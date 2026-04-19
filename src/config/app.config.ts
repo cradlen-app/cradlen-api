@@ -14,6 +14,13 @@ export interface AppConfig {
     supportedLocales: string[];
     fallbackLocale: string;
   };
+  cors: {
+    origins: string | string[];
+  };
+  throttle: {
+    ttl: number;
+    limit: number;
+  };
 }
 
 export default registerAs(
@@ -31,6 +38,13 @@ export default registerAs(
       defaultLocale: process.env.DEFAULT_LOCALE ?? 'en',
       supportedLocales: (process.env.SUPPORTED_LOCALES ?? 'en,ar').split(','),
       fallbackLocale: process.env.FALLBACK_LOCALE ?? 'en',
+    },
+    cors: {
+      origins: process.env.CORS_ORIGINS?.split(',') ?? [],
+    },
+    throttle: {
+      ttl: parseInt(process.env.THROTTLE_TTL ?? '60000', 10),
+      limit: parseInt(process.env.THROTTLE_LIMIT ?? '100', 10),
     },
   }),
 );
