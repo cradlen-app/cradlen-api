@@ -16,10 +16,13 @@ export class ResponseInterceptor implements NestInterceptor {
   ): Observable<unknown> {
     return next.handle().pipe(
       map((value: unknown) => {
+        if (value === undefined) {
+          return value;
+        }
         if (isPaginatedPayload(value)) {
           return { data: value.items, meta: value.meta };
         }
-        return { data: value ?? null, meta: {} };
+        return { data: value, meta: {} };
       }),
     );
   }
