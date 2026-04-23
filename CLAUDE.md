@@ -88,3 +88,7 @@ Copy `.env.example` to `.env`. Required vars:
 | `THROTTLE_TTL` / `THROTTLE_LIMIT` | Rate limiting window (ms) and request cap |
 | `LOG_LEVEL`                       | `trace\|debug\|info\|warn\|error\|fatal`  |
 | `SUPPORTED_LOCALES`               | e.g. `en,ar`                              |
+
+Always load:
+.agents/prisma.md
+.agents/git-workflow.md
