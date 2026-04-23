@@ -11,6 +11,7 @@ import type { AppConfig } from './config/app.config';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: [`.env.${process.env.NODE_ENV ?? 'development'}`, '.env'],
       load: [appConfig, databaseConfig],
     }),
     ThrottlerModule.forRootAsync({
