@@ -1,10 +1,14 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
+import authConfig from './config/auth.config';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './modules/health/health.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import type { AppConfig } from './config/app.config';
 
 @Module({
@@ -12,7 +16,7 @@ import type { AppConfig } from './config/app.config';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: [`.env.${process.env.NODE_ENV ?? 'development'}`, '.env'],
-      load: [appConfig, databaseConfig],
+      load: [appConfig, databaseConfig, authConfig],
     }),
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],
@@ -25,8 +29,14 @@ import type { AppConfig } from './config/app.config';
     }),
     DatabaseModule,
     HealthModule,
+    AuthModule,
   ],
   controllers: [],
-  providers: [],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
+  ],
 })
 export class AppModule {}
