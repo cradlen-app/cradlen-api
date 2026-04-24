@@ -4,7 +4,11 @@
       "Bash(npm install *)",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(npx prisma *)",
+      "Bash(npx dotenv *)",
+      "PowerShell(cd \"f:\\\\Cradlen\\\\cradlen-api\"; npx eslint \"src/modules/auth/auth.service.ts\" 2>&1; echo \"Exit: $LASTEXITCODE\")",
+      "PowerShell(cd \"f:\\\\Cradlen\\\\cradlen-api\"; npx tsc --noEmit 2>&1; echo \"Exit: $LASTEXITCODE\")"
     ]
   }
 }

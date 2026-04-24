@@ -15,6 +15,7 @@ model SubscriptionPlan {
   updated_at    DateTime       @updatedAt
   subscriptions Subscription[]
 
+  @@unique([plan])
   @@map("subscription_plans")
 }
 
@@ -54,18 +55,20 @@ model Branch {
 }
 
 model User {
-  id              String    @id @default(uuid()) @db.Uuid
-  first_name      String
-  last_name       String
-  email           String    @unique
-  password_hashed String
-  is_active       Boolean   @default(true)
-  is_deleted      Boolean   @default(false)
-  deleted_at      DateTime?
-  verified_at     DateTime?
-  created_at      DateTime  @default(now())
-  profile         Profile?
-  staff           Staff[]
+  id                 String              @id @default(uuid()) @db.Uuid
+  first_name         String
+  last_name          String
+  email              String              @unique
+  password_hashed    String
+  is_active          Boolean             @default(true)
+  is_deleted         Boolean             @default(false)
+  deleted_at         DateTime?
+  verified_at        DateTime?
+  created_at         DateTime            @default(now())
+  profile            Profile?
+  staff              Staff[]
+  refreshTokens      RefreshToken[]
+  emailVerifications EmailVerification[]
 
   @@map("users")
 }
@@ -117,6 +120,7 @@ model Subscription {
   id                   String           @id @default(uuid()) @db.Uuid
   organization_id      String           @db.Uuid
   subscription_plan_id String           @db.Uuid
+  trial_ends_at        DateTime?
   created_at           DateTime         @default(now())
   updated_at           DateTime         @updatedAt
   is_deleted           Boolean          @default(false)
@@ -125,4 +129,30 @@ model Subscription {
   subscription_plan    SubscriptionPlan @relation(fields: [subscription_plan_id], references: [id])
 
   @@map("subscriptions")
+}
+
+model RefreshToken {
+  id         String    @id @default(uuid()) @db.Uuid
+  jti        String    @unique @db.Uuid
+  token_hash String
+  user_id    String    @db.Uuid
+  expires_at DateTime
+  is_revoked Boolean   @default(false)
+  revoked_at DateTime?
+  created_at DateTime  @default(now())
+  user       User      @relation(fields: [user_id], references: [id])
+
+  @@map("refresh_tokens")
+}
+
+model EmailVerification {
+  id         String    @id @default(uuid()) @db.Uuid
+  user_id    String    @db.Uuid
+  code_hash  String
+  expires_at DateTime
+  used_at    DateTime?
+  created_at DateTime  @default(now())
+  user       User      @relation(fields: [user_id], references: [id])
+
+  @@map("email_verifications")
 }

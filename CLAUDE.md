@@ -18,77 +18,110 @@ npm run test:watch      # Watch mode
 npm run test:cov        # Coverage report
 npm run test:e2e        # End-to-end tests
 
+# Single test file
+npx jest src/modules/health/health.service.spec.ts
+
 # Code quality
 npm run lint            # ESLint with auto-fix
 npm run format          # Prettier formatting
 
-# Single test file
-npx jest src/modules/health/health.service.spec.ts
-
-# Database migrations (Prisma)
+# Database (Prisma)
 npx prisma migrate dev --name <migration-name>
 npx prisma generate
+npx prisma migrate status
 ```
 
 ## Architecture
 
-**Stack:** NestJS + Prisma + Neon (serverless PostgreSQL)
+**Stack:** NestJS (v11) + Prisma (v7) + Neon (serverless PostgreSQL)
 
 ### Module structure
 
 ```
 src/
 ├── app.module.ts          # Root — imports all feature modules
-├── main.ts                # Bootstrap: Helmet, CORS, versioning, Swagger, pipes
+├── main.ts                # Bootstrap: Helmet, CORS, versioning, Swagger, pipes, locale
 ├── common/                # Shared infrastructure (never holds business logic)
 │   ├── constant/          # App constants and error codes
-│   ├── dto/               # ApiResponseDto, PaginatedResponseDto
+│   ├── dto/               # ApiResponse interfaces, PaginatedPayload types
 │   ├── filters/           # GlobalExceptionFilter (maps Prisma errors → HTTP)
-│   ├── interceptor/       # ResponseInterceptor (wraps all responses in {data, meta})
-│   ├── logger/            # Pino-based structured logger
-│   ├── middleware/         # RequestIdMiddleware
-│   └── swagger/           # Swagger decorators and response DTOs
+│   ├── interceptor/       # ResponseInterceptor, LoggingInterceptor
+│   ├── logger/            # Pino logger factory
+│   ├── middleware/        # RequestIdMiddleware (UUID per request)
+│   ├── swagger/           # ApiStandardResponse, ApiPaginatedResponse, ApiVoidResponse decorators
+│   └── utils/             # paginated() helper for list endpoints
 ├── config/
-│   ├── app.config.ts      # App-level env vars (PORT, CORS, throttle, locale, etc.)
-│   └── database.config.ts # DATABASE_URL / DIRECT_URL
+│   ├── app.config.ts      # PORT, CORS, throttle, locale, versioning
+│   └── database.config.ts # DATABASE_URL
 ├── database/
 │   ├── database.module.ts # Global module — exports PrismaService everywhere
-│   └── prisma.service.ts  # PrismaClient with Neon adapter; lifecycle hooks
+│   └── prisma.service.ts  # PrismaClient with Neon adapter; exposes .db property
 └── modules/
-    └── health/            # Only implemented feature module (DB connectivity check)
+    └── health/            # DB connectivity check (reference module)
 ```
 
 ### Key conventions
 
-- **Response shape:** All responses are wrapped by `ResponseInterceptor` → `{ data: T, meta: {} }`. Paginated responses get `meta: { total, page, limit, ... }` via `PaginatedResponseDto`.
-- **Error shape:** `GlobalExceptionFilter` catches all exceptions and maps Prisma error codes (P2002 → 409, P2025 → 404, etc.) to HTTP responses with `{ error, errorCode, requestId }`.
-- **Versioning:** URI-based (`/v1/...`). Default version is `API_DEFAULT_VERSION` from env.
-- **Swagger:** Available at `/docs` in non-production environments; uses Bearer auth header (auth module not yet implemented).
-- **Database:** `DATABASE_URL` uses Neon connection pooler; `DIRECT_URL` is the direct connection used by Prisma Migrate.
-- **Logging:** Pino — pretty-print in dev, JSON in production. Request ID propagated through all log entries.
+**Response shape:** All responses wrapped by `ResponseInterceptor` → `{ data: T, meta: {} }`. For paginated responses return `paginated(items, { page, limit, total })` from `common/utils/pagination.utils.ts` — the interceptor detects the `items` + `meta` shape and restructures it to `{ data: items[], meta: { page, limit, total, totalPages } }`.
+
+**Error shape:** `GlobalExceptionFilter` returns `{ error: { code, message, statusCode, details, requestId } }`. Prisma error mappings: P2002 → 409, P2025 → 404, P2003 → 400. Validation errors include per-field `details`.
+
+**Database access:** Inject `PrismaService` and use `this.prismaService.db.<model>.<method>()`. `PrismaService` is globally provided — no need to import `DatabaseModule` in feature modules.
+
+**Soft deletes:** Models use `is_deleted Boolean @default(false)` + `deleted_at DateTime?`. Always filter `where: { is_deleted: false }` in queries unless fetching deleted records intentionally.
+
+**Swagger decorators** (from `common/swagger`):
+
+- `@ApiStandardResponse(DtoClass)` — single resource endpoints
+- `@ApiPaginatedResponse(DtoClass)` — list endpoints
+- `@ApiVoidResponse()` — 204 No Content endpoints
+
+**Versioning:** URI-based (`/v1/...`). Default version from `API_DEFAULT_VERSION` env var.
+
+**Logging:** Pino — pretty-print in dev, JSON in production. Request ID propagated via `x-request-id` header.
+
+**Locale:** `Accept-Language` header is parsed on each request and set as `x-locale`. Supported locales configured via `SUPPORTED_LOCALES` env var.
+
+**ESLint rules enforced as errors:** `no-explicit-any`, `no-floating-promises`, `no-unsafe-argument`, `no-unused-vars` (allow `_` prefix), `no-misused-promises`. Run `npm run lint` before committing.
 
 ### Adding a new module
 
-1. Create `src/modules/<feature>/` with controller, service, module files.
+1. Create `src/modules/<feature>/` with controller, service, and module files.
 2. Import the module in `AppModule`.
-3. Inject `PrismaService` directly (it is globally provided by `DatabaseModule`).
-4. Use `PaginatedResponseDto` for list endpoints; return plain objects for single-resource endpoints.
-5. Add Prisma models to `prisma/schema.prisma` and run `npx prisma migrate dev`.
+3. Inject `PrismaService` directly (globally provided).
+4. Use `paginated(items, { page, limit, total })` for list endpoints; return plain objects for single-resource endpoints.
+5. Decorate controller methods with the appropriate `@ApiStandardResponse` / `@ApiPaginatedResponse` / `@ApiVoidResponse`.
+6. Add Prisma models to `prisma/schema.prisma` and run `npx prisma migrate dev`.
+
+### Data models (prisma/schema.prisma)
+
+Core entities and their relationships:
+
+- **Organization** → many **Branch**, many **Staff**, many **Subscription**
+- **SubscriptionPlan** → many **Subscription**
+- **Branch** → many **Staff** (unique constraint: `id + organization_id`)
+- **User** → one **Profile**, many **Staff** records
+- **Role** → many **Staff**
+- **Staff** unique constraint: `(user_id, organization_id, branch_id, role_id)`
+
+All models have UUID primary keys, `created_at`/`updated_at` timestamps, and soft-delete fields (`is_deleted`, `deleted_at`).
 
 ## Environment variables
 
 Copy `.env.example` to `.env`. Required vars:
 
-| Variable                          | Purpose                                   |
-| --------------------------------- | ----------------------------------------- |
-| `DATABASE_URL`                    | Neon pooler connection string             |
-| `DIRECT_URL`                      | Neon direct connection (migrations)       |
-| `PORT`                            | HTTP port (default 3000)                  |
-| `CORS_ORIGINS`                    | Comma-separated allowed origins           |
-| `THROTTLE_TTL` / `THROTTLE_LIMIT` | Rate limiting window (ms) and request cap |
-| `LOG_LEVEL`                       | `trace\|debug\|info\|warn\|error\|fatal`  |
-| `SUPPORTED_LOCALES`               | e.g. `en,ar`                              |
+| Variable                             | Purpose                                         |
+| ------------------------------------ | ----------------------------------------------- |
+| `DATABASE_URL`                       | Neon pooler connection string                   |
+| `DIRECT_URL`                         | Neon direct connection (Prisma migrations only) |
+| `PORT`                               | HTTP port (default 3000)                        |
+| `API_DEFAULT_VERSION`                | URI version prefix (e.g. `1`)                   |
+| `CORS_ORIGINS`                       | Comma-separated allowed origins                 |
+| `THROTTLE_TTL` / `THROTTLE_LIMIT`    | Rate limiting window (ms) and request cap       |
+| `LOG_LEVEL`                          | `trace\|debug\|info\|warn\|error\|fatal`        |
+| `SUPPORTED_LOCALES`                  | e.g. `en,ar`                                    |
+| `DEFAULT_LOCALE` / `FALLBACK_LOCALE` | Locale defaults                                 |
 
 Always load:
-.agents/prisma.md
-.agents/git-workflow.md
+.agents/skills/prisma-cli/SKILL.md
+.agents/skills/git-workflow/SKILL.md
