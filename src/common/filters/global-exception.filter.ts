@@ -136,8 +136,20 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         isValidationErrorResponse(raw) && typeof raw.message === 'string'
           ? raw.message
           : exception.message;
+      const rawCode =
+        raw !== null &&
+        typeof raw === 'object' &&
+        'code' in raw &&
+        typeof (raw as Record<string, unknown>)['code'] === 'string'
+          ? ((raw as Record<string, unknown>)['code'] as string)
+          : null;
+      const errorCode =
+        rawCode !== null &&
+        (Object.values(ERROR_CODES) as string[]).includes(rawCode)
+          ? (rawCode as ErrorCode)
+          : resolveCode(status);
       body = {
-        code: resolveCode(status),
+        code: errorCode,
         message,
         statusCode: status,
         details: {},
