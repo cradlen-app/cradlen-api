@@ -366,7 +366,7 @@ describe('AuthService', () => {
       organization_name: string;
       branch_address: string;
       branch_city: string;
-      branch_governate: string;
+      branch_governorate: string;
     };
 
     beforeEach(async () => {
@@ -376,7 +376,7 @@ describe('AuthService', () => {
         organization_name: 'Test Clinic',
         branch_address: '123 Main St',
         branch_city: 'Cairo',
-        branch_governate: 'Cairo',
+        branch_governorate: 'Cairo',
       };
     });
 

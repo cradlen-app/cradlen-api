@@ -100,7 +100,7 @@ describe('AuthController', () => {
         organization_name: 'Clinic',
         branch_address: '123 St',
         branch_city: 'Cairo',
-        branch_governate: 'Cairo',
+        branch_governorate: 'Cairo',
       };
 
       const result = await controller.registerOrganization(dto as never);
