@@ -17,6 +17,7 @@ import type { AuthConfig } from '../../config/auth.config.js';
 import type {
   JwtAccessPayload,
   JwtRefreshPayload,
+  PasswordResetTokenPayload,
   RegistrationTokenPayload,
 } from './interfaces/jwt-payload.interface.js';
 import type { RegisterPersonalDto } from './dto/register-personal.dto.js';
@@ -24,7 +25,13 @@ import type { RegisterOrganizationDto } from './dto/register-organization.dto.js
 import type { LoginDto } from './dto/login.dto.js';
 import type { AuthTokensDto } from './dto/auth-tokens.dto.js';
 import type { RegistrationTokenResponseDto } from './dto/registration-token-response.dto.js';
+import type { PendingRegistrationResponseDto } from './dto/pending-registration-response.dto.js';
+import { ERROR_CODES } from '../../common/constant/error-codes.js';
 import type { MeResponseDto } from './dto/me-response.dto.js';
+import type { ForgotPasswordDto } from './dto/forgot-password.dto.js';
+import type { VerifyResetCodeDto } from './dto/verify-reset-code.dto.js';
+import type { ResetPasswordDto } from './dto/reset-password.dto.js';
+import type { ResetTokenResponseDto } from './dto/reset-token-response.dto.js';
 
 const OTP_TTL_MINUTES = 15;
 const OTP_RESEND_COOLDOWN_SECONDS = 60;
@@ -53,7 +60,16 @@ export class AuthService {
     const existing = await this.prismaService.db.user.findUnique({
       where: { email: dto.email },
     });
-    if (existing) throw new ConflictException('Email is already registered');
+    if (existing) {
+      if (existing.registration_status === 'ACTIVE') {
+        throw new ConflictException('Email is already registered');
+      }
+      throw new ConflictException({
+        code: ERROR_CODES.REGISTRATION_PENDING,
+        message:
+          'An account with this email is pending completion. Please log in to continue.',
+      });
+    }
 
     if (dto.is_clinical && !dto.speciality) {
       throw new BadRequestException(
@@ -69,6 +85,7 @@ export class AuthService {
           first_name: dto.first_name,
           last_name: dto.last_name,
           email: dto.email,
+          phone_number: dto.phone_number,
           password_hashed,
         },
       });
@@ -243,6 +260,11 @@ export class AuthService {
           trial_ends_at: trialEndsAt,
         },
       });
+
+      await tx.user.update({
+        where: { id: user.id },
+        data: { registration_status: 'ACTIVE' },
+      });
     });
 
     return this.issueTokenPair(user);
@@ -250,7 +272,9 @@ export class AuthService {
 
   // ── Login ──────────────────────────────────────────────────────────────────
 
-  async login(dto: LoginDto): Promise<AuthTokensDto> {
+  async login(
+    dto: LoginDto,
+  ): Promise<AuthTokensDto | PendingRegistrationResponseDto> {
     const user = await this.prismaService.db.user.findFirst({
       where: { email: dto.email, is_deleted: false },
     });
@@ -260,6 +284,11 @@ export class AuthService {
     }
 
     if (!user.is_active) throw new UnauthorizedException('Account is inactive');
+
+    if (user.registration_status === 'PENDING') {
+      const pending_step = user.verified_at ? 'organization' : 'verify_email';
+      return { ...this.issueRegistrationToken(user.id), pending_step };
+    }
 
     return this.issueTokenPair(user);
   }
@@ -315,6 +344,126 @@ export class AuthService {
     });
   }
 
+  // ── Forgot password ────────────────────────────────────────────────────────
+
+  async forgotPassword(dto: ForgotPasswordDto): Promise<ResetTokenResponseDto> {
+    const user = await this.prismaService.db.user.findFirst({
+      where: { email: dto.email, is_deleted: false },
+    });
+
+    if (!user) {
+      return this.issuePasswordResetToken(randomUUID(), dto.email, false);
+    }
+
+    const windowStart = new Date(Date.now() - 30 * 60 * 1000);
+
+    const [count, latest] = await Promise.all([
+      this.prismaService.db.passwordReset.count({
+        where: { user_id: user.id, created_at: { gte: windowStart } },
+      }),
+      this.prismaService.db.passwordReset.findFirst({
+        where: { user_id: user.id },
+        orderBy: { created_at: 'desc' },
+      }),
+    ]);
+
+    if (count >= OTP_MAX_ATTEMPTS) {
+      return this.issuePasswordResetToken(user.id, user.email, false);
+    }
+
+    if (latest) {
+      const secondsAgo = (Date.now() - latest.created_at.getTime()) / 1000;
+      if (secondsAgo < OTP_RESEND_COOLDOWN_SECONDS) {
+        return this.issuePasswordResetToken(user.id, user.email, false);
+      }
+    }
+
+    await this.sendPasswordResetOtp(user.id, user.email);
+
+    return this.issuePasswordResetToken(user.id, user.email, false);
+  }
+
+  // ── Verify reset code ──────────────────────────────────────────────────────
+
+  async verifyResetCode(
+    dto: VerifyResetCodeDto,
+  ): Promise<ResetTokenResponseDto> {
+    let payload: PasswordResetTokenPayload;
+    try {
+      payload = this.jwtService.verify<PasswordResetTokenPayload>(
+        dto.reset_token,
+        { secret: this.authConfig.jwt.accessSecret },
+      );
+    } catch {
+      throw new UnauthorizedException('Invalid or expired reset token');
+    }
+
+    if (payload.type !== 'password_reset' || payload.verified) {
+      throw new UnauthorizedException('Invalid token type');
+    }
+
+    const record = await this.prismaService.db.passwordReset.findFirst({
+      where: {
+        user_id: payload.sub,
+        used_at: null,
+        expires_at: { gt: new Date() },
+      },
+      orderBy: { created_at: 'desc' },
+    });
+
+    if (!record) {
+      throw new BadRequestException('Invalid or expired reset code');
+    }
+
+    const isValid = await bcrypt.compare(dto.code, record.code_hash);
+    if (!isValid) throw new BadRequestException('Invalid reset code');
+
+    await this.prismaService.db.passwordReset.update({
+      where: { id: record.id },
+      data: { used_at: new Date() },
+    });
+
+    return this.issuePasswordResetToken(payload.sub, payload.email, true);
+  }
+
+  // ── Reset password ─────────────────────────────────────────────────────────
+
+  async resetPassword(dto: ResetPasswordDto): Promise<AuthTokensDto> {
+    let payload: PasswordResetTokenPayload;
+    try {
+      payload = this.jwtService.verify<PasswordResetTokenPayload>(
+        dto.reset_token,
+        { secret: this.authConfig.jwt.accessSecret },
+      );
+    } catch {
+      throw new UnauthorizedException('Invalid or expired reset token');
+    }
+
+    if (payload.type !== 'password_reset' || !payload.verified) {
+      throw new UnauthorizedException('Invalid token type');
+    }
+
+    const user = await this.prismaService.db.user.findFirst({
+      where: { id: payload.sub, is_deleted: false },
+    });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    const password_hashed = await bcrypt.hash(dto.password, 12);
+
+    await this.prismaService.db.$transaction([
+      this.prismaService.db.user.update({
+        where: { id: user.id },
+        data: { password_hashed },
+      }),
+      this.prismaService.db.refreshToken.updateMany({
+        where: { user_id: user.id, is_revoked: false },
+        data: { is_revoked: true, revoked_at: new Date() },
+      }),
+    ]);
+
+    return this.issueTokenPair(user);
+  }
+
   // ── Me ─────────────────────────────────────────────────────────────────────
 
   getMe(user: User): MeResponseDto {
@@ -341,6 +490,46 @@ export class AuthService {
     });
 
     await this.mailService.sendVerificationEmail(email, code);
+  }
+
+  private issuePasswordResetToken(
+    userId: string,
+    email: string,
+    verified: boolean,
+  ): ResetTokenResponseDto {
+    const payload: PasswordResetTokenPayload = {
+      sub: userId,
+      email,
+      type: 'password_reset',
+      verified,
+    };
+    const reset_token = this.jwtService.sign(payload, {
+      secret: this.authConfig.jwt.accessSecret,
+      expiresIn: this.parseDurationToSeconds(
+        this.authConfig.jwt.registrationExpiration,
+      ),
+    });
+    return {
+      reset_token,
+      expires_in: this.parseDurationToSeconds(
+        this.authConfig.jwt.registrationExpiration,
+      ),
+    };
+  }
+
+  private async sendPasswordResetOtp(
+    userId: string,
+    email: string,
+  ): Promise<void> {
+    const code = randomInt(100000, 1000000).toString();
+    const code_hash = await bcrypt.hash(code, 6);
+    const expires_at = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
+
+    await this.prismaService.db.passwordReset.create({
+      data: { user_id: userId, code_hash, expires_at },
+    });
+
+    await this.mailService.sendPasswordResetEmail(email, code);
   }
 
   private issueRegistrationToken(userId: string): RegistrationTokenResponseDto {

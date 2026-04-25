@@ -14,11 +14,15 @@ const TABLES = [
 ];
 
 export async function cleanDatabase(prisma: PrismaClient): Promise<void> {
-  await (prisma as unknown as { $transaction: (ops: unknown[]) => Promise<unknown> }).$transaction(
+  await (
+    prisma as unknown as { $transaction: (ops: unknown[]) => Promise<unknown> }
+  ).$transaction(
     TABLES.map((table) =>
-      (prisma as unknown as { $executeRawUnsafe: (sql: string) => Promise<unknown> }).$executeRawUnsafe(
-        `TRUNCATE TABLE "${table}" CASCADE`,
-      ),
+      (
+        prisma as unknown as {
+          $executeRawUnsafe: (sql: string) => Promise<unknown>;
+        }
+      ).$executeRawUnsafe(`TRUNCATE TABLE "${table}" CASCADE`),
     ),
   );
 }

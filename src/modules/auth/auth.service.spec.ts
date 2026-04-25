@@ -40,6 +40,7 @@ const MOCK_USER = {
   is_active: true,
   is_deleted: false,
   verified_at: new Date(),
+  registration_status: 'ACTIVE' as const,
   created_at: new Date(),
   deleted_at: null,
 };
@@ -101,6 +102,7 @@ describe('AuthService', () => {
       first_name: 'John',
       last_name: 'Doe',
       email: 'john@example.com',
+      phone_number: '+201012345678',
       password: 'Password1!',
       confirm_password: 'Password1!',
       is_clinical: false,
@@ -131,12 +133,29 @@ describe('AuthService', () => {
       expect(result).toHaveProperty('expires_in', 1800);
     });
 
-    it('throws ConflictException when email is already registered', async () => {
-      prismaMock.db.user.findUnique.mockResolvedValue(MOCK_USER);
+    it('throws ConflictException when email is already registered as ACTIVE', async () => {
+      prismaMock.db.user.findUnique.mockResolvedValue({
+        ...MOCK_USER,
+        registration_status: 'ACTIVE',
+      });
 
       await expect(service.registerPersonal(dto)).rejects.toThrow(
         ConflictException,
       );
+      expect(prismaMock.db.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('throws ConflictException with REGISTRATION_PENDING code when email exists as PENDING', async () => {
+      prismaMock.db.user.findUnique.mockResolvedValue({
+        ...MOCK_USER,
+        registration_status: 'PENDING',
+      });
+
+      const error = await service.registerPersonal(dto).catch((e) => e);
+
+      expect(error).toBeInstanceOf(ConflictException);
+      const response = error.getResponse() as Record<string, unknown>;
+      expect(response['code']).toBe('REGISTRATION_PENDING');
       expect(prismaMock.db.$transaction).not.toHaveBeenCalled();
     });
 
@@ -382,6 +401,34 @@ describe('AuthService', () => {
       expect(result.token_type).toBe('Bearer');
     });
 
+    it('flips user registration_status to ACTIVE inside the transaction', async () => {
+      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_USER);
+      prismaMock.db.role.findFirst.mockResolvedValue(OWNER_ROLE);
+      prismaMock.db.subscriptionPlan.findFirst.mockResolvedValue(FREE_PLAN);
+      prismaMock.db.refreshToken.create.mockResolvedValue(MOCK_REFRESH_TOKEN);
+      prismaMock.db.$transaction.mockImplementation(
+        async (cb: (db: PrismaMock['db']) => Promise<void>) =>
+          cb(prismaMock.db),
+      );
+      prismaMock.db.organization.create.mockResolvedValue({ id: 'org-uuid-1' });
+      prismaMock.db.branch.create.mockResolvedValue({ id: 'branch-uuid-1' });
+      prismaMock.db.staff.create.mockResolvedValue({});
+      prismaMock.db.subscription.create.mockResolvedValue({});
+      prismaMock.db.user.update.mockResolvedValue({
+        ...MOCK_USER,
+        registration_status: 'ACTIVE',
+      });
+
+      await service.registerOrganization(dto);
+
+      expect(prismaMock.db.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: MOCK_USER.id },
+          data: expect.objectContaining({ registration_status: 'ACTIVE' }),
+        }),
+      );
+    });
+
     it('throws ForbiddenException when email is not verified', async () => {
       const token = await setupRegistrationToken();
       prismaMock.db.user.findFirst.mockResolvedValue({
@@ -467,6 +514,36 @@ describe('AuthService', () => {
       await expect(service.login(dto)).rejects.toThrow(
         new UnauthorizedException('Account is inactive'),
       );
+    });
+
+    it('returns registration token and pending_step=verify_email for PENDING unverified user', async () => {
+      prismaMock.db.user.findFirst.mockResolvedValue({
+        ...MOCK_USER,
+        registration_status: 'PENDING',
+        verified_at: null,
+      });
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+      const result = await service.login(dto);
+
+      expect(result).toHaveProperty('registration_token');
+      expect(result).toHaveProperty('pending_step', 'verify_email');
+      expect(result).not.toHaveProperty('access_token');
+    });
+
+    it('returns registration token and pending_step=organization for PENDING verified user', async () => {
+      prismaMock.db.user.findFirst.mockResolvedValue({
+        ...MOCK_USER,
+        registration_status: 'PENDING',
+        verified_at: new Date(),
+      });
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+      const result = await service.login(dto);
+
+      expect(result).toHaveProperty('registration_token');
+      expect(result).toHaveProperty('pending_step', 'organization');
+      expect(result).not.toHaveProperty('access_token');
     });
   });
 
@@ -653,6 +730,7 @@ describe('AuthService', () => {
       first_name: 'John',
       last_name: 'Doe',
       email: 'john@example.com',
+      phone_number: '+201012345678',
       password: 'Password1!',
       confirm_password: 'Password1!',
       is_clinical: false,

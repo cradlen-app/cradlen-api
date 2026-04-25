@@ -3,7 +3,10 @@ import * as request from 'supertest';
 import { JwtService } from '@nestjs/jwt';
 import { createTestApp } from '../helpers/app-factory';
 import { cleanDatabase } from '../helpers/db-cleaner';
-import { getTestPrisma, disconnectTestPrisma } from '../helpers/prisma-test-client';
+import {
+  getTestPrisma,
+  disconnectTestPrisma,
+} from '../helpers/prisma-test-client';
 
 const USER_EMAIL = 'login@example.com';
 const USER_PASSWORD = 'Password1!';
@@ -17,21 +20,24 @@ const REGISTER_BODY = {
   is_clinical: false,
 };
 
-async function doFullSetup(server: ReturnType<INestApplication['getHttpServer']>, mailMock: jest.Mock) {
-  const r1 = await request(server).post('/v1/auth/register/personal').send(REGISTER_BODY);
+async function doFullSetup(
+  server: ReturnType<INestApplication['getHttpServer']>,
+  mailMock: jest.Mock,
+) {
+  const r1 = await request(server)
+    .post('/v1/auth/register/personal')
+    .send(REGISTER_BODY);
   const otp = mailMock.mock.calls[0][1] as string;
   const r2 = await request(server)
     .post('/v1/auth/register/verify-email')
     .send({ registration_token: r1.body.data.registration_token, code: otp });
-  await request(server)
-    .post('/v1/auth/register/organization')
-    .send({
-      registration_token: r2.body.data.registration_token,
-      organization_name: 'Login Clinic',
-      branch_address: '1 St',
-      branch_city: 'Cairo',
-      branch_governate: 'Cairo',
-    });
+  await request(server).post('/v1/auth/register/organization').send({
+    registration_token: r2.body.data.registration_token,
+    organization_name: 'Login Clinic',
+    branch_address: '1 St',
+    branch_city: 'Cairo',
+    branch_governate: 'Cairo',
+  });
 }
 
 describe('POST /v1/auth/login (E2E)', () => {
@@ -71,7 +77,7 @@ describe('POST /v1/auth/login (E2E)', () => {
       .send({ email: USER_EMAIL, password: USER_PASSWORD });
 
     const jwt = new JwtService({});
-    const payload = jwt.decode(res.body.data.access_token as string) as Record<string, unknown>;
+    const payload = jwt.decode(res.body.data.access_token as string);
     expect(payload.email).toBe(USER_EMAIL);
     expect(payload.sub).toBeDefined();
   });
@@ -98,7 +104,10 @@ describe('POST /v1/auth/login (E2E)', () => {
 
   it('returns 401 when account is inactive', async () => {
     const prisma = getTestPrisma();
-    await prisma.user.updateMany({ where: { email: USER_EMAIL }, data: { is_active: false } });
+    await prisma.user.updateMany({
+      where: { email: USER_EMAIL },
+      data: { is_active: false },
+    });
 
     const res = await request(app.getHttpServer())
       .post('/v1/auth/login')
