@@ -2,7 +2,10 @@ import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
 import { createTestApp } from '../helpers/app-factory';
 import { cleanDatabase } from '../helpers/db-cleaner';
-import { getTestPrisma, disconnectTestPrisma } from '../helpers/prisma-test-client';
+import {
+  getTestPrisma,
+  disconnectTestPrisma,
+} from '../helpers/prisma-test-client';
 
 const REGISTER_BODY = {
   first_name: 'Sara',
@@ -24,7 +27,9 @@ async function doFullRegistration(
   server: ReturnType<INestApplication['getHttpServer']>,
   mailMock: jest.Mock,
 ) {
-  const r1 = await request(server).post('/v1/auth/register/personal').send(REGISTER_BODY);
+  const r1 = await request(server)
+    .post('/v1/auth/register/personal')
+    .send(REGISTER_BODY);
   const regToken1 = r1.body.data.registration_token as string;
   const otp = mailMock.mock.calls[0][1] as string;
 
@@ -73,16 +78,24 @@ describe('POST /v1/auth/register/organization (E2E)', () => {
       .send({ ...ORG_BODY, registration_token: verifiedToken });
 
     const prisma = getTestPrisma();
-    const org = await prisma.organization.findFirst({ where: { name: ORG_BODY.organization_name } });
+    const org = await prisma.organization.findFirst({
+      where: { name: ORG_BODY.organization_name },
+    });
     expect(org).not.toBeNull();
 
-    const branch = await prisma.branch.findFirst({ where: { organization_id: org!.id } });
+    const branch = await prisma.branch.findFirst({
+      where: { organization_id: org!.id },
+    });
     expect(branch?.is_main).toBe(true);
 
-    const staff = await prisma.staff.findFirst({ where: { organization_id: org!.id } });
+    const staff = await prisma.staff.findFirst({
+      where: { organization_id: org!.id },
+    });
     expect(staff).not.toBeNull();
 
-    const subscription = await prisma.subscription.findFirst({ where: { organization_id: org!.id } });
+    const subscription = await prisma.subscription.findFirst({
+      where: { organization_id: org!.id },
+    });
     expect(subscription).not.toBeNull();
   });
 
@@ -112,7 +125,12 @@ describe('POST /v1/auth/register/organization (E2E)', () => {
   it('returns 400 on missing organization_name', async () => {
     const res = await request(app.getHttpServer())
       .post('/v1/auth/register/organization')
-      .send({ registration_token: verifiedToken, branch_address: '123 St', branch_city: 'Cairo', branch_governate: 'Cairo' })
+      .send({
+        registration_token: verifiedToken,
+        branch_address: '123 St',
+        branch_city: 'Cairo',
+        branch_governate: 'Cairo',
+      })
       .expect(400);
 
     expect(res.body.error.code).toBe('VALIDATION_ERROR');

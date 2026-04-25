@@ -18,3 +18,12 @@ export interface RegistrationTokenPayload {
   iat?: number;
   exp?: number;
 }
+
+export interface PasswordResetTokenPayload {
+  sub: string;
+  email: string;
+  type: 'password_reset';
+  verified: boolean;
+  iat?: number;
+  exp?: number;
+}

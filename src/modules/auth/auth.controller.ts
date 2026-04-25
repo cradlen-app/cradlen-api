@@ -16,9 +16,11 @@ import {
   ApiStandardResponse,
   ApiVoidResponse,
 } from '../../common/swagger/index.js';
+import { ApiExtraModels } from '@nestjs/swagger';
 import { AuthService } from './auth.service.js';
 import { RegisterPersonalDto } from './dto/register-personal.dto.js';
 import { RegistrationTokenResponseDto } from './dto/registration-token-response.dto.js';
+import { PendingRegistrationResponseDto } from './dto/pending-registration-response.dto.js';
 import { VerifyEmailDto } from './dto/verify-email.dto.js';
 import { ResendOtpDto } from './dto/resend-otp.dto.js';
 import { RegisterOrganizationDto } from './dto/register-organization.dto.js';
@@ -27,8 +29,13 @@ import { LoginDto } from './dto/login.dto.js';
 import { RefreshDto } from './dto/refresh.dto.js';
 import { LogoutDto } from './dto/logout.dto.js';
 import { MeResponseDto } from './dto/me-response.dto.js';
+import { ForgotPasswordDto } from './dto/forgot-password.dto.js';
+import { VerifyResetCodeDto } from './dto/verify-reset-code.dto.js';
+import { ResetPasswordDto } from './dto/reset-password.dto.js';
+import { ResetTokenResponseDto } from './dto/reset-token-response.dto.js';
 
 @ApiTags('Auth')
+@ApiExtraModels(PendingRegistrationResponseDto)
 @Controller('auth')
 @UseGuards(JwtAuthGuard)
 export class AuthController {
@@ -90,9 +97,14 @@ export class AuthController {
   @Post('login')
   @Public()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Login with email and password' })
+  @ApiOperation({
+    summary:
+      'Login — returns AuthTokensDto for active users, or PendingRegistrationResponseDto (with pending_step) for incomplete registrations',
+  })
   @ApiStandardResponse(AuthTokensDto)
-  login(@Body() dto: LoginDto): Promise<AuthTokensDto> {
+  login(
+    @Body() dto: LoginDto,
+  ): Promise<AuthTokensDto | PendingRegistrationResponseDto> {
     return this.authService.login(dto);
   }
 
@@ -112,6 +124,43 @@ export class AuthController {
   @ApiVoidResponse()
   async logout(@Body() dto: LogoutDto): Promise<void> {
     await this.authService.logout(dto.refresh_token);
+  }
+
+  @Post('forgot-password')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Step 1 — submit email, receive reset token + OTP email',
+  })
+  @ApiStandardResponse(ResetTokenResponseDto)
+  forgotPassword(
+    @Body() dto: ForgotPasswordDto,
+  ): Promise<ResetTokenResponseDto> {
+    return this.authService.forgotPassword(dto);
+  }
+
+  @Post('forgot-password/verify-code')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Step 2 — submit 6-digit OTP, receive verified reset token',
+  })
+  @ApiStandardResponse(ResetTokenResponseDto)
+  verifyResetCode(
+    @Body() dto: VerifyResetCodeDto,
+  ): Promise<ResetTokenResponseDto> {
+    return this.authService.verifyResetCode(dto);
+  }
+
+  @Post('reset-password')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Step 3 — submit new password, receive auth tokens',
+  })
+  @ApiStandardResponse(AuthTokensDto)
+  resetPassword(@Body() dto: ResetPasswordDto): Promise<AuthTokensDto> {
+    return this.authService.resetPassword(dto);
   }
 
   @Get('me')

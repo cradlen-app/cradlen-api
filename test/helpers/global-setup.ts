@@ -10,7 +10,9 @@ export default async function globalSetup() {
   }
 
   if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL must be set for E2E/integration tests. Create test/.env.test or set env var.');
+    throw new Error(
+      'DATABASE_URL must be set for E2E/integration tests. Create test/.env.test or set env var.',
+    );
   }
 
   execSync('npx prisma migrate deploy', {
@@ -20,8 +22,12 @@ export default async function globalSetup() {
 
   const { PrismaNeon } = await import('@prisma/adapter-neon');
   const { PrismaClient } = await import('@prisma/client');
-  const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL });
-  const prisma = new PrismaClient({ adapter } as ConstructorParameters<typeof PrismaClient>[0]);
+  const adapter = new PrismaNeon({
+    connectionString: process.env.DATABASE_URL,
+  });
+  const prisma = new PrismaClient({ adapter } as ConstructorParameters<
+    typeof PrismaClient
+  >[0]);
 
   await prisma.role.upsert({
     where: { name: 'owner' },

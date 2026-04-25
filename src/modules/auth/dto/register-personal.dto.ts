@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsBoolean,
   IsEmail,
+  IsMobilePhone,
   IsOptional,
   IsString,
   MaxLength,
@@ -25,6 +26,10 @@ export class RegisterPersonalDto {
   @ApiProperty({ example: 'ahmed@example.com' })
   @IsEmail()
   email!: string;
+
+  @ApiProperty({ example: '+201012345678' })
+  @IsMobilePhone()
+  phone_number!: string;
 
   @ApiProperty({ example: 'SecurePass123!' })
   @IsString()

@@ -17,12 +17,18 @@ async function validateDto(data: Partial<TestDto>) {
 
 describe('MatchesField validator', () => {
   it('passes when both fields match', async () => {
-    const errors = await validateDto({ password: 'secret', confirm_password: 'secret' });
+    const errors = await validateDto({
+      password: 'secret',
+      confirm_password: 'secret',
+    });
     expect(errors).toHaveLength(0);
   });
 
   it('fails when fields do not match', async () => {
-    const errors = await validateDto({ password: 'secret', confirm_password: 'different' });
+    const errors = await validateDto({
+      password: 'secret',
+      confirm_password: 'different',
+    });
     const confirmErrors = errors.find((e) => e.property === 'confirm_password');
     expect(confirmErrors).toBeDefined();
     expect(Object.values(confirmErrors!.constraints ?? {})).toEqual(
@@ -37,7 +43,10 @@ describe('MatchesField validator', () => {
   });
 
   it('fails when password is empty string and confirm_password is not', async () => {
-    const errors = await validateDto({ password: '', confirm_password: 'notempty' });
+    const errors = await validateDto({
+      password: '',
+      confirm_password: 'notempty',
+    });
     const confirmErrors = errors.find((e) => e.property === 'confirm_password');
     expect(confirmErrors).toBeDefined();
   });

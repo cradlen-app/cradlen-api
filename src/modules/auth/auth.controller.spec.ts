@@ -14,7 +14,10 @@ const mockAuthService = {
   getMe: jest.fn(),
 };
 
-const MOCK_TOKEN_RESPONSE = { registration_token: 'token-abc', expires_in: 1800 };
+const MOCK_TOKEN_RESPONSE = {
+  registration_token: 'token-abc',
+  expires_in: 1800,
+};
 const MOCK_AUTH_TOKENS = {
   access_token: 'access-abc',
   refresh_token: 'refresh-abc',
@@ -46,7 +49,14 @@ describe('AuthController', () => {
   describe('registerPersonal', () => {
     it('delegates to service and returns result', async () => {
       mockAuthService.registerPersonal.mockResolvedValue(MOCK_TOKEN_RESPONSE);
-      const dto = { first_name: 'John', last_name: 'Doe', email: 'john@example.com', password: 'P1!', confirm_password: 'P1!', is_clinical: false };
+      const dto = {
+        first_name: 'John',
+        last_name: 'Doe',
+        email: 'john@example.com',
+        password: 'P1!',
+        confirm_password: 'P1!',
+        is_clinical: false,
+      };
 
       const result = await controller.registerPersonal(dto as never);
 
@@ -62,7 +72,10 @@ describe('AuthController', () => {
 
       const result = await controller.verifyEmail(dto as never);
 
-      expect(mockAuthService.verifyEmail).toHaveBeenCalledWith('reg-token', '123456');
+      expect(mockAuthService.verifyEmail).toHaveBeenCalledWith(
+        'reg-token',
+        '123456',
+      );
       expect(result).toEqual(MOCK_TOKEN_RESPONSE);
     });
   });
@@ -82,7 +95,13 @@ describe('AuthController', () => {
   describe('registerOrganization', () => {
     it('passes full dto to service', async () => {
       mockAuthService.registerOrganization.mockResolvedValue(MOCK_AUTH_TOKENS);
-      const dto = { registration_token: 'reg-token', organization_name: 'Clinic', branch_address: '123 St', branch_city: 'Cairo', branch_governate: 'Cairo' };
+      const dto = {
+        registration_token: 'reg-token',
+        organization_name: 'Clinic',
+        branch_address: '123 St',
+        branch_city: 'Cairo',
+        branch_governate: 'Cairo',
+      };
 
       const result = await controller.registerOrganization(dto as never);
 

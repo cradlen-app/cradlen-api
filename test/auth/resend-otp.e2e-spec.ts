@@ -2,7 +2,10 @@ import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
 import { createTestApp } from '../helpers/app-factory';
 import { cleanDatabase } from '../helpers/db-cleaner';
-import { getTestPrisma, disconnectTestPrisma } from '../helpers/prisma-test-client';
+import {
+  getTestPrisma,
+  disconnectTestPrisma,
+} from '../helpers/prisma-test-client';
 
 const REGISTER_BODY = {
   first_name: 'Alex',
@@ -39,7 +42,9 @@ describe('POST /v1/auth/register/resend-otp (E2E)', () => {
     registrationToken = res.body.data.registration_token as string;
 
     const prisma = getTestPrisma();
-    const user = await prisma.user.findFirst({ where: { email: REGISTER_BODY.email } });
+    const user = await prisma.user.findFirst({
+      where: { email: REGISTER_BODY.email },
+    });
     await prisma.emailVerification.updateMany({
       where: { user_id: user!.id },
       data: { created_at: new Date(Date.now() - 90 * 1000) },
@@ -60,7 +65,9 @@ describe('POST /v1/auth/register/resend-otp (E2E)', () => {
 
   it('marks previous OTP as used after resend', async () => {
     const prisma = getTestPrisma();
-    const user = await prisma.user.findFirst({ where: { email: REGISTER_BODY.email } });
+    const user = await prisma.user.findFirst({
+      where: { email: REGISTER_BODY.email },
+    });
 
     await request(app.getHttpServer())
       .post('/v1/auth/register/resend-otp')
@@ -90,7 +97,9 @@ describe('POST /v1/auth/register/resend-otp (E2E)', () => {
 
   it('returns 401 after max 5 OTP attempts', async () => {
     const prisma = getTestPrisma();
-    const user = await prisma.user.findFirst({ where: { email: REGISTER_BODY.email } });
+    const user = await prisma.user.findFirst({
+      where: { email: REGISTER_BODY.email },
+    });
 
     // Insert 4 more OTPs (1 already exists = 5 total in window)
     for (let i = 0; i < 4; i++) {

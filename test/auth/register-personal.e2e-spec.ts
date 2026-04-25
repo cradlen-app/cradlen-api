@@ -2,7 +2,10 @@ import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
 import { createTestApp } from '../helpers/app-factory';
 import { cleanDatabase } from '../helpers/db-cleaner';
-import { getTestPrisma, disconnectTestPrisma } from '../helpers/prisma-test-client';
+import {
+  getTestPrisma,
+  disconnectTestPrisma,
+} from '../helpers/prisma-test-client';
 
 describe('POST /v1/auth/register/personal (E2E)', () => {
   let app: INestApplication;
@@ -54,7 +57,9 @@ describe('POST /v1/auth/register/personal (E2E)', () => {
   });
 
   it('returns 409 on duplicate email', async () => {
-    await request(app.getHttpServer()).post('/v1/auth/register/personal').send(validBody);
+    await request(app.getHttpServer())
+      .post('/v1/auth/register/personal')
+      .send(validBody);
 
     const res = await request(app.getHttpServer())
       .post('/v1/auth/register/personal')
