@@ -10,7 +10,9 @@
       "PowerShell(cd \"f:\\\\Cradlen\\\\cradlen-api\"; npx eslint \"src/modules/auth/auth.service.ts\" 2>&1; echo \"Exit: $LASTEXITCODE\")",
       "PowerShell(cd \"f:\\\\Cradlen\\\\cradlen-api\"; npx tsc --noEmit 2>&1; echo \"Exit: $LASTEXITCODE\")",
       "Bash(npm run *)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(npx nest *)",
+      "Bash(npx jest *)"
     ]
   }
 }

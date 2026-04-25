@@ -5,6 +5,7 @@ export const createPrismaMock = () => ({
       findFirst: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      deleteMany: jest.fn(),
     },
     profile: {
       create: jest.fn(),

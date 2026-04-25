@@ -3,7 +3,10 @@ import { PrismaNeon } from '@prisma/adapter-neon';
 import { PrismaClient } from '@prisma/client';
 
 config({ path: '.env' });
-config({ path: `.env.${process.env.NODE_ENV ?? 'development'}`, override: true });
+config({
+  path: `.env.${process.env.NODE_ENV ?? 'development'}`,
+  override: true,
+});
 
 const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });
@@ -14,14 +17,34 @@ async function main() {
     update: {},
     create: { name: 'owner' },
   });
+  await prisma.role.upsert({
+    where: { name: 'doctor' },
+    update: {},
+    create: { name: 'doctor' },
+  });
+  await prisma.role.upsert({
+    where: { name: 'receptionist' },
+    update: {},
+    create: { name: 'receptionist' },
+  });
 
   await prisma.subscriptionPlan.upsert({
     where: { plan: 'free_trial' },
     update: {},
     create: { plan: 'free_trial', max_branches: 1, max_staff: 5 },
   });
+  await prisma.subscriptionPlan.upsert({
+    where: { plan: 'plus' },
+    update: {},
+    create: { plan: 'plus', max_branches: 3, max_staff: 15 },
+  });
+  await prisma.subscriptionPlan.upsert({
+    where: { plan: 'pro' },
+    update: {},
+    create: { plan: 'pro', max_branches: 5, max_staff: 25 },
+  });
 
-  console.log('Seed complete: owner role and free_trial plan upserted.');
+  console.log('Seed complete.');
 }
 
 main()

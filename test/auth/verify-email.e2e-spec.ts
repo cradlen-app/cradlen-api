@@ -2,7 +2,10 @@ import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
 import { createTestApp } from '../helpers/app-factory';
 import { cleanDatabase } from '../helpers/db-cleaner';
-import { getTestPrisma, disconnectTestPrisma } from '../helpers/prisma-test-client';
+import {
+  getTestPrisma,
+  disconnectTestPrisma,
+} from '../helpers/prisma-test-client';
 
 const REGISTER_BODY = {
   first_name: 'Jane',
@@ -57,7 +60,9 @@ describe('POST /v1/auth/register/verify-email (E2E)', () => {
       .send({ registration_token: registrationToken, code: otpCode });
 
     const prisma = getTestPrisma();
-    const user = await prisma.user.findFirst({ where: { email: REGISTER_BODY.email } });
+    const user = await prisma.user.findFirst({
+      where: { email: REGISTER_BODY.email },
+    });
     expect(user?.verified_at).not.toBeNull();
   });
 
@@ -67,8 +72,12 @@ describe('POST /v1/auth/register/verify-email (E2E)', () => {
       .send({ registration_token: registrationToken, code: otpCode });
 
     const prisma = getTestPrisma();
-    const user = await prisma.user.findFirst({ where: { email: REGISTER_BODY.email } });
-    const verif = await prisma.emailVerification.findFirst({ where: { user_id: user!.id } });
+    const user = await prisma.user.findFirst({
+      where: { email: REGISTER_BODY.email },
+    });
+    const verif = await prisma.emailVerification.findFirst({
+      where: { user_id: user!.id },
+    });
     expect(verif?.used_at).not.toBeNull();
   });
 
@@ -83,7 +92,9 @@ describe('POST /v1/auth/register/verify-email (E2E)', () => {
 
   it('returns 401 on expired OTP', async () => {
     const prisma = getTestPrisma();
-    const user = await prisma.user.findFirst({ where: { email: REGISTER_BODY.email } });
+    const user = await prisma.user.findFirst({
+      where: { email: REGISTER_BODY.email },
+    });
     await prisma.emailVerification.updateMany({
       where: { user_id: user!.id },
       data: { expires_at: new Date(Date.now() - 1000) },
