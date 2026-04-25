@@ -6,6 +6,11 @@ datasource db {
   provider = "postgresql"
 }
 
+enum RegistrationStatus {
+  PENDING
+  ACTIVE
+}
+
 model SubscriptionPlan {
   id            String         @id @default(uuid()) @db.Uuid
   plan          String
@@ -55,20 +60,23 @@ model Branch {
 }
 
 model User {
-  id                 String              @id @default(uuid()) @db.Uuid
-  first_name         String
-  last_name          String
-  email              String              @unique
-  password_hashed    String
-  is_active          Boolean             @default(true)
-  is_deleted         Boolean             @default(false)
-  deleted_at         DateTime?
-  verified_at        DateTime?
-  created_at         DateTime            @default(now())
-  profile            Profile?
-  staff              Staff[]
-  refreshTokens      RefreshToken[]
-  emailVerifications EmailVerification[]
+  id                  String              @id @default(uuid()) @db.Uuid
+  first_name          String
+  last_name           String
+  email               String              @unique
+  phone_number        String?
+  password_hashed     String
+  is_active           Boolean             @default(true)
+  is_deleted          Boolean             @default(false)
+  deleted_at          DateTime?
+  verified_at         DateTime?
+  registration_status RegistrationStatus  @default(PENDING)
+  created_at          DateTime            @default(now())
+  profile             Profile?
+  staff               Staff[]
+  refreshTokens       RefreshToken[]
+  emailVerifications  EmailVerification[]
+  passwordResets      PasswordReset[]
 
   @@map("users")
 }
@@ -92,7 +100,7 @@ model Profile {
   is_deleted  Boolean   @default(false)
   deleted_at  DateTime?
   user_id     String    @unique @db.Uuid
-  user        User      @relation(fields: [user_id], references: [id])
+  user        User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@map("profiles")
 }
@@ -152,7 +160,19 @@ model EmailVerification {
   expires_at DateTime
   used_at    DateTime?
   created_at DateTime  @default(now())
-  user       User      @relation(fields: [user_id], references: [id])
+  user       User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@map("email_verifications")
+}
+
+model PasswordReset {
+  id         String    @id @default(uuid()) @db.Uuid
+  user_id    String    @db.Uuid
+  code_hash  String
+  expires_at DateTime
+  used_at    DateTime?
+  created_at DateTime  @default(now())
+  user       User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("password_resets")
 }

@@ -1,4 +1,8 @@
-import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common';
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { AppModule } from '../../src/app.module';
 import { GlobalExceptionFilter } from '../../src/common/filters/global-exception.filter';
@@ -7,7 +11,9 @@ import { LoggingInterceptor } from '../../src/common/interceptor/logging.interce
 import { RequestIdMiddleware } from '../../src/common/middleware/request-id.middleware';
 import { MailService } from '../../src/modules/mail/mail.service';
 
-export async function createTestApp(mailMock: jest.Mock): Promise<INestApplication> {
+export async function createTestApp(
+  mailMock: jest.Mock,
+): Promise<INestApplication> {
   const moduleFixture = await Test.createTestingModule({
     imports: [AppModule],
   })
@@ -29,7 +35,10 @@ export async function createTestApp(mailMock: jest.Mock): Promise<INestApplicati
       transformOptions: { enableImplicitConversion: true },
     }),
   );
-  app.useGlobalInterceptors(new LoggingInterceptor(), new ResponseInterceptor());
+  app.useGlobalInterceptors(
+    new LoggingInterceptor(),
+    new ResponseInterceptor(),
+  );
 
   app.enableVersioning({
     type: VersioningType.URI,

@@ -15,7 +15,11 @@ function buildMockHost(requestId?: string) {
   return {
     host: {
       switchToHttp: () => ({
-        getRequest: () => ({ headers: { 'x-request-id': requestId }, method: 'POST', url: '/test' }),
+        getRequest: () => ({
+          headers: { 'x-request-id': requestId },
+          method: 'POST',
+          url: '/test',
+        }),
         getResponse: () => ({ status, json }),
       }),
     } as unknown as ArgumentsHost,
@@ -49,7 +53,11 @@ describe('GlobalExceptionFilter', () => {
       expect(status).toHaveBeenCalledWith(409);
       expect(json).toHaveBeenCalledWith(
         expect.objectContaining({
-          error: expect.objectContaining({ code: 'CONFLICT', statusCode: 409, requestId: 'req-1' }),
+          error: expect.objectContaining({
+            code: 'CONFLICT',
+            statusCode: 409,
+            requestId: 'req-1',
+          }),
         }),
       );
     });
@@ -62,7 +70,9 @@ describe('GlobalExceptionFilter', () => {
 
       expect(status).toHaveBeenCalledWith(404);
       expect(json).toHaveBeenCalledWith(
-        expect.objectContaining({ error: expect.objectContaining({ code: 'NOT_FOUND' }) }),
+        expect.objectContaining({
+          error: expect.objectContaining({ code: 'NOT_FOUND' }),
+        }),
       );
     });
 
@@ -102,7 +112,9 @@ describe('GlobalExceptionFilter', () => {
 
       expect(status).toHaveBeenCalledWith(400);
       expect(json).toHaveBeenCalledWith(
-        expect.objectContaining({ error: expect.objectContaining({ code: 'VALIDATION_ERROR' }) }),
+        expect.objectContaining({
+          error: expect.objectContaining({ code: 'VALIDATION_ERROR' }),
+        }),
       );
     });
   });
@@ -116,7 +128,10 @@ describe('GlobalExceptionFilter', () => {
       expect(status).toHaveBeenCalledWith(401);
       expect(json).toHaveBeenCalledWith(
         expect.objectContaining({
-          error: expect.objectContaining({ code: 'UNAUTHORIZED', message: 'Invalid credentials' }),
+          error: expect.objectContaining({
+            code: 'UNAUTHORIZED',
+            message: 'Invalid credentials',
+          }),
         }),
       );
     });
@@ -175,7 +190,9 @@ describe('GlobalExceptionFilter', () => {
 
       expect(status).toHaveBeenCalledWith(400);
       expect(json).toHaveBeenCalledWith(
-        expect.objectContaining({ error: expect.objectContaining({ code: 'VALIDATION_ERROR' }) }),
+        expect.objectContaining({
+          error: expect.objectContaining({ code: 'VALIDATION_ERROR' }),
+        }),
       );
     });
   });
