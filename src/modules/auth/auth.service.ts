@@ -229,7 +229,7 @@ export class AuthService {
         data: {
           name: dto.organization_name,
           specialities: dto.organization_specialities ?? [],
-          status: 'active',
+          status: 'ACTIVE',
         },
       });
 
@@ -237,9 +237,9 @@ export class AuthService {
         data: {
           address: dto.branch_address,
           city: dto.branch_city,
-          governate: dto.branch_governate,
+          governorate: dto.branch_governorate,
           is_main: true,
-          status: 'active',
+          status: 'ACTIVE',
           organization_id: org.id,
         },
       });
