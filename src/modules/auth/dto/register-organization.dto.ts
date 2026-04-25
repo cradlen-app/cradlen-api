@@ -37,5 +37,5 @@ export class RegisterOrganizationDto {
   @ApiProperty({ example: 'Giza' })
   @IsString()
   @IsNotEmpty()
-  branch_governate!: string;
+  branch_governorate!: string;
 }

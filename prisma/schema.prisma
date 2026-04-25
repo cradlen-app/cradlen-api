@@ -11,6 +11,24 @@ enum RegistrationStatus {
   ACTIVE
 }
 
+enum OrganizationStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum BranchStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
 model SubscriptionPlan {
   id            String         @id @default(uuid()) @db.Uuid
   plan          String
@@ -28,7 +46,7 @@ model Organization {
   id            String         @id @default(uuid()) @db.Uuid
   name          String
   specialities  String[]
-  status        String
+  status        OrganizationStatus
   is_deleted    Boolean        @default(false)
   deleted_at    DateTime?
   created_at    DateTime       @default(now())
@@ -44,9 +62,9 @@ model Branch {
   id              String       @id @default(uuid()) @db.Uuid
   address         String
   city            String
-  governate       String
+  governorate     String
   is_main         Boolean      @default(false)
-  status          String
+  status          BranchStatus
   is_deleted      Boolean      @default(false)
   deleted_at      DateTime?
   created_at      DateTime     @default(now())
@@ -72,6 +90,7 @@ model User {
   verified_at         DateTime?
   registration_status RegistrationStatus  @default(PENDING)
   created_at          DateTime            @default(now())
+  updated_at          DateTime            @updatedAt
   profile             Profile?
   staff               Staff[]
   refreshTokens       RefreshToken[]
@@ -126,11 +145,14 @@ model Staff {
 
 model Subscription {
   id                   String           @id @default(uuid()) @db.Uuid
-  organization_id      String           @db.Uuid
-  subscription_plan_id String           @db.Uuid
+  organization_id      String             @db.Uuid
+  subscription_plan_id String             @db.Uuid
+  status               SubscriptionStatus @default(TRIAL)
+  starts_at            DateTime           @default(now())
+  ends_at              DateTime?
   trial_ends_at        DateTime?
-  created_at           DateTime         @default(now())
-  updated_at           DateTime         @updatedAt
+  created_at           DateTime           @default(now())
+  updated_at           DateTime           @updatedAt
   is_deleted           Boolean          @default(false)
   deleted_at           DateTime?
   organization         Organization     @relation(fields: [organization_id], references: [id])
@@ -148,7 +170,7 @@ model RefreshToken {
   is_revoked Boolean   @default(false)
   revoked_at DateTime?
   created_at DateTime  @default(now())
-  user       User      @relation(fields: [user_id], references: [id])
+  user       User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@map("refresh_tokens")
 }
