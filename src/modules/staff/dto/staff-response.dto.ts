@@ -15,7 +15,8 @@ export class WorkingDayResponseDto {
 
 export class ScheduleResponseDto {
   @ApiProperty() id!: string;
-  @ApiProperty({ type: [WorkingDayResponseDto] }) days!: WorkingDayResponseDto[];
+  @ApiProperty({ type: [WorkingDayResponseDto] })
+  days!: WorkingDayResponseDto[];
 }
 
 export class StaffResponseDto {
@@ -27,7 +28,8 @@ export class StaffResponseDto {
   @ApiPropertyOptional() job_title?: string;
   @ApiPropertyOptional() specialty?: string;
   @ApiProperty() created_at!: Date;
-  @ApiPropertyOptional({ type: ScheduleResponseDto }) schedule?: ScheduleResponseDto;
+  @ApiPropertyOptional({ type: ScheduleResponseDto })
+  schedule?: ScheduleResponseDto;
 }
 
 export class StaffInvitationResponseDto {
