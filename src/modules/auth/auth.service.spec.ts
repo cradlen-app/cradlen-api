@@ -688,10 +688,32 @@ describe('AuthService', () => {
   // ── getMe ────────────────────────────────────────────────────────────────────
 
   describe('getMe', () => {
-    it('returns correct user shape', () => {
-      const result = service.getMe(
-        MOCK_USER as Parameters<typeof service.getMe>[0],
-      );
+    const MOCK_STAFF_PROFILE = {
+      id: 'staff-uuid-1',
+      job_title: 'Head Dentist',
+      role: { id: 'role-uuid-1', name: 'owner' },
+      organization: {
+        id: 'org-uuid-1',
+        name: 'Cradlen Clinic',
+        specialities: ['dentistry'],
+        status: 'ACTIVE',
+      },
+      branch: {
+        id: 'branch-uuid-1',
+        address: '123 Main St',
+        city: 'Cairo',
+        governorate: 'Cairo',
+        is_main: true,
+      },
+    };
+
+    it('returns correct user shape with profiles', async () => {
+      prismaMock.db.user.findFirstOrThrow.mockResolvedValue({
+        ...MOCK_USER,
+        staff: [MOCK_STAFF_PROFILE],
+      });
+
+      const result = await service.getMe(MOCK_USER.id);
 
       expect(result).toEqual({
         id: MOCK_USER.id,
@@ -701,16 +723,39 @@ describe('AuthService', () => {
         is_active: MOCK_USER.is_active,
         verified_at: MOCK_USER.verified_at,
         created_at: MOCK_USER.created_at,
+        profiles: [
+          {
+            staff_id: MOCK_STAFF_PROFILE.id,
+            job_title: MOCK_STAFF_PROFILE.job_title,
+            role: MOCK_STAFF_PROFILE.role,
+            organization: MOCK_STAFF_PROFILE.organization,
+            branch: MOCK_STAFF_PROFILE.branch,
+          },
+        ],
       });
     });
 
-    it('preserves null verified_at for unverified users', () => {
-      const result = service.getMe({
+    it('preserves null verified_at for unverified users', async () => {
+      prismaMock.db.user.findFirstOrThrow.mockResolvedValue({
         ...MOCK_USER,
         verified_at: null,
-      } as Parameters<typeof service.getMe>[0]);
+        staff: [],
+      });
+
+      const result = await service.getMe(MOCK_USER.id);
 
       expect(result.verified_at).toBeNull();
+    });
+
+    it('returns empty profiles when user has no staff records', async () => {
+      prismaMock.db.user.findFirstOrThrow.mockResolvedValue({
+        ...MOCK_USER,
+        staff: [],
+      });
+
+      const result = await service.getMe(MOCK_USER.id);
+
+      expect(result.profiles).toEqual([]);
     });
   });
 

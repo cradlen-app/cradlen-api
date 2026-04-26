@@ -466,7 +466,17 @@ export class AuthService {
 
   // ── Me ─────────────────────────────────────────────────────────────────────
 
-  getMe(user: User): MeResponseDto {
+  async getMe(userId: string): Promise<MeResponseDto> {
+    const user = await this.prismaService.db.user.findFirstOrThrow({
+      where: { id: userId, is_deleted: false },
+      include: {
+        staff: {
+          where: { is_deleted: false },
+          include: { organization: true, branch: true, role: true },
+        },
+      },
+    });
+
     return {
       id: user.id,
       first_name: user.first_name,
@@ -475,6 +485,24 @@ export class AuthService {
       is_active: user.is_active,
       verified_at: user.verified_at,
       created_at: user.created_at,
+      profiles: user.staff.map((s) => ({
+        staff_id: s.id,
+        job_title: s.job_title,
+        role: { id: s.role.id, name: s.role.name },
+        organization: {
+          id: s.organization.id,
+          name: s.organization.name,
+          specialities: s.organization.specialities,
+          status: s.organization.status,
+        },
+        branch: {
+          id: s.branch.id,
+          address: s.branch.address,
+          city: s.branch.city,
+          governorate: s.branch.governorate,
+          is_main: s.branch.is_main,
+        },
+      })),
     };
   }
 
