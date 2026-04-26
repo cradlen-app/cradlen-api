@@ -248,19 +248,24 @@ model StaffInvitation {
   role         Role                    @relation(fields: [role_id], references: [id])
   branches     StaffInvitationBranch[]
 
+  @@index([organization_id, status])
+  @@index([email])
+  @@index([expires_at])
   @@map("staff_invitations")
 }
 
 model StaffInvitationBranch {
-  id            String   @id @default(uuid()) @db.Uuid
-  invitation_id String   @db.Uuid
-  branch_id     String   @db.Uuid
-  created_at    DateTime @default(now())
+  id              String   @id @default(uuid()) @db.Uuid
+  invitation_id   String   @db.Uuid
+  branch_id       String   @db.Uuid
+  organization_id String   @db.Uuid
+  created_at      DateTime @default(now())
 
-  invitation StaffInvitation  @relation(fields: [invitation_id], references: [id])
-  branch     Branch           @relation(fields: [branch_id], references: [id])
+  invitation StaffInvitation  @relation(fields: [invitation_id], references: [id], onDelete: Cascade)
+  branch     Branch           @relation(fields: [branch_id, organization_id], references: [id, organization_id])
   schedule   WorkingSchedule?
 
+  @@index([invitation_id])
   @@map("staff_invitation_branches")
 }
 
@@ -284,9 +289,11 @@ model WorkingDay {
   day_of_week DayOfWeek
   created_at  DateTime  @default(now())
 
-  schedule WorkingSchedule @relation(fields: [schedule_id], references: [id])
+  schedule WorkingSchedule @relation(fields: [schedule_id], references: [id], onDelete: Cascade)
   shifts   WorkingShift[]
 
+  @@index([schedule_id])
+  @@unique([schedule_id, day_of_week])
   @@map("working_days")
 }
 
@@ -297,7 +304,8 @@ model WorkingShift {
   end_time   String
   created_at DateTime @default(now())
 
-  day WorkingDay @relation(fields: [day_id], references: [id])
+  day WorkingDay @relation(fields: [day_id], references: [id], onDelete: Cascade)
 
+  @@index([day_id])
   @@map("working_shifts")
 }
