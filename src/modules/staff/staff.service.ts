@@ -242,24 +242,26 @@ export class StaffService {
       });
 
       const jti = randomUUID();
+
+      // Parse duration like '7d' or '30m' into seconds (JWT expiresIn expects seconds)
+      const parseDurationSeconds = (duration: string): number => {
+        const match = /^(\d+)([smhd])$/.exec(duration);
+        if (!match) return 7 * 24 * 60 * 60;
+        const value = parseInt(match[1], 10);
+        const unit = match[2];
+        const multipliers: Record<string, number> = { s: 1, m: 60, h: 3600, d: 86400 };
+        return value * (multipliers[unit] ?? 1);
+      };
+
       const accessToken = this.jwtService.sign(
         { sub: user!.id, email: user!.email },
-        { secret: this.authConfig.jwt.accessSecret, expiresIn: this.authConfig.jwt.accessExpiration },
+        { secret: this.authConfig.jwt.accessSecret, expiresIn: parseDurationSeconds(this.authConfig.jwt.accessExpiration) },
       );
       const rawRefresh = randomUUID();
       const refreshHash = await bcrypt.hash(rawRefresh, 10);
 
-      // Parse duration like '7d' or '30m' into milliseconds
-      const parseDurationMs = (duration: string): number => {
-        const match = /^(\d+)([smhd])$/.exec(duration);
-        if (!match) return 7 * 24 * 60 * 60 * 1000;
-        const value = parseInt(match[1], 10);
-        const unit = match[2];
-        const multipliers: Record<string, number> = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
-        return value * multipliers[unit];
-      };
-
-      const refreshExpiry = new Date(Date.now() + parseDurationMs(this.authConfig.jwt.refreshExpiration));
+      const refreshExpirySeconds = parseDurationSeconds(this.authConfig.jwt.refreshExpiration);
+      const refreshExpiry = new Date(Date.now() + refreshExpirySeconds * 1000);
 
       await tx.refreshToken.create({
         data: { jti, token_hash: refreshHash, user_id: user!.id, expires_at: refreshExpiry },
@@ -267,7 +269,7 @@ export class StaffService {
 
       const refreshToken = this.jwtService.sign(
         { sub: user!.id, jti },
-        { secret: this.authConfig.jwt.refreshSecret, expiresIn: this.authConfig.jwt.refreshExpiration },
+        { secret: this.authConfig.jwt.refreshSecret, expiresIn: refreshExpirySeconds },
       );
 
       return { accessToken, refreshToken };
