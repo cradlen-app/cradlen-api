@@ -8,6 +8,7 @@ import authConfig from './config/auth.config';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { StaffModule } from './modules/staff/staff.module.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import type { AppConfig } from './config/app.config';
 
@@ -30,6 +31,7 @@ import type { AppConfig } from './config/app.config';
     DatabaseModule,
     HealthModule,
     AuthModule,
+    StaffModule,
   ],
   controllers: [],
   providers: [
