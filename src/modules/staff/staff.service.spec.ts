@@ -189,6 +189,18 @@ describe('StaffService', () => {
       );
     });
 
+    it('throws 401 (not 410) when token is wrong even if invitation is expired', async () => {
+      prismaMock.db.staffInvitation.findFirst.mockResolvedValue({
+        ...MOCK_INVITATION,
+        expires_at: new Date(Date.now() - 1000),
+        branches: [],
+      });
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+      await expect(service.previewInvitation('wrong-token', 'invite-uuid-1')).rejects.toThrow(
+        expect.objectContaining({ status: 401 }),
+      );
+    });
+
     it('returns preview with user_exists flag', async () => {
       prismaMock.db.staffInvitation.findFirst.mockResolvedValue({ ...MOCK_INVITATION, branches: [] });
       prismaMock.db.user.findFirst.mockResolvedValue(null);
@@ -254,6 +266,56 @@ describe('StaffService', () => {
       );
       expect(result).toHaveProperty('access_token');
       expect(result).toHaveProperty('refresh_token');
+    });
+
+    it('throws 401 when existing user provides wrong password', async () => {
+      prismaMock.db.staffInvitation.findFirst.mockResolvedValue({
+        ...MOCK_INVITATION,
+        branches: [],
+      });
+      (bcrypt.compare as jest.Mock)
+        .mockResolvedValueOnce(true)  // token match
+        .mockResolvedValueOnce(false); // password mismatch
+      prismaMock.db.$transaction.mockImplementation(
+        (cb: (tx: typeof prismaMock.db) => Promise<unknown>) => cb(prismaMock.db),
+      );
+      prismaMock.db.user.findFirst.mockResolvedValue({
+        id: 'existing-user-uuid',
+        email: 'doctor@example.com',
+        password_hashed: '$2b$10$existing-hash',
+      } as never);
+      await expect(service.acceptInvitation(ACCEPT_DTO)).rejects.toThrow(
+        expect.objectContaining({ status: 401 }),
+      );
+    });
+
+    it('skips user creation when user already exists with correct password', async () => {
+      const existingUser = {
+        id: 'existing-user-uuid',
+        email: 'doctor@example.com',
+        password_hashed: '$2b$10$existing-hash',
+      };
+      prismaMock.db.staffInvitation.findFirst.mockResolvedValue({
+        ...MOCK_INVITATION,
+        branches: [
+          { id: 'sib-uuid-1', branch_id: 'branch-uuid-1', organization_id: 'org-uuid-1', schedule: { id: 'sched-uuid-1', days: [] } },
+        ],
+      });
+      (bcrypt.compare as jest.Mock)
+        .mockResolvedValueOnce(true)  // token match
+        .mockResolvedValueOnce(true); // password match
+      prismaMock.db.$transaction.mockImplementation(
+        (cb: (tx: typeof prismaMock.db) => Promise<unknown>) => cb(prismaMock.db),
+      );
+      prismaMock.db.user.findFirst.mockResolvedValue(existingUser as never);
+      prismaMock.db.staff.create.mockResolvedValue({ id: 'staff-uuid-new', user_id: 'existing-user-uuid' } as never);
+      prismaMock.db.workingSchedule.create.mockResolvedValue({ id: 'sched-uuid-new' } as never);
+      prismaMock.db.refreshToken.create.mockResolvedValue({} as never);
+      prismaMock.db.staffInvitation.update.mockResolvedValue({} as never);
+
+      const result = await service.acceptInvitation(ACCEPT_DTO);
+      expect(prismaMock.db.user.create).not.toHaveBeenCalled();
+      expect(result).toHaveProperty('access_token');
     });
   });
 

@@ -11,6 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service.js';
 import { MailService } from '../mail/mail.service.js';
 import type { AppConfig } from '../../config/app.config.js';
@@ -132,14 +133,14 @@ export class StaffService {
       },
     });
 
-    if (!invitation || invitation.status === 'CANCELLED') {
-      throw new UnauthorizedException('Invalid invitation');
-    }
-    if (invitation.status === 'ACCEPTED') throw new ConflictException('Invitation already accepted');
-    if (invitation.expires_at < new Date()) throw new GoneException('Invitation has expired');
+    if (!invitation) throw new UnauthorizedException('Invalid invitation');
 
     const tokenMatch = await bcrypt.compare(token, invitation.token_hash);
     if (!tokenMatch) throw new UnauthorizedException('Invalid invitation token');
+
+    if (invitation.status === 'CANCELLED') throw new UnauthorizedException('Invalid invitation');
+    if (invitation.status === 'ACCEPTED') throw new ConflictException('Invitation already accepted');
+    if (invitation.expires_at < new Date()) throw new GoneException('Invitation has expired');
 
     const existingUser = await this.prismaService.db.user.findFirst({
       where: { email: invitation.email, is_deleted: false },
@@ -156,14 +157,14 @@ export class StaffService {
       },
     });
 
-    if (!invitation || invitation.status === 'CANCELLED') {
-      throw new UnauthorizedException('Invalid invitation');
-    }
-    if (invitation.status === 'ACCEPTED') throw new ConflictException('Invitation already accepted');
-    if (invitation.expires_at < new Date()) throw new GoneException('Invitation has expired');
+    if (!invitation) throw new UnauthorizedException('Invalid invitation');
 
     const tokenMatch = await bcrypt.compare(dto.token, invitation.token_hash);
     if (!tokenMatch) throw new UnauthorizedException('Invalid invitation token');
+
+    if (invitation.status === 'CANCELLED') throw new UnauthorizedException('Invalid invitation');
+    if (invitation.status === 'ACCEPTED') throw new ConflictException('Invitation already accepted');
+    if (invitation.expires_at < new Date()) throw new GoneException('Invitation has expired');
 
     const { accessToken, refreshToken } = await this.prismaService.db.$transaction(async (tx) => {
       let user = await tx.user.findFirst({ where: { email: invitation.email, is_deleted: false } });
@@ -181,6 +182,9 @@ export class StaffService {
             verified_at: new Date(),
           },
         });
+      } else {
+        const passwordMatch = await bcrypt.compare(dto.password, user.password_hashed);
+        if (!passwordMatch) throw new UnauthorizedException('Invalid credentials');
       }
 
       for (const invBranch of invitation.branches) {
@@ -196,15 +200,20 @@ export class StaffService {
               specialty: invitation.specialty,
             },
           });
-        } catch {
-          staffRecord = await tx.staff.findFirst({
-            where: {
-              user_id: user!.id,
-              organization_id: invitation.organization_id,
-              branch_id: invBranch.branch_id,
-              role_id: invitation.role_id,
-            },
-          });
+        } catch (err) {
+          if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+            staffRecord = await tx.staff.findFirst({
+              where: {
+                user_id: user!.id,
+                organization_id: invitation.organization_id,
+                branch_id: invBranch.branch_id,
+                role_id: invitation.role_id,
+              },
+            });
+            if (!staffRecord) throw new Error('Staff record creation failed despite no conflict');
+          } else {
+            throw err;
+          }
         }
 
         if (staffRecord && invBranch.schedule) {
@@ -239,8 +248,18 @@ export class StaffService {
       );
       const rawRefresh = randomUUID();
       const refreshHash = await bcrypt.hash(rawRefresh, 10);
-      const refreshExpiry = new Date();
-      refreshExpiry.setDate(refreshExpiry.getDate() + 7);
+
+      // Parse duration like '7d' or '30m' into milliseconds
+      const parseDurationMs = (duration: string): number => {
+        const match = /^(\d+)([smhd])$/.exec(duration);
+        if (!match) return 7 * 24 * 60 * 60 * 1000;
+        const value = parseInt(match[1], 10);
+        const unit = match[2];
+        const multipliers: Record<string, number> = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
+        return value * multipliers[unit];
+      };
+
+      const refreshExpiry = new Date(Date.now() + parseDurationMs(this.authConfig.jwt.refreshExpiration));
 
       await tx.refreshToken.create({
         data: { jti, token_hash: refreshHash, user_id: user!.id, expires_at: refreshExpiry },
@@ -391,12 +410,14 @@ export class StaffService {
   }
 
   async getSchedule(currentUserId: string, staffId: string, organizationId: string) {
-    const isOwner = await this.prismaService.db.staff.findFirst({
-      where: { user_id: currentUserId, organization_id: organizationId, is_deleted: false, role: { name: 'owner' } },
-    });
-    const targetStaff = await this.prismaService.db.staff.findFirst({
-      where: { id: staffId, organization_id: organizationId, is_deleted: false },
-    });
+    const [isOwner, targetStaff] = await Promise.all([
+      this.prismaService.db.staff.findFirst({
+        where: { user_id: currentUserId, organization_id: organizationId, is_deleted: false, role: { name: 'owner' } },
+      }),
+      this.prismaService.db.staff.findFirst({
+        where: { id: staffId, organization_id: organizationId, is_deleted: false },
+      }),
+    ]);
     if (!targetStaff) throw new NotFoundException('Staff member not found');
     if (!isOwner && targetStaff.user_id !== currentUserId) throw new ForbiddenException('Access denied');
 
@@ -407,12 +428,14 @@ export class StaffService {
   }
 
   async updateSchedule(currentUserId: string, staffId: string, organizationId: string, dto: UpdateScheduleDto) {
-    const isOwner = await this.prismaService.db.staff.findFirst({
-      where: { user_id: currentUserId, organization_id: organizationId, is_deleted: false, role: { name: 'owner' } },
-    });
-    const targetStaff = await this.prismaService.db.staff.findFirst({
-      where: { id: staffId, organization_id: organizationId, is_deleted: false },
-    });
+    const [isOwner, targetStaff] = await Promise.all([
+      this.prismaService.db.staff.findFirst({
+        where: { user_id: currentUserId, organization_id: organizationId, is_deleted: false, role: { name: 'owner' } },
+      }),
+      this.prismaService.db.staff.findFirst({
+        where: { id: staffId, organization_id: organizationId, is_deleted: false },
+      }),
+    ]);
     if (!targetStaff) throw new NotFoundException('Staff member not found');
     if (!isOwner && targetStaff.user_id !== currentUserId) throw new ForbiddenException('Access denied');
 
