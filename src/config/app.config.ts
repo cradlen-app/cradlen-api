@@ -4,6 +4,7 @@ export interface AppConfig {
   name: string;
   env: string;
   port: number;
+  appUrl: string;
   versioning: {
     enabled: boolean;
     prefix: string;
@@ -29,6 +30,11 @@ export default registerAs(
     name: process.env.APP_NAME ?? 'cradlen-api',
     env: process.env.NODE_ENV ?? 'development',
     port: parseInt(process.env.PORT ?? '3000', 10),
+    appUrl:
+      process.env.APP_URL ??
+      (() => {
+        throw new Error('APP_URL is not set');
+      })(),
     versioning: {
       enabled: true,
       prefix: 'v',
