@@ -25,7 +25,10 @@ import { InviteStaffDto } from './dto/invite-staff.dto.js';
 import { AcceptInvitationDto } from './dto/accept-invitation.dto.js';
 import { UpdateStaffDto } from './dto/update-staff.dto.js';
 import { UpdateScheduleDto } from './dto/update-schedule.dto.js';
-import { ListStaffQueryDto, ListInvitationsQueryDto } from './dto/list-staff-query.dto.js';
+import {
+  ListStaffQueryDto,
+  ListInvitationsQueryDto,
+} from './dto/list-staff-query.dto.js';
 import {
   StaffResponseDto,
   StaffInvitationResponseDto,
@@ -50,9 +53,14 @@ export class StaffController {
   }
 
   @Get('invitations')
-  @ApiOperation({ summary: 'List invitations for an organization (owner only)' })
+  @ApiOperation({
+    summary: 'List invitations for an organization (owner only)',
+  })
   @ApiPaginatedResponse(StaffInvitationResponseDto)
-  listInvitations(@CurrentUser() user: User, @Query() query: ListInvitationsQueryDto) {
+  listInvitations(
+    @CurrentUser() user: User,
+    @Query() query: ListInvitationsQueryDto,
+  ) {
     return this.staffService.listInvitations(user.id, query);
   }
 
@@ -84,7 +92,10 @@ export class StaffController {
   @Public()
   @ApiOperation({ summary: 'Preview invitation data (public)' })
   @ApiStandardResponse(StaffInvitationResponseDto)
-  previewInvitation(@Query('token') token: string, @Query('invite') inviteId: string) {
+  previewInvitation(
+    @Query('token') token: string,
+    @Query('invite') inviteId: string,
+  ) {
     return this.staffService.previewInvitation(token, inviteId);
   }
 
@@ -100,7 +111,9 @@ export class StaffController {
   // ── Staff management ─────────────────────────────────────────────────────
 
   @Get()
-  @ApiOperation({ summary: 'List active staff for an organization (owner only)' })
+  @ApiOperation({
+    summary: 'List active staff for an organization (owner only)',
+  })
   @ApiPaginatedResponse(StaffResponseDto)
   listStaff(@CurrentUser() user: User, @Query() query: ListStaffQueryDto) {
     return this.staffService.listStaff(user.id, query);
@@ -118,7 +131,9 @@ export class StaffController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Update staff role/job title/specialty (owner only)' })
+  @ApiOperation({
+    summary: 'Update staff role/job title/specialty (owner only)',
+  })
   @ApiStandardResponse(StaffResponseDto)
   updateStaff(
     @CurrentUser() user: User,
@@ -144,7 +159,9 @@ export class StaffController {
   // ── Schedule ─────────────────────────────────────────────────────────────
 
   @Get(':id/schedule')
-  @ApiOperation({ summary: 'Get schedule for a staff branch assignment (owner or self)' })
+  @ApiOperation({
+    summary: 'Get schedule for a staff branch assignment (owner or self)',
+  })
   @ApiStandardResponse(ScheduleResponseDto)
   getSchedule(
     @CurrentUser() user: User,
@@ -156,7 +173,10 @@ export class StaffController {
 
   @Patch(':id/schedule')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Full replace schedule for a staff branch assignment (owner or self)' })
+  @ApiOperation({
+    summary:
+      'Full replace schedule for a staff branch assignment (owner or self)',
+  })
   @ApiVoidResponse()
   updateSchedule(
     @CurrentUser() user: User,

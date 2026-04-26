@@ -43,6 +43,9 @@ export default registerAs(
       fromEmail: process.env.RESEND_FROM_EMAIL ?? 'noreply@example.com',
     },
     freeTrialDays: parseInt(process.env.FREE_TRIAL_DAYS ?? '14', 10),
-    invitationExpireHours: parseInt(process.env.INVITATION_EXPIRE_HOURS ?? '72', 10),
+    invitationExpireHours: parseInt(
+      process.env.INVITATION_EXPIRE_HOURS ?? '72',
+      10,
+    ),
   }),
 );

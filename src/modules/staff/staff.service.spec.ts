@@ -90,7 +90,12 @@ const INVITE_DTO = {
     {
       branch_id: 'branch-uuid-1',
       schedule: {
-        days: [{ day_of_week: 'MON' as const, shifts: [{ start_time: '09:00', end_time: '17:00' }] }],
+        days: [
+          {
+            day_of_week: 'MON' as const,
+            shifts: [{ start_time: '09:00', end_time: '17:00' }],
+          },
+        ],
       },
     },
   ],
@@ -103,7 +108,9 @@ describe('StaffService', () => {
 
   beforeEach(async () => {
     prismaMock = createPrismaMock();
-    mailMock = { sendStaffInvitationEmail: jest.fn().mockResolvedValue(undefined) };
+    mailMock = {
+      sendStaffInvitationEmail: jest.fn().mockResolvedValue(undefined),
+    };
 
     const module = await Test.createTestingModule({
       providers: [
@@ -120,7 +127,10 @@ describe('StaffService', () => {
             }),
           },
         },
-        { provide: JwtService, useValue: { sign: jest.fn().mockReturnValue('mock-token') } },
+        {
+          provide: JwtService,
+          useValue: { sign: jest.fn().mockReturnValue('mock-token') },
+        },
       ],
     }).compile();
 
@@ -130,20 +140,28 @@ describe('StaffService', () => {
   describe('sendInvitation', () => {
     it('throws 403 when caller is not an owner', async () => {
       prismaMock.db.staff.findFirst.mockResolvedValue(null);
-      await expect(service.sendInvitation('user-1', INVITE_DTO)).rejects.toThrow(ForbiddenException);
+      await expect(
+        service.sendInvitation('user-1', INVITE_DTO),
+      ).rejects.toThrow(ForbiddenException);
     });
 
     it('throws 400 when a branch does not belong to the org', async () => {
       prismaMock.db.staff.findFirst.mockResolvedValue(MOCK_OWNER_STAFF);
       prismaMock.db.branch.findMany.mockResolvedValue([]);
-      await expect(service.sendInvitation('owner-uuid-1', INVITE_DTO)).rejects.toThrow(BadRequestException);
+      await expect(
+        service.sendInvitation('owner-uuid-1', INVITE_DTO),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('throws 409 when a pending invitation already exists', async () => {
       prismaMock.db.staff.findFirst.mockResolvedValue(MOCK_OWNER_STAFF);
       prismaMock.db.branch.findMany.mockResolvedValue([MOCK_BRANCH]);
-      prismaMock.db.staffInvitation.findFirst.mockResolvedValue(MOCK_INVITATION);
-      await expect(service.sendInvitation('owner-uuid-1', INVITE_DTO)).rejects.toThrow(ConflictException);
+      prismaMock.db.staffInvitation.findFirst.mockResolvedValue(
+        MOCK_INVITATION,
+      );
+      await expect(
+        service.sendInvitation('owner-uuid-1', INVITE_DTO),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('creates invitation and sends email on success', async () => {
@@ -151,20 +169,26 @@ describe('StaffService', () => {
       prismaMock.db.branch.findMany.mockResolvedValue([MOCK_BRANCH]);
       prismaMock.db.staffInvitation.findFirst.mockResolvedValue(null);
       prismaMock.db.$transaction.mockImplementation(
-        (cb: (tx: typeof prismaMock.db) => Promise<unknown>) => cb(prismaMock.db),
+        (cb: (tx: typeof prismaMock.db) => Promise<unknown>) =>
+          cb(prismaMock.db),
       );
       prismaMock.db.staffInvitation.create.mockResolvedValue(MOCK_INVITATION);
 
       const result = await service.sendInvitation('owner-uuid-1', INVITE_DTO);
 
       expect(prismaMock.db.staffInvitation.create).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ email: 'doctor@example.com' }) }),
+        expect.objectContaining({
+          data: expect.objectContaining({ email: 'doctor@example.com' }),
+        }),
       );
       expect(mailMock.sendStaffInvitationEmail).toHaveBeenCalledWith(
         'doctor@example.com',
         expect.stringContaining('http://localhost:3000'),
       );
-      expect(result).toMatchObject({ id: 'invite-uuid-1', email: 'doctor@example.com' });
+      expect(result).toMatchObject({
+        id: 'invite-uuid-1',
+        email: 'doctor@example.com',
+      });
     });
   });
 
@@ -176,17 +200,20 @@ describe('StaffService', () => {
         branches: [],
       });
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
-      await expect(service.previewInvitation('raw-token', 'invite-uuid-1')).rejects.toThrow(
-        expect.objectContaining({ status: 410 }),
-      );
+      await expect(
+        service.previewInvitation('raw-token', 'invite-uuid-1'),
+      ).rejects.toThrow(expect.objectContaining({ status: 410 }));
     });
 
     it('throws 401 when token does not match', async () => {
-      prismaMock.db.staffInvitation.findFirst.mockResolvedValue({ ...MOCK_INVITATION, branches: [] });
+      prismaMock.db.staffInvitation.findFirst.mockResolvedValue({
+        ...MOCK_INVITATION,
+        branches: [],
+      });
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
-      await expect(service.previewInvitation('wrong-token', 'invite-uuid-1')).rejects.toThrow(
-        expect.objectContaining({ status: 401 }),
-      );
+      await expect(
+        service.previewInvitation('wrong-token', 'invite-uuid-1'),
+      ).rejects.toThrow(expect.objectContaining({ status: 401 }));
     });
 
     it('throws 401 (not 410) when token is wrong even if invitation is expired', async () => {
@@ -196,17 +223,26 @@ describe('StaffService', () => {
         branches: [],
       });
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
-      await expect(service.previewInvitation('wrong-token', 'invite-uuid-1')).rejects.toThrow(
-        expect.objectContaining({ status: 401 }),
-      );
+      await expect(
+        service.previewInvitation('wrong-token', 'invite-uuid-1'),
+      ).rejects.toThrow(expect.objectContaining({ status: 401 }));
     });
 
     it('returns preview with user_exists flag', async () => {
-      prismaMock.db.staffInvitation.findFirst.mockResolvedValue({ ...MOCK_INVITATION, branches: [] });
+      prismaMock.db.staffInvitation.findFirst.mockResolvedValue({
+        ...MOCK_INVITATION,
+        branches: [],
+      });
       prismaMock.db.user.findFirst.mockResolvedValue(null);
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
-      const result = await service.previewInvitation('raw-token', 'invite-uuid-1');
-      expect(result).toMatchObject({ email: 'doctor@example.com', user_exists: false });
+      const result = await service.previewInvitation(
+        'raw-token',
+        'invite-uuid-1',
+      );
+      expect(result).toMatchObject({
+        email: 'doctor@example.com',
+        user_exists: false,
+      });
     });
   });
 
@@ -224,19 +260,27 @@ describe('StaffService', () => {
         branches: [],
       });
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
-      await expect(service.acceptInvitation(ACCEPT_DTO)).rejects.toThrow(ConflictException);
+      await expect(service.acceptInvitation(ACCEPT_DTO)).rejects.toThrow(
+        ConflictException,
+      );
     });
 
     it('creates new user and staff records on acceptance', async () => {
       prismaMock.db.staffInvitation.findFirst.mockResolvedValue({
         ...MOCK_INVITATION,
         branches: [
-          { id: 'sib-uuid-1', branch_id: 'branch-uuid-1', organization_id: 'org-uuid-1', schedule: { id: 'sched-uuid-1', days: [] } },
+          {
+            id: 'sib-uuid-1',
+            branch_id: 'branch-uuid-1',
+            organization_id: 'org-uuid-1',
+            schedule: { id: 'sched-uuid-1', days: [] },
+          },
         ],
       });
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
       prismaMock.db.$transaction.mockImplementation(
-        (cb: (tx: typeof prismaMock.db) => Promise<unknown>) => cb(prismaMock.db),
+        (cb: (tx: typeof prismaMock.db) => Promise<unknown>) =>
+          cb(prismaMock.db),
       );
       prismaMock.db.user.findFirst.mockResolvedValue(null);
       prismaMock.db.user.create.mockResolvedValue({
@@ -254,15 +298,25 @@ describe('StaffService', () => {
         updated_at: new Date(),
         deleted_at: null,
       });
-      prismaMock.db.staff.create.mockResolvedValue({ id: 'staff-uuid-new', user_id: 'new-user-uuid' } as never);
-      prismaMock.db.workingSchedule.create.mockResolvedValue({ id: 'sched-uuid-new' } as never);
+      prismaMock.db.staff.create.mockResolvedValue({
+        id: 'staff-uuid-new',
+        user_id: 'new-user-uuid',
+      } as never);
+      prismaMock.db.workingSchedule.create.mockResolvedValue({
+        id: 'sched-uuid-new',
+      } as never);
       prismaMock.db.refreshToken.create.mockResolvedValue({} as never);
-      prismaMock.db.staffInvitation.update.mockResolvedValue({ ...MOCK_INVITATION, status: 'ACCEPTED' });
+      prismaMock.db.staffInvitation.update.mockResolvedValue({
+        ...MOCK_INVITATION,
+        status: 'ACCEPTED',
+      });
 
       const result = await service.acceptInvitation(ACCEPT_DTO);
       expect(prismaMock.db.user.create).toHaveBeenCalled();
       expect(prismaMock.db.staff.create).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ organization_id: 'org-uuid-1' }) }),
+        expect.objectContaining({
+          data: expect.objectContaining({ organization_id: 'org-uuid-1' }),
+        }),
       );
       expect(result).toHaveProperty('access_token');
       expect(result).toHaveProperty('refresh_token');
@@ -274,10 +328,11 @@ describe('StaffService', () => {
         branches: [],
       });
       (bcrypt.compare as jest.Mock)
-        .mockResolvedValueOnce(true)  // token match
+        .mockResolvedValueOnce(true) // token match
         .mockResolvedValueOnce(false); // password mismatch
       prismaMock.db.$transaction.mockImplementation(
-        (cb: (tx: typeof prismaMock.db) => Promise<unknown>) => cb(prismaMock.db),
+        (cb: (tx: typeof prismaMock.db) => Promise<unknown>) =>
+          cb(prismaMock.db),
       );
       prismaMock.db.user.findFirst.mockResolvedValue({
         id: 'existing-user-uuid',
@@ -298,18 +353,29 @@ describe('StaffService', () => {
       prismaMock.db.staffInvitation.findFirst.mockResolvedValue({
         ...MOCK_INVITATION,
         branches: [
-          { id: 'sib-uuid-1', branch_id: 'branch-uuid-1', organization_id: 'org-uuid-1', schedule: { id: 'sched-uuid-1', days: [] } },
+          {
+            id: 'sib-uuid-1',
+            branch_id: 'branch-uuid-1',
+            organization_id: 'org-uuid-1',
+            schedule: { id: 'sched-uuid-1', days: [] },
+          },
         ],
       });
       (bcrypt.compare as jest.Mock)
-        .mockResolvedValueOnce(true)  // token match
+        .mockResolvedValueOnce(true) // token match
         .mockResolvedValueOnce(true); // password match
       prismaMock.db.$transaction.mockImplementation(
-        (cb: (tx: typeof prismaMock.db) => Promise<unknown>) => cb(prismaMock.db),
+        (cb: (tx: typeof prismaMock.db) => Promise<unknown>) =>
+          cb(prismaMock.db),
       );
       prismaMock.db.user.findFirst.mockResolvedValue(existingUser as never);
-      prismaMock.db.staff.create.mockResolvedValue({ id: 'staff-uuid-new', user_id: 'existing-user-uuid' } as never);
-      prismaMock.db.workingSchedule.create.mockResolvedValue({ id: 'sched-uuid-new' } as never);
+      prismaMock.db.staff.create.mockResolvedValue({
+        id: 'staff-uuid-new',
+        user_id: 'existing-user-uuid',
+      } as never);
+      prismaMock.db.workingSchedule.create.mockResolvedValue({
+        id: 'sched-uuid-new',
+      } as never);
       prismaMock.db.refreshToken.create.mockResolvedValue({} as never);
       prismaMock.db.staffInvitation.update.mockResolvedValue({} as never);
 
@@ -323,15 +389,25 @@ describe('StaffService', () => {
     it('throws 403 when caller is not owner', async () => {
       prismaMock.db.staff.findFirst.mockResolvedValue(null);
       await expect(
-        service.listInvitations('user-1', { organization_id: 'org-uuid-1', page: 1, limit: 20 }),
+        service.listInvitations('user-1', {
+          organization_id: 'org-uuid-1',
+          page: 1,
+          limit: 20,
+        }),
       ).rejects.toThrow(ForbiddenException);
     });
 
     it('returns paginated invitations', async () => {
       prismaMock.db.staff.findFirst.mockResolvedValue(MOCK_OWNER_STAFF);
       prismaMock.db.staffInvitation.count.mockResolvedValue(1);
-      prismaMock.db.staffInvitation.findMany.mockResolvedValue([MOCK_INVITATION]);
-      const result = await service.listInvitations('owner-uuid-1', { organization_id: 'org-uuid-1', page: 1, limit: 20 });
+      prismaMock.db.staffInvitation.findMany.mockResolvedValue([
+        MOCK_INVITATION,
+      ]);
+      const result = await service.listInvitations('owner-uuid-1', {
+        organization_id: 'org-uuid-1',
+        page: 1,
+        limit: 20,
+      });
       expect(result.items).toHaveLength(1);
     });
   });
@@ -339,7 +415,10 @@ describe('StaffService', () => {
   describe('cancelInvitation', () => {
     it('throws 400 when invitation is not pending', async () => {
       prismaMock.db.staff.findFirst.mockResolvedValue(MOCK_OWNER_STAFF);
-      prismaMock.db.staffInvitation.findFirst.mockResolvedValue({ ...MOCK_INVITATION, status: 'ACCEPTED' });
+      prismaMock.db.staffInvitation.findFirst.mockResolvedValue({
+        ...MOCK_INVITATION,
+        status: 'ACCEPTED',
+      });
       await expect(
         service.cancelInvitation('owner-uuid-1', 'invite-uuid-1', 'org-uuid-1'),
       ).rejects.toThrow(BadRequestException);
@@ -347,9 +426,18 @@ describe('StaffService', () => {
 
     it('marks invitation as CANCELLED', async () => {
       prismaMock.db.staff.findFirst.mockResolvedValue(MOCK_OWNER_STAFF);
-      prismaMock.db.staffInvitation.findFirst.mockResolvedValue(MOCK_INVITATION);
-      prismaMock.db.staffInvitation.update.mockResolvedValue({ ...MOCK_INVITATION, status: 'CANCELLED' });
-      await service.cancelInvitation('owner-uuid-1', 'invite-uuid-1', 'org-uuid-1');
+      prismaMock.db.staffInvitation.findFirst.mockResolvedValue(
+        MOCK_INVITATION,
+      );
+      prismaMock.db.staffInvitation.update.mockResolvedValue({
+        ...MOCK_INVITATION,
+        status: 'CANCELLED',
+      });
+      await service.cancelInvitation(
+        'owner-uuid-1',
+        'invite-uuid-1',
+        'org-uuid-1',
+      );
       expect(prismaMock.db.staffInvitation.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: { status: 'CANCELLED' } }),
       );
@@ -369,7 +457,13 @@ describe('StaffService', () => {
       deleted_at: null,
       created_at: new Date(),
       updated_at: new Date(),
-      user: { id: 'doctor-uuid-1', first_name: 'Ahmed', last_name: 'Hassan', email: 'doctor@example.com', phone_number: null },
+      user: {
+        id: 'doctor-uuid-1',
+        first_name: 'Ahmed',
+        last_name: 'Hassan',
+        email: 'doctor@example.com',
+        phone_number: null,
+      },
       role: { id: 'role-uuid-doctor', name: 'doctor' },
       schedule: null,
     };
@@ -378,14 +472,22 @@ describe('StaffService', () => {
       prismaMock.db.staff.findFirst.mockResolvedValue(MOCK_OWNER_STAFF);
       prismaMock.db.staff.count.mockResolvedValue(1);
       prismaMock.db.staff.findMany.mockResolvedValue([MOCK_STAFF_RECORD]);
-      const result = await service.listStaff('owner-uuid-1', { organization_id: 'org-uuid-1', page: 1, limit: 20 });
+      const result = await service.listStaff('owner-uuid-1', {
+        organization_id: 'org-uuid-1',
+        page: 1,
+        limit: 20,
+      });
       expect(result.items).toHaveLength(1);
     });
 
     it('throws 403 when caller is not owner', async () => {
       prismaMock.db.staff.findFirst.mockResolvedValue(null);
       await expect(
-        service.listStaff('user-1', { organization_id: 'org-uuid-1', page: 1, limit: 20 }),
+        service.listStaff('user-1', {
+          organization_id: 'org-uuid-1',
+          page: 1,
+          limit: 20,
+        }),
       ).rejects.toThrow(ForbiddenException);
     });
   });
@@ -394,11 +496,17 @@ describe('StaffService', () => {
     it('soft-deletes staff record', async () => {
       prismaMock.db.staff.findFirst
         .mockResolvedValueOnce(MOCK_OWNER_STAFF)
-        .mockResolvedValueOnce({ id: 'staff-uuid-2', user_id: 'doctor-uuid-1', is_deleted: false } as never);
+        .mockResolvedValueOnce({
+          id: 'staff-uuid-2',
+          user_id: 'doctor-uuid-1',
+          is_deleted: false,
+        } as never);
       prismaMock.db.staff.update.mockResolvedValue({} as never);
       await service.deleteStaff('owner-uuid-1', 'staff-uuid-2', 'org-uuid-1');
       expect(prismaMock.db.staff.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ is_deleted: true }) }),
+        expect.objectContaining({
+          data: expect.objectContaining({ is_deleted: true }),
+        }),
       );
     });
   });
@@ -407,22 +515,42 @@ describe('StaffService', () => {
     it('throws 403 when caller is neither owner nor the staff member', async () => {
       prismaMock.db.staff.findFirst
         .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({ id: 'staff-uuid-2', user_id: 'other-user', is_deleted: false } as never);
+        .mockResolvedValueOnce({
+          id: 'staff-uuid-2',
+          user_id: 'other-user',
+          is_deleted: false,
+        } as never);
       await expect(
-        service.updateSchedule('random-user', 'staff-uuid-2', 'org-uuid-1', { days: [] }),
+        service.updateSchedule('random-user', 'staff-uuid-2', 'org-uuid-1', {
+          days: [],
+        }),
       ).rejects.toThrow(ForbiddenException);
     });
 
     it('replaces schedule when caller is the staff member', async () => {
       prismaMock.db.staff.findFirst
         .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({ id: 'staff-uuid-2', user_id: 'doctor-uuid-1', is_deleted: false } as never);
+        .mockResolvedValueOnce({
+          id: 'staff-uuid-2',
+          user_id: 'doctor-uuid-1',
+          is_deleted: false,
+        } as never);
       prismaMock.db.$transaction.mockImplementation(
-        (cb: (tx: typeof prismaMock.db) => Promise<unknown>) => cb(prismaMock.db),
+        (cb: (tx: typeof prismaMock.db) => Promise<unknown>) =>
+          cb(prismaMock.db),
       );
-      prismaMock.db.workingSchedule.delete.mockRejectedValue(new Error('not found'));
-      prismaMock.db.workingSchedule.create.mockResolvedValue({ id: 'new-sched' } as never);
-      await service.updateSchedule('doctor-uuid-1', 'staff-uuid-2', 'org-uuid-1', { days: [] });
+      prismaMock.db.workingSchedule.delete.mockRejectedValue(
+        new Error('not found'),
+      );
+      prismaMock.db.workingSchedule.create.mockResolvedValue({
+        id: 'new-sched',
+      } as never);
+      await service.updateSchedule(
+        'doctor-uuid-1',
+        'staff-uuid-2',
+        'org-uuid-1',
+        { days: [] },
+      );
       expect(prismaMock.db.workingSchedule.create).toHaveBeenCalled();
     });
   });
