@@ -146,7 +146,7 @@ describe('AuthController', () => {
   });
 
   describe('me', () => {
-    it('delegates user to getMe and returns result', () => {
+    it('delegates user.id to getMe and returns result', async () => {
       const meResponse = {
         id: MOCK_USER.id,
         first_name: 'John',
@@ -155,12 +155,13 @@ describe('AuthController', () => {
         is_active: true,
         verified_at: MOCK_USER.verified_at,
         created_at: MOCK_USER.created_at,
+        profiles: [],
       };
-      mockAuthService.getMe.mockReturnValue(meResponse);
+      mockAuthService.getMe.mockResolvedValue(meResponse);
 
-      const result = controller.me(MOCK_USER);
+      const result = await controller.me(MOCK_USER);
 
-      expect(mockAuthService.getMe).toHaveBeenCalledWith(MOCK_USER);
+      expect(mockAuthService.getMe).toHaveBeenCalledWith(MOCK_USER.id);
       expect(result).toEqual(meResponse);
     });
   });

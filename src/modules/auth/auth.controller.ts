@@ -168,7 +168,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Get current authenticated user' })
   @ApiStandardResponse(MeResponseDto)
-  me(@CurrentUser() user: User): MeResponseDto {
-    return this.authService.getMe(user);
+  async me(@CurrentUser() user: User): Promise<MeResponseDto> {
+    return this.authService.getMe(user.id);
   }
 }
