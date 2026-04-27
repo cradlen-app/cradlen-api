@@ -48,6 +48,20 @@ describe('ResponseInterceptor', () => {
       });
   });
 
+  it('passes explicit response envelopes through', (done) => {
+    const response = {
+      data: { id: '1' },
+      message: 'Done',
+    };
+
+    interceptor
+      .intercept({} as ExecutionContext, callHandler(response))
+      .subscribe((result) => {
+        expect(result).toEqual(response);
+        done();
+      });
+  });
+
   it('wraps null in { data: null, meta: {} }', (done) => {
     interceptor
       .intercept({} as ExecutionContext, callHandler(null))
