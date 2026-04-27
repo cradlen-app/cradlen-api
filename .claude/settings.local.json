@@ -14,7 +14,12 @@
       "Bash(npx nest *)",
       "Bash(npx jest *)",
       "Bash(npx eslint *)",
-      "Bash(echo \"EXIT:$?\")"
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(git worktree *)",
+      "Bash(npm test *)",
+      "Bash(git checkout *)",
+      "Bash(git merge *)",
+      "Bash(git branch *)"
     ]
   }
 }
