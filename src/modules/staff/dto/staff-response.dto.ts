@@ -19,6 +19,41 @@ export class ScheduleResponseDto {
   days!: WorkingDayResponseDto[];
 }
 
+export class InvitationOrganizationResponseDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() name!: string;
+}
+
+export class InvitationUserResponseDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() first_name!: string;
+  @ApiProperty() last_name!: string;
+  @ApiProperty() email!: string;
+}
+
+export class InvitationRoleResponseDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() name!: string;
+}
+
+export class InvitationBranchResponseDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() address!: string;
+  @ApiProperty() city!: string;
+  @ApiProperty() governorate!: string;
+  @ApiPropertyOptional() country?: string;
+  @ApiProperty() is_main!: boolean;
+}
+
+export class StaffInvitationBranchResponseDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() branch_id!: string;
+  @ApiProperty({ type: InvitationBranchResponseDto })
+  branch!: InvitationBranchResponseDto;
+  @ApiPropertyOptional({ type: ScheduleResponseDto })
+  schedule?: ScheduleResponseDto;
+}
+
 export class StaffResponseDto {
   @ApiProperty() id!: string;
   @ApiProperty() user_id!: string;
@@ -45,6 +80,14 @@ export class StaffInvitationResponseDto {
   @ApiPropertyOptional() accepted_at?: Date;
   @ApiProperty() created_at!: Date;
   @ApiProperty() user_exists!: boolean;
+  @ApiPropertyOptional({ type: InvitationOrganizationResponseDto })
+  organization?: InvitationOrganizationResponseDto;
+  @ApiPropertyOptional({ type: InvitationUserResponseDto })
+  invited_by?: InvitationUserResponseDto;
+  @ApiPropertyOptional({ type: InvitationRoleResponseDto })
+  role?: InvitationRoleResponseDto;
+  @ApiPropertyOptional({ type: [StaffInvitationBranchResponseDto] })
+  branches?: StaffInvitationBranchResponseDto[];
 }
 
 export class AcceptInvitationResponseDto {

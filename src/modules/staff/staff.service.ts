@@ -146,8 +146,28 @@ export class StaffService {
     const invitation = await this.prismaService.db.staffInvitation.findFirst({
       where: { id: invitationId, is_deleted: false },
       include: {
+        organization: { select: { id: true, name: true } },
+        invited_by: {
+          select: {
+            id: true,
+            first_name: true,
+            last_name: true,
+            email: true,
+          },
+        },
+        role: { select: { id: true, name: true } },
         branches: {
           include: {
+            branch: {
+              select: {
+                id: true,
+                address: true,
+                city: true,
+                governorate: true,
+                country: true,
+                is_main: true,
+              },
+            },
             schedule: { include: { days: { include: { shifts: true } } } },
           },
         },
@@ -171,7 +191,8 @@ export class StaffService {
       where: { email: invitation.email, is_deleted: false },
     });
 
-    return { ...invitation, user_exists: !!existingUser };
+    const { token_hash: _tokenHash, ...preview } = invitation;
+    return { ...preview, user_exists: !!existingUser };
   }
 
   async acceptInvitation(dto: AcceptInvitationDto) {
