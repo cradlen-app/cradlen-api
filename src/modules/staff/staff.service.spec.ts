@@ -62,6 +62,7 @@ const MOCK_INVITATION = {
   organization_id: 'org-uuid-1',
   invited_by_id: 'owner-uuid-1',
   role_id: 'role-uuid-doctor',
+  role: { name: 'doctor' },
   email: 'doctor@example.com',
   first_name: 'Ahmed',
   last_name: 'Hassan',
@@ -315,7 +316,10 @@ describe('StaffService', () => {
       expect(prismaMock.db.user.create).toHaveBeenCalled();
       expect(prismaMock.db.staff.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ organization_id: 'org-uuid-1' }),
+          data: expect.objectContaining({
+            organization_id: 'org-uuid-1',
+            is_clinical: true,
+          }),
         }),
       );
       expect(result).toHaveProperty('access_token');
