@@ -55,7 +55,6 @@ describe('AuthController', () => {
         email: 'john@example.com',
         password: 'P1!',
         confirm_password: 'P1!',
-        is_clinical: false,
       };
 
       const result = await controller.registerPersonal(dto as never);

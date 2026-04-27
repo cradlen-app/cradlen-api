@@ -71,12 +71,6 @@ export class AuthService {
       });
     }
 
-    if (dto.is_clinical && !dto.speciality) {
-      throw new BadRequestException(
-        'speciality is required for clinical users',
-      );
-    }
-
     const password_hashed = await bcrypt.hash(dto.password, 12);
 
     const user = await this.prismaService.db.$transaction(async (tx) => {
@@ -90,11 +84,7 @@ export class AuthService {
         },
       });
       await tx.profile.create({
-        data: {
-          user_id: created.id,
-          is_clinical: dto.is_clinical,
-          speciality: dto.speciality ?? null,
-        },
+        data: { user_id: created.id },
       });
       return created;
     });
@@ -221,6 +211,12 @@ export class AuthService {
     if (!freePlan)
       throw new InternalServerErrorException('Free trial plan not seeded');
 
+    if (dto.is_clinical && !dto.speciality) {
+      throw new BadRequestException(
+        'speciality is required for clinical users',
+      );
+    }
+
     const trialEndsAt = new Date();
     trialEndsAt.setDate(trialEndsAt.getDate() + this.authConfig.freeTrialDays);
 
@@ -238,41 +234,24 @@ export class AuthService {
           address: dto.branch_address,
           city: dto.branch_city,
           governorate: dto.branch_governorate,
+          country: dto.branch_country,
           is_main: true,
           status: 'ACTIVE',
           organization_id: org.id,
         },
       });
 
-      const staff = await tx.staff.create({
+      await tx.staff.create({
         data: {
           user_id: user.id,
           organization_id: org.id,
           branch_id: branch.id,
           role_id: ownerRole.id,
+          is_clinical: dto.is_clinical,
+          ...(dto.speciality !== undefined && { specialty: dto.speciality }),
           ...(dto.job_title !== undefined && { job_title: dto.job_title }),
-          ...(dto.specialty !== undefined && { specialty: dto.specialty }),
         },
       });
-
-      if (dto.working_schedule) {
-        await tx.workingSchedule.create({
-          data: {
-            staff_id: staff.id,
-            days: {
-              create: dto.working_schedule.days.map((d) => ({
-                day_of_week: d.day_of_week,
-                shifts: {
-                  create: d.shifts.map((s) => ({
-                    start_time: s.start_time,
-                    end_time: s.end_time,
-                  })),
-                },
-              })),
-            },
-          },
-        });
-      }
 
       await tx.subscription.create({
         data: {

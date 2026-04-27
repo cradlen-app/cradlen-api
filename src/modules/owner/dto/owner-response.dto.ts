@@ -9,15 +9,11 @@ export class OwnerUserDto {
   @ApiPropertyOptional() phone_number?: string;
 }
 
-export class OwnerProfileDto {
-  @ApiProperty() is_clinical!: boolean;
-  @ApiPropertyOptional() speciality?: string;
-}
-
 export class OwnerStaffDto {
   @ApiProperty() id!: string;
-  @ApiPropertyOptional() job_title?: string;
+  @ApiProperty() is_clinical!: boolean;
   @ApiPropertyOptional() specialty?: string;
+  @ApiPropertyOptional() job_title?: string;
   @ApiProperty() role!: { id: string; name: string };
 }
 
@@ -30,7 +26,6 @@ export class OwnerOrganizationDto {
 
 export class OwnerResponseDto {
   @ApiProperty({ type: OwnerUserDto }) user!: OwnerUserDto;
-  @ApiProperty({ type: OwnerProfileDto }) profile!: OwnerProfileDto;
   @ApiProperty({ type: OwnerStaffDto }) staff!: OwnerStaffDto;
   @ApiProperty({ type: OwnerOrganizationDto })
   organization!: OwnerOrganizationDto;
