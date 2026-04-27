@@ -46,10 +46,7 @@ export class StaffService {
     this.authConfig = auth;
   }
 
-  private async assertOwner(
-    userId: string,
-    organizationId: string,
-  ): Promise<void> {
+  async assertOwner(userId: string, organizationId: string): Promise<void> {
     const staff = await this.prismaService.db.staff.findFirst({
       where: {
         user_id: userId,
@@ -441,7 +438,16 @@ export class StaffService {
   async listStaff(currentUserId: string, query: ListStaffQueryDto) {
     await this.assertOwner(currentUserId, query.organization_id);
 
-    const where = { organization_id: query.organization_id, is_deleted: false };
+    const where = {
+      organization_id: query.organization_id,
+      is_deleted: false,
+      NOT: {
+        AND: [
+          { role: { name: 'owner' } },
+          { user: { profile: { is_clinical: false } } },
+        ],
+      },
+    };
     const [total, items] = await Promise.all([
       this.prismaService.db.staff.count({ where }),
       this.prismaService.db.staff.findMany({
