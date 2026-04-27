@@ -244,14 +244,35 @@ export class AuthService {
         },
       });
 
-      await tx.staff.create({
+      const staff = await tx.staff.create({
         data: {
           user_id: user.id,
           organization_id: org.id,
           branch_id: branch.id,
           role_id: ownerRole.id,
+          ...(dto.job_title !== undefined && { job_title: dto.job_title }),
+          ...(dto.specialty !== undefined && { specialty: dto.specialty }),
         },
       });
+
+      if (dto.working_schedule) {
+        await tx.workingSchedule.create({
+          data: {
+            staff_id: staff.id,
+            days: {
+              create: dto.working_schedule.days.map((d) => ({
+                day_of_week: d.day_of_week,
+                shifts: {
+                  create: d.shifts.map((s) => ({
+                    start_time: s.start_time,
+                    end_time: s.end_time,
+                  })),
+                },
+              })),
+            },
+          },
+        });
+      }
 
       await tx.subscription.create({
         data: {
