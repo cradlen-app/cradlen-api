@@ -438,13 +438,35 @@ export class StaffService {
   async listStaff(currentUserId: string, query: ListStaffQueryDto) {
     await this.assertOwner(currentUserId, query.organization_id);
 
-    const where = {
+    const where: Prisma.StaffWhereInput = {
       organization_id: query.organization_id,
       is_deleted: false,
       NOT: {
         AND: [{ role: { name: 'owner' } }, { is_clinical: false }],
       },
     };
+
+    if (query.role_id) {
+      const role = await this.prismaService.db.role.findFirst({
+        where: { id: query.role_id },
+        select: { name: true },
+      });
+
+      if (!role) {
+        return paginated([], {
+          page: query.page ?? 1,
+          limit: query.limit ?? 20,
+          total: 0,
+        });
+      }
+
+      if (role.name === 'doctor') {
+        where.is_clinical = true;
+      } else {
+        where.role_id = query.role_id;
+      }
+    }
+
     const [total, items] = await Promise.all([
       this.prismaService.db.staff.count({ where }),
       this.prismaService.db.staff.findMany({
