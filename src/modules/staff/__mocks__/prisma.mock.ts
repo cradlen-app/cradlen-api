@@ -2,6 +2,7 @@ export const createPrismaMock = () => ({
   db: {
     user: {
       findFirst: jest.fn(),
+      findMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },

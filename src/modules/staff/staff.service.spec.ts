@@ -79,6 +79,19 @@ const MOCK_INVITATION = {
   updated_at: new Date(),
 };
 
+const MOCK_INVITATION_WITH_RELATIONS = {
+  ...MOCK_INVITATION,
+  organization: { id: 'org-uuid-1', name: 'Cradlen Clinic' },
+  invited_by: {
+    id: 'owner-uuid-1',
+    first_name: 'Ibrahim',
+    last_name: 'Khaled',
+    email: 'owner@example.com',
+  },
+  role: { id: 'role-uuid-doctor', name: 'doctor' },
+  branches: [],
+};
+
 const INVITE_DTO = {
   organization_id: 'org-uuid-1',
   email: 'doctor@example.com',
@@ -196,9 +209,8 @@ describe('StaffService', () => {
   describe('previewInvitation', () => {
     it('throws 410 when invitation is expired', async () => {
       prismaMock.db.staffInvitation.findFirst.mockResolvedValue({
-        ...MOCK_INVITATION,
+        ...MOCK_INVITATION_WITH_RELATIONS,
         expires_at: new Date(Date.now() - 1000),
-        branches: [],
       });
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
       await expect(
@@ -208,8 +220,7 @@ describe('StaffService', () => {
 
     it('throws 401 when token does not match', async () => {
       prismaMock.db.staffInvitation.findFirst.mockResolvedValue({
-        ...MOCK_INVITATION,
-        branches: [],
+        ...MOCK_INVITATION_WITH_RELATIONS,
       });
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
       await expect(
@@ -219,9 +230,8 @@ describe('StaffService', () => {
 
     it('throws 401 (not 410) when token is wrong even if invitation is expired', async () => {
       prismaMock.db.staffInvitation.findFirst.mockResolvedValue({
-        ...MOCK_INVITATION,
+        ...MOCK_INVITATION_WITH_RELATIONS,
         expires_at: new Date(Date.now() - 1000),
-        branches: [],
       });
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
       await expect(
@@ -231,8 +241,7 @@ describe('StaffService', () => {
 
     it('returns preview with user_exists flag', async () => {
       prismaMock.db.staffInvitation.findFirst.mockResolvedValue({
-        ...MOCK_INVITATION,
-        branches: [],
+        ...MOCK_INVITATION_WITH_RELATIONS,
       });
       prismaMock.db.user.findFirst.mockResolvedValue(null);
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
@@ -240,8 +249,9 @@ describe('StaffService', () => {
         'raw-token',
         'invite-uuid-1',
       );
-      expect(result).toMatchObject({
+      expect(result.data).toMatchObject({
         email: 'doctor@example.com',
+        role_name: 'doctor',
         user_exists: false,
       });
     });
@@ -395,6 +405,7 @@ describe('StaffService', () => {
       await expect(
         service.listInvitations('user-1', {
           organization_id: 'org-uuid-1',
+          branch_id: 'branch-uuid-1',
           page: 1,
           limit: 20,
         }),
@@ -405,27 +416,38 @@ describe('StaffService', () => {
       prismaMock.db.staff.findFirst.mockResolvedValue(MOCK_OWNER_STAFF);
       prismaMock.db.staffInvitation.count.mockResolvedValue(1);
       prismaMock.db.staffInvitation.findMany.mockResolvedValue([
-        MOCK_INVITATION,
+        MOCK_INVITATION_WITH_RELATIONS,
       ]);
+      prismaMock.db.user.findMany.mockResolvedValue([]);
       const result = await service.listInvitations('owner-uuid-1', {
         organization_id: 'org-uuid-1',
+        branch_id: 'branch-uuid-1',
         page: 1,
         limit: 20,
       });
       expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toMatchObject({
+        email: 'doctor@example.com',
+        role_name: 'doctor',
+        status: 'pending',
+      });
     });
   });
 
   describe('cancelInvitation', () => {
-    it('throws 400 when invitation is not pending', async () => {
+    it('soft-deletes a non-pending invitation', async () => {
       prismaMock.db.staff.findFirst.mockResolvedValue(MOCK_OWNER_STAFF);
       prismaMock.db.staffInvitation.findFirst.mockResolvedValue({
         ...MOCK_INVITATION,
         status: 'ACCEPTED',
       });
+      prismaMock.db.staffInvitation.update.mockResolvedValue({
+        ...MOCK_INVITATION,
+        status: 'CANCELLED',
+      });
       await expect(
         service.cancelInvitation('owner-uuid-1', 'invite-uuid-1', 'org-uuid-1'),
-      ).rejects.toThrow(BadRequestException);
+      ).resolves.toEqual({ message: 'Invitation deleted successfully' });
     });
 
     it('marks invitation as CANCELLED', async () => {
@@ -443,7 +465,9 @@ describe('StaffService', () => {
         'org-uuid-1',
       );
       expect(prismaMock.db.staffInvitation.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { status: 'CANCELLED' } }),
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'CANCELLED' }),
+        }),
       );
     });
   });
