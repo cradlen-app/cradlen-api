@@ -22,6 +22,13 @@ export class ResponseInterceptor implements NestInterceptor {
         if (isPaginatedPayload(value)) {
           return { data: value.items, meta: value.meta };
         }
+        if (
+          typeof value === 'object' &&
+          value !== null &&
+          ('data' in value || 'message' in value)
+        ) {
+          return value;
+        }
         return { data: value, meta: {} };
       }),
     );

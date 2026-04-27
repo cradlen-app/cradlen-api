@@ -11,7 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
-import { Prisma } from '@prisma/client';
+import { InvitationStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service.js';
 import { MailService } from '../mail/mail.service.js';
 import type { AppConfig } from '../../config/app.config.js';
@@ -25,6 +25,34 @@ import type {
   ListInvitationsQueryDto,
 } from './dto/list-staff-query.dto.js';
 import { paginated } from '../../common/utils/pagination.utils.js';
+
+const STAFF_INVITATION_INCLUDE = {
+  organization: { select: { id: true, name: true } },
+  invited_by: {
+    select: {
+      id: true,
+      first_name: true,
+      last_name: true,
+      email: true,
+    },
+  },
+  role: { select: { id: true, name: true } },
+  branches: {
+    include: {
+      branch: {
+        select: {
+          id: true,
+          address: true,
+          city: true,
+          governorate: true,
+          country: true,
+          is_main: true,
+        },
+      },
+      schedule: { include: { days: { include: { shifts: true } } } },
+    },
+  },
+} satisfies Prisma.StaffInvitationInclude;
 
 @Injectable()
 export class StaffService {
@@ -59,6 +87,89 @@ export class StaffService {
       throw new ForbiddenException(
         'Only organization owners can perform this action',
       );
+  }
+
+  private normalizeInvitationStatus(
+    status: string,
+  ): InvitationStatus | undefined {
+    const normalized = status.trim().toUpperCase();
+    if (normalized === 'CANCELED' || normalized === 'REVOKED') {
+      return InvitationStatus.CANCELLED;
+    }
+    if (normalized in InvitationStatus) {
+      return InvitationStatus[normalized as keyof typeof InvitationStatus];
+    }
+    return undefined;
+  }
+
+  private invitationStatusForResponse(invitation: {
+    status: InvitationStatus;
+    expires_at: Date;
+  }) {
+    if (
+      invitation.status === InvitationStatus.PENDING &&
+      invitation.expires_at < new Date()
+    ) {
+      return 'expired';
+    }
+    return invitation.status.toLowerCase();
+  }
+
+  private branchDisplayName(branch: {
+    is_main: boolean;
+    city: string;
+    governorate: string;
+  }) {
+    if (branch.is_main) return 'Main branch';
+    return branch.city || branch.governorate || 'Branch';
+  }
+
+  private toInvitationResponse(
+    invitation: Prisma.StaffInvitationGetPayload<{
+      include: typeof STAFF_INVITATION_INCLUDE;
+    }>,
+    userExists = false,
+  ) {
+    const firstBranch = invitation.branches[0];
+    const branchId = firstBranch?.branch_id ?? null;
+
+    return {
+      id: invitation.id,
+      organization_id: invitation.organization_id,
+      branch_id: branchId,
+      email: invitation.email,
+      first_name: invitation.first_name,
+      last_name: invitation.last_name,
+      phone: invitation.phone,
+      role_id: invitation.role_id,
+      role_name: invitation.role.name,
+      role: invitation.role,
+      job_title: invitation.job_title,
+      specialty: invitation.specialty,
+      status: this.invitationStatusForResponse(invitation),
+      created_at: invitation.created_at,
+      sent_at: invitation.updated_at,
+      invited_at: invitation.created_at,
+      expires_at: invitation.expires_at,
+      accepted_at: invitation.accepted_at,
+      organization: invitation.organization,
+      organization_name: invitation.organization.name,
+      invited_by: invitation.invited_by,
+      branches: invitation.branches.map((invitationBranch) => {
+        const branchName = this.branchDisplayName(invitationBranch.branch);
+        return {
+          id: invitationBranch.id,
+          branch_id: invitationBranch.branch_id,
+          branch_name: branchName,
+          branch: {
+            ...invitationBranch.branch,
+            name: branchName,
+          },
+          schedule: invitationBranch.schedule,
+        };
+      }),
+      user_exists: userExists,
+    };
   }
 
   async sendInvitation(currentUserId: string, dto: InviteStaffDto) {
@@ -145,33 +256,7 @@ export class StaffService {
   async previewInvitation(token: string, invitationId: string) {
     const invitation = await this.prismaService.db.staffInvitation.findFirst({
       where: { id: invitationId, is_deleted: false },
-      include: {
-        organization: { select: { id: true, name: true } },
-        invited_by: {
-          select: {
-            id: true,
-            first_name: true,
-            last_name: true,
-            email: true,
-          },
-        },
-        role: { select: { id: true, name: true } },
-        branches: {
-          include: {
-            branch: {
-              select: {
-                id: true,
-                address: true,
-                city: true,
-                governorate: true,
-                country: true,
-                is_main: true,
-              },
-            },
-            schedule: { include: { days: { include: { shifts: true } } } },
-          },
-        },
-      },
+      include: STAFF_INVITATION_INCLUDE,
     });
 
     if (!invitation) throw new UnauthorizedException('Invalid invitation');
@@ -191,8 +276,7 @@ export class StaffService {
       where: { email: invitation.email, is_deleted: false },
     });
 
-    const { token_hash: _tokenHash, ...preview } = invitation;
-    return { ...preview, user_exists: !!existingUser };
+    return { data: this.toInvitationResponse(invitation, !!existingUser) };
   }
 
   async acceptInvitation(dto: AcceptInvitationDto) {
@@ -380,71 +464,129 @@ export class StaffService {
   async listInvitations(currentUserId: string, query: ListInvitationsQueryDto) {
     await this.assertOwner(currentUserId, query.organization_id);
 
-    const where = {
+    const status = query.status
+      ? this.normalizeInvitationStatus(query.status)
+      : undefined;
+
+    const where: Prisma.StaffInvitationWhereInput = {
       organization_id: query.organization_id,
       is_deleted: false,
-      ...(query.status ? { status: query.status } : {}),
+      ...(query.branch_id
+        ? { branches: { some: { branch_id: query.branch_id } } }
+        : {}),
     };
+
+    if (status === InvitationStatus.EXPIRED) {
+      where.OR = [
+        { status: InvitationStatus.EXPIRED },
+        { status: InvitationStatus.PENDING, expires_at: { lt: new Date() } },
+      ];
+    } else if (status) {
+      where.status = status;
+    }
 
     const [total, items] = await Promise.all([
       this.prismaService.db.staffInvitation.count({ where }),
       this.prismaService.db.staffInvitation.findMany({
         where,
+        include: STAFF_INVITATION_INCLUDE,
         orderBy: { created_at: 'desc' },
         skip: ((query.page ?? 1) - 1) * (query.limit ?? 20),
         take: query.limit ?? 20,
       }),
     ]);
 
-    return paginated(items, {
-      page: query.page ?? 1,
-      limit: query.limit ?? 20,
-      total,
+    const existingUsers = await this.prismaService.db.user.findMany({
+      where: {
+        email: { in: items.map((item) => item.email) },
+        is_deleted: false,
+      },
+      select: { email: true },
     });
+    const existingEmails = new Set(existingUsers.map((user) => user.email));
+
+    return paginated(
+      items.map((item) =>
+        this.toInvitationResponse(item, existingEmails.has(item.email)),
+      ),
+      {
+        page: query.page ?? 1,
+        limit: query.limit ?? 20,
+        total,
+      },
+    );
+  }
+
+  async getInvitation(
+    currentUserId: string,
+    invitationId: string,
+    organizationId?: string,
+  ) {
+    const invitation = await this.prismaService.db.staffInvitation.findFirst({
+      where: {
+        id: invitationId,
+        ...(organizationId ? { organization_id: organizationId } : {}),
+        is_deleted: false,
+      },
+      include: STAFF_INVITATION_INCLUDE,
+    });
+    if (!invitation) throw new NotFoundException('Invitation not found');
+
+    await this.assertOwner(currentUserId, invitation.organization_id);
+
+    const existingUser = await this.prismaService.db.user.findFirst({
+      where: { email: invitation.email, is_deleted: false },
+      select: { id: true },
+    });
+
+    return { data: this.toInvitationResponse(invitation, !!existingUser) };
   }
 
   async cancelInvitation(
     currentUserId: string,
     invitationId: string,
-    organizationId: string,
+    organizationId?: string,
   ) {
-    await this.assertOwner(currentUserId, organizationId);
-
     const invitation = await this.prismaService.db.staffInvitation.findFirst({
       where: {
         id: invitationId,
-        organization_id: organizationId,
+        ...(organizationId ? { organization_id: organizationId } : {}),
         is_deleted: false,
       },
     });
     if (!invitation) throw new NotFoundException('Invitation not found');
-    if (invitation.status !== 'PENDING')
-      throw new BadRequestException(
-        'Only pending invitations can be cancelled',
-      );
+
+    await this.assertOwner(currentUserId, invitation.organization_id);
 
     await this.prismaService.db.staffInvitation.update({
       where: { id: invitationId },
-      data: { status: 'CANCELLED' },
+      data: {
+        status: InvitationStatus.CANCELLED,
+        is_deleted: true,
+        deleted_at: new Date(),
+      },
     });
+
+    return { message: 'Invitation deleted successfully' };
   }
 
   async resendInvitation(
     currentUserId: string,
     invitationId: string,
-    organizationId: string,
+    organizationId?: string,
   ) {
-    await this.assertOwner(currentUserId, organizationId);
-
     const invitation = await this.prismaService.db.staffInvitation.findFirst({
       where: {
         id: invitationId,
-        organization_id: organizationId,
+        ...(organizationId ? { organization_id: organizationId } : {}),
         is_deleted: false,
       },
     });
     if (!invitation) throw new NotFoundException('Invitation not found');
-    if (invitation.status !== 'PENDING')
+
+    await this.assertOwner(currentUserId, invitation.organization_id);
+
+    if (invitation.status !== InvitationStatus.PENDING)
       throw new BadRequestException('Only pending invitations can be resent');
 
     const rawToken = randomUUID();
@@ -454,9 +596,15 @@ export class StaffService {
       expiresAt.getHours() + this.authConfig.invitationExpireHours,
     );
 
-    await this.prismaService.db.staffInvitation.update({
+    const updated = await this.prismaService.db.staffInvitation.update({
       where: { id: invitationId },
       data: { token_hash: tokenHash, expires_at: expiresAt },
+      select: {
+        id: true,
+        status: true,
+        updated_at: true,
+        expires_at: true,
+      },
     });
 
     const inviteUrl = `${this.appConfig.appUrl}/staff/invite?token=${rawToken}&invite=${invitation.id}`;
@@ -464,6 +612,16 @@ export class StaffService {
       invitation.email,
       inviteUrl,
     );
+
+    return {
+      data: {
+        id: updated.id,
+        status: updated.status.toLowerCase(),
+        sent_at: updated.updated_at,
+        expires_at: updated.expires_at,
+      },
+      message: 'Invitation resent successfully',
+    };
   }
 
   async listStaff(currentUserId: string, query: ListStaffQueryDto) {
