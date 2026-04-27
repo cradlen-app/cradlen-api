@@ -442,10 +442,7 @@ export class StaffService {
       organization_id: query.organization_id,
       is_deleted: false,
       NOT: {
-        AND: [
-          { role: { name: 'owner' } },
-          { user: { profile: { is_clinical: false } } },
-        ],
+        AND: [{ role: { name: 'owner' } }, { is_clinical: false }],
       },
     };
     const [total, items] = await Promise.all([
