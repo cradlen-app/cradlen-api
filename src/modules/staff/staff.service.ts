@@ -178,6 +178,7 @@ export class StaffService {
     const invitation = await this.prismaService.db.staffInvitation.findFirst({
       where: { id: dto.invitation_id, is_deleted: false },
       include: {
+        role: { select: { name: true } },
         branches: {
           include: {
             schedule: { include: { days: { include: { shifts: true } } } },
@@ -198,6 +199,8 @@ export class StaffService {
       throw new ConflictException('Invitation already accepted');
     if (invitation.expires_at < new Date())
       throw new GoneException('Invitation has expired');
+
+    const isDoctorRole = invitation.role?.name === 'doctor';
 
     const { accessToken, refreshToken } =
       await this.prismaService.db.$transaction(async (tx) => {
@@ -238,6 +241,7 @@ export class StaffService {
                 role_id: invitation.role_id,
                 job_title: invitation.job_title,
                 specialty: invitation.specialty,
+                is_clinical: isDoctorRole,
               },
             });
           } catch (err) {
@@ -257,6 +261,12 @@ export class StaffService {
                 throw new Error(
                   'Staff record creation failed despite no conflict',
                 );
+              if (isDoctorRole && !staffRecord.is_clinical) {
+                staffRecord = await tx.staff.update({
+                  where: { id: staffRecord.id },
+                  data: { is_clinical: true },
+                });
+              }
             } else {
               throw err;
             }
