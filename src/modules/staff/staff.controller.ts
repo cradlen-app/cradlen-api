@@ -65,27 +65,37 @@ export class StaffController {
   }
 
   @Delete('invitations/:id')
-  @HttpCode(HttpStatus.NO_CONTENT)
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Cancel a pending invitation (owner only)' })
-  @ApiVoidResponse()
   cancelInvitation(
     @CurrentUser() user: User,
     @Param('id', ParseUUIDPipe) id: string,
-    @Query('organization_id', ParseUUIDPipe) organizationId: string,
+    @Query('organization_id') organizationId?: string,
   ) {
     return this.staffService.cancelInvitation(user.id, id, organizationId);
   }
 
   @Post('invitations/:id/resend')
-  @HttpCode(HttpStatus.NO_CONTENT)
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Resend invitation email (owner only)' })
-  @ApiVoidResponse()
+  @ApiStandardResponse(StaffInvitationResponseDto)
   resendInvitation(
     @CurrentUser() user: User,
     @Param('id', ParseUUIDPipe) id: string,
-    @Query('organization_id', ParseUUIDPipe) organizationId: string,
+    @Query('organization_id') organizationId?: string,
   ) {
     return this.staffService.resendInvitation(user.id, id, organizationId);
+  }
+
+  @Get('invitations/:id')
+  @ApiOperation({ summary: 'Get invitation details (owner only)' })
+  @ApiStandardResponse(StaffInvitationResponseDto)
+  getInvitation(
+    @CurrentUser() user: User,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('organization_id') organizationId?: string,
+  ) {
+    return this.staffService.getInvitation(user.id, id, organizationId);
   }
 
   @Get('invite/preview')

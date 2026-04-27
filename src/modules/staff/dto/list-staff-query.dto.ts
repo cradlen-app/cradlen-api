@@ -1,12 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import { IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 
 export enum InvitationStatusFilter {
   PENDING = 'PENDING',
   ACCEPTED = 'ACCEPTED',
   EXPIRED = 'EXPIRED',
   CANCELLED = 'CANCELLED',
+  CANCELED = 'CANCELED',
+  REVOKED = 'REVOKED',
 }
 
 export class ListStaffQueryDto {
@@ -40,10 +42,14 @@ export class ListInvitationsQueryDto {
   @IsUUID()
   organization_id!: string;
 
+  @ApiProperty()
+  @IsUUID()
+  branch_id!: string;
+
   @ApiPropertyOptional({ enum: InvitationStatusFilter })
   @IsOptional()
-  @IsEnum(InvitationStatusFilter)
-  status?: InvitationStatusFilter;
+  @IsString()
+  status?: string;
 
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
