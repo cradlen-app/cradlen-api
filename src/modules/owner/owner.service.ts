@@ -29,7 +29,6 @@ export class OwnerService {
             last_name: true,
             email: true,
             phone_number: true,
-            profile: { select: { is_clinical: true, speciality: true } },
           },
         },
         role: { select: { id: true, name: true } },
@@ -42,13 +41,12 @@ export class OwnerService {
     if (!staff) throw new NotFoundException('Owner staff record not found');
 
     const { user, role, organization, ...staffFields } = staff;
-    const { profile, ...userFields } = user;
 
     return {
-      user: userFields,
-      profile: profile ?? { is_clinical: false, speciality: null },
+      user,
       staff: {
         id: staffFields.id,
+        is_clinical: staffFields.is_clinical,
         job_title: staffFields.job_title,
         specialty: staffFields.specialty,
         role,
@@ -69,7 +67,6 @@ export class OwnerService {
       last_name,
       phone_number,
       is_clinical,
-      speciality,
       job_title,
       specialty,
     } = dto;
@@ -90,17 +87,11 @@ export class OwnerService {
         });
       }
 
-      if (is_clinical !== undefined || speciality !== undefined) {
-        await tx.profile.update({
-          where: { user_id: currentUserId },
-          data: {
-            ...(is_clinical !== undefined && { is_clinical }),
-            ...(speciality !== undefined && { speciality }),
-          },
-        });
-      }
-
-      if (job_title !== undefined || specialty !== undefined) {
+      if (
+        job_title !== undefined ||
+        specialty !== undefined ||
+        is_clinical !== undefined
+      ) {
         await tx.staff.updateMany({
           where: {
             user_id: currentUserId,
@@ -111,6 +102,7 @@ export class OwnerService {
           data: {
             ...(job_title !== undefined && { job_title }),
             ...(specialty !== undefined && { specialty }),
+            ...(is_clinical !== undefined && { is_clinical }),
           },
         });
       }

@@ -1,14 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
   IsNotEmpty,
   IsOptional,
   IsString,
   MinLength,
-  ValidateNested,
 } from 'class-validator';
-import { ScheduleDto } from '../../staff/dto/invite-staff.dto.js';
 
 export class RegisterOrganizationDto {
   @ApiProperty()
@@ -42,19 +40,22 @@ export class RegisterOrganizationDto {
   @IsNotEmpty()
   branch_governorate!: string;
 
-  @ApiPropertyOptional({ example: 'General Practitioner' })
-  @IsOptional()
+  @ApiProperty({ example: 'Egypt' })
   @IsString()
-  job_title?: string;
+  @IsNotEmpty()
+  branch_country!: string;
+
+  @ApiProperty({ example: false })
+  @IsBoolean()
+  is_clinical!: boolean;
 
   @ApiPropertyOptional({ example: 'Cardiology' })
   @IsOptional()
   @IsString()
-  specialty?: string;
+  speciality?: string;
 
-  @ApiPropertyOptional({ type: ScheduleDto })
+  @ApiPropertyOptional({ example: 'General Practitioner' })
   @IsOptional()
-  @ValidateNested()
-  @Type(() => ScheduleDto)
-  working_schedule?: ScheduleDto;
+  @IsString()
+  job_title?: string;
 }
