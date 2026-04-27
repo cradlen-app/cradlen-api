@@ -478,6 +478,94 @@ describe('StaffService', () => {
         limit: 20,
       });
       expect(result.items).toHaveLength(1);
+      expect(prismaMock.db.staff.count).toHaveBeenCalledWith({
+        where: {
+          organization_id: 'org-uuid-1',
+          is_deleted: false,
+          NOT: {
+            AND: [{ role: { name: 'owner' } }, { is_clinical: false }],
+          },
+        },
+      });
+    });
+
+    it('filters by exact role_id for non-doctor roles', async () => {
+      prismaMock.db.staff.findFirst.mockResolvedValue(MOCK_OWNER_STAFF);
+      prismaMock.db.role.findFirst.mockResolvedValue({ name: 'assistant' });
+      prismaMock.db.staff.count.mockResolvedValue(1);
+      prismaMock.db.staff.findMany.mockResolvedValue([MOCK_STAFF_RECORD]);
+
+      await service.listStaff('owner-uuid-1', {
+        organization_id: 'org-uuid-1',
+        role_id: 'role-uuid-assistant',
+        page: 1,
+        limit: 20,
+      });
+
+      expect(prismaMock.db.role.findFirst).toHaveBeenCalledWith({
+        where: { id: 'role-uuid-assistant' },
+        select: { name: true },
+      });
+      expect(prismaMock.db.staff.count).toHaveBeenCalledWith({
+        where: {
+          organization_id: 'org-uuid-1',
+          is_deleted: false,
+          role_id: 'role-uuid-assistant',
+          NOT: {
+            AND: [{ role: { name: 'owner' } }, { is_clinical: false }],
+          },
+        },
+      });
+    });
+
+    it('filters doctor role_id as all clinical staff', async () => {
+      prismaMock.db.staff.findFirst.mockResolvedValue(MOCK_OWNER_STAFF);
+      prismaMock.db.role.findFirst.mockResolvedValue({ name: 'doctor' });
+      prismaMock.db.staff.count.mockResolvedValue(1);
+      prismaMock.db.staff.findMany.mockResolvedValue([
+        {
+          ...MOCK_OWNER_STAFF,
+          is_clinical: true,
+          role: { id: 'role-uuid-owner', name: 'owner' },
+        },
+      ]);
+
+      await service.listStaff('owner-uuid-1', {
+        organization_id: 'org-uuid-1',
+        role_id: 'role-uuid-doctor',
+        page: 1,
+        limit: 20,
+      });
+
+      expect(prismaMock.db.staff.count).toHaveBeenCalledWith({
+        where: {
+          organization_id: 'org-uuid-1',
+          is_deleted: false,
+          is_clinical: true,
+          NOT: {
+            AND: [{ role: { name: 'owner' } }, { is_clinical: false }],
+          },
+        },
+      });
+    });
+
+    it('returns an empty page for unknown role_id without querying staff rows', async () => {
+      prismaMock.db.staff.findFirst.mockResolvedValue(MOCK_OWNER_STAFF);
+      prismaMock.db.role.findFirst.mockResolvedValue(null);
+
+      const result = await service.listStaff('owner-uuid-1', {
+        organization_id: 'org-uuid-1',
+        role_id: 'role-uuid-missing',
+        page: 2,
+        limit: 10,
+      });
+
+      expect(result).toEqual({
+        items: [],
+        meta: { page: 2, limit: 10, total: 0, totalPages: 0 },
+      });
+      expect(prismaMock.db.staff.count).not.toHaveBeenCalled();
+      expect(prismaMock.db.staff.findMany).not.toHaveBeenCalled();
     });
 
     it('throws 403 when caller is not owner', async () => {
