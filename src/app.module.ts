@@ -10,6 +10,7 @@ import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { StaffModule } from './modules/staff/staff.module.js';
 import { RolesModule } from './modules/roles/roles.module';
+import { OwnerModule } from './modules/owner/owner.module.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import type { AppConfig } from './config/app.config';
 
@@ -34,6 +35,7 @@ import type { AppConfig } from './config/app.config';
     AuthModule,
     StaffModule,
     RolesModule,
+    OwnerModule,
   ],
   controllers: [],
   providers: [
