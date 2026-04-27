@@ -4,7 +4,6 @@ jest.mock('bcryptjs', () => ({
 }));
 
 import {
-  BadRequestException,
   ConflictException,
   ForbiddenException,
   InternalServerErrorException,
@@ -105,7 +104,6 @@ describe('AuthService', () => {
       phone_number: '+201012345678',
       password: 'Password1!',
       confirm_password: 'Password1!',
-      is_clinical: false,
     };
 
     it('creates user, sends OTP, returns registration token', async () => {
@@ -159,16 +157,7 @@ describe('AuthService', () => {
       expect(prismaMock.db.$transaction).not.toHaveBeenCalled();
     });
 
-    it('throws BadRequestException when clinical but no speciality', async () => {
-      prismaMock.db.user.findUnique.mockResolvedValue(null);
-
-      await expect(
-        service.registerPersonal({ ...dto, is_clinical: true }),
-      ).rejects.toThrow(BadRequestException);
-      expect(prismaMock.db.$transaction).not.toHaveBeenCalled();
-    });
-
-    it('accepts clinical user with speciality', async () => {
+    it('creates profile with only user_id', async () => {
       prismaMock.db.user.findUnique.mockResolvedValue(null);
       prismaMock.db.$transaction.mockImplementation(
         async (cb: (db: PrismaMock['db']) => Promise<typeof MOCK_USER>) =>
@@ -178,18 +167,11 @@ describe('AuthService', () => {
       prismaMock.db.profile.create.mockResolvedValue({});
       prismaMock.db.emailVerification.create.mockResolvedValue({});
 
-      const result = await service.registerPersonal({
-        ...dto,
-        is_clinical: true,
-        speciality: 'Cardiology',
-      });
+      const result = await service.registerPersonal(dto);
 
       expect(prismaMock.db.profile.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({
-            is_clinical: true,
-            speciality: 'Cardiology',
-          }),
+          data: { user_id: MOCK_USER.id },
         }),
       );
       expect(result).toHaveProperty('registration_token');
@@ -778,7 +760,6 @@ describe('AuthService', () => {
       phone_number: '+201012345678',
       password: 'Password1!',
       confirm_password: 'Password1!',
-      is_clinical: false,
     });
 
     jest.clearAllMocks();

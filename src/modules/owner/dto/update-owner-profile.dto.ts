@@ -25,11 +25,6 @@ export class UpdateOwnerProfileDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  speciality?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
   job_title?: string;
 
   @ApiPropertyOptional()
