@@ -8,5 +8,6 @@ import { MailModule } from '../mail/mail.module.js';
   imports: [MailModule, JwtModule.register({})],
   controllers: [StaffController],
   providers: [StaffService],
+  exports: [StaffService],
 })
 export class StaffModule {}
