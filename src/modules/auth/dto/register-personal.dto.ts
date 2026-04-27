@@ -1,10 +1,10 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import {
-  IsBoolean,
   IsEmail,
   IsMobilePhone,
-  IsOptional,
   IsString,
+  Matches,
   MaxLength,
   MinLength,
 } from 'class-validator';
@@ -24,6 +24,9 @@ export class RegisterPersonalDto {
   last_name!: string;
 
   @ApiProperty({ example: 'ahmed@example.com' })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.toLowerCase().trim() : value,
+  )
   @IsEmail()
   email!: string;
 
@@ -35,20 +38,14 @@ export class RegisterPersonalDto {
   @IsString()
   @MinLength(8)
   @MaxLength(128)
+  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).+$/, {
+    message:
+      'password must contain at least one uppercase letter, one lowercase letter, one number, and one special character',
+  })
   password!: string;
 
   @ApiProperty({ example: 'SecurePass123!' })
   @IsString()
   @MatchesField('password')
   confirm_password!: string;
-
-  @ApiProperty({ example: false })
-  @IsBoolean()
-  is_clinical!: boolean;
-
-  @ApiPropertyOptional({ example: 'Cardiology' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(200)
-  speciality?: string;
 }
