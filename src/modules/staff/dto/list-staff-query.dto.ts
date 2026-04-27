@@ -28,6 +28,11 @@ export class ListStaffQueryDto {
   @Min(1)
   @Max(100)
   limit?: number = 20;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  role_id?: string;
 }
 
 export class ListInvitationsQueryDto {
