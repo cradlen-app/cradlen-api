@@ -26,8 +26,15 @@ export function paginated<T>(
   items: T[],
   options: PaginateOptions,
 ): PaginatedPayload<T> {
-  return {
+  const payload = {
     items,
     meta: buildPaginationMeta(options),
-  };
+  } as PaginatedPayload<T>;
+
+  Object.defineProperty(payload, '__paginatedPayload', {
+    value: true,
+    enumerable: false,
+  });
+
+  return payload;
 }

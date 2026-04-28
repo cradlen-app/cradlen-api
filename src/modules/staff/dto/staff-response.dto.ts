@@ -91,6 +91,9 @@ export class StaffInvitationResponseDto {
 }
 
 export class AcceptInvitationResponseDto {
+  @ApiProperty({ enum: ['tokens'] }) type!: 'tokens';
   @ApiProperty() access_token!: string;
   @ApiProperty() refresh_token!: string;
+  @ApiProperty({ example: 'Bearer' }) token_type!: string;
+  @ApiProperty({ example: 900 }) expires_in!: number;
 }

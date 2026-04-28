@@ -25,6 +25,11 @@ import type {
   ListInvitationsQueryDto,
 } from './dto/list-staff-query.dto.js';
 import { paginated } from '../../common/utils/pagination.utils.js';
+import type { AuthTokensDto } from '../auth/dto/auth-tokens.dto.js';
+import type {
+  JwtAccessPayload,
+  JwtRefreshPayload,
+} from '../auth/interfaces/jwt-payload.interface.js';
 
 const STAFF_INVITATION_INCLUDE = {
   organization: { select: { id: true, name: true } },
@@ -124,6 +129,83 @@ export class StaffService {
     return branch.city || branch.governorate || 'Branch';
   }
 
+  private parseDurationToSeconds(duration: string): number {
+    const match = /^(\d+)([smhd])$/.exec(duration);
+    if (!match) return 900;
+    const value = parseInt(match[1], 10);
+    const multipliers: Record<string, number> = {
+      s: 1,
+      m: 60,
+      h: 3600,
+      d: 86400,
+    };
+    return value * (multipliers[match[2]] ?? 1);
+  }
+
+  private validateScheduleOrder(
+    days: { shifts: { start_time: string; end_time: string }[] }[],
+  ): void {
+    for (const day of days) {
+      for (const shift of day.shifts) {
+        if (shift.start_time >= shift.end_time) {
+          throw new BadRequestException(
+            'Shift start_time must be before end_time',
+          );
+        }
+      }
+    }
+  }
+
+  private async issueTokenPair(
+    tx: Prisma.TransactionClient,
+    user: { id: string; email: string },
+  ): Promise<AuthTokensDto> {
+    const jti = randomUUID();
+    const accessExpiresIn = this.parseDurationToSeconds(
+      this.authConfig.jwt.accessExpiration,
+    );
+    const refreshExpiresIn = this.parseDurationToSeconds(
+      this.authConfig.jwt.refreshExpiration,
+    );
+    const accessPayload: JwtAccessPayload = {
+      sub: user.id,
+      email: user.email,
+      type: 'access',
+    };
+    const refreshPayload: JwtRefreshPayload = {
+      sub: user.id,
+      jti,
+      type: 'refresh',
+    };
+    const accessToken = this.jwtService.sign(accessPayload, {
+      secret: this.authConfig.jwt.accessSecret,
+      expiresIn: accessExpiresIn,
+    });
+    const refreshToken = this.jwtService.sign(refreshPayload, {
+      secret: this.authConfig.jwt.refreshSecret,
+      expiresIn: refreshExpiresIn,
+    });
+    const refreshHash = await bcrypt.hash(refreshToken, 10);
+    const refreshExpiry = new Date(Date.now() + refreshExpiresIn * 1000);
+
+    await tx.refreshToken.create({
+      data: {
+        jti,
+        token_hash: refreshHash,
+        user_id: user.id,
+        expires_at: refreshExpiry,
+      },
+    });
+
+    return {
+      type: 'tokens',
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      token_type: 'Bearer',
+      expires_in: accessExpiresIn,
+    };
+  }
+
   private toInvitationResponse(
     invitation: Prisma.StaffInvitationGetPayload<{
       include: typeof STAFF_INVITATION_INCLUDE;
@@ -174,6 +256,9 @@ export class StaffService {
 
   async sendInvitation(currentUserId: string, dto: InviteStaffDto) {
     await this.assertOwner(currentUserId, dto.organization_id);
+    for (const branch of dto.branches) {
+      this.validateScheduleOrder(branch.schedule.days);
+    }
 
     const branches = await this.prismaService.db.branch.findMany({
       where: {
@@ -307,158 +392,113 @@ export class StaffService {
 
     const isDoctorRole = invitation.role?.name === 'doctor';
 
-    const { accessToken, refreshToken } =
-      await this.prismaService.db.$transaction(async (tx) => {
-        let user = await tx.user.findFirst({
-          where: { email: invitation.email, is_deleted: false },
-        });
+    const tokens = await this.prismaService.db.$transaction(async (tx) => {
+      const claimed = await tx.staffInvitation.updateMany({
+        where: {
+          id: invitation.id,
+          status: InvitationStatus.PENDING,
+          accepted_at: null,
+          is_deleted: false,
+          expires_at: { gt: new Date() },
+        },
+        data: { status: InvitationStatus.ACCEPTED, accepted_at: new Date() },
+      });
+      if (claimed.count !== 1) {
+        throw new ConflictException('Invitation has already been accepted');
+      }
 
-        if (!user) {
-          const passwordHash = await bcrypt.hash(dto.password, 12);
-          user = await tx.user.create({
+      let user = await tx.user.findFirst({
+        where: { email: invitation.email, is_deleted: false },
+      });
+
+      if (!user) {
+        const passwordHash = await bcrypt.hash(dto.password, 12);
+        user = await tx.user.create({
+          data: {
+            first_name: invitation.first_name,
+            last_name: invitation.last_name,
+            email: invitation.email,
+            phone_number: invitation.phone,
+            password_hashed: passwordHash,
+            registration_status: 'ACTIVE',
+            verified_at: new Date(),
+          },
+        });
+      } else {
+        const passwordMatch = await bcrypt.compare(
+          dto.password,
+          user.password_hashed,
+        );
+        if (!passwordMatch)
+          throw new UnauthorizedException('Invalid credentials');
+      }
+
+      for (const invBranch of invitation.branches) {
+        let staffRecord;
+        try {
+          staffRecord = await tx.staff.create({
             data: {
-              first_name: invitation.first_name,
-              last_name: invitation.last_name,
-              email: invitation.email,
-              phone_number: invitation.phone,
-              password_hashed: passwordHash,
-              registration_status: 'ACTIVE',
-              verified_at: new Date(),
+              user_id: user.id,
+              organization_id: invitation.organization_id,
+              branch_id: invBranch.branch_id,
+              role_id: invitation.role_id,
+              job_title: invitation.job_title,
+              specialty: invitation.specialty,
+              is_clinical: isDoctorRole,
             },
           });
-        } else {
-          const passwordMatch = await bcrypt.compare(
-            dto.password,
-            user.password_hashed,
-          );
-          if (!passwordMatch)
-            throw new UnauthorizedException('Invalid credentials');
-        }
-
-        for (const invBranch of invitation.branches) {
-          let staffRecord;
-          try {
-            staffRecord = await tx.staff.create({
-              data: {
+        } catch (err) {
+          if (
+            err instanceof Prisma.PrismaClientKnownRequestError &&
+            err.code === 'P2002'
+          ) {
+            staffRecord = await tx.staff.findFirst({
+              where: {
                 user_id: user.id,
                 organization_id: invitation.organization_id,
                 branch_id: invBranch.branch_id,
                 role_id: invitation.role_id,
-                job_title: invitation.job_title,
-                specialty: invitation.specialty,
-                is_clinical: isDoctorRole,
               },
             });
-          } catch (err) {
-            if (
-              err instanceof Prisma.PrismaClientKnownRequestError &&
-              err.code === 'P2002'
-            ) {
-              staffRecord = await tx.staff.findFirst({
-                where: {
-                  user_id: user.id,
-                  organization_id: invitation.organization_id,
-                  branch_id: invBranch.branch_id,
-                  role_id: invitation.role_id,
-                },
+            if (!staffRecord)
+              throw new Error(
+                'Staff record creation failed despite no conflict',
+              );
+            if (isDoctorRole && !staffRecord.is_clinical) {
+              staffRecord = await tx.staff.update({
+                where: { id: staffRecord.id },
+                data: { is_clinical: true },
               });
-              if (!staffRecord)
-                throw new Error(
-                  'Staff record creation failed despite no conflict',
-                );
-              if (isDoctorRole && !staffRecord.is_clinical) {
-                staffRecord = await tx.staff.update({
-                  where: { id: staffRecord.id },
-                  data: { is_clinical: true },
-                });
-              }
-            } else {
-              throw err;
             }
-          }
-
-          if (staffRecord && invBranch.schedule) {
-            await tx.workingSchedule.create({
-              data: {
-                staff_id: staffRecord.id,
-                days: {
-                  create: invBranch.schedule.days.map((d) => ({
-                    day_of_week: d.day_of_week,
-                    shifts: {
-                      create: d.shifts.map((s) => ({
-                        start_time: s.start_time,
-                        end_time: s.end_time,
-                      })),
-                    },
-                  })),
-                },
-              },
-            });
+          } else {
+            throw err;
           }
         }
 
-        await tx.staffInvitation.update({
-          where: { id: invitation.id },
-          data: { status: 'ACCEPTED', accepted_at: new Date() },
-        });
+        if (staffRecord && invBranch.schedule) {
+          await tx.workingSchedule.create({
+            data: {
+              staff_id: staffRecord.id,
+              days: {
+                create: invBranch.schedule.days.map((d) => ({
+                  day_of_week: d.day_of_week,
+                  shifts: {
+                    create: d.shifts.map((s) => ({
+                      start_time: s.start_time,
+                      end_time: s.end_time,
+                    })),
+                  },
+                })),
+              },
+            },
+          });
+        }
+      }
 
-        const jti = randomUUID();
+      return this.issueTokenPair(tx, user);
+    });
 
-        // Parse duration like '7d' or '30m' into seconds (JWT expiresIn expects seconds)
-        const parseDurationSeconds = (duration: string): number => {
-          const match = /^(\d+)([smhd])$/.exec(duration);
-          if (!match) return 7 * 24 * 60 * 60;
-          const value = parseInt(match[1], 10);
-          const unit = match[2];
-          const multipliers: Record<string, number> = {
-            s: 1,
-            m: 60,
-            h: 3600,
-            d: 86400,
-          };
-          return value * (multipliers[unit] ?? 1);
-        };
-
-        const accessToken = this.jwtService.sign(
-          { sub: user.id, email: user.email },
-          {
-            secret: this.authConfig.jwt.accessSecret,
-            expiresIn: parseDurationSeconds(
-              this.authConfig.jwt.accessExpiration,
-            ),
-          },
-        );
-        const rawRefresh = randomUUID();
-        const refreshHash = await bcrypt.hash(rawRefresh, 10);
-
-        const refreshExpirySeconds = parseDurationSeconds(
-          this.authConfig.jwt.refreshExpiration,
-        );
-        const refreshExpiry = new Date(
-          Date.now() + refreshExpirySeconds * 1000,
-        );
-
-        await tx.refreshToken.create({
-          data: {
-            jti,
-            token_hash: refreshHash,
-            user_id: user.id,
-            expires_at: refreshExpiry,
-          },
-        });
-
-        const refreshToken = this.jwtService.sign(
-          { sub: user.id, jti },
-          {
-            secret: this.authConfig.jwt.refreshSecret,
-            expiresIn: refreshExpirySeconds,
-          },
-        );
-
-        return { accessToken, refreshToken };
-      });
-
-    return { access_token: accessToken, refresh_token: refreshToken };
+    return tokens;
   }
 
   async listInvitations(currentUserId: string, query: ListInvitationsQueryDto) {
@@ -816,6 +856,8 @@ export class StaffService {
     organizationId: string,
     dto: UpdateScheduleDto,
   ) {
+    this.validateScheduleOrder(dto.days);
+
     const [isOwner, targetStaff] = await Promise.all([
       this.prismaService.db.staff.findFirst({
         where: {

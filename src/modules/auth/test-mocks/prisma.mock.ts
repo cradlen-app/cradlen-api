@@ -3,6 +3,7 @@ export const createPrismaMock = () => ({
     user: {
       findUnique: jest.fn(),
       findFirst: jest.fn(),
+      findMany: jest.fn(),
       findFirstOrThrow: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
@@ -12,6 +13,13 @@ export const createPrismaMock = () => ({
       create: jest.fn(),
     },
     emailVerification: {
+      create: jest.fn(),
+      findFirst: jest.fn(),
+      count: jest.fn(),
+      update: jest.fn(),
+      updateMany: jest.fn(),
+    },
+    passwordReset: {
       create: jest.fn(),
       findFirst: jest.fn(),
       count: jest.fn(),
