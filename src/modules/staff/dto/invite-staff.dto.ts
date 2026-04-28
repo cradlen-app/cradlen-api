@@ -8,6 +8,7 @@ import {
   IsString,
   IsUUID,
   Matches,
+  ArrayMinSize,
   ValidateNested,
 } from 'class-validator';
 import { DayOfWeek } from '@prisma/client';
@@ -15,12 +16,16 @@ import { DayOfWeek } from '@prisma/client';
 export class ShiftDto {
   @ApiProperty({ example: '09:00' })
   @IsString()
-  @Matches(/^\d{2}:\d{2}$/, { message: 'start_time must be HH:MM' })
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, {
+    message: 'start_time must be a valid HH:MM time',
+  })
   start_time!: string;
 
   @ApiProperty({ example: '17:00' })
   @IsString()
-  @Matches(/^\d{2}:\d{2}$/, { message: 'end_time must be HH:MM' })
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, {
+    message: 'end_time must be a valid HH:MM time',
+  })
   end_time!: string;
 }
 
@@ -31,6 +36,7 @@ export class ScheduleDayDto {
 
   @ApiProperty({ type: [ShiftDto] })
   @IsArray()
+  @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => ShiftDto)
   shifts!: ShiftDto[];
@@ -39,6 +45,7 @@ export class ScheduleDayDto {
 export class ScheduleDto {
   @ApiProperty({ type: [ScheduleDayDto] })
   @IsArray()
+  @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => ScheduleDayDto)
   days!: ScheduleDayDto[];
@@ -92,6 +99,7 @@ export class InviteStaffDto {
 
   @ApiProperty({ type: [BranchScheduleDto] })
   @IsArray()
+  @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => BranchScheduleDto)
   branches!: BranchScheduleDto[];

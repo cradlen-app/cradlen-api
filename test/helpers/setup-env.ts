@@ -6,3 +6,5 @@ const envFile = path.resolve(__dirname, '../.env.test');
 if (fs.existsSync(envFile)) {
   dotenv.config({ path: envFile });
 }
+
+process.env.JWT_RESET_SECRET ??= 'test-reset-secret-at-least-32-chars!!';

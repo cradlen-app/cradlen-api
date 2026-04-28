@@ -70,7 +70,8 @@ describe('POST /v1/auth/register/personal (E2E)', () => {
   });
 
   it('returns 400 on missing first_name', async () => {
-    const { first_name: _, ...body } = validBody;
+    const body: Partial<typeof validBody> = { ...validBody };
+    delete body.first_name;
     const res = await request(app.getHttpServer())
       .post('/v1/auth/register/personal')
       .send(body)

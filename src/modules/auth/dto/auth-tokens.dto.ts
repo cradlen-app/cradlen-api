@@ -1,6 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 export class AuthTokensDto {
+  @ApiProperty({ enum: ['tokens'] })
+  type!: 'tokens';
+
   @ApiProperty()
   access_token!: string;
 

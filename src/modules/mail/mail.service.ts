@@ -12,6 +12,7 @@ export class MailService {
   private readonly resend: Resend;
   private readonly fromEmail: string;
   private readonly logger = new Logger(MailService.name);
+  private readonly maxSendAttempts = 3;
 
   constructor(private readonly configService: ConfigService) {
     const authConfig = this.configService.get<AuthConfig>('auth');
@@ -21,7 +22,7 @@ export class MailService {
   }
 
   async sendVerificationEmail(to: string, code: string): Promise<void> {
-    const { error } = await this.resend.emails.send({
+    await this.sendWithRetry(to, {
       from: this.fromEmail,
       to,
       subject: 'Your verification code',
@@ -36,17 +37,10 @@ export class MailService {
         </div>
       `,
     });
-
-    if (error) {
-      this.logger.error(`Resend failed to ${to}: ${JSON.stringify(error)}`);
-      throw new InternalServerErrorException(
-        'Failed to send verification email',
-      );
-    }
   }
 
   async sendPasswordResetEmail(to: string, code: string): Promise<void> {
-    const { error } = await this.resend.emails.send({
+    await this.sendWithRetry(to, {
       from: this.fromEmail,
       to,
       subject: 'Reset your password',
@@ -61,17 +55,10 @@ export class MailService {
         </div>
       `,
     });
-
-    if (error) {
-      this.logger.error(`Resend failed to ${to}: ${JSON.stringify(error)}`);
-      throw new InternalServerErrorException(
-        'Failed to send password reset email',
-      );
-    }
   }
 
   async sendStaffInvitationEmail(to: string, inviteUrl: string): Promise<void> {
-    const { error } = await this.resend.emails.send({
+    await this.sendWithRetry(to, {
       from: this.fromEmail,
       to,
       subject: 'You have been invited to join an organization',
@@ -86,10 +73,39 @@ export class MailService {
         </div>
       `,
     });
+  }
 
-    if (error) {
-      this.logger.error(`Resend failed to ${to}: ${JSON.stringify(error)}`);
-      throw new InternalServerErrorException('Failed to send invitation email');
+  private async sendWithRetry(
+    to: string,
+    payload: Parameters<Resend['emails']['send']>[0],
+  ): Promise<void> {
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= this.maxSendAttempts; attempt += 1) {
+      const { error } = await this.resend.emails.send(payload);
+      if (!error) return;
+
+      lastError = error;
+      this.logger.warn({
+        message: 'Resend email attempt failed',
+        to,
+        attempt,
+        statusCode: (error as { statusCode?: unknown }).statusCode,
+        errorMessage: (error as { message?: unknown }).message,
+      });
+
+      if (attempt < this.maxSendAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 250));
+      }
     }
+
+    this.logger.error({
+      message: 'Resend failed after retries',
+      to,
+      statusCode: (lastError as { statusCode?: unknown } | undefined)
+        ?.statusCode,
+      errorMessage: (lastError as { message?: unknown } | undefined)?.message,
+    });
+    throw new InternalServerErrorException('Failed to send email');
   }
 }

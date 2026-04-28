@@ -163,6 +163,8 @@ model Staff {
   role            Role             @relation(fields: [role_id], references: [id])
   schedule        WorkingSchedule?
 
+  @@index([organization_id, is_deleted])
+  @@index([user_id, organization_id])
   @@unique([user_id, organization_id, branch_id, role_id])
   @@map("staff")
 }
@@ -182,6 +184,7 @@ model Subscription {
   organization         Organization       @relation(fields: [organization_id], references: [id])
   subscription_plan    SubscriptionPlan   @relation(fields: [subscription_plan_id], references: [id])
 
+  @@index([organization_id, is_deleted])
   @@map("subscriptions")
 }
 
@@ -217,6 +220,7 @@ model PasswordReset {
   code_hash  String
   expires_at DateTime
   used_at    DateTime?
+  reset_at   DateTime?
   created_at DateTime  @default(now())
   user       User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
