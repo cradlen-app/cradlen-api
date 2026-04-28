@@ -4,6 +4,7 @@ jest.mock('bcryptjs', () => ({
 }));
 
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   InternalServerErrorException,
@@ -352,6 +353,7 @@ describe('AuthService', () => {
 
   describe('registerOrganization', () => {
     const OWNER_ROLE = { id: 'role-uuid-1', name: 'owner' };
+    const DOCTOR_ROLE = { id: 'role-uuid-2', name: 'doctor' };
     const FREE_PLAN = { id: 'plan-uuid-1', plan: 'free_trial' };
     let dto: {
       registration_token: string;
@@ -391,6 +393,61 @@ describe('AuthService', () => {
       expect(result).toHaveProperty('access_token');
       expect(result).toHaveProperty('refresh_token');
       expect(result.token_type).toBe('Bearer');
+      expect(prismaMock.db.staff.create).toHaveBeenCalledTimes(1);
+      expect(prismaMock.db.staff.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            role_id: OWNER_ROLE.id,
+            is_clinical: false,
+          }),
+        }),
+      );
+    });
+
+    it('creates owner and doctor staff rows for clinical owners', async () => {
+      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_PENDING_USER);
+      prismaMock.db.role.findFirst
+        .mockResolvedValueOnce(OWNER_ROLE)
+        .mockResolvedValueOnce(DOCTOR_ROLE);
+      prismaMock.db.subscriptionPlan.findFirst.mockResolvedValue(FREE_PLAN);
+      prismaMock.db.refreshToken.create.mockResolvedValue(MOCK_REFRESH_TOKEN);
+      prismaMock.db.$transaction.mockImplementation(
+        async (cb: (db: PrismaMock['db']) => Promise<void>) =>
+          cb(prismaMock.db),
+      );
+      prismaMock.db.organization.create.mockResolvedValue({ id: 'org-uuid-1' });
+      prismaMock.db.branch.create.mockResolvedValue({ id: 'branch-uuid-1' });
+      prismaMock.db.staff.create.mockResolvedValue({});
+      prismaMock.db.subscription.create.mockResolvedValue({});
+
+      await service.registerOrganization({
+        ...dto,
+        is_clinical: true,
+        speciality: 'Cardiology',
+        job_title: 'Consultant',
+      });
+
+      expect(prismaMock.db.staff.create).toHaveBeenCalledTimes(2);
+      expect(prismaMock.db.staff.create).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          data: expect.objectContaining({
+            role_id: OWNER_ROLE.id,
+            is_clinical: false,
+          }),
+        }),
+      );
+      expect(prismaMock.db.staff.create).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          data: expect.objectContaining({
+            role_id: DOCTOR_ROLE.id,
+            is_clinical: true,
+            specialty: 'Cardiology',
+            job_title: 'Consultant',
+          }),
+        }),
+      );
     });
 
     it('flips user registration_status to ACTIVE inside the transaction', async () => {
@@ -451,6 +508,36 @@ describe('AuthService', () => {
       await expect(service.registerOrganization(dto)).rejects.toThrow(
         InternalServerErrorException,
       );
+    });
+
+    it('throws BadRequestException when clinical owner omits speciality', async () => {
+      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_PENDING_USER);
+      prismaMock.db.role.findFirst.mockResolvedValue(OWNER_ROLE);
+      prismaMock.db.subscriptionPlan.findFirst.mockResolvedValue(FREE_PLAN);
+
+      await expect(
+        service.registerOrganization({ ...dto, is_clinical: true }),
+      ).rejects.toThrow(BadRequestException);
+      expect(prismaMock.db.staff.create).not.toHaveBeenCalled();
+    });
+
+    it('throws InternalServerErrorException when doctor role not seeded for clinical owner', async () => {
+      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_PENDING_USER);
+      prismaMock.db.role.findFirst
+        .mockResolvedValueOnce(OWNER_ROLE)
+        .mockResolvedValueOnce(null);
+      prismaMock.db.subscriptionPlan.findFirst.mockResolvedValue(FREE_PLAN);
+
+      await expect(
+        service.registerOrganization({
+          ...dto,
+          is_clinical: true,
+          speciality: 'Cardiology',
+        }),
+      ).rejects.toThrow(
+        new InternalServerErrorException('Doctor role not seeded'),
+      );
+      expect(prismaMock.db.staff.create).not.toHaveBeenCalled();
     });
 
     it('throws UnauthorizedException when user not found', async () => {

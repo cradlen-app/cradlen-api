@@ -15,9 +15,9 @@ const REGISTER_BODY = {
   first_name: 'Login',
   last_name: 'User',
   email: USER_EMAIL,
+  phone_number: '+201012345678',
   password: USER_PASSWORD,
   confirm_password: USER_PASSWORD,
-  is_clinical: false,
 };
 
 async function doFullSetup(
@@ -36,7 +36,9 @@ async function doFullSetup(
     organization_name: 'Login Clinic',
     branch_address: '1 St',
     branch_city: 'Cairo',
-    branch_governate: 'Cairo',
+    branch_governorate: 'Cairo',
+    branch_country: 'Egypt',
+    is_clinical: false,
   });
 }
 

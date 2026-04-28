@@ -11,16 +11,18 @@ const REGISTER_BODY = {
   first_name: 'Sara',
   last_name: 'Ali',
   email: 'sara@example.com',
+  phone_number: '+201012345678',
   password: 'Password1!',
   confirm_password: 'Password1!',
-  is_clinical: false,
 };
 
 const ORG_BODY = {
   organization_name: 'Test Clinic',
   branch_address: '123 Main St',
   branch_city: 'Cairo',
-  branch_governate: 'Cairo',
+  branch_governorate: 'Cairo',
+  branch_country: 'Egypt',
+  is_clinical: false,
 };
 
 async function doFullRegistration(
@@ -99,6 +101,46 @@ describe('POST /v1/auth/register/organization (E2E)', () => {
     expect(subscription).not.toBeNull();
   });
 
+  it('creates owner and doctor staff rows for clinical owners', async () => {
+    await request(app.getHttpServer())
+      .post('/v1/auth/register/organization')
+      .send({
+        ...ORG_BODY,
+        registration_token: verifiedToken,
+        is_clinical: true,
+        speciality: 'Cardiology',
+        job_title: 'Consultant',
+      })
+      .expect(201);
+
+    const prisma = getTestPrisma();
+    const org = await prisma.organization.findFirst({
+      where: { name: ORG_BODY.organization_name },
+    });
+    expect(org).not.toBeNull();
+
+    const staff = await prisma.staff.findMany({
+      where: { organization_id: org!.id, is_deleted: false },
+      include: { role: true },
+    });
+
+    expect(staff).toHaveLength(2);
+    expect(staff.map((s) => s.role.name).sort()).toEqual(['doctor', 'owner']);
+    expect(staff.find((s) => s.role.name === 'owner')).toEqual(
+      expect.objectContaining({
+        is_clinical: false,
+        specialty: null,
+      }),
+    );
+    expect(staff.find((s) => s.role.name === 'doctor')).toEqual(
+      expect.objectContaining({
+        is_clinical: true,
+        specialty: 'Cardiology',
+        job_title: 'Consultant',
+      }),
+    );
+  });
+
   it('returns 403 when email not verified (using unverified token)', async () => {
     const r = await request(app.getHttpServer())
       .post('/v1/auth/register/personal')
@@ -129,7 +171,9 @@ describe('POST /v1/auth/register/organization (E2E)', () => {
         registration_token: verifiedToken,
         branch_address: '123 St',
         branch_city: 'Cairo',
-        branch_governate: 'Cairo',
+        branch_governorate: 'Cairo',
+        branch_country: 'Egypt',
+        is_clinical: false,
       })
       .expect(400);
 
