@@ -876,8 +876,13 @@ export class StaffService {
         );
       }
 
-      return tx.staff.findUniqueOrThrow({
+      return tx.staff.update({
         where: { id: staffId },
+        data: {
+          ...(dto.role_id !== undefined ? { role_id: dto.role_id } : {}),
+          ...(dto.job_title !== undefined ? { job_title: dto.job_title } : {}),
+          ...(dto.specialty !== undefined ? { specialty: dto.specialty } : {}),
+        },
         include: {
           user: {
             select: {
