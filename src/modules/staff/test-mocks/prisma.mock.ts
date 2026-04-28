@@ -25,6 +25,7 @@ export const createPrismaMock = () => ({
       findMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
       count: jest.fn(),
     },
     workingSchedule: {

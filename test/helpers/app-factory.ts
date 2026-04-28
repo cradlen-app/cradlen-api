@@ -18,7 +18,11 @@ export async function createTestApp(
     imports: [AppModule],
   })
     .overrideProvider(MailService)
-    .useValue({ sendVerificationEmail: mailMock })
+    .useValue({
+      sendVerificationEmail: mailMock,
+      sendPasswordResetEmail: mailMock,
+      sendStaffInvitationEmail: mailMock,
+    })
     .compile();
 
   const app = moduleFixture.createNestApplication();

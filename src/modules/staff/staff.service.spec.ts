@@ -15,7 +15,7 @@ import * as bcrypt from 'bcryptjs';
 import { StaffService } from './staff.service.js';
 import { MailService } from '../mail/mail.service.js';
 import { PrismaService } from '../../database/prisma.service.js';
-import { createPrismaMock, type PrismaMock } from './__mocks__/prisma.mock.js';
+import { createPrismaMock, type PrismaMock } from './test-mocks/prisma.mock.js';
 import type { AcceptInvitationDto } from './dto/accept-invitation.dto.js';
 
 const APP_CONFIG = { appUrl: 'http://localhost:3000' };
@@ -149,6 +149,7 @@ describe('StaffService', () => {
     }).compile();
 
     service = module.get(StaffService);
+    prismaMock.db.staffInvitation.updateMany.mockResolvedValue({ count: 1 });
   });
 
   describe('sendInvitation', () => {
@@ -261,7 +262,7 @@ describe('StaffService', () => {
     const ACCEPT_DTO: AcceptInvitationDto = {
       invitation_id: 'invite-uuid-1',
       token: 'raw-token',
-      password: 'password123',
+      password: 'Password123!',
     };
 
     it('throws 409 when invitation is already accepted', async () => {

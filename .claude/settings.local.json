@@ -19,7 +19,10 @@
       "Bash(npm test *)",
       "Bash(git checkout *)",
       "Bash(git merge *)",
-      "Bash(git branch *)"
+      "Bash(git branch *)",
+      "Skill(code-review:code-review)",
+      "Skill(code-review:code-review:*)",
+      "Bash(xargs ls *)"
     ]
   }
 }
