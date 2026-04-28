@@ -70,9 +70,15 @@ export class StaffController {
   cancelInvitation(
     @CurrentUser() user: User,
     @Param('id', ParseUUIDPipe) id: string,
-    @Query('organization_id') organizationId?: string,
+    @Query('organization_id', ParseUUIDPipe) organizationId: string,
+    @Query('branch_id', ParseUUIDPipe) branchId: string,
   ) {
-    return this.staffService.cancelInvitation(user.id, id, organizationId);
+    return this.staffService.cancelInvitation(
+      user.id,
+      id,
+      organizationId,
+      branchId,
+    );
   }
 
   @Post('invitations/:id/resend')
@@ -82,9 +88,15 @@ export class StaffController {
   resendInvitation(
     @CurrentUser() user: User,
     @Param('id', ParseUUIDPipe) id: string,
-    @Query('organization_id') organizationId?: string,
+    @Query('organization_id', ParseUUIDPipe) organizationId: string,
+    @Query('branch_id', ParseUUIDPipe) branchId: string,
   ) {
-    return this.staffService.resendInvitation(user.id, id, organizationId);
+    return this.staffService.resendInvitation(
+      user.id,
+      id,
+      organizationId,
+      branchId,
+    );
   }
 
   @Get('invitations/:id')
@@ -93,9 +105,15 @@ export class StaffController {
   getInvitation(
     @CurrentUser() user: User,
     @Param('id', ParseUUIDPipe) id: string,
-    @Query('organization_id') organizationId?: string,
+    @Query('organization_id', ParseUUIDPipe) organizationId: string,
+    @Query('branch_id', ParseUUIDPipe) branchId: string,
   ) {
-    return this.staffService.getInvitation(user.id, id, organizationId);
+    return this.staffService.getInvitation(
+      user.id,
+      id,
+      organizationId,
+      branchId,
+    );
   }
 
   @Get('invite/preview')
@@ -136,8 +154,9 @@ export class StaffController {
     @CurrentUser() user: User,
     @Param('id', ParseUUIDPipe) id: string,
     @Query('organization_id', ParseUUIDPipe) organizationId: string,
+    @Query('branch_id', ParseUUIDPipe) branchId: string,
   ) {
-    return this.staffService.getStaff(user.id, id, organizationId);
+    return this.staffService.getStaff(user.id, id, organizationId, branchId);
   }
 
   @Patch(':id')
@@ -149,9 +168,16 @@ export class StaffController {
     @CurrentUser() user: User,
     @Param('id', ParseUUIDPipe) id: string,
     @Query('organization_id', ParseUUIDPipe) organizationId: string,
+    @Query('branch_id', ParseUUIDPipe) branchId: string,
     @Body() dto: UpdateStaffDto,
   ) {
-    return this.staffService.updateStaff(user.id, id, organizationId, dto);
+    return this.staffService.updateStaff(
+      user.id,
+      id,
+      organizationId,
+      branchId,
+      dto,
+    );
   }
 
   @Delete(':id')
@@ -162,8 +188,9 @@ export class StaffController {
     @CurrentUser() user: User,
     @Param('id', ParseUUIDPipe) id: string,
     @Query('organization_id', ParseUUIDPipe) organizationId: string,
+    @Query('branch_id', ParseUUIDPipe) branchId: string,
   ) {
-    return this.staffService.deleteStaff(user.id, id, organizationId);
+    return this.staffService.deleteStaff(user.id, id, organizationId, branchId);
   }
 
   // ── Schedule ─────────────────────────────────────────────────────────────
@@ -177,8 +204,9 @@ export class StaffController {
     @CurrentUser() user: User,
     @Param('id', ParseUUIDPipe) id: string,
     @Query('organization_id', ParseUUIDPipe) organizationId: string,
+    @Query('branch_id', ParseUUIDPipe) branchId: string,
   ) {
-    return this.staffService.getSchedule(user.id, id, organizationId);
+    return this.staffService.getSchedule(user.id, id, organizationId, branchId);
   }
 
   @Patch(':id/schedule')
@@ -192,8 +220,15 @@ export class StaffController {
     @CurrentUser() user: User,
     @Param('id', ParseUUIDPipe) id: string,
     @Query('organization_id', ParseUUIDPipe) organizationId: string,
+    @Query('branch_id', ParseUUIDPipe) branchId: string,
     @Body() dto: UpdateScheduleDto,
   ) {
-    return this.staffService.updateSchedule(user.id, id, organizationId, dto);
+    return this.staffService.updateSchedule(
+      user.id,
+      id,
+      organizationId,
+      branchId,
+      dto,
+    );
   }
 }
