@@ -16,6 +16,10 @@ export class ListStaffQueryDto {
   @IsUUID()
   organization_id!: string;
 
+  @ApiProperty()
+  @IsUUID()
+  branch_id!: string;
+
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
   @Type(() => Number)
@@ -35,6 +39,13 @@ export class ListStaffQueryDto {
   @IsOptional()
   @IsUUID()
   role_id?: string;
+
+  @ApiPropertyOptional({
+    description: 'Search by first name, last name, specialty, or job title',
+  })
+  @IsOptional()
+  @IsString()
+  q?: string;
 }
 
 export class ListInvitationsQueryDto {
