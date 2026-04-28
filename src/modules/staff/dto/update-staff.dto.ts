@@ -1,19 +1,38 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsUUID } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsArray,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
+import { BranchScheduleDto } from './invite-staff.dto.js';
 
 export class UpdateStaffDto {
   @ApiPropertyOptional()
   @IsOptional()
-  @IsUUID()
-  role_id?: string;
+  @IsString()
+  first_name?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  job_title?: string;
+  last_name?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  specialty?: string;
+  phone?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  phone_number?: string;
+
+  @ApiPropertyOptional({ type: [BranchScheduleDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BranchScheduleDto)
+  branches?: BranchScheduleDto[];
 }

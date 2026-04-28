@@ -79,11 +79,16 @@ export class StaffService {
     this.authConfig = auth;
   }
 
-  async assertOwner(userId: string, organizationId: string): Promise<void> {
+  async assertOwner(
+    userId: string,
+    organizationId: string,
+    branchId?: string,
+  ): Promise<void> {
     const staff = await this.prismaService.db.staff.findFirst({
       where: {
         user_id: userId,
         organization_id: organizationId,
+        ...(branchId ? { branch_id: branchId } : {}),
         is_deleted: false,
         role: { name: 'owner' },
       },
@@ -154,6 +159,33 @@ export class StaffService {
         }
       }
     }
+  }
+
+  private async replaceStaffSchedule(
+    tx: Prisma.TransactionClient,
+    staffId: string,
+    days: UpdateScheduleDto['days'],
+  ): Promise<void> {
+    await tx.workingSchedule
+      .delete({ where: { staff_id: staffId } })
+      .catch(() => undefined);
+
+    await tx.workingSchedule.create({
+      data: {
+        staff_id: staffId,
+        days: {
+          create: days.map((d) => ({
+            day_of_week: d.day_of_week,
+            shifts: {
+              create: d.shifts.map((s) => ({
+                start_time: s.start_time,
+                end_time: s.end_time,
+              })),
+            },
+          })),
+        },
+      },
+    });
   }
 
   private async issueTokenPair(
@@ -560,12 +592,14 @@ export class StaffService {
   async getInvitation(
     currentUserId: string,
     invitationId: string,
-    organizationId?: string,
+    organizationId: string,
+    branchId: string,
   ) {
     const invitation = await this.prismaService.db.staffInvitation.findFirst({
       where: {
         id: invitationId,
-        ...(organizationId ? { organization_id: organizationId } : {}),
+        organization_id: organizationId,
+        branches: { some: { branch_id: branchId } },
         is_deleted: false,
       },
       include: STAFF_INVITATION_INCLUDE,
@@ -585,12 +619,14 @@ export class StaffService {
   async cancelInvitation(
     currentUserId: string,
     invitationId: string,
-    organizationId?: string,
+    organizationId: string,
+    branchId: string,
   ) {
     const invitation = await this.prismaService.db.staffInvitation.findFirst({
       where: {
         id: invitationId,
-        ...(organizationId ? { organization_id: organizationId } : {}),
+        organization_id: organizationId,
+        branches: { some: { branch_id: branchId } },
         is_deleted: false,
       },
     });
@@ -613,12 +649,14 @@ export class StaffService {
   async resendInvitation(
     currentUserId: string,
     invitationId: string,
-    organizationId?: string,
+    organizationId: string,
+    branchId: string,
   ) {
     const invitation = await this.prismaService.db.staffInvitation.findFirst({
       where: {
         id: invitationId,
-        ...(organizationId ? { organization_id: organizationId } : {}),
+        organization_id: organizationId,
+        branches: { some: { branch_id: branchId } },
         is_deleted: false,
       },
     });
@@ -749,6 +787,7 @@ export class StaffService {
     currentUserId: string,
     staffId: string,
     organizationId: string,
+    branchId: string,
   ) {
     await this.assertOwner(currentUserId, organizationId);
 
@@ -756,6 +795,7 @@ export class StaffService {
       where: {
         id: staffId,
         organization_id: organizationId,
+        branch_id: branchId,
         is_deleted: false,
       },
       include: {
@@ -780,6 +820,7 @@ export class StaffService {
     currentUserId: string,
     staffId: string,
     organizationId: string,
+    branchId: string,
     dto: UpdateStaffDto,
   ) {
     await this.assertOwner(currentUserId, organizationId);
@@ -788,30 +829,69 @@ export class StaffService {
       where: {
         id: staffId,
         organization_id: organizationId,
+        branch_id: branchId,
         is_deleted: false,
       },
     });
     if (!staff) throw new NotFoundException('Staff member not found');
 
-    return this.prismaService.db.staff.update({
-      where: { id: staffId },
-      data: {
-        ...(dto.role_id ? { role_id: dto.role_id } : {}),
-        ...(dto.job_title !== undefined ? { job_title: dto.job_title } : {}),
-        ...(dto.specialty !== undefined ? { specialty: dto.specialty } : {}),
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            first_name: true,
-            last_name: true,
-            email: true,
-            phone_number: true,
+    const branchSchedule = dto.branches?.find(
+      (branch) => branch.branch_id === staff.branch_id,
+    );
+    if (dto.branches && !branchSchedule) {
+      throw new BadRequestException(
+        'branches must include the staff member branch_id',
+      );
+    }
+    if (branchSchedule) {
+      this.validateScheduleOrder(branchSchedule.schedule.days);
+    }
+
+    return this.prismaService.db.$transaction(async (tx) => {
+      const phoneNumber = dto.phone_number ?? dto.phone;
+      if (
+        dto.first_name !== undefined ||
+        dto.last_name !== undefined ||
+        phoneNumber !== undefined
+      ) {
+        await tx.user.update({
+          where: { id: staff.user_id },
+          data: {
+            ...(dto.first_name !== undefined
+              ? { first_name: dto.first_name }
+              : {}),
+            ...(dto.last_name !== undefined
+              ? { last_name: dto.last_name }
+              : {}),
+            ...(phoneNumber !== undefined ? { phone_number: phoneNumber } : {}),
           },
+        });
+      }
+
+      if (branchSchedule) {
+        await this.replaceStaffSchedule(
+          tx,
+          staffId,
+          branchSchedule.schedule.days,
+        );
+      }
+
+      return tx.staff.findUniqueOrThrow({
+        where: { id: staffId },
+        include: {
+          user: {
+            select: {
+              id: true,
+              first_name: true,
+              last_name: true,
+              email: true,
+              phone_number: true,
+            },
+          },
+          role: { select: { id: true, name: true } },
+          schedule: { include: { days: { include: { shifts: true } } } },
         },
-        role: { select: { id: true, name: true } },
-      },
+      });
     });
   }
 
@@ -819,6 +899,7 @@ export class StaffService {
     currentUserId: string,
     staffId: string,
     organizationId: string,
+    branchId: string,
   ) {
     await this.assertOwner(currentUserId, organizationId);
 
@@ -826,6 +907,7 @@ export class StaffService {
       where: {
         id: staffId,
         organization_id: organizationId,
+        branch_id: branchId,
         is_deleted: false,
       },
     });
@@ -841,6 +923,7 @@ export class StaffService {
     currentUserId: string,
     staffId: string,
     organizationId: string,
+    branchId: string,
   ) {
     const [isOwner, targetStaff] = await Promise.all([
       this.prismaService.db.staff.findFirst({
@@ -855,6 +938,7 @@ export class StaffService {
         where: {
           id: staffId,
           organization_id: organizationId,
+          branch_id: branchId,
           is_deleted: false,
         },
       }),
@@ -873,6 +957,7 @@ export class StaffService {
     currentUserId: string,
     staffId: string,
     organizationId: string,
+    branchId: string,
     dto: UpdateScheduleDto,
   ) {
     this.validateScheduleOrder(dto.days);
@@ -890,6 +975,7 @@ export class StaffService {
         where: {
           id: staffId,
           organization_id: organizationId,
+          branch_id: branchId,
           is_deleted: false,
         },
       }),
@@ -898,27 +984,8 @@ export class StaffService {
     if (!isOwner && targetStaff.user_id !== currentUserId)
       throw new ForbiddenException('Access denied');
 
-    await this.prismaService.db.$transaction(async (tx) => {
-      await tx.workingSchedule
-        .delete({ where: { staff_id: staffId } })
-        .catch(() => undefined);
-
-      await tx.workingSchedule.create({
-        data: {
-          staff_id: staffId,
-          days: {
-            create: dto.days.map((d) => ({
-              day_of_week: d.day_of_week,
-              shifts: {
-                create: d.shifts.map((s) => ({
-                  start_time: s.start_time,
-                  end_time: s.end_time,
-                })),
-              },
-            })),
-          },
-        },
-      });
-    });
+    await this.prismaService.db.$transaction((tx) =>
+      this.replaceStaffSchedule(tx, staffId, dto.days),
+    );
   }
 }

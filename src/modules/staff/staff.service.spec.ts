@@ -7,6 +7,7 @@ import {
   ForbiddenException,
   BadRequestException,
   ConflictException,
+  NotFoundException,
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
@@ -20,6 +21,7 @@ import { PrismaService } from '../../database/prisma.service.js';
 import { createPrismaMock, type PrismaMock } from './test-mocks/prisma.mock.js';
 import type { AcceptInvitationDto } from './dto/accept-invitation.dto.js';
 import { ListStaffQueryDto } from './dto/list-staff-query.dto.js';
+import { UpdateStaffDto } from './dto/update-staff.dto.js';
 
 const APP_CONFIG = { appUrl: 'http://localhost:3000' };
 const AUTH_CONFIG = {
@@ -450,7 +452,12 @@ describe('StaffService', () => {
         status: 'CANCELLED',
       });
       await expect(
-        service.cancelInvitation('owner-uuid-1', 'invite-uuid-1', 'org-uuid-1'),
+        service.cancelInvitation(
+          'owner-uuid-1',
+          'invite-uuid-1',
+          'org-uuid-1',
+          'branch-uuid-1',
+        ),
       ).resolves.toEqual({ message: 'Invitation deleted successfully' });
     });
 
@@ -467,10 +474,33 @@ describe('StaffService', () => {
         'owner-uuid-1',
         'invite-uuid-1',
         'org-uuid-1',
+        'branch-uuid-1',
       );
       expect(prismaMock.db.staffInvitation.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ status: 'CANCELLED' }),
+        }),
+      );
+    });
+
+    it('requires invitation to belong to the requested branch', async () => {
+      prismaMock.db.staffInvitation.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.cancelInvitation(
+          'owner-uuid-1',
+          'invite-uuid-1',
+          'org-uuid-1',
+          'other-branch',
+        ),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(prismaMock.db.staffInvitation.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            organization_id: 'org-uuid-1',
+            branches: { some: { branch_id: 'other-branch' } },
+          }),
         }),
       );
     });
@@ -754,6 +784,203 @@ describe('StaffService', () => {
     });
   });
 
+  describe('UpdateStaffDto', () => {
+    it('accepts staff edit form fields', async () => {
+      const dto = plainToInstance(UpdateStaffDto, {
+        first_name: 'Mona',
+        last_name: 'Nabil',
+        phone: '+201000000000',
+        phone_number: '+201011111111',
+        role_id: '11111111-1111-4111-8111-111111111111',
+        job_title: 'Pediatrician',
+        branches: [
+          {
+            branch_id: '22222222-2222-4222-8222-222222222222',
+            schedule: {
+              days: [
+                {
+                  day_of_week: 'MON',
+                  shifts: [{ start_time: '09:00', end_time: '17:00' }],
+                },
+              ],
+            },
+          },
+        ],
+      });
+
+      const errors = await validate(dto);
+
+      expect(errors).toHaveLength(0);
+    });
+  });
+
+  describe('updateStaff', () => {
+    it('updates related user names and staff fields', async () => {
+      prismaMock.db.staff.findFirst
+        .mockResolvedValueOnce(MOCK_OWNER_STAFF)
+        .mockResolvedValueOnce({
+          ...MOCK_OWNER_STAFF,
+          id: 'staff-uuid-2',
+          user_id: 'doctor-uuid-1',
+          branch_id: 'branch-uuid-1',
+        } as never);
+      prismaMock.db.$transaction.mockImplementation(
+        (cb: (tx: typeof prismaMock.db) => Promise<unknown>) =>
+          cb(prismaMock.db),
+      );
+      prismaMock.db.user.update.mockResolvedValue({} as never);
+      prismaMock.db.staff.update.mockResolvedValue({ id: 'staff-uuid-2' });
+
+      await service.updateStaff(
+        'owner-uuid-1',
+        'staff-uuid-2',
+        'org-uuid-1',
+        'branch-uuid-1',
+        {
+          first_name: 'Mona',
+          last_name: 'Nabil',
+          phone: '+201000000000',
+          job_title: 'Pediatrician',
+        },
+      );
+
+      expect(prismaMock.db.user.update).toHaveBeenCalledWith({
+        where: { id: 'doctor-uuid-1' },
+        data: {
+          first_name: 'Mona',
+          last_name: 'Nabil',
+          phone_number: '+201000000000',
+        },
+      });
+      expect(prismaMock.db.staff.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ job_title: 'Pediatrician' }),
+          include: expect.objectContaining({
+            schedule: { include: { days: { include: { shifts: true } } } },
+          }),
+        }),
+      );
+    });
+
+    it('replaces the matching branch schedule from branches payload', async () => {
+      prismaMock.db.staff.findFirst
+        .mockResolvedValueOnce(MOCK_OWNER_STAFF)
+        .mockResolvedValueOnce({
+          ...MOCK_OWNER_STAFF,
+          id: 'staff-uuid-2',
+          user_id: 'doctor-uuid-1',
+          branch_id: 'branch-uuid-1',
+        } as never);
+      prismaMock.db.$transaction.mockImplementation(
+        (cb: (tx: typeof prismaMock.db) => Promise<unknown>) =>
+          cb(prismaMock.db),
+      );
+      prismaMock.db.workingSchedule.delete.mockRejectedValue(
+        new Error('not found'),
+      );
+      prismaMock.db.workingSchedule.create.mockResolvedValue({
+        id: 'new-sched',
+      } as never);
+      prismaMock.db.staff.update.mockResolvedValue({ id: 'staff-uuid-2' });
+
+      await service.updateStaff(
+        'owner-uuid-1',
+        'staff-uuid-2',
+        'org-uuid-1',
+        'branch-uuid-1',
+        {
+          branches: [
+            {
+              branch_id: 'branch-uuid-1',
+              schedule: {
+                days: [
+                  {
+                    day_of_week: 'MON',
+                    shifts: [{ start_time: '09:00', end_time: '17:00' }],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      );
+
+      expect(prismaMock.db.workingSchedule.create).toHaveBeenCalledWith({
+        data: {
+          staff_id: 'staff-uuid-2',
+          days: {
+            create: [
+              {
+                day_of_week: 'MON',
+                shifts: {
+                  create: [{ start_time: '09:00', end_time: '17:00' }],
+                },
+              },
+            ],
+          },
+        },
+      });
+    });
+
+    it('uses phone_number over phone when both are present', async () => {
+      prismaMock.db.staff.findFirst
+        .mockResolvedValueOnce(MOCK_OWNER_STAFF)
+        .mockResolvedValueOnce({
+          ...MOCK_OWNER_STAFF,
+          id: 'staff-uuid-2',
+          user_id: 'doctor-uuid-1',
+          branch_id: 'branch-uuid-1',
+        } as never);
+      prismaMock.db.$transaction.mockImplementation(
+        (cb: (tx: typeof prismaMock.db) => Promise<unknown>) =>
+          cb(prismaMock.db),
+      );
+      prismaMock.db.user.update.mockResolvedValue({} as never);
+      prismaMock.db.staff.update.mockResolvedValue({ id: 'staff-uuid-2' });
+
+      await service.updateStaff(
+        'owner-uuid-1',
+        'staff-uuid-2',
+        'org-uuid-1',
+        'branch-uuid-1',
+        {
+          phone: '+201000000000',
+          phone_number: '+201011111111',
+        },
+      );
+
+      expect(prismaMock.db.user.update).toHaveBeenCalledWith({
+        where: { id: 'doctor-uuid-1' },
+        data: { phone_number: '+201011111111' },
+      });
+    });
+
+    it('returns 404 when staff does not belong to the requested branch', async () => {
+      prismaMock.db.staff.findFirst
+        .mockResolvedValueOnce(MOCK_OWNER_STAFF)
+        .mockResolvedValueOnce(null);
+
+      await expect(
+        service.updateStaff(
+          'owner-uuid-1',
+          'staff-uuid-2',
+          'org-uuid-1',
+          'other-branch',
+          { job_title: 'Pediatrician' },
+        ),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(prismaMock.db.staff.findFirst).toHaveBeenLastCalledWith({
+        where: {
+          id: 'staff-uuid-2',
+          organization_id: 'org-uuid-1',
+          branch_id: 'other-branch',
+          is_deleted: false,
+        },
+      });
+    });
+  });
+
   describe('deleteStaff', () => {
     it('soft-deletes staff record', async () => {
       prismaMock.db.staff.findFirst
@@ -764,12 +991,32 @@ describe('StaffService', () => {
           is_deleted: false,
         } as never);
       prismaMock.db.staff.update.mockResolvedValue({} as never);
-      await service.deleteStaff('owner-uuid-1', 'staff-uuid-2', 'org-uuid-1');
+      await service.deleteStaff(
+        'owner-uuid-1',
+        'staff-uuid-2',
+        'org-uuid-1',
+        'branch-uuid-1',
+      );
       expect(prismaMock.db.staff.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ is_deleted: true }),
         }),
       );
+    });
+
+    it('returns 404 when staff does not belong to the requested branch', async () => {
+      prismaMock.db.staff.findFirst
+        .mockResolvedValueOnce(MOCK_OWNER_STAFF)
+        .mockResolvedValueOnce(null);
+
+      await expect(
+        service.deleteStaff(
+          'owner-uuid-1',
+          'staff-uuid-2',
+          'org-uuid-1',
+          'other-branch',
+        ),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -783,9 +1030,15 @@ describe('StaffService', () => {
           is_deleted: false,
         } as never);
       await expect(
-        service.updateSchedule('random-user', 'staff-uuid-2', 'org-uuid-1', {
-          days: [],
-        }),
+        service.updateSchedule(
+          'random-user',
+          'staff-uuid-2',
+          'org-uuid-1',
+          'branch-uuid-1',
+          {
+            days: [],
+          },
+        ),
       ).rejects.toThrow(ForbiddenException);
     });
 
@@ -811,9 +1064,26 @@ describe('StaffService', () => {
         'doctor-uuid-1',
         'staff-uuid-2',
         'org-uuid-1',
+        'branch-uuid-1',
         { days: [] },
       );
       expect(prismaMock.db.workingSchedule.create).toHaveBeenCalled();
+    });
+
+    it('returns 404 when schedule staff does not belong to the requested branch', async () => {
+      prismaMock.db.staff.findFirst
+        .mockResolvedValueOnce(MOCK_OWNER_STAFF)
+        .mockResolvedValueOnce(null);
+
+      await expect(
+        service.updateSchedule(
+          'owner-uuid-1',
+          'staff-uuid-2',
+          'org-uuid-1',
+          'other-branch',
+          { days: [] },
+        ),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 });
