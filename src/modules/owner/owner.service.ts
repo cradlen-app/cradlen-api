@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service.js';
 import { StaffService } from '../staff/staff.service.js';
 import type { UpdateOwnerProfileDto } from './dto/update-owner-profile.dto.js';
@@ -40,15 +45,29 @@ export class OwnerService {
 
     if (!staff) throw new NotFoundException('Owner staff record not found');
 
+    const doctorStaff = await this.prismaService.db.staff.findFirst({
+      where: {
+        user_id: currentUserId,
+        organization_id: organizationId,
+        is_deleted: false,
+        role: { name: 'doctor' },
+      },
+      select: {
+        is_clinical: true,
+        job_title: true,
+        specialty: true,
+      },
+    });
+
     const { user, role, organization, ...staffFields } = staff;
 
     return {
       user,
       staff: {
         id: staffFields.id,
-        is_clinical: staffFields.is_clinical,
-        job_title: staffFields.job_title,
-        specialty: staffFields.specialty,
+        is_clinical: !!doctorStaff || staffFields.is_clinical,
+        job_title: doctorStaff?.job_title ?? staffFields.job_title,
+        specialty: doctorStaff?.specialty ?? staffFields.specialty,
         role,
       },
       organization,
@@ -71,6 +90,55 @@ export class OwnerService {
       specialty,
     } = dto;
 
+    const [ownerStaff, activeDoctorStaff] = await Promise.all([
+      this.prismaService.db.staff.findFirst({
+        where: {
+          user_id: currentUserId,
+          organization_id: organizationId,
+          is_deleted: false,
+          role: { name: 'owner' },
+        },
+      }),
+      this.prismaService.db.staff.findFirst({
+        where: {
+          user_id: currentUserId,
+          organization_id: organizationId,
+          is_deleted: false,
+          role: { name: 'doctor' },
+        },
+      }),
+    ]);
+
+    if (!ownerStaff) throw new NotFoundException('Owner staff record not found');
+
+    const shouldEnableClinical = is_clinical === true;
+    const shouldDisableClinical = is_clinical === false;
+    const shouldUpdateDoctorFields =
+      !shouldDisableClinical &&
+      (shouldEnableClinical ||
+        (!!activeDoctorStaff &&
+          (job_title !== undefined || specialty !== undefined)));
+
+    if (
+      shouldEnableClinical &&
+      specialty === undefined &&
+      !activeDoctorStaff?.specialty
+    ) {
+      throw new BadRequestException(
+        'specialty is required for clinical users',
+      );
+    }
+
+    const doctorRole = shouldEnableClinical
+      ? await this.prismaService.db.role.findFirst({
+          where: { name: 'doctor' },
+        })
+      : null;
+
+    if (shouldEnableClinical && !doctorRole) {
+      throw new InternalServerErrorException('Doctor role not seeded');
+    }
+
     await this.prismaService.db.$transaction(async (tx) => {
       if (
         first_name !== undefined ||
@@ -87,23 +155,79 @@ export class OwnerService {
         });
       }
 
-      if (
-        job_title !== undefined ||
-        specialty !== undefined ||
-        is_clinical !== undefined
-      ) {
+      if (shouldDisableClinical) {
         await tx.staff.updateMany({
           where: {
             user_id: currentUserId,
             organization_id: organizationId,
             is_deleted: false,
-            role: { name: 'owner' },
+            role: { name: 'doctor' },
           },
           data: {
-            ...(job_title !== undefined && { job_title }),
-            ...(specialty !== undefined && { specialty }),
-            ...(is_clinical !== undefined && { is_clinical }),
+            is_deleted: true,
+            deleted_at: new Date(),
           },
+        });
+      }
+
+      if (shouldUpdateDoctorFields) {
+        if (activeDoctorStaff) {
+          await tx.staff.update({
+            where: { id: activeDoctorStaff.id },
+            data: {
+              is_clinical: true,
+              ...(job_title !== undefined && { job_title }),
+              ...(specialty !== undefined && { specialty }),
+            },
+          });
+          return;
+        }
+
+        if (!doctorRole) {
+          throw new InternalServerErrorException('Doctor role not seeded');
+        }
+
+        const existingDoctorStaff = await tx.staff.findFirst({
+          where: {
+            user_id: currentUserId,
+            organization_id: organizationId,
+            branch_id: ownerStaff.branch_id,
+            role_id: doctorRole.id,
+          },
+        });
+
+        if (existingDoctorStaff) {
+          await tx.staff.update({
+            where: { id: existingDoctorStaff.id },
+            data: {
+              is_deleted: false,
+              deleted_at: null,
+              is_clinical: true,
+              ...(job_title !== undefined && { job_title }),
+              ...(specialty !== undefined && { specialty }),
+            },
+          });
+        } else {
+          await tx.staff.create({
+            data: {
+              user_id: currentUserId,
+              organization_id: organizationId,
+              branch_id: ownerStaff.branch_id,
+              role_id: doctorRole.id,
+              is_clinical: true,
+              job_title,
+              specialty,
+            },
+          });
+        }
+      } else if (
+        !activeDoctorStaff &&
+        !shouldDisableClinical &&
+        job_title !== undefined
+      ) {
+        await tx.staff.update({
+          where: { id: ownerStaff.id },
+          data: { job_title },
         });
       }
     });

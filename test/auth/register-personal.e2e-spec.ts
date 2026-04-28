@@ -15,9 +15,9 @@ describe('POST /v1/auth/register/personal (E2E)', () => {
     first_name: 'John',
     last_name: 'Doe',
     email: 'john@example.com',
+    phone_number: '+201012345678',
     password: 'Password1!',
     confirm_password: 'Password1!',
-    is_clinical: false,
   };
 
   beforeAll(async () => {
@@ -107,7 +107,7 @@ describe('POST /v1/auth/register/personal (E2E)', () => {
     expect(res.body.error.code).toBe('VALIDATION_ERROR');
   });
 
-  it('returns 400 on clinical user without speciality', async () => {
+  it('returns 400 when clinical fields are sent to the personal step', async () => {
     const res = await request(app.getHttpServer())
       .post('/v1/auth/register/personal')
       .send({ ...validBody, is_clinical: true })
