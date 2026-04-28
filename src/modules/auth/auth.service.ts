@@ -221,6 +221,16 @@ export class AuthService {
       );
     }
 
+    const doctorRole = dto.is_clinical
+      ? await this.prismaService.db.role.findFirst({
+          where: { name: 'doctor' },
+        })
+      : null;
+
+    if (dto.is_clinical && !doctorRole) {
+      throw new InternalServerErrorException('Doctor role not seeded');
+    }
+
     const trialEndsAt = new Date();
     trialEndsAt.setDate(trialEndsAt.getDate() + this.authConfig.freeTrialDays);
 
@@ -251,11 +261,25 @@ export class AuthService {
           organization_id: org.id,
           branch_id: branch.id,
           role_id: ownerRole.id,
-          is_clinical: dto.is_clinical,
-          ...(dto.speciality !== undefined && { specialty: dto.speciality }),
-          ...(dto.job_title !== undefined && { job_title: dto.job_title }),
+          is_clinical: false,
+          ...(!dto.is_clinical &&
+            dto.job_title !== undefined && { job_title: dto.job_title }),
         },
       });
+
+      if (dto.is_clinical && doctorRole) {
+        await tx.staff.create({
+          data: {
+            user_id: user.id,
+            organization_id: org.id,
+            branch_id: branch.id,
+            role_id: doctorRole.id,
+            is_clinical: true,
+            specialty: dto.speciality,
+            ...(dto.job_title !== undefined && { job_title: dto.job_title }),
+          },
+        });
+      }
 
       await tx.subscription.create({
         data: {

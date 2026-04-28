@@ -11,9 +11,9 @@ const REGISTER_BODY = {
   first_name: 'Jane',
   last_name: 'Doe',
   email: 'jane@example.com',
+  phone_number: '+201012345678',
   password: 'Password1!',
   confirm_password: 'Password1!',
-  is_clinical: false,
 };
 
 describe('POST /v1/auth/register/verify-email (E2E)', () => {

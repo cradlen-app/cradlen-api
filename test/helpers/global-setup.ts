@@ -34,6 +34,11 @@ export default async function globalSetup() {
     update: {},
     create: { name: 'owner' },
   });
+  await prisma.role.upsert({
+    where: { name: 'doctor' },
+    update: {},
+    create: { name: 'doctor' },
+  });
 
   await prisma.subscriptionPlan.upsert({
     where: { plan: 'free_trial' },
