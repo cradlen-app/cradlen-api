@@ -1,6 +1,7 @@
 import { ExecutionContext } from '@nestjs/common';
 import { of } from 'rxjs';
 import { ResponseInterceptor } from './response.interceptor';
+import { paginated as paginatedPayload } from '../utils/pagination.utils';
 
 function callHandler(value: unknown) {
   return { handle: () => of(value) };
@@ -32,10 +33,11 @@ describe('ResponseInterceptor', () => {
   });
 
   it('restructures paginated payload into { data: items[], meta: pagination }', (done) => {
-    const paginated = {
-      items: [{ id: '1' }, { id: '2' }],
-      meta: { page: 1, limit: 10, total: 20, totalPages: 2 },
-    };
+    const paginated = paginatedPayload([{ id: '1' }, { id: '2' }], {
+      page: 1,
+      limit: 10,
+      total: 20,
+    });
 
     interceptor
       .intercept({} as ExecutionContext, callHandler(paginated))

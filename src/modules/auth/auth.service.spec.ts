@@ -16,12 +16,13 @@ import * as bcrypt from 'bcryptjs';
 import { AuthService } from './auth.service';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../../database/prisma.service';
-import { createPrismaMock, type PrismaMock } from './__mocks__/prisma.mock';
+import { createPrismaMock, type PrismaMock } from './test-mocks/prisma.mock';
 
 const AUTH_CONFIG = {
   jwt: {
     accessSecret: 'test-access-secret-at-least-32-chars!!',
     refreshSecret: 'test-refresh-secret-at-least-32!!',
+    resetSecret: 'test-reset-secret-at-least-32-chars!!',
     accessExpiration: '15m',
     refreshExpiration: '7d',
     registrationExpiration: '30m',
@@ -65,15 +66,24 @@ const MOCK_REFRESH_TOKEN = {
   user: MOCK_USER,
 };
 
+const MOCK_PENDING_USER = {
+  ...MOCK_USER,
+  registration_status: 'PENDING' as const,
+};
+
 describe('AuthService', () => {
   let service: AuthService;
   let prismaMock: PrismaMock;
-  let mailMock: { sendVerificationEmail: jest.Mock };
+  let mailMock: {
+    sendVerificationEmail: jest.Mock;
+    sendPasswordResetEmail: jest.Mock;
+  };
 
   beforeEach(async () => {
     prismaMock = createPrismaMock();
     mailMock = {
       sendVerificationEmail: jest.fn().mockResolvedValue(undefined),
+      sendPasswordResetEmail: jest.fn().mockResolvedValue(undefined),
     };
 
     const module = await Test.createTestingModule({
@@ -188,7 +198,7 @@ describe('AuthService', () => {
     });
 
     it('validates OTP, marks verification used, returns new registration token', async () => {
-      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_USER);
+      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_PENDING_USER);
       prismaMock.db.emailVerification.findFirst.mockResolvedValue(
         MOCK_VERIFICATION,
       );
@@ -202,7 +212,7 @@ describe('AuthService', () => {
     });
 
     it('throws UnauthorizedException on wrong OTP', async () => {
-      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_USER);
+      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_PENDING_USER);
       prismaMock.db.emailVerification.findFirst.mockResolvedValue(
         MOCK_VERIFICATION,
       );
@@ -214,7 +224,7 @@ describe('AuthService', () => {
     });
 
     it('throws UnauthorizedException when OTP is expired', async () => {
-      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_USER);
+      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_PENDING_USER);
       prismaMock.db.emailVerification.findFirst.mockResolvedValue({
         ...MOCK_VERIFICATION,
         expires_at: new Date(Date.now() - 1000),
@@ -226,7 +236,7 @@ describe('AuthService', () => {
     });
 
     it('throws UnauthorizedException when no verification record found', async () => {
-      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_USER);
+      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_PENDING_USER);
       prismaMock.db.emailVerification.findFirst.mockResolvedValue(null);
 
       await expect(
@@ -261,7 +271,7 @@ describe('AuthService', () => {
     });
 
     it('sends new OTP when cooldown has elapsed', async () => {
-      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_USER);
+      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_PENDING_USER);
       prismaMock.db.emailVerification.count.mockResolvedValue(2);
       prismaMock.db.emailVerification.findFirst.mockResolvedValue({
         ...MOCK_VERIFICATION,
@@ -282,7 +292,7 @@ describe('AuthService', () => {
     });
 
     it('sends OTP when no prior OTPs exist', async () => {
-      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_USER);
+      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_PENDING_USER);
       prismaMock.db.emailVerification.count.mockResolvedValue(0);
       prismaMock.db.emailVerification.findFirst.mockResolvedValue(null);
       prismaMock.db.emailVerification.updateMany.mockResolvedValue({
@@ -297,7 +307,7 @@ describe('AuthService', () => {
     });
 
     it('throws UnauthorizedException when max attempts reached', async () => {
-      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_USER);
+      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_PENDING_USER);
       prismaMock.db.emailVerification.count.mockResolvedValue(5);
       prismaMock.db.emailVerification.findFirst.mockResolvedValue(
         MOCK_VERIFICATION,
@@ -310,7 +320,7 @@ describe('AuthService', () => {
     });
 
     it('throws UnauthorizedException within cooldown window', async () => {
-      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_USER);
+      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_PENDING_USER);
       prismaMock.db.emailVerification.count.mockResolvedValue(1);
       prismaMock.db.emailVerification.findFirst.mockResolvedValue({
         ...MOCK_VERIFICATION,
@@ -363,7 +373,7 @@ describe('AuthService', () => {
     });
 
     it('creates org, branch, staff, subscription and returns token pair', async () => {
-      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_USER);
+      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_PENDING_USER);
       prismaMock.db.role.findFirst.mockResolvedValue(OWNER_ROLE);
       prismaMock.db.subscriptionPlan.findFirst.mockResolvedValue(FREE_PLAN);
       prismaMock.db.refreshToken.create.mockResolvedValue(MOCK_REFRESH_TOKEN);
@@ -384,7 +394,7 @@ describe('AuthService', () => {
     });
 
     it('flips user registration_status to ACTIVE inside the transaction', async () => {
-      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_USER);
+      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_PENDING_USER);
       prismaMock.db.role.findFirst.mockResolvedValue(OWNER_ROLE);
       prismaMock.db.subscriptionPlan.findFirst.mockResolvedValue(FREE_PLAN);
       prismaMock.db.refreshToken.create.mockResolvedValue(MOCK_REFRESH_TOKEN);
@@ -424,7 +434,7 @@ describe('AuthService', () => {
     });
 
     it('throws InternalServerErrorException when owner role not seeded', async () => {
-      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_USER);
+      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_PENDING_USER);
       prismaMock.db.role.findFirst.mockResolvedValue(null);
       prismaMock.db.subscriptionPlan.findFirst.mockResolvedValue(FREE_PLAN);
 
@@ -434,7 +444,7 @@ describe('AuthService', () => {
     });
 
     it('throws InternalServerErrorException when free trial plan not seeded', async () => {
-      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_USER);
+      prismaMock.db.user.findFirst.mockResolvedValue(MOCK_PENDING_USER);
       prismaMock.db.role.findFirst.mockResolvedValue(OWNER_ROLE);
       prismaMock.db.subscriptionPlan.findFirst.mockResolvedValue(null);
 
@@ -542,7 +552,7 @@ describe('AuthService', () => {
 
       const jwtService = new JwtService({});
       const rawToken = jwtService.sign(
-        { sub: MOCK_USER.id, jti: MOCK_REFRESH_TOKEN.jti },
+        { sub: MOCK_USER.id, jti: MOCK_REFRESH_TOKEN.jti, type: 'refresh' },
         { secret: AUTH_CONFIG.jwt.refreshSecret, expiresIn: '7d' },
       );
 
@@ -564,7 +574,7 @@ describe('AuthService', () => {
 
       const jwtService = new JwtService({});
       const rawToken = jwtService.sign(
-        { sub: MOCK_USER.id, jti: MOCK_REFRESH_TOKEN.jti },
+        { sub: MOCK_USER.id, jti: MOCK_REFRESH_TOKEN.jti, type: 'refresh' },
         { secret: AUTH_CONFIG.jwt.refreshSecret, expiresIn: '7d' },
       );
 
@@ -578,7 +588,7 @@ describe('AuthService', () => {
 
       const jwtService = new JwtService({});
       const rawToken = jwtService.sign(
-        { sub: MOCK_USER.id, jti: 'unknown-jti' },
+        { sub: MOCK_USER.id, jti: 'unknown-jti', type: 'refresh' },
         { secret: AUTH_CONFIG.jwt.refreshSecret, expiresIn: '7d' },
       );
 
@@ -595,7 +605,7 @@ describe('AuthService', () => {
 
       const jwtService = new JwtService({});
       const rawToken = jwtService.sign(
-        { sub: MOCK_USER.id, jti: MOCK_REFRESH_TOKEN.jti },
+        { sub: MOCK_USER.id, jti: MOCK_REFRESH_TOKEN.jti, type: 'refresh' },
         { secret: AUTH_CONFIG.jwt.refreshSecret, expiresIn: '7d' },
       );
 
@@ -612,7 +622,7 @@ describe('AuthService', () => {
 
       const jwtService = new JwtService({});
       const rawToken = jwtService.sign(
-        { sub: MOCK_USER.id, jti: MOCK_REFRESH_TOKEN.jti },
+        { sub: MOCK_USER.id, jti: MOCK_REFRESH_TOKEN.jti, type: 'refresh' },
         { secret: AUTH_CONFIG.jwt.refreshSecret, expiresIn: '7d' },
       );
 
@@ -636,7 +646,7 @@ describe('AuthService', () => {
 
       const jwtService = new JwtService({});
       const rawToken = jwtService.sign(
-        { sub: MOCK_USER.id, jti: 'jti-abc' },
+        { sub: MOCK_USER.id, jti: 'jti-abc', type: 'refresh' },
         { secret: AUTH_CONFIG.jwt.refreshSecret, expiresIn: '7d' },
       );
 
@@ -658,7 +668,7 @@ describe('AuthService', () => {
 
       const jwtService = new JwtService({});
       const rawToken = jwtService.sign(
-        { sub: MOCK_USER.id, jti: 'jti-expired' },
+        { sub: MOCK_USER.id, jti: 'jti-expired', type: 'refresh' },
         { secret: AUTH_CONFIG.jwt.refreshSecret, expiresIn: '-1s' },
       );
 

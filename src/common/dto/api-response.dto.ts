@@ -13,6 +13,7 @@ export interface ApiResponse<T> {
 export interface PaginatedPayload<T> {
   items: T[];
   meta: PaginationMeta;
+  readonly __paginatedPayload: true;
 }
 
 export function isPaginatedPayload<T>(
@@ -21,8 +22,6 @@ export function isPaginatedPayload<T>(
   return (
     typeof value === 'object' &&
     value !== null &&
-    'items' in value &&
-    'meta' in value &&
-    Array.isArray((value as PaginatedPayload<T>).items)
+    (value as { __paginatedPayload?: unknown }).__paginatedPayload === true
   );
 }

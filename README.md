@@ -27,6 +27,7 @@ npm run start:dev         # → http://localhost:3000
 | `PORT` | HTTP port | `3000` |
 | `API_DEFAULT_VERSION` | URI version prefix | `1` |
 | `CORS_ORIGINS` | Comma-separated allowed origins | `http://localhost:3000,...` |
+| `JWT_RESET_SECRET` | Dedicated password-reset token secret | — |
 | `THROTTLE_TTL` | Rate-limit window in milliseconds | `60000` |
 | `THROTTLE_LIMIT` | Max requests per window | `100` |
 | `LOG_LEVEL` | `trace\|debug\|info\|warn\|error\|fatal` | `info` |
@@ -101,6 +102,8 @@ Paginated list responses include `meta: { total, page, limit, ... }` via `Pagina
 Prisma error codes are mapped automatically (e.g. P2002 → 409 Conflict, P2025 → 404 Not Found).
 
 **Versioning** — URI-based. All routes are prefixed with `/v{API_DEFAULT_VERSION}/` (e.g. `/v1/health`).
+
+**Token responses** — Auth token responses include a discriminator (`type: "tokens"`). Pending login responses include `type: "pending"` plus `pending_step`.
 
 **Swagger** — Available at `/docs` in non-production environments. Uses Bearer auth header.
 

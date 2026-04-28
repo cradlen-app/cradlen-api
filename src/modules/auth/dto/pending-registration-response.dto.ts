@@ -1,6 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 export class PendingRegistrationResponseDto {
+  @ApiProperty({ enum: ['pending'] })
+  type!: 'pending';
+
   @ApiProperty()
   registration_token!: string;
 

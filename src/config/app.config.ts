@@ -1,5 +1,14 @@
 import { registerAs } from '@nestjs/config';
 
+function parsePositiveInt(name: string, fallback: string): number {
+  const raw = process.env[name] ?? fallback;
+  const value = parseInt(raw, 10);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return value;
+}
+
 export interface AppConfig {
   name: string;
   env: string;
@@ -29,7 +38,7 @@ export default registerAs(
   (): AppConfig => ({
     name: process.env.APP_NAME ?? 'cradlen-api',
     env: process.env.NODE_ENV ?? 'development',
-    port: parseInt(process.env.PORT ?? '3000', 10),
+    port: parsePositiveInt('PORT', '3000'),
     appUrl:
       process.env.APP_URL ??
       (() => {
@@ -49,8 +58,8 @@ export default registerAs(
       origins: process.env.CORS_ORIGINS?.split(',') ?? [],
     },
     throttle: {
-      ttl: parseInt(process.env.THROTTLE_TTL ?? '60000', 10),
-      limit: parseInt(process.env.THROTTLE_LIMIT ?? '100', 10),
+      ttl: parsePositiveInt('THROTTLE_TTL', '60000'),
+      limit: parsePositiveInt('THROTTLE_LIMIT', '100'),
     },
   }),
 );
