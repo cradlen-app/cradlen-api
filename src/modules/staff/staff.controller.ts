@@ -122,7 +122,7 @@ export class StaffController {
 
   @Get()
   @ApiOperation({
-    summary: 'List active staff for an organization (owner only)',
+    summary: 'List or search active staff for a branch',
   })
   @ApiPaginatedResponse(StaffResponseDto)
   listStaff(@CurrentUser() user: User, @Query() query: ListStaffQueryDto) {

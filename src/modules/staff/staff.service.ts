@@ -665,15 +665,34 @@ export class StaffService {
   }
 
   async listStaff(currentUserId: string, query: ListStaffQueryDto) {
-    await this.assertOwner(currentUserId, query.organization_id);
+    const requesterStaff = await this.prismaService.db.staff.findFirst({
+      where: {
+        user_id: currentUserId,
+        organization_id: query.organization_id,
+        branch_id: query.branch_id,
+        is_deleted: false,
+      },
+    });
+    if (!requesterStaff) throw new ForbiddenException('Access denied');
 
     const where: Prisma.StaffWhereInput = {
       organization_id: query.organization_id,
+      branch_id: query.branch_id,
       is_deleted: false,
       NOT: {
         AND: [{ role: { name: 'owner' } }, { is_clinical: false }],
       },
     };
+
+    const search = query.q?.trim();
+    if (search) {
+      where.OR = [
+        { user: { first_name: { contains: search, mode: 'insensitive' } } },
+        { user: { last_name: { contains: search, mode: 'insensitive' } } },
+        { specialty: { contains: search, mode: 'insensitive' } },
+        { job_title: { contains: search, mode: 'insensitive' } },
+      ];
+    }
 
     if (query.role_id) {
       const role = await this.prismaService.db.role.findFirst({

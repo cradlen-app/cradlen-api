@@ -11,12 +11,15 @@ import {
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import * as bcrypt from 'bcryptjs';
 import { StaffService } from './staff.service.js';
 import { MailService } from '../mail/mail.service.js';
 import { PrismaService } from '../../database/prisma.service.js';
 import { createPrismaMock, type PrismaMock } from './test-mocks/prisma.mock.js';
 import type { AcceptInvitationDto } from './dto/accept-invitation.dto.js';
+import { ListStaffQueryDto } from './dto/list-staff-query.dto.js';
 
 const APP_CONFIG = { appUrl: 'http://localhost:3000' };
 const AUTH_CONFIG = {
@@ -497,19 +500,93 @@ describe('StaffService', () => {
       schedule: null,
     };
 
-    it('returns paginated staff for org', async () => {
+    it('allows active branch staff to return paginated staff for branch', async () => {
       prismaMock.db.staff.findFirst.mockResolvedValue(MOCK_OWNER_STAFF);
       prismaMock.db.staff.count.mockResolvedValue(1);
       prismaMock.db.staff.findMany.mockResolvedValue([MOCK_STAFF_RECORD]);
       const result = await service.listStaff('owner-uuid-1', {
         organization_id: 'org-uuid-1',
+        branch_id: 'branch-uuid-1',
         page: 1,
         limit: 20,
       });
       expect(result.items).toHaveLength(1);
+      expect(prismaMock.db.staff.findFirst).toHaveBeenCalledWith({
+        where: {
+          user_id: 'owner-uuid-1',
+          organization_id: 'org-uuid-1',
+          branch_id: 'branch-uuid-1',
+          is_deleted: false,
+        },
+      });
       expect(prismaMock.db.staff.count).toHaveBeenCalledWith({
         where: {
           organization_id: 'org-uuid-1',
+          branch_id: 'branch-uuid-1',
+          is_deleted: false,
+          NOT: {
+            AND: [{ role: { name: 'owner' } }, { is_clinical: false }],
+          },
+        },
+      });
+    });
+
+    it('searches branch staff by name, specialty, or job title', async () => {
+      prismaMock.db.staff.findFirst.mockResolvedValue(MOCK_OWNER_STAFF);
+      prismaMock.db.staff.count.mockResolvedValue(1);
+      prismaMock.db.staff.findMany.mockResolvedValue([MOCK_STAFF_RECORD]);
+
+      await service.listStaff('owner-uuid-1', {
+        organization_id: 'org-uuid-1',
+        branch_id: 'branch-uuid-1',
+        q: '  cardio  ',
+        page: 1,
+        limit: 20,
+      });
+
+      expect(prismaMock.db.staff.count).toHaveBeenCalledWith({
+        where: {
+          organization_id: 'org-uuid-1',
+          branch_id: 'branch-uuid-1',
+          is_deleted: false,
+          NOT: {
+            AND: [{ role: { name: 'owner' } }, { is_clinical: false }],
+          },
+          OR: [
+            {
+              user: {
+                first_name: { contains: 'cardio', mode: 'insensitive' },
+              },
+            },
+            {
+              user: {
+                last_name: { contains: 'cardio', mode: 'insensitive' },
+              },
+            },
+            { specialty: { contains: 'cardio', mode: 'insensitive' } },
+            { job_title: { contains: 'cardio', mode: 'insensitive' } },
+          ],
+        },
+      });
+    });
+
+    it('ignores whitespace-only search text', async () => {
+      prismaMock.db.staff.findFirst.mockResolvedValue(MOCK_OWNER_STAFF);
+      prismaMock.db.staff.count.mockResolvedValue(1);
+      prismaMock.db.staff.findMany.mockResolvedValue([MOCK_STAFF_RECORD]);
+
+      await service.listStaff('owner-uuid-1', {
+        organization_id: 'org-uuid-1',
+        branch_id: 'branch-uuid-1',
+        q: '   ',
+        page: 1,
+        limit: 20,
+      });
+
+      expect(prismaMock.db.staff.count).toHaveBeenCalledWith({
+        where: {
+          organization_id: 'org-uuid-1',
+          branch_id: 'branch-uuid-1',
           is_deleted: false,
           NOT: {
             AND: [{ role: { name: 'owner' } }, { is_clinical: false }],
@@ -526,6 +603,7 @@ describe('StaffService', () => {
 
       await service.listStaff('owner-uuid-1', {
         organization_id: 'org-uuid-1',
+        branch_id: 'branch-uuid-1',
         role_id: 'role-uuid-assistant',
         page: 1,
         limit: 20,
@@ -538,12 +616,51 @@ describe('StaffService', () => {
       expect(prismaMock.db.staff.count).toHaveBeenCalledWith({
         where: {
           organization_id: 'org-uuid-1',
+          branch_id: 'branch-uuid-1',
           is_deleted: false,
           role_id: 'role-uuid-assistant',
           NOT: {
             AND: [{ role: { name: 'owner' } }, { is_clinical: false }],
           },
         },
+      });
+    });
+
+    it('combines search text with role filtering', async () => {
+      prismaMock.db.staff.findFirst.mockResolvedValue(MOCK_OWNER_STAFF);
+      prismaMock.db.role.findFirst.mockResolvedValue({ name: 'assistant' });
+      prismaMock.db.staff.count.mockResolvedValue(1);
+      prismaMock.db.staff.findMany.mockResolvedValue([MOCK_STAFF_RECORD]);
+
+      await service.listStaff('owner-uuid-1', {
+        organization_id: 'org-uuid-1',
+        branch_id: 'branch-uuid-1',
+        role_id: 'role-uuid-assistant',
+        q: 'nurse',
+        page: 1,
+        limit: 20,
+      });
+
+      expect(prismaMock.db.staff.count).toHaveBeenCalledWith({
+        where: expect.objectContaining({
+          organization_id: 'org-uuid-1',
+          branch_id: 'branch-uuid-1',
+          role_id: 'role-uuid-assistant',
+          OR: [
+            {
+              user: {
+                first_name: { contains: 'nurse', mode: 'insensitive' },
+              },
+            },
+            {
+              user: {
+                last_name: { contains: 'nurse', mode: 'insensitive' },
+              },
+            },
+            { specialty: { contains: 'nurse', mode: 'insensitive' } },
+            { job_title: { contains: 'nurse', mode: 'insensitive' } },
+          ],
+        }),
       });
     });
 
@@ -561,6 +678,7 @@ describe('StaffService', () => {
 
       await service.listStaff('owner-uuid-1', {
         organization_id: 'org-uuid-1',
+        branch_id: 'branch-uuid-1',
         role_id: 'role-uuid-doctor',
         page: 1,
         limit: 20,
@@ -569,6 +687,7 @@ describe('StaffService', () => {
       expect(prismaMock.db.staff.count).toHaveBeenCalledWith({
         where: {
           organization_id: 'org-uuid-1',
+          branch_id: 'branch-uuid-1',
           is_deleted: false,
           is_clinical: true,
           NOT: {
@@ -584,6 +703,7 @@ describe('StaffService', () => {
 
       const result = await service.listStaff('owner-uuid-1', {
         organization_id: 'org-uuid-1',
+        branch_id: 'branch-uuid-1',
         role_id: 'role-uuid-missing',
         page: 2,
         limit: 10,
@@ -597,15 +717,40 @@ describe('StaffService', () => {
       expect(prismaMock.db.staff.findMany).not.toHaveBeenCalled();
     });
 
-    it('throws 403 when caller is not owner', async () => {
+    it('throws 403 when caller is not assigned to the requested branch', async () => {
       prismaMock.db.staff.findFirst.mockResolvedValue(null);
       await expect(
         service.listStaff('user-1', {
           organization_id: 'org-uuid-1',
+          branch_id: 'branch-uuid-1',
           page: 1,
           limit: 20,
         }),
       ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('ListStaffQueryDto', () => {
+    it('requires branch_id', async () => {
+      const dto = plainToInstance(ListStaffQueryDto, {
+        organization_id: '11111111-1111-4111-8111-111111111111',
+      });
+
+      const errors = await validate(dto);
+
+      expect(errors.map((error) => error.property)).toContain('branch_id');
+    });
+
+    it('accepts branch_id and optional search text', async () => {
+      const dto = plainToInstance(ListStaffQueryDto, {
+        organization_id: '11111111-1111-4111-8111-111111111111',
+        branch_id: '22222222-2222-4222-8222-222222222222',
+        q: 'cardio',
+      });
+
+      const errors = await validate(dto);
+
+      expect(errors).toHaveLength(0);
     });
   });
 
