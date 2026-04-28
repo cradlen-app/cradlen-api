@@ -36,6 +36,7 @@ import type { ResetTokenResponseDto } from './dto/reset-token-response.dto.js';
 const OTP_TTL_MINUTES = 15;
 const OTP_RESEND_COOLDOWN_SECONDS = 60;
 const OTP_MAX_ATTEMPTS = 5;
+const OTP_HASH_ROUNDS = 10;
 
 @Injectable()
 export class AuthService {
@@ -198,6 +199,9 @@ export class AuthService {
     });
     if (!user) throw new UnauthorizedException('User not found');
     if (!user.verified_at) throw new ForbiddenException('Email not verified');
+    if (user.registration_status !== 'PENDING') {
+      throw new ConflictException('Registration has already been completed');
+    }
 
     const [ownerRole, freePlan] = await Promise.all([
       this.prismaService.db.role.findFirst({ where: { name: 'owner' } }),
@@ -287,7 +291,11 @@ export class AuthService {
 
     if (user.registration_status === 'PENDING') {
       const pending_step = user.verified_at ? 'organization' : 'verify_email';
-      return { ...this.issueRegistrationToken(user.id), pending_step };
+      return {
+        type: 'pending',
+        ...this.issueRegistrationToken(user.id),
+        pending_step,
+      };
     }
 
     return this.issueTokenPair(user);
@@ -303,6 +311,9 @@ export class AuthService {
       });
     } catch {
       throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+    if (payload.type !== 'refresh') {
+      throw new UnauthorizedException('Invalid token type');
     }
 
     const stored = await this.prismaService.db.refreshToken.findUnique({
@@ -337,6 +348,7 @@ export class AuthService {
     } catch {
       return;
     }
+    if (payload.type !== 'refresh') return;
 
     await this.prismaService.db.refreshToken.updateMany({
       where: { jti: payload.jti, is_revoked: false },
@@ -352,7 +364,12 @@ export class AuthService {
     });
 
     if (!user) {
-      return this.issuePasswordResetToken(randomUUID(), dto.email, false);
+      return this.issuePasswordResetToken(
+        randomUUID(),
+        dto.email,
+        randomUUID(),
+        false,
+      );
     }
 
     const windowStart = new Date(Date.now() - 30 * 60 * 1000);
@@ -368,19 +385,34 @@ export class AuthService {
     ]);
 
     if (count >= OTP_MAX_ATTEMPTS) {
-      return this.issuePasswordResetToken(user.id, user.email, false);
+      return this.issuePasswordResetToken(
+        user.id,
+        user.email,
+        latest?.id ?? randomUUID(),
+        false,
+      );
     }
 
     if (latest) {
       const secondsAgo = (Date.now() - latest.created_at.getTime()) / 1000;
       if (secondsAgo < OTP_RESEND_COOLDOWN_SECONDS) {
-        return this.issuePasswordResetToken(user.id, user.email, false);
+        return this.issuePasswordResetToken(
+          user.id,
+          user.email,
+          latest.id,
+          false,
+        );
       }
     }
 
-    await this.sendPasswordResetOtp(user.id, user.email);
+    const resetRecord = await this.sendPasswordResetOtp(user.id, user.email);
 
-    return this.issuePasswordResetToken(user.id, user.email, false);
+    return this.issuePasswordResetToken(
+      user.id,
+      user.email,
+      resetRecord.id,
+      false,
+    );
   }
 
   // ── Verify reset code ──────────────────────────────────────────────────────
@@ -392,7 +424,7 @@ export class AuthService {
     try {
       payload = this.jwtService.verify<PasswordResetTokenPayload>(
         dto.reset_token,
-        { secret: this.authConfig.jwt.accessSecret },
+        { secret: this.authConfig.jwt.resetSecret },
       );
     } catch {
       throw new UnauthorizedException('Invalid or expired reset token');
@@ -404,6 +436,7 @@ export class AuthService {
 
     const record = await this.prismaService.db.passwordReset.findFirst({
       where: {
+        id: payload.jti,
         user_id: payload.sub,
         used_at: null,
         expires_at: { gt: new Date() },
@@ -423,7 +456,12 @@ export class AuthService {
       data: { used_at: new Date() },
     });
 
-    return this.issuePasswordResetToken(payload.sub, payload.email, true);
+    return this.issuePasswordResetToken(
+      payload.sub,
+      payload.email,
+      record.id,
+      true,
+    );
   }
 
   // ── Reset password ─────────────────────────────────────────────────────────
@@ -433,7 +471,7 @@ export class AuthService {
     try {
       payload = this.jwtService.verify<PasswordResetTokenPayload>(
         dto.reset_token,
-        { secret: this.authConfig.jwt.accessSecret },
+        { secret: this.authConfig.jwt.resetSecret },
       );
     } catch {
       throw new UnauthorizedException('Invalid or expired reset token');
@@ -450,16 +488,29 @@ export class AuthService {
 
     const password_hashed = await bcrypt.hash(dto.password, 12);
 
-    await this.prismaService.db.$transaction([
-      this.prismaService.db.user.update({
+    await this.prismaService.db.$transaction(async (tx) => {
+      const consumed = await tx.passwordReset.updateMany({
+        where: {
+          id: payload.jti,
+          user_id: user.id,
+          used_at: { not: null },
+          reset_at: null,
+        },
+        data: { reset_at: new Date() },
+      });
+      if (consumed.count !== 1) {
+        throw new UnauthorizedException('Reset token has already been used');
+      }
+
+      await tx.user.update({
         where: { id: user.id },
         data: { password_hashed },
-      }),
-      this.prismaService.db.refreshToken.updateMany({
+      });
+      await tx.refreshToken.updateMany({
         where: { user_id: user.id, is_revoked: false },
         data: { is_revoked: true, revoked_at: new Date() },
-      }),
-    ]);
+      });
+    });
 
     return this.issueTokenPair(user);
   }
@@ -510,7 +561,7 @@ export class AuthService {
 
   private async sendOtp(userId: string, email: string): Promise<void> {
     const code = randomInt(100000, 1000000).toString();
-    const code_hash = await bcrypt.hash(code, 6);
+    const code_hash = await bcrypt.hash(code, OTP_HASH_ROUNDS);
     const expires_at = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
 
     await this.prismaService.db.emailVerification.create({
@@ -523,16 +574,18 @@ export class AuthService {
   private issuePasswordResetToken(
     userId: string,
     email: string,
+    jti: string,
     verified: boolean,
   ): ResetTokenResponseDto {
     const payload: PasswordResetTokenPayload = {
       sub: userId,
       email,
+      jti,
       type: 'password_reset',
       verified,
     };
     const reset_token = this.jwtService.sign(payload, {
-      secret: this.authConfig.jwt.accessSecret,
+      secret: this.authConfig.jwt.resetSecret,
       expiresIn: this.parseDurationToSeconds(
         this.authConfig.jwt.registrationExpiration,
       ),
@@ -548,16 +601,19 @@ export class AuthService {
   private async sendPasswordResetOtp(
     userId: string,
     email: string,
-  ): Promise<void> {
+  ): Promise<{ id: string }> {
     const code = randomInt(100000, 1000000).toString();
-    const code_hash = await bcrypt.hash(code, 6);
+    const code_hash = await bcrypt.hash(code, OTP_HASH_ROUNDS);
     const expires_at = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
 
-    await this.prismaService.db.passwordReset.create({
+    const resetRecord = await this.prismaService.db.passwordReset.create({
       data: { user_id: userId, code_hash, expires_at },
+      select: { id: true },
     });
 
     await this.mailService.sendPasswordResetEmail(email, code);
+
+    return resetRecord;
   }
 
   private issueRegistrationToken(userId: string): RegistrationTokenResponseDto {
@@ -596,8 +652,16 @@ export class AuthService {
 
   private async issueTokenPair(user: User): Promise<AuthTokensDto> {
     const jti = randomUUID();
-    const accessPayload: JwtAccessPayload = { sub: user.id, email: user.email };
-    const refreshPayload: JwtRefreshPayload = { sub: user.id, jti };
+    const accessPayload: JwtAccessPayload = {
+      sub: user.id,
+      email: user.email,
+      type: 'access',
+    };
+    const refreshPayload: JwtRefreshPayload = {
+      sub: user.id,
+      jti,
+      type: 'refresh',
+    };
 
     const access_token = this.jwtService.sign(accessPayload, {
       secret: this.authConfig.jwt.accessSecret,
@@ -625,6 +689,7 @@ export class AuthService {
     });
 
     return {
+      type: 'tokens',
       access_token,
       refresh_token,
       token_type: 'Bearer',

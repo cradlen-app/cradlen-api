@@ -52,7 +52,10 @@ async function bootstrap() {
   });
 
   app.use((req: Request, _res: Response, next: NextFunction) => {
-    const locale = req.headers['accept-language']?.split(',')[0]?.split('-')[0];
+    const locale = req.headers['accept-language']
+      ?.split(',')[0]
+      ?.split('-')[0]
+      ?.trim();
     req.headers['x-locale'] =
       locale && appConfig.localisation.supportedLocales.includes(locale)
         ? locale
