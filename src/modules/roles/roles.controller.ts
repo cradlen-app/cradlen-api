@@ -18,7 +18,9 @@ export class RolesController {
   listRoles(
     @CurrentUser() user: User,
     @Query('organization_id', ParseUUIDPipe) organizationId: string,
+    @Query('branch_id', new ParseUUIDPipe({ optional: true }))
+    branchId?: string,
   ) {
-    return this.rolesService.listRoles(user.id, organizationId);
+    return this.rolesService.listRoles(user.id, organizationId, branchId);
   }
 }
