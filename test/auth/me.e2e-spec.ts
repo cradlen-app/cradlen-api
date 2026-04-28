@@ -19,9 +19,9 @@ async function doFullSetup(
     first_name: 'Me',
     last_name: 'User',
     email: USER_EMAIL,
+    phone_number: '+201012345678',
     password: USER_PASSWORD,
     confirm_password: USER_PASSWORD,
-    is_clinical: false,
   });
   const otp = mailMock.mock.calls[0][1] as string;
   const r2 = await request(server)
@@ -32,7 +32,9 @@ async function doFullSetup(
     organization_name: 'Me Clinic',
     branch_address: '1 St',
     branch_city: 'Cairo',
-    branch_governate: 'Cairo',
+    branch_governorate: 'Cairo',
+    branch_country: 'Egypt',
+    is_clinical: false,
   });
   const loginRes = await request(server)
     .post('/v1/auth/login')
@@ -98,9 +100,9 @@ describe('GET /v1/auth/me (E2E)', () => {
         first_name: 'Tmp',
         last_name: 'Tmp',
         email: 'tmp@example.com',
+        phone_number: '+201012345679',
         password: USER_PASSWORD,
         confirm_password: USER_PASSWORD,
-        is_clinical: false,
       });
     const regToken = r.body.data.registration_token as string;
 
