@@ -35,6 +35,9 @@ export class ProfileBranchDto {
   @ApiProperty()
   governorate!: string;
 
+  @ApiPropertyOptional({ nullable: true })
+  country!: string | null;
+
   @ApiProperty()
   is_main!: boolean;
 }
