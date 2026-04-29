@@ -49,6 +49,12 @@ export class StaffProfileDto {
   @ApiPropertyOptional({ nullable: true })
   job_title!: string | null;
 
+  @ApiPropertyOptional({ nullable: true })
+  specialty!: string | null;
+
+  @ApiProperty()
+  is_clinical!: boolean;
+
   @ApiProperty({ type: ProfileRoleDto })
   role!: ProfileRoleDto;
 
