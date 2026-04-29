@@ -567,6 +567,8 @@ export class AuthService {
       profiles: user.staff.map((s) => ({
         staff_id: s.id,
         job_title: s.job_title,
+        specialty: s.specialty,
+        is_clinical: s.is_clinical,
         role: { id: s.role.id, name: s.role.name },
         organization: {
           id: s.organization.id,
