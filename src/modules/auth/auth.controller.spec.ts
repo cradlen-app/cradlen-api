@@ -9,6 +9,8 @@ describe('AuthController', () => {
       | 'signupStart'
       | 'signupVerify'
       | 'signupComplete'
+      | 'resendOtp'
+      | 'getRegistrationStatus'
       | 'login'
       | 'requestPhoneOtp'
       | 'verifyPhoneOtp'
@@ -23,6 +25,8 @@ describe('AuthController', () => {
       signupStart: jest.fn(),
       signupVerify: jest.fn(),
       signupComplete: jest.fn(),
+      resendOtp: jest.fn(),
+      getRegistrationStatus: jest.fn(),
       login: jest.fn(),
       requestPhoneOtp: jest.fn(),
       verifyPhoneOtp: jest.fn(),
@@ -39,6 +43,7 @@ describe('AuthController', () => {
       last_name: 'Ali',
       email: 'sara@example.com',
       password: 'Password1!',
+      confirm_password: 'Password1!',
     };
     authService.signupStart.mockResolvedValue({
       signup_token: 'token',
@@ -56,22 +61,18 @@ describe('AuthController', () => {
     const dto = {
       signup_token: 'token',
       account_name: 'Clinic',
+      specialties: [],
       branch_name: 'Main',
-      branch_address: '123 St',
-      branch_city: 'Cairo',
-      branch_governorate: 'Cairo',
-      is_clinical: false,
+      roles: ['OWNER'],
     };
-    const tokens = {
-      type: 'tokens' as const,
-      access_token: 'access',
-      refresh_token: 'refresh',
-      token_type: 'Bearer' as const,
-      expires_in: 900,
+    const response = {
+      type: 'profile_selection' as const,
+      selection_token: 'selection-token',
+      profiles: [],
     };
-    authService.signupComplete.mockResolvedValue(tokens);
+    authService.signupComplete.mockResolvedValue(response);
 
-    await expect(controller.signupComplete(dto)).resolves.toEqual(tokens);
+    await expect(controller.signupComplete(dto)).resolves.toEqual(response);
     expect(authService.signupComplete).toHaveBeenCalledWith(dto);
   });
 
@@ -88,6 +89,34 @@ describe('AuthController', () => {
 
     await expect(controller.refresh(dto)).resolves.toEqual(tokens);
     expect(authService.refresh).toHaveBeenCalledWith(dto);
+  });
+
+  it('delegates signup resend', async () => {
+    const dto = { email: 'sara@example.com' };
+    authService.resendOtp.mockResolvedValue({ success: true });
+
+    await expect(controller.resendOtp(dto)).resolves.toEqual({
+      success: true,
+    });
+    expect(authService.resendOtp).toHaveBeenCalledWith(dto);
+  });
+
+  it('delegates registration status with query and authorization header', async () => {
+    authService.getRegistrationStatus.mockResolvedValue({
+      step: 'DONE',
+      email: 'sara@example.com',
+    });
+
+    await expect(
+      controller.getRegistrationStatus(
+        { email: 'sara@example.com' },
+        'Bearer token',
+      ),
+    ).resolves.toEqual({ step: 'DONE', email: 'sara@example.com' });
+    expect(authService.getRegistrationStatus).toHaveBeenCalledWith({
+      email: 'sara@example.com',
+      authorization: 'Bearer token',
+    });
   });
 
   it('revokes logout token', async () => {

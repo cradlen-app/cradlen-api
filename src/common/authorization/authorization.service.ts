@@ -68,6 +68,23 @@ export class AuthorizationService {
     return hasRole && !!hasBranch;
   }
 
+  async canAccessBranch(profileId: string, branchId: string): Promise<boolean> {
+    const match = await this.prismaService.db.profileBranch.findFirst({
+      where: {
+        profile_id: profileId,
+        branch_id: branchId,
+        profile: {
+          is_deleted: false,
+          is_active: true,
+          account: { status: 'ACTIVE', is_deleted: false },
+        },
+        branch: { status: 'ACTIVE', is_deleted: false },
+      },
+      select: { id: true },
+    });
+    return !!match;
+  }
+
   async canManageStaff(profileId: string, accountId: string): Promise<boolean> {
     return this.hasAnyRole(profileId, accountId, STAFF_MANAGER_ROLES);
   }
