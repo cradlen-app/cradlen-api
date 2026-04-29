@@ -5,6 +5,7 @@ import {
 import { OwnerService } from './owner.service';
 import { PrismaService } from '../../database/prisma.service';
 import { StaffService } from '../staff/staff.service';
+import { ConfigService } from '@nestjs/config';
 
 const OWNER_STAFF = {
   id: 'owner-staff-uuid',
@@ -58,6 +59,7 @@ describe('OwnerService', () => {
     };
   };
   let staffServiceMock: { assertOwner: jest.Mock };
+  let configServiceMock: { get: jest.Mock };
 
   beforeEach(() => {
     prismaMock = {
@@ -74,10 +76,14 @@ describe('OwnerService', () => {
       },
     };
     staffServiceMock = { assertOwner: jest.fn().mockResolvedValue(undefined) };
+    configServiceMock = {
+      get: jest.fn().mockReturnValue({ freeTrialDays: 14 }),
+    };
 
     service = new OwnerService(
       prismaMock as unknown as PrismaService,
       staffServiceMock as unknown as StaffService,
+      configServiceMock as unknown as ConfigService,
     );
   });
 
