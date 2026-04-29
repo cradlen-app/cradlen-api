@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsOptional, IsString } from 'class-validator';
+import { OrganizationStatus } from '@prisma/client';
+import { IsArray, IsEnum, IsOptional, IsString } from 'class-validator';
 
 export class UpdateOwnerOrganizationDto {
   @ApiPropertyOptional()
@@ -12,4 +13,9 @@ export class UpdateOwnerOrganizationDto {
   @IsArray()
   @IsString({ each: true })
   specialities?: string[];
+
+  @ApiPropertyOptional({ enum: OrganizationStatus })
+  @IsOptional()
+  @IsEnum(OrganizationStatus)
+  status?: OrganizationStatus;
 }

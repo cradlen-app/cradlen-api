@@ -7,5 +7,6 @@ import { StaffModule } from '../staff/staff.module.js';
   imports: [StaffModule],
   controllers: [OwnerController],
   providers: [OwnerService],
+  exports: [OwnerService],
 })
 export class OwnerModule {}

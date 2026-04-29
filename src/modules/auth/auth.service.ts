@@ -546,7 +546,11 @@ export class AuthService {
       where: { id: userId, is_deleted: false },
       include: {
         staff: {
-          where: { is_deleted: false },
+          where: {
+            is_deleted: false,
+            organization: { is_deleted: false, status: 'ACTIVE' },
+            branch: { is_deleted: false, status: 'ACTIVE' },
+          },
           include: { organization: true, branch: true, role: true },
         },
       },
@@ -575,6 +579,7 @@ export class AuthService {
           address: s.branch.address,
           city: s.branch.city,
           governorate: s.branch.governorate,
+          country: s.branch.country,
           is_main: s.branch.is_main,
         },
       })),
