@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsUUID } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class SelectProfileDto {
   @ApiProperty()
@@ -9,4 +9,9 @@ export class SelectProfileDto {
   @ApiProperty()
   @IsUUID()
   profile_id!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  branch_id?: string;
 }

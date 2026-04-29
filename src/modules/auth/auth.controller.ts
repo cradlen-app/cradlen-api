@@ -1,4 +1,13 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator.js';
 import {
@@ -10,6 +19,10 @@ import { AuthTokensDto } from './dto/auth-tokens.dto.js';
 import { LoginDto } from './dto/login.dto.js';
 import { LogoutDto } from './dto/logout.dto.js';
 import { RefreshDto } from './dto/refresh.dto.js';
+import { RegistrationStatusQueryDto } from './dto/registration-status-query.dto.js';
+import { RegistrationStatusResponseDto } from './dto/registration-status-response.dto.js';
+import { ResendOtpDto } from './dto/resend-otp.dto.js';
+import { ResendOtpResponseDto } from './dto/resend-otp-response.dto.js';
 import { RequestPhoneOtpDto, VerifyPhoneOtpDto } from './dto/phone-otp.dto.js';
 import { SelectProfileDto } from './dto/select-profile.dto.js';
 import { SignupCompleteDto } from './dto/signup-complete.dto.js';
@@ -41,11 +54,36 @@ export class AuthController {
   @Public()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: 'Create account, branch, profile, roles, and subscription',
+    summary:
+      'Create account, branch, profile, roles, subscription, and return selectable profiles',
   })
-  @ApiStandardResponse(AuthTokensDto)
+  @ApiStandardResponse(Object)
   signupComplete(@Body() dto: SignupCompleteDto) {
     return this.authService.signupComplete(dto);
+  }
+
+  @Post('signup/resend')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Resend signup verification code' })
+  @ApiStandardResponse(ResendOtpResponseDto)
+  resendOtp(@Body() dto: ResendOtpDto) {
+    return this.authService.resendOtp(dto);
+  }
+
+  @Get('registration/status')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get registration onboarding status' })
+  @ApiStandardResponse(RegistrationStatusResponseDto)
+  getRegistrationStatus(
+    @Query() query: RegistrationStatusQueryDto,
+    @Headers('authorization') authorization?: string,
+  ) {
+    return this.authService.getRegistrationStatus({
+      email: query.email,
+      authorization,
+    });
   }
 
   @Post('login')

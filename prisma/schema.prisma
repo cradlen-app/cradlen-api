@@ -50,6 +50,7 @@ enum VerificationChannel {
 
 enum VerificationPurpose {
   SIGNUP
+  LOGIN
   PHONE_LOGIN
   PASSWORD_RESET
 }
@@ -240,6 +241,7 @@ model VerificationCode {
   code_hash   String
   attempts    Int                 @default(0)
   max_attempts Int                @default(5)
+  is_resend   Boolean             @default(false)
   expires_at  DateTime
   consumed_at DateTime?
   created_at  DateTime            @default(now())
