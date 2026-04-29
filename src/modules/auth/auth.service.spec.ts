@@ -836,6 +836,40 @@ describe('AuthService', () => {
 
       expect(result.profiles).toEqual([]);
     });
+
+    it('includes specialty and is_clinical in each profile', async () => {
+      prismaMock.db.user.findFirstOrThrow.mockResolvedValue({
+        ...MOCK_USER,
+        staff: [
+          {
+            id: 'staff-uuid-2',
+            job_title: 'GP',
+            specialty: 'Cardiology',
+            is_clinical: true,
+            role: { id: 'role-uuid-2', name: 'doctor' },
+            organization: {
+              id: 'org-uuid-1',
+              name: 'Clinic A',
+              specialities: ['Cardiology'],
+              status: 'ACTIVE',
+            },
+            branch: {
+              id: 'branch-uuid-2',
+              address: '1 Main St',
+              city: 'Cairo',
+              governorate: 'Cairo',
+              country: 'EG',
+              is_main: true,
+            },
+          },
+        ],
+      });
+
+      const result = await service.getMe(MOCK_USER.id);
+
+      expect(result.profiles[0].specialty).toBe('Cardiology');
+      expect(result.profiles[0].is_clinical).toBe(true);
+    });
   });
 
   // ── private helpers ──────────────────────────────────────────────────────────
