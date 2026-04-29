@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import * as bcrypt from 'bcryptjs';
 import { AuthService } from './auth.service.js';
 import type { PrismaService } from '../../database/prisma.service.js';
 import type { MailService } from '../mail/mail.service.js';
@@ -106,9 +107,48 @@ describe('AuthService', () => {
     await expect(action).rejects.toMatchObject({ status: 429 });
   }
 
-  it('rejects signup start when email already exists', async () => {
+  it('resends signup OTP when signup start is retried for a pending user', async () => {
     const { service, mocks } = createService();
-    mocks.userFindFirst.mockResolvedValue({ id: 'existing-user' });
+    const existingUser = {
+      id: '11111111-1111-4111-8111-111111111111',
+      email: 'sara@example.com',
+      registration_status: 'PENDING',
+    };
+    mocks.userFindFirst
+      .mockResolvedValueOnce(existingUser)
+      .mockResolvedValueOnce(existingUser);
+    mocks.verificationFindFirst.mockResolvedValue(null);
+    mocks.verificationCount.mockResolvedValue(0);
+    mocks.verificationUpdateMany.mockResolvedValue({ count: 1 });
+    mocks.verificationCreate.mockResolvedValue({});
+
+    const result = await service.signupStart({
+      first_name: 'Sara',
+      last_name: 'Ali',
+      email: 'sara@example.com',
+      password: 'Password1!',
+      confirm_password: 'Password1!',
+    });
+
+    expect(result.signup_token).toEqual(expect.any(String));
+    expect(mocks.userCreate).not.toHaveBeenCalled();
+    expect(mocks.verificationCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          purpose: 'SIGNUP',
+          is_resend: true,
+        }),
+      }),
+    );
+    expect(mocks.sendVerificationEmail).toHaveBeenCalled();
+  });
+
+  it('rejects signup start when active email already exists', async () => {
+    const { service, mocks } = createService();
+    mocks.userFindFirst.mockResolvedValue({
+      id: 'existing-user',
+      registration_status: 'ACTIVE',
+    });
 
     await expect(
       service.signupStart({
@@ -121,9 +161,12 @@ describe('AuthService', () => {
     ).rejects.toThrow(ConflictException);
   });
 
-  it('rejects signup start when phone already exists', async () => {
+  it('rejects signup start when active phone already exists', async () => {
     const { service, mocks } = createService();
-    mocks.userFindFirst.mockResolvedValue({ id: 'existing-user' });
+    mocks.userFindFirst.mockResolvedValue({
+      id: 'existing-user',
+      registration_status: 'ACTIVE',
+    });
 
     await expect(
       service.signupStart({
@@ -349,6 +392,100 @@ describe('AuthService', () => {
         authorization: `Bearer ${token}`,
       }),
     ).resolves.toEqual({ step: 'DONE', email: 'sara@example.com' });
+  });
+
+  it('returns verify OTP onboarding requirement when pending user logs in', async () => {
+    const { service, mocks } = createService();
+    mocks.userFindFirst.mockResolvedValue({
+      id: '11111111-1111-4111-8111-111111111111',
+      email: 'sara@example.com',
+      password_hashed: await bcrypt.hash('Password1!', 12),
+      is_active: true,
+      registration_status: 'PENDING',
+      onboarding_completed: false,
+    });
+
+    await expect(
+      service.login({ email: 'sara@example.com', password: 'Password1!' }),
+    ).resolves.toEqual({
+      type: 'ONBOARDING_REQUIRED',
+      step: 'VERIFY_OTP',
+    });
+    expect(mocks.profileFindMany).not.toHaveBeenCalled();
+  });
+
+  it('returns complete onboarding requirement for active users without onboarding', async () => {
+    const { service, mocks } = createService();
+    mocks.userFindFirst.mockResolvedValue({
+      id: '11111111-1111-4111-8111-111111111111',
+      email: 'sara@example.com',
+      password_hashed: await bcrypt.hash('Password1!', 12),
+      is_active: true,
+      registration_status: 'ACTIVE',
+      onboarding_completed: false,
+    });
+
+    await expect(
+      service.login({ email: 'sara@example.com', password: 'Password1!' }),
+    ).resolves.toEqual({
+      type: 'ONBOARDING_REQUIRED',
+      step: 'COMPLETE_ONBOARDING',
+    });
+    expect(mocks.profileFindMany).not.toHaveBeenCalled();
+  });
+
+  it('returns profile selection for active users with completed onboarding', async () => {
+    const { service, mocks } = createService();
+    mocks.userFindFirst.mockResolvedValue({
+      id: '11111111-1111-4111-8111-111111111111',
+      email: 'sara@example.com',
+      password_hashed: await bcrypt.hash('Password1!', 12),
+      is_active: true,
+      registration_status: 'ACTIVE',
+      onboarding_completed: true,
+    });
+    mocks.profileFindMany.mockResolvedValue([
+      {
+        id: '22222222-2222-4222-8222-222222222222',
+        account: {
+          id: '33333333-3333-4333-8333-333333333333',
+          name: 'Clinic',
+        },
+        roles: [{ role: { name: 'OWNER' } }],
+        branches: [
+          {
+            branch_id: '44444444-4444-4444-8444-444444444444',
+            branch: {
+              id: '44444444-4444-4444-8444-444444444444',
+              name: 'Main',
+              is_main: true,
+            },
+          },
+        ],
+      },
+    ]);
+
+    await expect(
+      service.login({ email: 'sara@example.com', password: 'Password1!' }),
+    ).resolves.toEqual({
+      type: 'profile_selection',
+      selection_token: expect.any(String),
+      profiles: [
+        {
+          profile_id: '22222222-2222-4222-8222-222222222222',
+          account_id: '33333333-3333-4333-8333-333333333333',
+          account_name: 'Clinic',
+          roles: ['OWNER'],
+          branches: [
+            {
+              branch_id: '44444444-4444-4444-8444-444444444444',
+              name: 'Main',
+              is_main: true,
+            },
+          ],
+        },
+      ],
+    });
   });
 
   it('requires branch id when selected profile has multiple branches', async () => {
