@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 export class AuthTokensDto {
-  @ApiProperty({ enum: ['tokens'] })
+  @ApiProperty({ example: 'tokens' })
   type!: 'tokens';
 
   @ApiProperty()
@@ -11,8 +11,8 @@ export class AuthTokensDto {
   refresh_token!: string;
 
   @ApiProperty({ example: 'Bearer' })
-  token_type!: string;
+  token_type!: 'Bearer';
 
-  @ApiProperty({ example: 900, description: 'Access token TTL in seconds' })
+  @ApiProperty()
   expires_in!: number;
 }

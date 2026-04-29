@@ -5,12 +5,14 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../../../database/prisma.service.js';
 import type { AuthConfig } from '../../../config/auth.config.js';
 import type { JwtAccessPayload } from '../interfaces/jwt-payload.interface.js';
+import { AuthorizationService } from '../../../common/authorization/authorization.service.js';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   constructor(
     configService: ConfigService,
     private readonly prismaService: PrismaService,
+    private readonly authorizationService: AuthorizationService,
   ) {
     const authConfig = configService.get<AuthConfig>('auth');
     if (!authConfig) throw new Error('Auth configuration not loaded');
@@ -28,11 +30,15 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     }
 
     const user = await this.prismaService.db.user.findFirst({
-      where: { id: payload.sub, is_deleted: false, is_active: true },
+      where: { id: payload.userId, is_deleted: false, is_active: true },
     });
 
     if (!user) throw new UnauthorizedException('User not found or inactive');
 
-    return user;
+    return this.authorizationService.getProfileContext(
+      payload.userId,
+      payload.profileId,
+      payload.accountId,
+    );
   }
 }

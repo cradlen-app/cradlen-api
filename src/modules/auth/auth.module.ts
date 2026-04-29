@@ -7,12 +7,14 @@ import { AuthService } from './auth.service.js';
 import { JwtStrategy } from './strategies/jwt.strategy.js';
 import { MailModule } from '../mail/mail.module.js';
 import { RegistrationCleanupService } from './registration-cleanup.service.js';
+import { AuthorizationModule } from '../../common/authorization/authorization.module.js';
 
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.register({}),
     MailModule,
+    AuthorizationModule,
     ScheduleModule.forRoot(),
   ],
   controllers: [AuthController],

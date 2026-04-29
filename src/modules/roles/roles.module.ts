@@ -1,10 +1,11 @@
 import { Module } from '@nestjs/common';
-import { RolesController } from './roles.controller';
-import { RolesService } from './roles.service';
-import { StaffModule } from '../staff/staff.module.js';
+import { AuthorizationModule } from '../../common/authorization/authorization.module.js';
+import { DatabaseModule } from '../../database/database.module.js';
+import { RolesController } from './roles.controller.js';
+import { RolesService } from './roles.service.js';
 
 @Module({
-  imports: [StaffModule],
+  imports: [DatabaseModule, AuthorizationModule],
   controllers: [RolesController],
   providers: [RolesService],
 })

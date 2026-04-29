@@ -22,6 +22,7 @@ export async function createTestApp(
       sendVerificationEmail: mailMock,
       sendPasswordResetEmail: mailMock,
       sendStaffInvitationEmail: mailMock,
+      sendPhoneOtp: mailMock,
     })
     .compile();
 
