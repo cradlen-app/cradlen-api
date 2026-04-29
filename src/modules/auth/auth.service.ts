@@ -70,6 +70,11 @@ export interface ProfileSelectionResponse {
   profiles: SelectableProfile[];
 }
 
+export interface OnboardingRequiredResponse {
+  type: 'ONBOARDING_REQUIRED';
+  step: 'VERIFY_OTP' | 'COMPLETE_ONBOARDING';
+}
+
 @Injectable()
 export class AuthService {
   private readonly authConfig: AuthConfig;
@@ -95,7 +100,13 @@ export class AuthService {
         is_deleted: false,
       },
     });
-    if (existing) throw new ConflictException('User already exists');
+    if (existing) {
+      if (existing.registration_status === 'PENDING' && existing.email) {
+        await this.resendOtp({ email: existing.email });
+        return this.issueSignupToken(existing.id, 'signup');
+      }
+      throw new ConflictException('User already exists');
+    }
 
     const password_hashed = await bcrypt.hash(dto.password, 12);
     const user = await this.prismaService.db.user.create({
@@ -462,15 +473,23 @@ export class AuthService {
     }
   }
 
-  private async buildLoginResponse(user: User) {
+  private async buildLoginResponse(
+    user: User,
+  ): Promise<ProfileSelectionResponse | OnboardingRequiredResponse> {
     if (!user.is_active) throw new UnauthorizedException('User is inactive');
+    if (user.registration_status === 'PENDING') {
+      return {
+        type: 'ONBOARDING_REQUIRED',
+        step: 'VERIFY_OTP',
+      };
+    }
     if (user.registration_status !== 'ACTIVE') {
       throw new ForbiddenException('User registration is not active');
     }
     if (!user.onboarding_completed) {
       return {
-        type: 'onboarding_required',
-        ...this.issueSignupToken(user.id, 'signup'),
+        type: 'ONBOARDING_REQUIRED',
+        step: 'COMPLETE_ONBOARDING',
       };
     }
 
