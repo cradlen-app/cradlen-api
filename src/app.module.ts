@@ -8,10 +8,13 @@ import authConfig from './config/auth.config';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
-import { StaffModule } from './modules/staff/staff.module.js';
 import { RolesModule } from './modules/roles/roles.module';
-import { OwnerModule } from './modules/owner/owner.module.js';
-import { AccountModule } from './modules/account/account.module.js';
+import { AccountsModule } from './modules/accounts/accounts.module.js';
+import { BranchesModule } from './modules/branches/branches.module.js';
+import { ProfilesModule } from './modules/profiles/profiles.module.js';
+import { InvitationsModule } from './modules/invitations/invitations.module.js';
+import { JoinCodesModule } from './modules/join-codes/join-codes.module.js';
+import { UsersModule } from './modules/users/users.module.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import type { AppConfig } from './config/app.config';
 
@@ -34,10 +37,13 @@ import type { AppConfig } from './config/app.config';
     DatabaseModule,
     HealthModule,
     AuthModule,
-    StaffModule,
     RolesModule,
-    OwnerModule,
-    AccountModule,
+    UsersModule,
+    AccountsModule,
+    ProfilesModule,
+    BranchesModule,
+    InvitationsModule,
+    JoinCodesModule,
   ],
   controllers: [],
   providers: [

@@ -11,7 +11,7 @@ enum RegistrationStatus {
   ACTIVE
 }
 
-enum OrganizationStatus {
+enum AccountStatus {
   ACTIVE
   INACTIVE
   SUSPENDED
@@ -36,142 +36,168 @@ enum InvitationStatus {
   CANCELLED
 }
 
-enum DayOfWeek {
-  MON
-  TUE
-  WED
-  THU
-  FRI
-  SAT
-  SUN
+enum JoinCodeStatus {
+  ACTIVE
+  USED
+  EXPIRED
+  REVOKED
+}
+
+enum VerificationChannel {
+  EMAIL
+  PHONE
+}
+
+enum VerificationPurpose {
+  SIGNUP
+  PHONE_LOGIN
+  PASSWORD_RESET
 }
 
 model SubscriptionPlan {
   id            String         @id @default(uuid()) @db.Uuid
-  plan          String
+  plan          String         @unique
   max_branches  Int
   max_staff     Int
   created_at    DateTime       @default(now())
   updated_at    DateTime       @updatedAt
   subscriptions Subscription[]
 
-  @@unique([plan])
   @@map("subscription_plans")
 }
 
-model Organization {
+model Account {
   id            String             @id @default(uuid()) @db.Uuid
   name          String
-  specialities  String[]
-  status        OrganizationStatus
+  specialities  String[]           @default([])
+  status        AccountStatus      @default(ACTIVE)
   is_deleted    Boolean            @default(false)
   deleted_at    DateTime?
   created_at    DateTime           @default(now())
   updated_at    DateTime           @updatedAt
   branches      Branch[]
-  staff         Staff[]
+  profiles      Profile[]
+  invitations   Invitation[]
+  joinCodes     JoinCode[]
   subscriptions Subscription[]
-  invitations   StaffInvitation[]
 
-  @@map("organizations")
+  @@index([status, is_deleted])
+  @@map("accounts")
 }
 
 model Branch {
-  id                 String                  @id @default(uuid()) @db.Uuid
+  id                 String             @id @default(uuid()) @db.Uuid
+  name               String
   address            String
   city               String
   governorate        String
   country            String?
-  is_main            Boolean                 @default(false)
-  status             BranchStatus
-  is_deleted         Boolean                 @default(false)
+  is_main            Boolean            @default(false)
+  status             BranchStatus       @default(ACTIVE)
+  is_deleted         Boolean            @default(false)
   deleted_at         DateTime?
-  created_at         DateTime                @default(now())
-  updated_at         DateTime                @updatedAt
-  organization_id    String                  @db.Uuid
-  organization       Organization            @relation(fields: [organization_id], references: [id])
-  staff              Staff[]
-  invitationBranches StaffInvitationBranch[]
+  created_at         DateTime           @default(now())
+  updated_at         DateTime           @updatedAt
+  account_id         String             @db.Uuid
+  account            Account            @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  profileBranches    ProfileBranch[]
+  invitationBranches InvitationBranch[]
+  joinCodeBranches   JoinCodeBranch[]
 
-  @@unique([id, organization_id])
+  @@unique([id, account_id])
+  @@index([account_id, is_deleted])
   @@map("branches")
 }
 
 model User {
-  id                  String              @id @default(uuid()) @db.Uuid
-  first_name          String
-  last_name           String
-  email               String              @unique
-  phone_number        String?
-  password_hashed     String
-  is_active           Boolean             @default(true)
-  is_deleted          Boolean             @default(false)
-  deleted_at          DateTime?
-  verified_at         DateTime?
-  registration_status RegistrationStatus  @default(PENDING)
-  created_at          DateTime            @default(now())
-  updated_at          DateTime            @updatedAt
-  profile             Profile?
-  staff               Staff[]
-  refreshTokens       RefreshToken[]
-  emailVerifications  EmailVerification[]
-  passwordResets      PasswordReset[]
-  sentInvitations     StaffInvitation[]   @relation("InvitedBy")
+  id                   String              @id @default(uuid()) @db.Uuid
+  first_name           String
+  last_name            String
+  email                String?             @unique
+  phone_number         String?             @unique
+  password_hashed      String?
+  is_active            Boolean             @default(true)
+  is_deleted           Boolean             @default(false)
+  deleted_at           DateTime?
+  verified_at          DateTime?
+  registration_status  RegistrationStatus  @default(PENDING)
+  onboarding_completed Boolean             @default(false)
+  created_at           DateTime            @default(now())
+  updated_at           DateTime            @updatedAt
+  profiles             Profile[]
+  refreshTokens        RefreshToken[]
+  verificationCodes    VerificationCode[]
+  sentInvitations      Invitation[]         @relation("InvitedBy")
 
+  @@index([registration_status, onboarding_completed])
   @@map("users")
 }
 
 model Role {
-  id               String            @id @default(uuid()) @db.Uuid
-  name             String            @unique
-  created_at       DateTime          @default(now())
-  updated_at       DateTime          @updatedAt
-  staff            Staff[]
-  staffInvitations StaffInvitation[]
+  id              String           @id @default(uuid()) @db.Uuid
+  name            String           @unique
+  created_at      DateTime         @default(now())
+  updated_at      DateTime         @updatedAt
+  profileRoles    ProfileRole[]
+  invitationRoles InvitationRole[]
+  joinCodeRoles   JoinCodeRole[]
 
   @@map("roles")
 }
 
 model Profile {
-  id          String    @id @default(uuid()) @db.Uuid
-  created_at  DateTime  @default(now())
-  updated_at  DateTime  @updatedAt
-  is_deleted  Boolean   @default(false)
-  deleted_at  DateTime?
-  user_id     String    @unique @db.Uuid
-  user        User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  id              String          @id @default(uuid()) @db.Uuid
+  user_id         String          @db.Uuid
+  account_id      String          @db.Uuid
+  job_title       String?
+  specialty       String?
+  is_clinical     Boolean         @default(false)
+  is_active       Boolean         @default(true)
+  is_deleted      Boolean         @default(false)
+  deleted_at      DateTime?
+  created_at      DateTime        @default(now())
+  updated_at      DateTime        @updatedAt
+  user            User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  account         Account         @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  roles           ProfileRole[]
+  branches        ProfileBranch[]
 
+  @@unique([user_id, account_id])
+  @@index([account_id, is_deleted])
+  @@index([user_id, is_deleted])
   @@map("profiles")
 }
 
-model Staff {
-  id              String           @id @default(uuid()) @db.Uuid
-  user_id         String           @db.Uuid
-  organization_id String           @db.Uuid
-  branch_id       String           @db.Uuid
-  role_id         String           @db.Uuid
-  job_title       String?
-  specialty       String?
-  is_clinical     Boolean          @default(false)
-  created_at      DateTime         @default(now())
-  updated_at      DateTime         @updatedAt
-  is_deleted      Boolean          @default(false)
-  deleted_at      DateTime?
-  user            User             @relation(fields: [user_id], references: [id])
-  organization    Organization     @relation(fields: [organization_id], references: [id])
-  branch          Branch           @relation(fields: [branch_id, organization_id], references: [id, organization_id])
-  role            Role             @relation(fields: [role_id], references: [id])
-  schedule        WorkingSchedule?
+model ProfileRole {
+  id         String   @id @default(uuid()) @db.Uuid
+  profile_id String   @db.Uuid
+  role_id    String   @db.Uuid
+  created_at DateTime @default(now())
+  profile    Profile  @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+  role       Role     @relation(fields: [role_id], references: [id], onDelete: Cascade)
 
-  @@index([organization_id, is_deleted])
-  @@index([user_id, organization_id])
-  @@unique([user_id, organization_id, branch_id, role_id])
-  @@map("staff")
+  @@unique([profile_id, role_id])
+  @@index([role_id])
+  @@map("profile_roles")
+}
+
+model ProfileBranch {
+  id         String   @id @default(uuid()) @db.Uuid
+  profile_id String   @db.Uuid
+  branch_id  String   @db.Uuid
+  account_id String   @db.Uuid
+  created_at DateTime @default(now())
+  profile    Profile  @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+  branch     Branch   @relation(fields: [branch_id, account_id], references: [id, account_id], onDelete: Cascade)
+
+  @@unique([profile_id, branch_id])
+  @@index([account_id, branch_id])
+  @@map("profile_branches")
 }
 
 model Subscription {
   id                   String             @id @default(uuid()) @db.Uuid
-  organization_id      String             @db.Uuid
+  account_id           String             @db.Uuid
   subscription_plan_id String             @db.Uuid
   status               SubscriptionStatus @default(TRIAL)
   starts_at            DateTime           @default(now())
@@ -181,10 +207,10 @@ model Subscription {
   updated_at           DateTime           @updatedAt
   is_deleted           Boolean            @default(false)
   deleted_at           DateTime?
-  organization         Organization       @relation(fields: [organization_id], references: [id])
+  account              Account            @relation(fields: [account_id], references: [id], onDelete: Cascade)
   subscription_plan    SubscriptionPlan   @relation(fields: [subscription_plan_id], references: [id])
 
-  @@index([organization_id, is_deleted])
+  @@index([account_id, is_deleted])
   @@map("subscriptions")
 }
 
@@ -193,123 +219,142 @@ model RefreshToken {
   jti        String    @unique @db.Uuid
   token_hash String
   user_id    String    @db.Uuid
+  profile_id String?   @db.Uuid
+  account_id String?   @db.Uuid
   expires_at DateTime
   is_revoked Boolean   @default(false)
   revoked_at DateTime?
   created_at DateTime  @default(now())
   user       User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
+  @@index([user_id, is_revoked])
   @@map("refresh_tokens")
 }
 
-model EmailVerification {
-  id         String    @id @default(uuid()) @db.Uuid
-  user_id    String    @db.Uuid
-  code_hash  String
-  expires_at DateTime
-  used_at    DateTime?
-  created_at DateTime  @default(now())
-  user       User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+model VerificationCode {
+  id          String              @id @default(uuid()) @db.Uuid
+  user_id     String?             @db.Uuid
+  channel     VerificationChannel
+  purpose     VerificationPurpose
+  target      String
+  code_hash   String
+  attempts    Int                 @default(0)
+  max_attempts Int                @default(5)
+  expires_at  DateTime
+  consumed_at DateTime?
+  created_at  DateTime            @default(now())
+  user        User?               @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
-  @@map("email_verifications")
+  @@index([target, purpose, consumed_at])
+  @@index([user_id, purpose])
+  @@map("verification_codes")
 }
 
-model PasswordReset {
-  id         String    @id @default(uuid()) @db.Uuid
-  user_id    String    @db.Uuid
-  code_hash  String
-  expires_at DateTime
-  used_at    DateTime?
-  reset_at   DateTime?
-  created_at DateTime  @default(now())
-  user       User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+model Invitation {
+  id            String           @id @default(uuid()) @db.Uuid
+  account_id    String           @db.Uuid
+  invited_by_id String           @db.Uuid
+  email         String
+  first_name    String
+  last_name     String
+  phone_number  String?
+  job_title     String?
+  specialty     String?
+  is_clinical   Boolean          @default(false)
+  token_hash    String
+  status        InvitationStatus @default(PENDING)
+  expires_at    DateTime
+  accepted_at   DateTime?
+  is_deleted    Boolean          @default(false)
+  deleted_at    DateTime?
+  created_at    DateTime         @default(now())
+  updated_at    DateTime         @updatedAt
+  account       Account          @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  invited_by    User             @relation("InvitedBy", fields: [invited_by_id], references: [id])
+  roles         InvitationRole[]
+  branches      InvitationBranch[]
 
-  @@map("password_resets")
-}
-
-model StaffInvitation {
-  id              String           @id @default(uuid()) @db.Uuid
-  organization_id String           @db.Uuid
-  invited_by_id   String           @db.Uuid
-  role_id         String           @db.Uuid
-  email           String
-  first_name      String
-  last_name       String
-  phone           String?
-  job_title       String
-  specialty       String?
-  token_hash      String
-  status          InvitationStatus @default(PENDING)
-  expires_at      DateTime
-  accepted_at     DateTime?
-  is_deleted      Boolean          @default(false)
-  deleted_at      DateTime?
-  created_at      DateTime         @default(now())
-  updated_at      DateTime         @updatedAt
-
-  organization Organization            @relation(fields: [organization_id], references: [id])
-  invited_by   User                    @relation("InvitedBy", fields: [invited_by_id], references: [id])
-  role         Role                    @relation(fields: [role_id], references: [id])
-  branches     StaffInvitationBranch[]
-
-  @@index([organization_id, status])
+  @@index([account_id, status])
   @@index([email])
   @@index([expires_at])
-  @@map("staff_invitations")
+  @@map("invitations")
 }
 
-model StaffInvitationBranch {
-  id              String   @id @default(uuid()) @db.Uuid
-  invitation_id   String   @db.Uuid
-  branch_id       String   @db.Uuid
-  organization_id String   @db.Uuid
-  created_at      DateTime @default(now())
+model InvitationRole {
+  id            String     @id @default(uuid()) @db.Uuid
+  invitation_id String     @db.Uuid
+  role_id       String     @db.Uuid
+  created_at    DateTime   @default(now())
+  invitation    Invitation @relation(fields: [invitation_id], references: [id], onDelete: Cascade)
+  role          Role       @relation(fields: [role_id], references: [id], onDelete: Cascade)
 
-  invitation StaffInvitation  @relation(fields: [invitation_id], references: [id], onDelete: Cascade)
-  branch     Branch           @relation(fields: [branch_id, organization_id], references: [id, organization_id])
-  schedule   WorkingSchedule?
-
-  @@index([invitation_id])
-  @@map("staff_invitation_branches")
+  @@unique([invitation_id, role_id])
+  @@map("invitation_roles")
 }
 
-model WorkingSchedule {
-  id                         String   @id @default(uuid()) @db.Uuid
-  staff_invitation_branch_id String?  @unique @db.Uuid
-  staff_id                   String?  @unique @db.Uuid
-  created_at                 DateTime @default(now())
-  updated_at                 DateTime @updatedAt
+model InvitationBranch {
+  id            String     @id @default(uuid()) @db.Uuid
+  invitation_id String     @db.Uuid
+  branch_id     String     @db.Uuid
+  account_id    String     @db.Uuid
+  created_at    DateTime   @default(now())
+  invitation    Invitation @relation(fields: [invitation_id], references: [id], onDelete: Cascade)
+  branch        Branch     @relation(fields: [branch_id, account_id], references: [id, account_id], onDelete: Cascade)
 
-  invitation_branch StaffInvitationBranch? @relation(fields: [staff_invitation_branch_id], references: [id])
-  staff             Staff?                 @relation(fields: [staff_id], references: [id])
-  days              WorkingDay[]
-
-  @@map("working_schedules")
+  @@unique([invitation_id, branch_id])
+  @@index([account_id, branch_id])
+  @@map("invitation_branches")
 }
 
-model WorkingDay {
-  id          String    @id @default(uuid()) @db.Uuid
-  schedule_id String    @db.Uuid
-  day_of_week DayOfWeek
-  created_at  DateTime  @default(now())
+model JoinCode {
+  id            String           @id @default(uuid()) @db.Uuid
+  account_id    String           @db.Uuid
+  created_by_id String           @db.Uuid
+  code_lookup   String           @unique
+  code_hash     String
+  first_name    String?
+  last_name     String?
+  job_title     String?
+  specialty     String?
+  is_clinical   Boolean          @default(false)
+  status        JoinCodeStatus   @default(ACTIVE)
+  max_uses      Int              @default(1)
+  used_count    Int              @default(0)
+  expires_at    DateTime
+  revoked_at    DateTime?
+  created_at    DateTime         @default(now())
+  updated_at    DateTime         @updatedAt
+  account       Account          @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  roles         JoinCodeRole[]
+  branches      JoinCodeBranch[]
 
-  schedule WorkingSchedule @relation(fields: [schedule_id], references: [id], onDelete: Cascade)
-  shifts   WorkingShift[]
-
-  @@index([schedule_id])
-  @@unique([schedule_id, day_of_week])
-  @@map("working_days")
+  @@index([account_id, status])
+  @@index([expires_at])
+  @@map("join_codes")
 }
 
-model WorkingShift {
-  id         String   @id @default(uuid()) @db.Uuid
-  day_id     String   @db.Uuid
-  start_time String
-  end_time   String
-  created_at DateTime @default(now())
+model JoinCodeRole {
+  id           String   @id @default(uuid()) @db.Uuid
+  join_code_id String   @db.Uuid
+  role_id      String   @db.Uuid
+  created_at   DateTime @default(now())
+  joinCode     JoinCode @relation(fields: [join_code_id], references: [id], onDelete: Cascade)
+  role         Role     @relation(fields: [role_id], references: [id], onDelete: Cascade)
 
-  day WorkingDay @relation(fields: [day_id], references: [id], onDelete: Cascade)
+  @@unique([join_code_id, role_id])
+  @@map("join_code_roles")
+}
 
-  @@index([day_id])
-  @@map("working_shifts")
+model JoinCodeBranch {
+  id           String   @id @default(uuid()) @db.Uuid
+  join_code_id String   @db.Uuid
+  branch_id    String   @db.Uuid
+  account_id   String   @db.Uuid
+  created_at   DateTime @default(now())
+  joinCode     JoinCode @relation(fields: [join_code_id], references: [id], onDelete: Cascade)
+  branch       Branch   @relation(fields: [branch_id, account_id], references: [id, account_id], onDelete: Cascade)
+
+  @@unique([join_code_id, branch_id])
+  @@index([account_id, branch_id])
+  @@map("join_code_branches")
 }

@@ -1,60 +1,30 @@
-import { Test } from '@nestjs/testing';
-import { RolesService } from './roles.service';
-import { PrismaService } from '../../database/prisma.service';
-import { StaffService } from '../staff/staff.service.js';
+import { RolesService } from './roles.service.js';
+import type { AuthorizationService } from '../../common/authorization/authorization.service.js';
+import type { PrismaService } from '../../database/prisma.service.js';
 
 describe('RolesService', () => {
-  let service: RolesService;
-  let prismaMock: { db: { role: { findMany: jest.Mock } } };
-  let staffServiceMock: { assertOwner: jest.Mock };
-
-  beforeEach(async () => {
-    prismaMock = {
+  it('asserts staff-management access before listing roles', async () => {
+    const assertCanManageStaff = jest.fn().mockResolvedValue(undefined);
+    const prismaService = {
       db: {
         role: {
-          findMany: jest.fn().mockResolvedValue([
-            { id: 'role-uuid-owner', name: 'owner' },
-            { id: 'role-uuid-doctor', name: 'doctor' },
-          ]),
+          findMany: jest
+            .fn()
+            .mockResolvedValue([{ id: 'role-id', name: 'OWNER' }]),
         },
       },
-    };
-    staffServiceMock = {
-      assertOwner: jest.fn().mockResolvedValue(undefined),
-    };
+    } as unknown as PrismaService;
+    const authorizationService = {
+      assertCanManageStaff,
+    } as unknown as AuthorizationService;
+    const service = new RolesService(prismaService, authorizationService);
 
-    const module = await Test.createTestingModule({
-      providers: [
-        RolesService,
-        { provide: PrismaService, useValue: prismaMock },
-        { provide: StaffService, useValue: staffServiceMock },
-      ],
-    }).compile();
-
-    service = module.get(RolesService);
-  });
-
-  it('validates branch access when branch_id is provided', async () => {
-    await service.listRoles('owner-uuid-1', 'org-uuid-1', 'branch-uuid-1');
-
-    expect(staffServiceMock.assertOwner).toHaveBeenCalledWith(
-      'owner-uuid-1',
-      'org-uuid-1',
-      'branch-uuid-1',
-    );
-    expect(prismaMock.db.role.findMany).toHaveBeenCalledWith({
-      select: { id: true, name: true },
-      orderBy: { name: 'asc' },
-    });
-  });
-
-  it('keeps organization-scoped role listing when branch_id is omitted', async () => {
-    await service.listRoles('owner-uuid-1', 'org-uuid-1');
-
-    expect(staffServiceMock.assertOwner).toHaveBeenCalledWith(
-      'owner-uuid-1',
-      'org-uuid-1',
-      undefined,
+    await expect(
+      service.listRoles('profile-id', 'account-id'),
+    ).resolves.toEqual([{ id: 'role-id', name: 'OWNER' }]);
+    expect(assertCanManageStaff).toHaveBeenCalledWith(
+      'profile-id',
+      'account-id',
     );
   });
 });

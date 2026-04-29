@@ -1,25 +1,16 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../../database/prisma.service';
-import { StaffService } from '../staff/staff.service.js';
+import { AuthorizationService } from '../../common/authorization/authorization.service.js';
+import { PrismaService } from '../../database/prisma.service.js';
 
 @Injectable()
 export class RolesService {
   constructor(
     private readonly prismaService: PrismaService,
-    private readonly staffService: StaffService,
+    private readonly authorizationService: AuthorizationService,
   ) {}
 
-  async listRoles(
-    currentUserId: string,
-    organizationId: string,
-    branchId?: string,
-  ) {
-    await this.staffService.assertOwner(
-      currentUserId,
-      organizationId,
-      branchId,
-    );
-
+  async listRoles(profileId: string, accountId: string) {
+    await this.authorizationService.assertCanManageStaff(profileId, accountId);
     return this.prismaService.db.role.findMany({
       select: { id: true, name: true },
       orderBy: { name: 'asc' },
