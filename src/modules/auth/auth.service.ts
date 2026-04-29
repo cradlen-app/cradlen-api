@@ -3,6 +3,8 @@ import {
   ConflictException,
   ForbiddenException,
   GoneException,
+  HttpException,
+  HttpStatus,
   Injectable,
   InternalServerErrorException,
   UnauthorizedException,
@@ -11,13 +13,15 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { randomInt, randomUUID } from 'crypto';
-import type { User } from '@prisma/client';
+import type { User, VerificationPurpose } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service.js';
 import { MailService } from '../mail/mail.service.js';
 import type { AuthConfig } from '../../config/auth.config.js';
 import type { AuthTokensDto } from './dto/auth-tokens.dto.js';
 import type { LoginDto } from './dto/login.dto.js';
 import type { RefreshDto } from './dto/refresh.dto.js';
+import type { RegistrationStep } from './dto/registration-status-response.dto.js';
+import type { ResendOtpDto } from './dto/resend-otp.dto.js';
 import type { SignupCompleteDto } from './dto/signup-complete.dto.js';
 import type { SignupStartDto } from './dto/signup-start.dto.js';
 import type { SignupVerifyDto } from './dto/signup-verify.dto.js';
@@ -34,6 +38,37 @@ import type {
 
 const OTP_TTL_MINUTES = 15;
 const OTP_MAX_ATTEMPTS = 5;
+const SIGNUP_RESEND_COOLDOWN_SECONDS = 60;
+const SIGNUP_RESEND_MAX_PER_HOUR = 5;
+const SIGNUP_COMPLETE_ROLES = ['OWNER', 'DOCTOR'] as const;
+
+type SignupCompleteRole = (typeof SIGNUP_COMPLETE_ROLES)[number];
+type VerificationPurposeInput =
+  | 'SIGNUP'
+  | 'LOGIN'
+  | 'PHONE_LOGIN'
+  | 'PASSWORD_RESET';
+type VerificationPurposeFilter =
+  | VerificationPurpose
+  | { in: VerificationPurpose[] };
+
+export interface SelectableProfile {
+  profile_id: string;
+  account_id: string;
+  account_name: string;
+  roles: string[];
+  branches: {
+    branch_id: string;
+    name: string;
+    is_main: boolean;
+  }[];
+}
+
+export interface ProfileSelectionResponse {
+  type: 'profile_selection';
+  selection_token: string;
+  profiles: SelectableProfile[];
+}
 
 @Injectable()
 export class AuthService {
@@ -111,7 +146,9 @@ export class AuthService {
     return this.issueSignupToken(userId, 'signup');
   }
 
-  async signupComplete(dto: SignupCompleteDto): Promise<AuthTokensDto> {
+  async signupComplete(
+    dto: SignupCompleteDto,
+  ): Promise<ProfileSelectionResponse> {
     const userId = this.decodeSignupToken(dto.signup_token, 'signup');
     const user = await this.prismaService.db.user.findFirst({
       where: { id: userId, is_deleted: false, is_active: true },
@@ -123,13 +160,12 @@ export class AuthService {
     if (user.onboarding_completed) {
       throw new ConflictException('Onboarding already completed');
     }
-    if (dto.is_clinical && !dto.specialty) {
-      throw new BadRequestException('specialty is required for clinical users');
-    }
 
-    const [ownerRole, doctorRole, freePlan] = await Promise.all([
-      this.findRole('OWNER'),
-      dto.is_clinical ? this.findRole('DOCTOR') : Promise.resolve(null),
+    const requestedRoles = this.resolveSignupCompleteRoles(dto.roles);
+    const isDoctor = requestedRoles.includes('DOCTOR');
+
+    const [roles, freePlan] = await Promise.all([
+      Promise.all(requestedRoles.map((role) => this.findRole(role))),
       this.prismaService.db.subscriptionPlan.findUnique({
         where: { plan: 'free_trial' },
       }),
@@ -144,17 +180,16 @@ export class AuthService {
       const account = await tx.account.create({
         data: {
           name: dto.account_name,
-          specialities: dto.account_specialities ?? [],
+          specialities: dto.specialties,
         },
       });
       const branch = await tx.branch.create({
         data: {
           account_id: account.id,
           name: dto.branch_name,
-          address: dto.branch_address,
-          city: dto.branch_city,
-          governorate: dto.branch_governorate,
-          country: dto.branch_country,
+          address: '',
+          city: '',
+          governorate: '',
           is_main: true,
         },
       });
@@ -162,14 +197,11 @@ export class AuthService {
         data: {
           user_id: user.id,
           account_id: account.id,
-          is_clinical: dto.is_clinical,
-          specialty: dto.specialty,
-          job_title: dto.job_title,
+          is_clinical: isDoctor,
+          specialty: isDoctor ? dto.specialty : null,
+          job_title: isDoctor ? dto.job_title : null,
           roles: {
-            create: [
-              { role_id: ownerRole.id },
-              ...(doctorRole ? [{ role_id: doctorRole.id }] : []),
-            ],
+            create: roles.map((role) => ({ role_id: role.id })),
           },
           branches: {
             create: { branch_id: branch.id, account_id: account.id },
@@ -187,10 +219,98 @@ export class AuthService {
         where: { id: user.id },
         data: { onboarding_completed: true },
       });
-      return { accountId: account.id, profileId: profile.id };
+      return { accountId: account.id, profileId: profile.id, userId: user.id };
     });
 
-    return this.issueTokenPair(user, result.profileId, result.accountId);
+    return this.buildProfileSelectionResponse(result.userId);
+  }
+
+  async resendOtp(dto: ResendOtpDto) {
+    const user = await this.prismaService.db.user.findFirst({
+      where: { email: dto.email, is_deleted: false },
+    });
+    if (!user) return { success: true as const };
+    if (user.registration_status !== 'PENDING') {
+      throw new ConflictException('Registration is not pending');
+    }
+
+    const latestResend = await this.prismaService.db.verificationCode.findFirst(
+      {
+        where: {
+          user_id: user.id,
+          purpose: 'SIGNUP',
+          is_resend: true,
+        },
+        orderBy: { created_at: 'desc' },
+      },
+    );
+    if (
+      latestResend &&
+      latestResend.created_at.getTime() >
+        Date.now() - SIGNUP_RESEND_COOLDOWN_SECONDS * 1000
+    ) {
+      throw new HttpException(
+        'Please wait before requesting another code',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    const resendWindowStart = new Date(Date.now() - 60 * 60 * 1000);
+    const recentResendCount =
+      await this.prismaService.db.verificationCode.count({
+        where: {
+          user_id: user.id,
+          purpose: 'SIGNUP',
+          is_resend: true,
+          created_at: { gte: resendWindowStart },
+        },
+      });
+    if (recentResendCount >= SIGNUP_RESEND_MAX_PER_HOUR) {
+      throw new HttpException(
+        'Too many resend requests',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    await this.sendVerificationCode({
+      userId: user.id,
+      target: dto.email,
+      channel: 'EMAIL',
+      purpose: 'SIGNUP',
+      isResend: true,
+    });
+
+    return { success: true as const };
+  }
+
+  async getRegistrationStatus(input: {
+    email?: string;
+    authorization?: string;
+  }): Promise<{ step: RegistrationStep; email?: string }> {
+    const tokenUserId = this.tryDecodeAccessToken(input.authorization);
+    if (tokenUserId) {
+      const user = await this.prismaService.db.user.findFirst({
+        where: { id: tokenUserId, is_deleted: false },
+      });
+      if (!user) return { step: 'NONE' };
+      return {
+        step: this.resolveRegistrationStep(user),
+        ...(user.email ? { email: user.email } : {}),
+      };
+    }
+
+    if (!input.email) {
+      if (input.authorization) {
+        throw new UnauthorizedException('Invalid or expired token');
+      }
+      throw new BadRequestException('email is required');
+    }
+
+    const user = await this.prismaService.db.user.findFirst({
+      where: { email: input.email, is_deleted: false },
+    });
+    if (!user) return { step: 'NONE' };
+    return { step: this.resolveRegistrationStep(user) };
   }
 
   async login(dto: LoginDto) {
@@ -222,7 +342,7 @@ export class AuthService {
       userId: user.id,
       target: dto.phone_number,
       channel: 'PHONE',
-      purpose: 'PHONE_LOGIN',
+      purpose: 'LOGIN',
     });
 
     return { message: 'OTP sent' };
@@ -241,7 +361,7 @@ export class AuthService {
     await this.consumeVerificationCode({
       userId: user.id,
       target: dto.phone_number,
-      purpose: 'PHONE_LOGIN',
+      purpose: 'LOGIN',
       code: dto.code,
     });
 
@@ -261,9 +381,28 @@ export class AuthService {
         is_active: true,
         account: { status: 'ACTIVE', is_deleted: false },
       },
-      include: { user: true },
+      include: {
+        user: true,
+        branches: {
+          where: {
+            branch: { status: 'ACTIVE', is_deleted: false },
+          },
+          include: { branch: true },
+          orderBy: { created_at: 'asc' },
+        },
+      },
     });
     if (!profile) throw new ForbiddenException('Invalid profile selection');
+
+    const branchId = this.resolveSelectedBranchId(profile.branches, dto.branch_id);
+
+    const selectedBranch = profile.branches.find(
+      (item) => item.branch_id === branchId,
+    );
+    if (!selectedBranch || selectedBranch.account_id !== profile.account_id) {
+      throw new ForbiddenException('Invalid branch selection');
+    }
+
     return this.issueTokenPair(profile.user, profile.id, profile.account_id);
   }
 
@@ -335,16 +474,24 @@ export class AuthService {
       };
     }
 
-    const profiles = await this.getSelectableProfiles(user.id);
+    return this.buildProfileSelectionResponse(user.id);
+  }
+
+  private async buildProfileSelectionResponse(
+    userId: string,
+  ): Promise<ProfileSelectionResponse> {
+    const profiles = await this.getSelectableProfiles(userId);
     return {
       type: 'profile_selection',
-      selection_token: this.issueSignupToken(user.id, 'profile_selection')
+      selection_token: this.issueSignupToken(userId, 'profile_selection')
         .signup_token,
       profiles,
     };
   }
 
-  private async getSelectableProfiles(userId: string) {
+  private async getSelectableProfiles(
+    userId: string,
+  ): Promise<SelectableProfile[]> {
     const profiles = await this.prismaService.db.profile.findMany({
       where: {
         user_id: userId,
@@ -355,40 +502,74 @@ export class AuthService {
       include: {
         account: true,
         roles: { include: { role: true } },
-        branches: { include: { branch: true } },
+        branches: {
+          where: {
+            branch: { status: 'ACTIVE', is_deleted: false },
+          },
+          include: { branch: true },
+        },
       },
       orderBy: { created_at: 'asc' },
     });
 
     return profiles.map((profile) => ({
-      id: profile.id,
-      account: {
-        id: profile.account.id,
-        name: profile.account.name,
-        specialities: profile.account.specialities,
-        status: profile.account.status,
-      },
+      profile_id: profile.id,
+      account_id: profile.account.id,
+      account_name: profile.account.name,
       roles: profile.roles.map((item) => item.role.name),
       branches: profile.branches.map((item) => ({
-        id: item.branch.id,
+        branch_id: item.branch.id,
         name: item.branch.name,
-        city: item.branch.city,
-        governorate: item.branch.governorate,
         is_main: item.branch.is_main,
       })),
     }));
+  }
+
+  private resolveSignupCompleteRoles(
+    roles: string[],
+  ): SignupCompleteRole[] {
+    const uniqueRoles = [...new Set(roles)] as SignupCompleteRole[];
+    const unsupportedRole = uniqueRoles.find(
+      (role) => !SIGNUP_COMPLETE_ROLES.includes(role),
+    );
+    if (unsupportedRole) {
+      throw new BadRequestException(`Unsupported role: ${unsupportedRole}`);
+    }
+    if (!uniqueRoles.includes('OWNER')) {
+      throw new BadRequestException('OWNER role is required');
+    }
+    return uniqueRoles;
+  }
+
+  private resolveSelectedBranchId(
+    branches: { branch_id: string }[],
+    branchId?: string,
+  ): string {
+    if (branchId) return branchId;
+    if (branches.length === 1) return branches[0].branch_id;
+    throw new BadRequestException('branch_id is required');
+  }
+
+  private getVerificationPurposeFilter(
+    purpose: VerificationPurposeInput,
+  ): VerificationPurposeFilter {
+    if (purpose === 'LOGIN' || purpose === 'PHONE_LOGIN') {
+      return { in: ['LOGIN', 'PHONE_LOGIN'] as VerificationPurpose[] };
+    }
+    return purpose as VerificationPurpose;
   }
 
   private async sendVerificationCode(input: {
     userId: string;
     target: string;
     channel: 'EMAIL' | 'PHONE';
-    purpose: 'SIGNUP' | 'PHONE_LOGIN' | 'PASSWORD_RESET';
+    purpose: VerificationPurposeInput;
+    isResend?: boolean;
   }) {
     await this.prismaService.db.verificationCode.updateMany({
       where: {
         user_id: input.userId,
-        purpose: input.purpose,
+        purpose: this.getVerificationPurposeFilter(input.purpose),
         consumed_at: null,
       },
       data: { consumed_at: new Date() },
@@ -406,6 +587,7 @@ export class AuthService {
         code_hash,
         expires_at,
         max_attempts: OTP_MAX_ATTEMPTS,
+        is_resend: input.isResend ?? false,
       },
     });
 
@@ -419,14 +601,14 @@ export class AuthService {
   private async consumeVerificationCode(input: {
     userId: string;
     target: string;
-    purpose: 'SIGNUP' | 'PHONE_LOGIN' | 'PASSWORD_RESET';
+    purpose: VerificationPurposeInput;
     code: string;
   }) {
     const record = await this.prismaService.db.verificationCode.findFirst({
       where: {
         user_id: input.userId,
         target: input.target,
-        purpose: input.purpose,
+        purpose: this.getVerificationPurposeFilter(input.purpose),
         consumed_at: null,
       },
       orderBy: { created_at: 'desc' },
@@ -496,6 +678,30 @@ export class AuthService {
     if (payload.type !== type)
       throw new UnauthorizedException('Invalid token type');
     return payload.userId;
+  }
+
+  private tryDecodeAccessToken(authorization?: string): string | null {
+    if (!authorization) return null;
+
+    const match = /^Bearer\s+(.+)$/i.exec(authorization.trim());
+    if (!match) return null;
+
+    try {
+      const payload = this.jwtService.verify<JwtAccessPayload>(match[1], {
+        secret: this.authConfig.jwt.accessSecret,
+      });
+      return payload.type === 'access' ? payload.userId : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private resolveRegistrationStep(
+    user: Pick<User, 'registration_status' | 'onboarding_completed'>,
+  ): RegistrationStep {
+    if (user.onboarding_completed) return 'DONE';
+    if (user.registration_status === 'PENDING') return 'VERIFY_OTP';
+    return 'COMPLETE_ONBOARDING';
   }
 
   private async issueTokenPair(
