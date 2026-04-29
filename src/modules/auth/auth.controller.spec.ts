@@ -1,167 +1,98 @@
-import { Test } from '@nestjs/testing';
-import { AuthController } from './auth.controller';
-import { AuthService } from './auth.service';
-import type { User } from '@prisma/client';
-
-const mockAuthService = {
-  registerPersonal: jest.fn(),
-  verifyEmail: jest.fn(),
-  resendOtp: jest.fn(),
-  registerOrganization: jest.fn(),
-  login: jest.fn(),
-  refresh: jest.fn(),
-  logout: jest.fn(),
-  getMe: jest.fn(),
-};
-
-const MOCK_TOKEN_RESPONSE = {
-  registration_token: 'token-abc',
-  expires_in: 1800,
-};
-const MOCK_AUTH_TOKENS = {
-  access_token: 'access-abc',
-  refresh_token: 'refresh-abc',
-  token_type: 'Bearer',
-  expires_in: 900,
-};
-const MOCK_USER = {
-  id: 'user-uuid',
-  first_name: 'John',
-  last_name: 'Doe',
-  email: 'john@example.com',
-  is_active: true,
-  verified_at: new Date(),
-  created_at: new Date(),
-} as unknown as User;
+import { AuthController } from './auth.controller.js';
+import type { AuthService } from './auth.service.js';
 
 describe('AuthController', () => {
   let controller: AuthController;
+  let authService: jest.Mocked<
+    Pick<
+      AuthService,
+      | 'signupStart'
+      | 'signupVerify'
+      | 'signupComplete'
+      | 'login'
+      | 'requestPhoneOtp'
+      | 'verifyPhoneOtp'
+      | 'selectProfile'
+      | 'refresh'
+      | 'logout'
+    >
+  >;
 
-  beforeEach(async () => {
-    const module = await Test.createTestingModule({
-      controllers: [AuthController],
-      providers: [{ provide: AuthService, useValue: mockAuthService }],
-    }).compile();
-
-    controller = module.get<AuthController>(AuthController);
+  beforeEach(() => {
+    authService = {
+      signupStart: jest.fn(),
+      signupVerify: jest.fn(),
+      signupComplete: jest.fn(),
+      login: jest.fn(),
+      requestPhoneOtp: jest.fn(),
+      verifyPhoneOtp: jest.fn(),
+      selectProfile: jest.fn(),
+      refresh: jest.fn(),
+      logout: jest.fn(),
+    };
+    controller = new AuthController(authService as unknown as AuthService);
   });
 
-  describe('registerPersonal', () => {
-    it('delegates to service and returns result', async () => {
-      mockAuthService.registerPersonal.mockResolvedValue(MOCK_TOKEN_RESPONSE);
-      const dto = {
-        first_name: 'John',
-        last_name: 'Doe',
-        email: 'john@example.com',
-        password: 'P1!',
-        confirm_password: 'P1!',
-      };
-
-      const result = await controller.registerPersonal(dto as never);
-
-      expect(mockAuthService.registerPersonal).toHaveBeenCalledWith(dto);
-      expect(result).toEqual(MOCK_TOKEN_RESPONSE);
+  it('delegates signup start', async () => {
+    const dto = {
+      first_name: 'Sara',
+      last_name: 'Ali',
+      email: 'sara@example.com',
+      password: 'Password1!',
+    };
+    authService.signupStart.mockResolvedValue({
+      signup_token: 'token',
+      expires_in: 1800,
     });
+
+    await expect(controller.signupStart(dto)).resolves.toEqual({
+      signup_token: 'token',
+      expires_in: 1800,
+    });
+    expect(authService.signupStart).toHaveBeenCalledWith(dto);
   });
 
-  describe('verifyEmail', () => {
-    it('passes registration_token and code to service', async () => {
-      mockAuthService.verifyEmail.mockResolvedValue(MOCK_TOKEN_RESPONSE);
-      const dto = { registration_token: 'reg-token', code: '123456' };
+  it('delegates signup completion', async () => {
+    const dto = {
+      signup_token: 'token',
+      account_name: 'Clinic',
+      branch_name: 'Main',
+      branch_address: '123 St',
+      branch_city: 'Cairo',
+      branch_governorate: 'Cairo',
+      is_clinical: false,
+    };
+    const tokens = {
+      type: 'tokens' as const,
+      access_token: 'access',
+      refresh_token: 'refresh',
+      token_type: 'Bearer' as const,
+      expires_in: 900,
+    };
+    authService.signupComplete.mockResolvedValue(tokens);
 
-      const result = await controller.verifyEmail(dto as never);
-
-      expect(mockAuthService.verifyEmail).toHaveBeenCalledWith(
-        'reg-token',
-        '123456',
-      );
-      expect(result).toEqual(MOCK_TOKEN_RESPONSE);
-    });
+    await expect(controller.signupComplete(dto)).resolves.toEqual(tokens);
+    expect(authService.signupComplete).toHaveBeenCalledWith(dto);
   });
 
-  describe('resendOtp', () => {
-    it('passes registration_token to service', async () => {
-      mockAuthService.resendOtp.mockResolvedValue(MOCK_TOKEN_RESPONSE);
-      const dto = { registration_token: 'reg-token' };
+  it('passes refresh dto through to the service', async () => {
+    const dto = { refresh_token: 'raw-refresh-token' };
+    const tokens = {
+      type: 'tokens' as const,
+      access_token: 'access',
+      refresh_token: 'refresh',
+      token_type: 'Bearer' as const,
+      expires_in: 900,
+    };
+    authService.refresh.mockResolvedValue(tokens);
 
-      const result = await controller.resendOtp(dto as never);
-
-      expect(mockAuthService.resendOtp).toHaveBeenCalledWith('reg-token');
-      expect(result).toEqual(MOCK_TOKEN_RESPONSE);
-    });
+    await expect(controller.refresh(dto)).resolves.toEqual(tokens);
+    expect(authService.refresh).toHaveBeenCalledWith(dto);
   });
 
-  describe('registerOrganization', () => {
-    it('passes full dto to service', async () => {
-      mockAuthService.registerOrganization.mockResolvedValue(MOCK_AUTH_TOKENS);
-      const dto = {
-        registration_token: 'reg-token',
-        organization_name: 'Clinic',
-        branch_address: '123 St',
-        branch_city: 'Cairo',
-        branch_governorate: 'Cairo',
-      };
-
-      const result = await controller.registerOrganization(dto as never);
-
-      expect(mockAuthService.registerOrganization).toHaveBeenCalledWith(dto);
-      expect(result).toEqual(MOCK_AUTH_TOKENS);
-    });
-  });
-
-  describe('login', () => {
-    it('passes dto to service', async () => {
-      mockAuthService.login.mockResolvedValue(MOCK_AUTH_TOKENS);
-      const dto = { email: 'john@example.com', password: 'P1!' };
-
-      const result = await controller.login(dto as never);
-
-      expect(mockAuthService.login).toHaveBeenCalledWith(dto);
-      expect(result).toEqual(MOCK_AUTH_TOKENS);
-    });
-  });
-
-  describe('refresh', () => {
-    it('passes refresh_token string to service', async () => {
-      mockAuthService.refresh.mockResolvedValue(MOCK_AUTH_TOKENS);
-      const dto = { refresh_token: 'raw-refresh-token' };
-
-      const result = await controller.refresh(dto as never);
-
-      expect(mockAuthService.refresh).toHaveBeenCalledWith('raw-refresh-token');
-      expect(result).toEqual(MOCK_AUTH_TOKENS);
-    });
-  });
-
-  describe('logout', () => {
-    it('calls service and returns void', async () => {
-      mockAuthService.logout.mockResolvedValue(undefined);
-      const dto = { refresh_token: 'raw-refresh-token' };
-
-      await controller.logout(dto as never);
-
-      expect(mockAuthService.logout).toHaveBeenCalledWith('raw-refresh-token');
-    });
-  });
-
-  describe('me', () => {
-    it('delegates user.id to getMe and returns result', async () => {
-      const meResponse = {
-        id: MOCK_USER.id,
-        first_name: 'John',
-        last_name: 'Doe',
-        email: 'john@example.com',
-        is_active: true,
-        verified_at: MOCK_USER.verified_at,
-        created_at: MOCK_USER.created_at,
-        profiles: [],
-      };
-      mockAuthService.getMe.mockResolvedValue(meResponse);
-
-      const result = await controller.me(MOCK_USER);
-
-      expect(mockAuthService.getMe).toHaveBeenCalledWith(MOCK_USER.id);
-      expect(result).toEqual(meResponse);
-    });
+  it('revokes logout token', async () => {
+    authService.logout.mockResolvedValue(undefined);
+    await controller.logout({ refresh_token: 'refresh' });
+    expect(authService.logout).toHaveBeenCalledWith('refresh');
   });
 });

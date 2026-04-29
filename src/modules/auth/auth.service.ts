@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  GoneException,
   Injectable,
   InternalServerErrorException,
   UnauthorizedException,
@@ -14,29 +15,25 @@ import type { User } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service.js';
 import { MailService } from '../mail/mail.service.js';
 import type { AuthConfig } from '../../config/auth.config.js';
+import type { AuthTokensDto } from './dto/auth-tokens.dto.js';
+import type { LoginDto } from './dto/login.dto.js';
+import type { RefreshDto } from './dto/refresh.dto.js';
+import type { SignupCompleteDto } from './dto/signup-complete.dto.js';
+import type { SignupStartDto } from './dto/signup-start.dto.js';
+import type { SignupVerifyDto } from './dto/signup-verify.dto.js';
+import type {
+  RequestPhoneOtpDto,
+  VerifyPhoneOtpDto,
+} from './dto/phone-otp.dto.js';
+import type { SelectProfileDto } from './dto/select-profile.dto.js';
 import type {
   JwtAccessPayload,
   JwtRefreshPayload,
-  PasswordResetTokenPayload,
-  RegistrationTokenPayload,
+  SignupTokenPayload,
 } from './interfaces/jwt-payload.interface.js';
-import type { RegisterPersonalDto } from './dto/register-personal.dto.js';
-import type { RegisterOrganizationDto } from './dto/register-organization.dto.js';
-import type { LoginDto } from './dto/login.dto.js';
-import type { AuthTokensDto } from './dto/auth-tokens.dto.js';
-import type { RegistrationTokenResponseDto } from './dto/registration-token-response.dto.js';
-import type { PendingRegistrationResponseDto } from './dto/pending-registration-response.dto.js';
-import { ERROR_CODES } from '../../common/constant/error-codes.js';
-import type { MeResponseDto } from './dto/me-response.dto.js';
-import type { ForgotPasswordDto } from './dto/forgot-password.dto.js';
-import type { VerifyResetCodeDto } from './dto/verify-reset-code.dto.js';
-import type { ResetPasswordDto } from './dto/reset-password.dto.js';
-import type { ResetTokenResponseDto } from './dto/reset-token-response.dto.js';
 
 const OTP_TTL_MINUTES = 15;
-const OTP_RESEND_COOLDOWN_SECONDS = 60;
 const OTP_MAX_ATTEMPTS = 5;
-const OTP_HASH_ROUNDS = 10;
 
 @Injectable()
 export class AuthService {
@@ -53,670 +50,499 @@ export class AuthService {
     this.authConfig = config;
   }
 
-  // ── Step 1: personal info ──────────────────────────────────────────────────
-
-  async registerPersonal(
-    dto: RegisterPersonalDto,
-  ): Promise<RegistrationTokenResponseDto> {
-    const existing = await this.prismaService.db.user.findUnique({
-      where: { email: dto.email },
+  async signupStart(dto: SignupStartDto) {
+    const existing = await this.prismaService.db.user.findFirst({
+      where: {
+        OR: [
+          { email: dto.email },
+          ...(dto.phone_number ? [{ phone_number: dto.phone_number }] : []),
+        ],
+        is_deleted: false,
+      },
     });
-    if (existing) {
-      if (existing.registration_status === 'ACTIVE') {
-        throw new ConflictException('Email is already registered');
-      }
-      throw new ConflictException({
-        code: ERROR_CODES.REGISTRATION_PENDING,
-        message:
-          'An account with this email is pending completion. Please log in to continue.',
-      });
-    }
+    if (existing) throw new ConflictException('User already exists');
 
     const password_hashed = await bcrypt.hash(dto.password, 12);
-
-    const user = await this.prismaService.db.$transaction(async (tx) => {
-      const created = await tx.user.create({
-        data: {
-          first_name: dto.first_name,
-          last_name: dto.last_name,
-          email: dto.email,
-          phone_number: dto.phone_number,
-          password_hashed,
-        },
-      });
-      await tx.profile.create({
-        data: { user_id: created.id },
-      });
-      return created;
+    const user = await this.prismaService.db.user.create({
+      data: {
+        first_name: dto.first_name,
+        last_name: dto.last_name,
+        email: dto.email,
+        phone_number: dto.phone_number,
+        password_hashed,
+        registration_status: 'PENDING',
+        onboarding_completed: false,
+      },
     });
 
-    await this.sendOtp(user.id, user.email);
+    await this.sendVerificationCode({
+      userId: user.id,
+      target: dto.email,
+      channel: 'EMAIL',
+      purpose: 'SIGNUP',
+    });
 
-    return this.issueRegistrationToken(user.id);
+    return this.issueSignupToken(user.id, 'signup');
   }
 
-  // ── Step 2: email verification ─────────────────────────────────────────────
-
-  async verifyEmail(
-    registrationToken: string,
-    code: string,
-  ): Promise<RegistrationTokenResponseDto> {
-    const userId = this.decodeRegistrationToken(registrationToken);
-
+  async signupVerify(dto: SignupVerifyDto) {
+    const userId = this.decodeSignupToken(dto.signup_token, 'signup');
     const user = await this.prismaService.db.user.findFirst({
       where: { id: userId, is_deleted: false },
     });
-    if (!user) throw new UnauthorizedException('User not found');
+    if (!user?.email) throw new UnauthorizedException('User not found');
 
-    const verification =
-      await this.prismaService.db.emailVerification.findFirst({
-        where: { user_id: userId, used_at: null },
-        orderBy: { created_at: 'desc' },
-      });
+    await this.consumeVerificationCode({
+      userId,
+      target: user.email,
+      purpose: 'SIGNUP',
+      code: dto.code,
+    });
 
-    if (!verification || verification.expires_at < new Date()) {
-      throw new UnauthorizedException(
-        'OTP expired. Please request a new code.',
-      );
-    }
+    await this.prismaService.db.user.update({
+      where: { id: userId },
+      data: {
+        verified_at: new Date(),
+        registration_status: 'ACTIVE',
+        is_active: true,
+      },
+    });
 
-    const isValid = await bcrypt.compare(code, verification.code_hash);
-    if (!isValid) throw new UnauthorizedException('Invalid OTP');
-
-    await this.prismaService.db.$transaction([
-      this.prismaService.db.emailVerification.update({
-        where: { id: verification.id },
-        data: { used_at: new Date() },
-      }),
-      this.prismaService.db.user.update({
-        where: { id: userId },
-        data: { verified_at: new Date() },
-      }),
-    ]);
-
-    return this.issueRegistrationToken(userId);
+    return this.issueSignupToken(userId, 'signup');
   }
 
-  // ── Resend OTP ─────────────────────────────────────────────────────────────
-
-  async resendOtp(
-    registrationToken: string,
-  ): Promise<RegistrationTokenResponseDto> {
-    const userId = this.decodeRegistrationToken(registrationToken);
-
+  async signupComplete(dto: SignupCompleteDto): Promise<AuthTokensDto> {
+    const userId = this.decodeSignupToken(dto.signup_token, 'signup');
     const user = await this.prismaService.db.user.findFirst({
-      where: { id: userId, is_deleted: false },
+      where: { id: userId, is_deleted: false, is_active: true },
     });
     if (!user) throw new UnauthorizedException('User not found');
-
-    const windowStart = new Date(Date.now() - 30 * 60 * 1000);
-
-    const [count, latest] = await Promise.all([
-      this.prismaService.db.emailVerification.count({
-        where: { user_id: userId, created_at: { gte: windowStart } },
-      }),
-      this.prismaService.db.emailVerification.findFirst({
-        where: { user_id: userId },
-        orderBy: { created_at: 'desc' },
-      }),
-    ]);
-
-    if (count >= OTP_MAX_ATTEMPTS) {
-      throw new UnauthorizedException(
-        'Maximum OTP attempts reached. Please start registration again.',
-      );
+    if (user.registration_status !== 'ACTIVE' || !user.verified_at) {
+      throw new ForbiddenException('Signup has not been verified');
+    }
+    if (user.onboarding_completed) {
+      throw new ConflictException('Onboarding already completed');
+    }
+    if (dto.is_clinical && !dto.specialty) {
+      throw new BadRequestException('specialty is required for clinical users');
     }
 
-    if (latest) {
-      const secondsAgo = (Date.now() - latest.created_at.getTime()) / 1000;
-      if (secondsAgo < OTP_RESEND_COOLDOWN_SECONDS) {
-        const waitSeconds = Math.ceil(OTP_RESEND_COOLDOWN_SECONDS - secondsAgo);
-        throw new UnauthorizedException(
-          `Please wait ${waitSeconds} seconds before requesting a new code.`,
-        );
-      }
-    }
-
-    await this.prismaService.db.emailVerification.updateMany({
-      where: { user_id: userId, used_at: null },
-      data: { used_at: new Date() },
-    });
-
-    await this.sendOtp(userId, user.email);
-
-    return this.issueRegistrationToken(userId);
-  }
-
-  // ── Step 3: organization + Start Free Trial ────────────────────────────────
-
-  async registerOrganization(
-    dto: RegisterOrganizationDto,
-  ): Promise<AuthTokensDto> {
-    const userId = this.decodeRegistrationToken(dto.registration_token);
-
-    const user = await this.prismaService.db.user.findFirst({
-      where: { id: userId, is_deleted: false },
-    });
-    if (!user) throw new UnauthorizedException('User not found');
-    if (!user.verified_at) throw new ForbiddenException('Email not verified');
-    if (user.registration_status !== 'PENDING') {
-      throw new ConflictException('Registration has already been completed');
-    }
-
-    const [ownerRole, freePlan] = await Promise.all([
-      this.prismaService.db.role.findFirst({ where: { name: 'owner' } }),
-      this.prismaService.db.subscriptionPlan.findFirst({
+    const [ownerRole, doctorRole, freePlan] = await Promise.all([
+      this.findRole('OWNER'),
+      dto.is_clinical ? this.findRole('DOCTOR') : Promise.resolve(null),
+      this.prismaService.db.subscriptionPlan.findUnique({
         where: { plan: 'free_trial' },
       }),
     ]);
-
-    if (!ownerRole)
-      throw new InternalServerErrorException('Owner role not seeded');
     if (!freePlan)
       throw new InternalServerErrorException('Free trial plan not seeded');
-
-    if (dto.is_clinical && !dto.speciality) {
-      throw new BadRequestException(
-        'speciality is required for clinical users',
-      );
-    }
-
-    const doctorRole = dto.is_clinical
-      ? await this.prismaService.db.role.findFirst({
-          where: { name: 'doctor' },
-        })
-      : null;
-
-    if (dto.is_clinical && !doctorRole) {
-      throw new InternalServerErrorException('Doctor role not seeded');
-    }
 
     const trialEndsAt = new Date();
     trialEndsAt.setDate(trialEndsAt.getDate() + this.authConfig.freeTrialDays);
 
-    await this.prismaService.db.$transaction(async (tx) => {
-      const org = await tx.organization.create({
+    const result = await this.prismaService.db.$transaction(async (tx) => {
+      const account = await tx.account.create({
         data: {
-          name: dto.organization_name,
-          specialities: dto.organization_specialities ?? [],
-          status: 'ACTIVE',
+          name: dto.account_name,
+          specialities: dto.account_specialities ?? [],
         },
       });
-
       const branch = await tx.branch.create({
         data: {
+          account_id: account.id,
+          name: dto.branch_name,
           address: dto.branch_address,
           city: dto.branch_city,
           governorate: dto.branch_governorate,
           country: dto.branch_country,
           is_main: true,
-          status: 'ACTIVE',
-          organization_id: org.id,
         },
       });
-
-      await tx.staff.create({
+      const profile = await tx.profile.create({
         data: {
           user_id: user.id,
-          organization_id: org.id,
-          branch_id: branch.id,
-          role_id: ownerRole.id,
-          is_clinical: false,
-          ...(!dto.is_clinical &&
-            dto.job_title !== undefined && { job_title: dto.job_title }),
+          account_id: account.id,
+          is_clinical: dto.is_clinical,
+          specialty: dto.specialty,
+          job_title: dto.job_title,
+          roles: {
+            create: [
+              { role_id: ownerRole.id },
+              ...(doctorRole ? [{ role_id: doctorRole.id }] : []),
+            ],
+          },
+          branches: {
+            create: { branch_id: branch.id, account_id: account.id },
+          },
         },
       });
-
-      if (dto.is_clinical && doctorRole) {
-        await tx.staff.create({
-          data: {
-            user_id: user.id,
-            organization_id: org.id,
-            branch_id: branch.id,
-            role_id: doctorRole.id,
-            is_clinical: true,
-            specialty: dto.speciality,
-            ...(dto.job_title !== undefined && { job_title: dto.job_title }),
-          },
-        });
-      }
-
       await tx.subscription.create({
         data: {
-          organization_id: org.id,
+          account_id: account.id,
           subscription_plan_id: freePlan.id,
           trial_ends_at: trialEndsAt,
         },
       });
-
       await tx.user.update({
         where: { id: user.id },
-        data: { registration_status: 'ACTIVE' },
+        data: { onboarding_completed: true },
       });
+      return { accountId: account.id, profileId: profile.id };
     });
 
-    return this.issueTokenPair(user);
+    return this.issueTokenPair(user, result.profileId, result.accountId);
   }
 
-  // ── Login ──────────────────────────────────────────────────────────────────
-
-  async login(
-    dto: LoginDto,
-  ): Promise<AuthTokensDto | PendingRegistrationResponseDto> {
+  async login(dto: LoginDto) {
     const user = await this.prismaService.db.user.findFirst({
       where: { email: dto.email, is_deleted: false },
     });
-
-    if (!user || !(await bcrypt.compare(dto.password, user.password_hashed))) {
+    if (!user?.password_hashed)
       throw new UnauthorizedException('Invalid credentials');
-    }
-
-    if (!user.is_active) throw new UnauthorizedException('Account is inactive');
-
-    if (user.registration_status === 'PENDING') {
-      const pending_step = user.verified_at ? 'organization' : 'verify_email';
-      return {
-        type: 'pending',
-        ...this.issueRegistrationToken(user.id),
-        pending_step,
-      };
-    }
-
-    return this.issueTokenPair(user);
+    const passwordMatches = await bcrypt.compare(
+      dto.password,
+      user.password_hashed,
+    );
+    if (!passwordMatches)
+      throw new UnauthorizedException('Invalid credentials');
+    return this.buildLoginResponse(user);
   }
 
-  // ── Refresh ────────────────────────────────────────────────────────────────
+  async requestPhoneOtp(dto: RequestPhoneOtpDto) {
+    const user = await this.prismaService.db.user.findFirst({
+      where: {
+        phone_number: dto.phone_number,
+        is_deleted: false,
+        is_active: true,
+      },
+    });
+    if (!user) throw new UnauthorizedException('User not found');
 
-  async refresh(rawRefreshToken: string): Promise<AuthTokensDto> {
+    await this.sendVerificationCode({
+      userId: user.id,
+      target: dto.phone_number,
+      channel: 'PHONE',
+      purpose: 'PHONE_LOGIN',
+    });
+
+    return { message: 'OTP sent' };
+  }
+
+  async verifyPhoneOtp(dto: VerifyPhoneOtpDto) {
+    const user = await this.prismaService.db.user.findFirst({
+      where: {
+        phone_number: dto.phone_number,
+        is_deleted: false,
+        is_active: true,
+      },
+    });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    await this.consumeVerificationCode({
+      userId: user.id,
+      target: dto.phone_number,
+      purpose: 'PHONE_LOGIN',
+      code: dto.code,
+    });
+
+    return this.buildLoginResponse(user);
+  }
+
+  async selectProfile(dto: SelectProfileDto): Promise<AuthTokensDto> {
+    const userId = this.decodeSignupToken(
+      dto.selection_token,
+      'profile_selection',
+    );
+    const profile = await this.prismaService.db.profile.findFirst({
+      where: {
+        id: dto.profile_id,
+        user_id: userId,
+        is_deleted: false,
+        is_active: true,
+        account: { status: 'ACTIVE', is_deleted: false },
+      },
+      include: { user: true },
+    });
+    if (!profile) throw new ForbiddenException('Invalid profile selection');
+    return this.issueTokenPair(profile.user, profile.id, profile.account_id);
+  }
+
+  async refresh(dto: RefreshDto): Promise<AuthTokensDto> {
     let payload: JwtRefreshPayload;
     try {
-      payload = this.jwtService.verify<JwtRefreshPayload>(rawRefreshToken, {
+      payload = this.jwtService.verify<JwtRefreshPayload>(dto.refresh_token, {
         secret: this.authConfig.jwt.refreshSecret,
       });
     } catch {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
-    if (payload.type !== 'refresh') {
+    if (payload.type !== 'refresh')
       throw new UnauthorizedException('Invalid token type');
-    }
 
     const stored = await this.prismaService.db.refreshToken.findUnique({
       where: { jti: payload.jti },
       include: { user: true },
     });
-
     if (!stored || stored.is_revoked || stored.expires_at < new Date()) {
       throw new UnauthorizedException('Refresh token revoked or expired');
     }
-
-    const valid = await bcrypt.compare(rawRefreshToken, stored.token_hash);
-    if (!valid) throw new UnauthorizedException('Refresh token mismatch');
+    const matches = await bcrypt.compare(dto.refresh_token, stored.token_hash);
+    if (!matches) throw new UnauthorizedException('Refresh token mismatch');
+    if (!stored.profile_id || !stored.account_id) {
+      throw new UnauthorizedException('Refresh token has no profile context');
+    }
 
     await this.prismaService.db.refreshToken.update({
       where: { id: stored.id },
       data: { is_revoked: true, revoked_at: new Date() },
     });
 
-    return this.issueTokenPair(stored.user);
+    return this.issueTokenPair(
+      stored.user,
+      stored.profile_id,
+      stored.account_id,
+    );
   }
 
-  // ── Logout ─────────────────────────────────────────────────────────────────
-
   async logout(rawRefreshToken: string): Promise<void> {
-    let payload: JwtRefreshPayload;
     try {
-      payload = this.jwtService.verify<JwtRefreshPayload>(rawRefreshToken, {
-        secret: this.authConfig.jwt.refreshSecret,
-        ignoreExpiration: true,
+      const payload = this.jwtService.verify<JwtRefreshPayload>(
+        rawRefreshToken,
+        {
+          secret: this.authConfig.jwt.refreshSecret,
+          ignoreExpiration: true,
+        },
+      );
+      if (payload.type !== 'refresh') return;
+      await this.prismaService.db.refreshToken.updateMany({
+        where: { jti: payload.jti, is_revoked: false },
+        data: { is_revoked: true, revoked_at: new Date() },
       });
     } catch {
       return;
     }
-    if (payload.type !== 'refresh') return;
-
-    await this.prismaService.db.refreshToken.updateMany({
-      where: { jti: payload.jti, is_revoked: false },
-      data: { is_revoked: true, revoked_at: new Date() },
-    });
   }
 
-  // ── Forgot password ────────────────────────────────────────────────────────
-
-  async forgotPassword(dto: ForgotPasswordDto): Promise<ResetTokenResponseDto> {
-    const user = await this.prismaService.db.user.findFirst({
-      where: { email: dto.email, is_deleted: false },
-    });
-
-    if (!user) {
-      return this.issuePasswordResetToken(
-        randomUUID(),
-        dto.email,
-        randomUUID(),
-        false,
-      );
+  private async buildLoginResponse(user: User) {
+    if (!user.is_active) throw new UnauthorizedException('User is inactive');
+    if (user.registration_status !== 'ACTIVE') {
+      throw new ForbiddenException('User registration is not active');
+    }
+    if (!user.onboarding_completed) {
+      return {
+        type: 'onboarding_required',
+        ...this.issueSignupToken(user.id, 'signup'),
+      };
     }
 
-    const windowStart = new Date(Date.now() - 30 * 60 * 1000);
-
-    const [count, latest] = await Promise.all([
-      this.prismaService.db.passwordReset.count({
-        where: { user_id: user.id, created_at: { gte: windowStart } },
-      }),
-      this.prismaService.db.passwordReset.findFirst({
-        where: { user_id: user.id },
-        orderBy: { created_at: 'desc' },
-      }),
-    ]);
-
-    if (count >= OTP_MAX_ATTEMPTS) {
-      return this.issuePasswordResetToken(
-        user.id,
-        user.email,
-        latest?.id ?? randomUUID(),
-        false,
-      );
-    }
-
-    if (latest) {
-      const secondsAgo = (Date.now() - latest.created_at.getTime()) / 1000;
-      if (secondsAgo < OTP_RESEND_COOLDOWN_SECONDS) {
-        return this.issuePasswordResetToken(
-          user.id,
-          user.email,
-          latest.id,
-          false,
-        );
-      }
-    }
-
-    const resetRecord = await this.sendPasswordResetOtp(user.id, user.email);
-
-    return this.issuePasswordResetToken(
-      user.id,
-      user.email,
-      resetRecord.id,
-      false,
-    );
+    const profiles = await this.getSelectableProfiles(user.id);
+    return {
+      type: 'profile_selection',
+      selection_token: this.issueSignupToken(user.id, 'profile_selection')
+        .signup_token,
+      profiles,
+    };
   }
 
-  // ── Verify reset code ──────────────────────────────────────────────────────
-
-  async verifyResetCode(
-    dto: VerifyResetCodeDto,
-  ): Promise<ResetTokenResponseDto> {
-    let payload: PasswordResetTokenPayload;
-    try {
-      payload = this.jwtService.verify<PasswordResetTokenPayload>(
-        dto.reset_token,
-        { secret: this.authConfig.jwt.resetSecret },
-      );
-    } catch {
-      throw new UnauthorizedException('Invalid or expired reset token');
-    }
-
-    if (payload.type !== 'password_reset' || payload.verified) {
-      throw new UnauthorizedException('Invalid token type');
-    }
-
-    const record = await this.prismaService.db.passwordReset.findFirst({
+  private async getSelectableProfiles(userId: string) {
+    const profiles = await this.prismaService.db.profile.findMany({
       where: {
-        id: payload.jti,
-        user_id: payload.sub,
-        used_at: null,
-        expires_at: { gt: new Date() },
+        user_id: userId,
+        is_deleted: false,
+        is_active: true,
+        account: { is_deleted: false, status: 'ACTIVE' },
+      },
+      include: {
+        account: true,
+        roles: { include: { role: true } },
+        branches: { include: { branch: true } },
+      },
+      orderBy: { created_at: 'asc' },
+    });
+
+    return profiles.map((profile) => ({
+      id: profile.id,
+      account: {
+        id: profile.account.id,
+        name: profile.account.name,
+        specialities: profile.account.specialities,
+        status: profile.account.status,
+      },
+      roles: profile.roles.map((item) => item.role.name),
+      branches: profile.branches.map((item) => ({
+        id: item.branch.id,
+        name: item.branch.name,
+        city: item.branch.city,
+        governorate: item.branch.governorate,
+        is_main: item.branch.is_main,
+      })),
+    }));
+  }
+
+  private async sendVerificationCode(input: {
+    userId: string;
+    target: string;
+    channel: 'EMAIL' | 'PHONE';
+    purpose: 'SIGNUP' | 'PHONE_LOGIN' | 'PASSWORD_RESET';
+  }) {
+    await this.prismaService.db.verificationCode.updateMany({
+      where: {
+        user_id: input.userId,
+        purpose: input.purpose,
+        consumed_at: null,
+      },
+      data: { consumed_at: new Date() },
+    });
+
+    const code = randomInt(100000, 1000000).toString();
+    const code_hash = await bcrypt.hash(code, 10);
+    const expires_at = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
+    await this.prismaService.db.verificationCode.create({
+      data: {
+        user_id: input.userId,
+        target: input.target,
+        channel: input.channel,
+        purpose: input.purpose,
+        code_hash,
+        expires_at,
+        max_attempts: OTP_MAX_ATTEMPTS,
+      },
+    });
+
+    if (input.channel === 'EMAIL') {
+      await this.mailService.sendVerificationEmail(input.target, code);
+    } else {
+      await this.mailService.sendPhoneOtp(input.target, code);
+    }
+  }
+
+  private async consumeVerificationCode(input: {
+    userId: string;
+    target: string;
+    purpose: 'SIGNUP' | 'PHONE_LOGIN' | 'PASSWORD_RESET';
+    code: string;
+  }) {
+    const record = await this.prismaService.db.verificationCode.findFirst({
+      where: {
+        user_id: input.userId,
+        target: input.target,
+        purpose: input.purpose,
+        consumed_at: null,
       },
       orderBy: { created_at: 'desc' },
     });
-
-    if (!record) {
-      throw new BadRequestException('Invalid or expired reset code');
+    if (!record) throw new UnauthorizedException('Invalid verification code');
+    if (record.expires_at < new Date())
+      throw new GoneException('Verification code expired');
+    if (record.attempts >= record.max_attempts) {
+      throw new UnauthorizedException('Maximum verification attempts reached');
     }
 
-    const isValid = await bcrypt.compare(dto.code, record.code_hash);
-    if (!isValid) throw new BadRequestException('Invalid reset code');
+    const matches = await bcrypt.compare(input.code, record.code_hash);
+    if (!matches) {
+      await this.prismaService.db.verificationCode.update({
+        where: { id: record.id },
+        data: { attempts: { increment: 1 } },
+      });
+      throw new UnauthorizedException('Invalid verification code');
+    }
 
-    await this.prismaService.db.passwordReset.update({
+    await this.prismaService.db.verificationCode.update({
       where: { id: record.id },
-      data: { used_at: new Date() },
+      data: { consumed_at: new Date() },
     });
-
-    return this.issuePasswordResetToken(
-      payload.sub,
-      payload.email,
-      record.id,
-      true,
-    );
   }
 
-  // ── Reset password ─────────────────────────────────────────────────────────
-
-  async resetPassword(dto: ResetPasswordDto): Promise<AuthTokensDto> {
-    let payload: PasswordResetTokenPayload;
-    try {
-      payload = this.jwtService.verify<PasswordResetTokenPayload>(
-        dto.reset_token,
-        { secret: this.authConfig.jwt.resetSecret },
-      );
-    } catch {
-      throw new UnauthorizedException('Invalid or expired reset token');
-    }
-
-    if (payload.type !== 'password_reset' || !payload.verified) {
-      throw new UnauthorizedException('Invalid token type');
-    }
-
-    const user = await this.prismaService.db.user.findFirst({
-      where: { id: payload.sub, is_deleted: false },
+  private async findRole(name: string) {
+    const role = await this.prismaService.db.role.findUnique({
+      where: { name },
     });
-    if (!user) throw new UnauthorizedException('User not found');
-
-    const password_hashed = await bcrypt.hash(dto.password, 12);
-
-    await this.prismaService.db.$transaction(async (tx) => {
-      const consumed = await tx.passwordReset.updateMany({
-        where: {
-          id: payload.jti,
-          user_id: user.id,
-          used_at: { not: null },
-          reset_at: null,
-        },
-        data: { reset_at: new Date() },
-      });
-      if (consumed.count !== 1) {
-        throw new UnauthorizedException('Reset token has already been used');
-      }
-
-      await tx.user.update({
-        where: { id: user.id },
-        data: { password_hashed },
-      });
-      await tx.refreshToken.updateMany({
-        where: { user_id: user.id, is_revoked: false },
-        data: { is_revoked: true, revoked_at: new Date() },
-      });
-    });
-
-    return this.issueTokenPair(user);
+    if (!role)
+      throw new InternalServerErrorException(`${name} role not seeded`);
+    return role;
   }
 
-  // ── Me ─────────────────────────────────────────────────────────────────────
-
-  async getMe(userId: string): Promise<MeResponseDto> {
-    const user = await this.prismaService.db.user.findFirstOrThrow({
-      where: { id: userId, is_deleted: false },
-      include: {
-        staff: {
-          where: {
-            is_deleted: false,
-            organization: { is_deleted: false, status: 'ACTIVE' },
-            branch: { is_deleted: false, status: 'ACTIVE' },
-          },
-          include: { organization: true, branch: true, role: true },
-        },
-      },
-    });
-
-    return {
-      id: user.id,
-      first_name: user.first_name,
-      last_name: user.last_name,
-      email: user.email,
-      is_active: user.is_active,
-      verified_at: user.verified_at,
-      created_at: user.created_at,
-      profiles: user.staff.map((s) => ({
-        staff_id: s.id,
-        job_title: s.job_title,
-        specialty: s.specialty,
-        is_clinical: s.is_clinical,
-        role: { id: s.role.id, name: s.role.name },
-        organization: {
-          id: s.organization.id,
-          name: s.organization.name,
-          specialities: s.organization.specialities,
-          status: s.organization.status,
-        },
-        branch: {
-          id: s.branch.id,
-          address: s.branch.address,
-          city: s.branch.city,
-          governorate: s.branch.governorate,
-          country: s.branch.country,
-          is_main: s.branch.is_main,
-        },
-      })),
-    };
-  }
-
-  // ── Private helpers ────────────────────────────────────────────────────────
-
-  private async sendOtp(userId: string, email: string): Promise<void> {
-    const code = randomInt(100000, 1000000).toString();
-    const code_hash = await bcrypt.hash(code, OTP_HASH_ROUNDS);
-    const expires_at = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
-
-    await this.prismaService.db.emailVerification.create({
-      data: { user_id: userId, code_hash, expires_at },
-    });
-
-    await this.mailService.sendVerificationEmail(email, code);
-  }
-
-  private issuePasswordResetToken(
+  private issueSignupToken(
     userId: string,
-    email: string,
-    jti: string,
-    verified: boolean,
-  ): ResetTokenResponseDto {
-    const payload: PasswordResetTokenPayload = {
-      sub: userId,
-      email,
-      jti,
-      type: 'password_reset',
-      verified,
-    };
-    const reset_token = this.jwtService.sign(payload, {
-      secret: this.authConfig.jwt.resetSecret,
-      expiresIn: this.parseDurationToSeconds(
-        this.authConfig.jwt.registrationExpiration,
-      ),
-    });
-    return {
-      reset_token,
-      expires_in: this.parseDurationToSeconds(
-        this.authConfig.jwt.registrationExpiration,
-      ),
-    };
-  }
-
-  private async sendPasswordResetOtp(
-    userId: string,
-    email: string,
-  ): Promise<{ id: string }> {
-    const code = randomInt(100000, 1000000).toString();
-    const code_hash = await bcrypt.hash(code, OTP_HASH_ROUNDS);
-    const expires_at = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
-
-    const resetRecord = await this.prismaService.db.passwordReset.create({
-      data: { user_id: userId, code_hash, expires_at },
-      select: { id: true },
-    });
-
-    await this.mailService.sendPasswordResetEmail(email, code);
-
-    return resetRecord;
-  }
-
-  private issueRegistrationToken(userId: string): RegistrationTokenResponseDto {
-    const payload: RegistrationTokenPayload = {
-      sub: userId,
-      type: 'registration',
-    };
-    const registration_token = this.jwtService.sign(payload, {
+    type: 'signup' | 'profile_selection',
+  ) {
+    const payload: SignupTokenPayload = { userId, type };
+    const signup_token = this.jwtService.sign(payload, {
       secret: this.authConfig.jwt.accessSecret,
       expiresIn: this.parseDurationToSeconds(
         this.authConfig.jwt.registrationExpiration,
       ),
     });
     return {
-      registration_token,
+      signup_token,
       expires_in: this.parseDurationToSeconds(
         this.authConfig.jwt.registrationExpiration,
       ),
     };
   }
 
-  private decodeRegistrationToken(token: string): string {
-    let payload: RegistrationTokenPayload;
+  private decodeSignupToken(
+    token: string,
+    type: 'signup' | 'profile_selection',
+  ) {
+    let payload: SignupTokenPayload;
     try {
-      payload = this.jwtService.verify<RegistrationTokenPayload>(token, {
+      payload = this.jwtService.verify<SignupTokenPayload>(token, {
         secret: this.authConfig.jwt.accessSecret,
       });
     } catch {
-      throw new UnauthorizedException('Invalid or expired registration token');
+      throw new UnauthorizedException('Invalid or expired token');
     }
-    if (payload.type !== 'registration') {
+    if (payload.type !== type)
       throw new UnauthorizedException('Invalid token type');
-    }
-    return payload.sub;
+    return payload.userId;
   }
 
-  private async issueTokenPair(user: User): Promise<AuthTokensDto> {
+  private async issueTokenPair(
+    user: Pick<User, 'id'>,
+    profileId: string,
+    accountId: string,
+  ): Promise<AuthTokensDto> {
+    await this.assertProfileBelongsToUser(user.id, profileId, accountId);
+
     const jti = randomUUID();
+    const accessExpiresIn = this.parseDurationToSeconds(
+      this.authConfig.jwt.accessExpiration,
+    );
+    const refreshExpiresIn = this.parseDurationToSeconds(
+      this.authConfig.jwt.refreshExpiration,
+    );
     const accessPayload: JwtAccessPayload = {
-      sub: user.id,
-      email: user.email,
+      userId: user.id,
+      profileId,
+      accountId,
       type: 'access',
     };
     const refreshPayload: JwtRefreshPayload = {
-      sub: user.id,
+      userId: user.id,
+      profileId,
+      accountId,
       jti,
       type: 'refresh',
     };
-
     const access_token = this.jwtService.sign(accessPayload, {
       secret: this.authConfig.jwt.accessSecret,
-      expiresIn: this.parseDurationToSeconds(
-        this.authConfig.jwt.accessExpiration,
-      ),
+      expiresIn: accessExpiresIn,
     });
-
     const refresh_token = this.jwtService.sign(refreshPayload, {
       secret: this.authConfig.jwt.refreshSecret,
-      expiresIn: this.parseDurationToSeconds(
-        this.authConfig.jwt.refreshExpiration,
-      ),
+      expiresIn: refreshExpiresIn,
     });
-
     const token_hash = await bcrypt.hash(refresh_token, 10);
-    const expires_at = new Date(
-      Date.now() +
-        this.parseDurationToSeconds(this.authConfig.jwt.refreshExpiration) *
-          1000,
-    );
-
     await this.prismaService.db.refreshToken.create({
-      data: { jti, token_hash, user_id: user.id, expires_at },
+      data: {
+        jti,
+        token_hash,
+        user_id: user.id,
+        profile_id: profileId,
+        account_id: accountId,
+        expires_at: new Date(Date.now() + refreshExpiresIn * 1000),
+      },
     });
 
     return {
@@ -724,10 +550,26 @@ export class AuthService {
       access_token,
       refresh_token,
       token_type: 'Bearer',
-      expires_in: this.parseDurationToSeconds(
-        this.authConfig.jwt.accessExpiration,
-      ),
+      expires_in: accessExpiresIn,
     };
+  }
+
+  private async assertProfileBelongsToUser(
+    userId: string,
+    profileId: string,
+    accountId: string,
+  ) {
+    const profile = await this.prismaService.db.profile.findFirst({
+      where: {
+        id: profileId,
+        user_id: userId,
+        account_id: accountId,
+        is_deleted: false,
+        is_active: true,
+      },
+      select: { id: true },
+    });
+    if (!profile) throw new ForbiddenException('Invalid profile context');
   }
 
   private parseDurationToSeconds(duration: string): number {
