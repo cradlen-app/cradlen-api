@@ -57,6 +57,15 @@ export class MailService {
     });
   }
 
+  sendPhoneOtp(phoneNumber: string, code: string): Promise<void> {
+    this.logger.log({
+      message: 'Mock phone OTP send',
+      phoneNumber,
+      code,
+    });
+    return Promise.resolve();
+  }
+
   async sendStaffInvitationEmail(to: string, inviteUrl: string): Promise<void> {
     await this.sendWithRetry(to, {
       from: this.fromEmail,

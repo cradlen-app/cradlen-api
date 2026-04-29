@@ -1,0 +1,3 @@
+-- Placeholder restored for migration history continuity.
+-- The target database has this migration recorded already; keep this file so
+-- Prisma Migrate can reason about the local migration timeline.

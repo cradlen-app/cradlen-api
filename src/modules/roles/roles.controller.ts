@@ -1,26 +1,24 @@
-import { Controller, Get, ParseUUIDPipe, Query } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { User } from '@prisma/client';
-import { RolesService } from './roles.service';
-import { RoleResponseDto } from './dto/role-response.dto';
-import { ApiStandardResponse } from '../../common/swagger/api-responses.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
+import type { AuthContext } from '../../common/interfaces/auth-context.interface.js';
+import { ApiStandardResponse } from '../../common/swagger/api-responses.decorator.js';
+import { RoleResponseDto } from './dto/role-response.dto.js';
+import { RolesService } from './roles.service.js';
 
 @ApiTags('Roles')
 @ApiBearerAuth()
-@Controller('roles')
+@Controller('accounts/:accountId/roles')
 export class RolesController {
   constructor(private readonly rolesService: RolesService) {}
 
   @Get()
-  @ApiOperation({ summary: 'List roles for an organization (owner only)' })
+  @ApiOperation({ summary: 'List roles for an account' })
   @ApiStandardResponse(RoleResponseDto)
   listRoles(
-    @CurrentUser() user: User,
-    @Query('organization_id', ParseUUIDPipe) organizationId: string,
-    @Query('branch_id', new ParseUUIDPipe({ optional: true }))
-    branchId?: string,
+    @CurrentUser() user: AuthContext,
+    @Param('accountId', ParseUUIDPipe) accountId: string,
   ) {
-    return this.rolesService.listRoles(user.id, organizationId, branchId);
+    return this.rolesService.listRoles(user.profileId, accountId);
   }
 }

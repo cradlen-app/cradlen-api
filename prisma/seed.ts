@@ -13,19 +13,19 @@ const prisma = new PrismaClient({ adapter });
 
 async function main() {
   await prisma.role.upsert({
-    where: { name: 'owner' },
+    where: { name: 'OWNER' },
     update: {},
-    create: { name: 'owner' },
+    create: { name: 'OWNER' },
   });
   await prisma.role.upsert({
-    where: { name: 'doctor' },
+    where: { name: 'DOCTOR' },
     update: {},
-    create: { name: 'doctor' },
+    create: { name: 'DOCTOR' },
   });
   await prisma.role.upsert({
-    where: { name: 'receptionist' },
+    where: { name: 'RECEPTIONIST' },
     update: {},
-    create: { name: 'receptionist' },
+    create: { name: 'RECEPTIONIST' },
   });
 
   await prisma.subscriptionPlan.upsert({

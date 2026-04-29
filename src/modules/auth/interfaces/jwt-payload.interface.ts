@@ -1,29 +1,32 @@
 export interface JwtAccessPayload {
-  sub: string;
-  email: string;
+  userId: string;
+  profileId: string;
+  accountId: string;
   type: 'access';
   iat?: number;
   exp?: number;
 }
 
 export interface JwtRefreshPayload {
-  sub: string;
+  userId: string;
+  profileId?: string;
+  accountId?: string;
   jti: string;
   type: 'refresh';
   iat?: number;
   exp?: number;
 }
 
-export interface RegistrationTokenPayload {
-  sub: string;
-  type: 'registration';
+export interface SignupTokenPayload {
+  userId: string;
+  type: 'signup' | 'profile_selection';
   iat?: number;
   exp?: number;
 }
 
 export interface PasswordResetTokenPayload {
-  sub: string;
-  email: string;
+  userId: string;
+  target: string;
   jti: string;
   type: 'password_reset';
   verified: boolean;
