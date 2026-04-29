@@ -1,9 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsEmail } from 'class-validator';
 
 export class ResendOtpDto {
   @ApiProperty()
-  @IsString()
-  @IsNotEmpty()
-  registration_token!: string;
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.toLowerCase().trim() : value,
+  )
+  @IsEmail()
+  email!: string;
 }

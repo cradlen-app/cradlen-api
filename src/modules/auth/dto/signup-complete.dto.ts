@@ -1,7 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  ArrayNotEmpty,
   IsArray,
-  IsBoolean,
+  IsIn,
   IsOptional,
   IsString,
   MinLength,
@@ -17,36 +18,21 @@ export class SignupCompleteDto {
   @MinLength(1)
   account_name!: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
+  @ApiProperty({ type: [String] })
   @IsArray()
   @IsString({ each: true })
-  account_specialities?: string[];
+  specialties!: string[];
 
   @ApiProperty({ example: 'Main Branch' })
   @IsString()
   branch_name!: string;
 
-  @ApiProperty()
-  @IsString()
-  branch_address!: string;
-
-  @ApiProperty()
-  @IsString()
-  branch_city!: string;
-
-  @ApiProperty()
-  @IsString()
-  branch_governorate!: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  branch_country?: string;
-
-  @ApiProperty()
-  @IsBoolean()
-  is_clinical!: boolean;
+  @ApiProperty({ type: [String], example: ['OWNER', 'DOCTOR'] })
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  @IsIn(['OWNER', 'DOCTOR'], { each: true })
+  roles!: string[];
 
   @ApiPropertyOptional()
   @IsOptional()

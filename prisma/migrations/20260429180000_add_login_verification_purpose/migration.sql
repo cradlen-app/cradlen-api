@@ -1,0 +1,1 @@
+ALTER TYPE "VerificationPurpose" ADD VALUE IF NOT EXISTS 'LOGIN';
