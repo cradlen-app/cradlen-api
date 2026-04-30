@@ -115,7 +115,7 @@ model User {
   first_name           String
   last_name            String
   email                String?             @unique
-  phone_number         String?             @unique
+  phone_number         String?
   password_hashed      String?
   is_active            Boolean             @default(true)
   is_deleted           Boolean             @default(false)
