@@ -55,14 +55,14 @@ export class StaffProfileDto {
   @ApiProperty()
   is_clinical!: boolean;
 
-  @ApiProperty({ type: ProfileRoleDto })
-  role!: ProfileRoleDto;
+  @ApiProperty({ type: [ProfileRoleDto] })
+  roles!: ProfileRoleDto[];
 
   @ApiProperty({ type: ProfileOrganizationDto })
   organization!: ProfileOrganizationDto;
 
-  @ApiProperty({ type: ProfileBranchDto })
-  branch!: ProfileBranchDto;
+  @ApiProperty({ type: [ProfileBranchDto] })
+  branches!: ProfileBranchDto[];
 }
 
 export class MeResponseDto {

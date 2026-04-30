@@ -1,5 +1,6 @@
 import { AuthController } from './auth.controller.js';
 import type { AuthService } from './auth.service.js';
+import type { AuthContext } from '../../common/interfaces/auth-context.interface.js';
 
 describe('AuthController', () => {
   let controller: AuthController;
@@ -17,6 +18,7 @@ describe('AuthController', () => {
       | 'selectProfile'
       | 'refresh'
       | 'logout'
+      | 'getMe'
     >
   >;
 
@@ -33,6 +35,7 @@ describe('AuthController', () => {
       selectProfile: jest.fn(),
       refresh: jest.fn(),
       logout: jest.fn(),
+      getMe: jest.fn(),
     };
     controller = new AuthController(authService as unknown as AuthService);
   });
@@ -123,5 +126,29 @@ describe('AuthController', () => {
     authService.logout.mockResolvedValue(undefined);
     await controller.logout({ refresh_token: 'refresh' });
     expect(authService.logout).toHaveBeenCalledWith('refresh');
+  });
+
+  it('delegates getMe with userId and profileId from auth context', async () => {
+    const user: AuthContext = {
+      userId: 'user-uuid',
+      profileId: 'profile-uuid',
+      accountId: 'account-uuid',
+      roles: ['OWNER'],
+      branchIds: ['branch-uuid'],
+    };
+    const meResponse = {
+      id: 'user-uuid',
+      first_name: 'Sara',
+      last_name: 'Ali',
+      email: 'sara@example.com',
+      is_active: true,
+      verified_at: null,
+      created_at: new Date(),
+      profiles: [],
+    };
+    authService.getMe.mockResolvedValue(meResponse);
+
+    await expect(controller.getMe(user)).resolves.toEqual(meResponse);
+    expect(authService.getMe).toHaveBeenCalledWith('user-uuid', 'profile-uuid');
   });
 });
