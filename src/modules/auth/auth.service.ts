@@ -2,13 +2,13 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
-  GoneException,
   HttpException,
   HttpStatus,
   Injectable,
   InternalServerErrorException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ERROR_CODES } from '../../common/constant/error-codes.js';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
@@ -105,7 +105,17 @@ export class AuthService {
         await this.resendOtp({ email: existing.email });
         return this.issueSignupToken(existing.id, 'signup');
       }
-      throw new ConflictException('User already exists');
+      const conflictFields = [
+        ...(existing.email === dto.email ? ['email'] : []),
+        ...(dto.phone_number && existing.phone_number === dto.phone_number
+          ? ['phone_number']
+          : []),
+      ];
+      throw new ConflictException({
+        message: 'User already exists',
+        code: ERROR_CODES.CONFLICT,
+        details: { fields: conflictFields },
+      });
     }
 
     const password_hashed = await bcrypt.hash(dto.password, 12);
@@ -198,9 +208,10 @@ export class AuthService {
         data: {
           account_id: account.id,
           name: dto.branch_name,
-          address: '',
-          city: '',
-          governorate: '',
+          address: dto.branch_address,
+          city: dto.branch_city,
+          governorate: dto.branch_governorate,
+          country: dto.branch_country,
           is_main: true,
         },
       });
@@ -405,7 +416,10 @@ export class AuthService {
     });
     if (!profile) throw new ForbiddenException('Invalid profile selection');
 
-    const branchId = this.resolveSelectedBranchId(profile.branches, dto.branch_id);
+    const branchId = this.resolveSelectedBranchId(
+      profile.branches,
+      dto.branch_id,
+    );
 
     const selectedBranch = profile.branches.find(
       (item) => item.branch_id === branchId,
@@ -544,9 +558,7 @@ export class AuthService {
     }));
   }
 
-  private resolveSignupCompleteRoles(
-    roles: string[],
-  ): SignupCompleteRole[] {
+  private resolveSignupCompleteRoles(roles: string[]): SignupCompleteRole[] {
     const uniqueRoles = [...new Set(roles)] as SignupCompleteRole[];
     const unsupportedRole = uniqueRoles.find(
       (role) => !SIGNUP_COMPLETE_ROLES.includes(role),
@@ -632,11 +644,32 @@ export class AuthService {
       },
       orderBy: { created_at: 'desc' },
     });
-    if (!record) throw new UnauthorizedException('Invalid verification code');
-    if (record.expires_at < new Date())
-      throw new GoneException('Verification code expired');
+    if (!record) {
+      throw new HttpException(
+        {
+          code: ERROR_CODES.INVALID_CODE,
+          message: 'Verification code not found or already used',
+        },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    if (record.expires_at < new Date()) {
+      throw new HttpException(
+        {
+          code: ERROR_CODES.CODE_EXPIRED,
+          message: 'Verification code has expired',
+        },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
     if (record.attempts >= record.max_attempts) {
-      throw new UnauthorizedException('Maximum verification attempts reached');
+      throw new HttpException(
+        {
+          code: ERROR_CODES.MAX_ATTEMPTS_EXCEEDED,
+          message: 'Maximum verification attempts reached',
+        },
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     const matches = await bcrypt.compare(input.code, record.code_hash);
@@ -645,7 +678,13 @@ export class AuthService {
         where: { id: record.id },
         data: { attempts: { increment: 1 } },
       });
-      throw new UnauthorizedException('Invalid verification code');
+      throw new HttpException(
+        {
+          code: ERROR_CODES.INVALID_CODE,
+          message: 'Incorrect verification code',
+        },
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     await this.prismaService.db.verificationCode.update({
