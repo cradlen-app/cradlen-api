@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Injectable,
   InternalServerErrorException,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ERROR_CODES } from '../../common/constant/error-codes.js';
@@ -834,6 +835,55 @@ export class AuthService {
       select: { id: true },
     });
     if (!profile) throw new ForbiddenException('Invalid profile context');
+  }
+
+  async getMe(userId: string, profileId: string) {
+    const user = await this.prismaService.db.user.findFirst({
+      where: { id: userId, is_deleted: false },
+      include: {
+        profiles: {
+          where: { id: profileId, is_deleted: false },
+          include: {
+            account: true,
+            roles: { include: { role: true } },
+            branches: { include: { branch: true } },
+          },
+        },
+      },
+    });
+
+    if (!user) throw new NotFoundException('User not found');
+
+    return {
+      id: user.id,
+      first_name: user.first_name,
+      last_name: user.last_name,
+      email: user.email,
+      is_active: user.is_active,
+      verified_at: user.verified_at,
+      created_at: user.created_at,
+      profiles: user.profiles.map((profile) => ({
+        staff_id: profile.id,
+        job_title: profile.job_title,
+        specialty: profile.specialty,
+        is_clinical: profile.is_clinical,
+        organization: {
+          id: profile.account.id,
+          name: profile.account.name,
+          specialities: profile.account.specialities,
+          status: profile.account.status,
+        },
+        roles: profile.roles.map((pr) => ({ id: pr.role.id, name: pr.role.name })),
+        branches: profile.branches.map((pb) => ({
+          id: pb.branch.id,
+          address: pb.branch.address,
+          city: pb.branch.city,
+          governorate: pb.branch.governorate,
+          country: pb.branch.country,
+          is_main: pb.branch.is_main,
+        })),
+      })),
+    };
   }
 
   private parseDurationToSeconds(duration: string): number {
