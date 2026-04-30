@@ -539,4 +539,91 @@ describe('AuthService', () => {
       }),
     ).rejects.toThrow(ForbiddenException);
   });
+
+  it('returns current user with active profile data for getMe', async () => {
+    const { service, mocks } = createService();
+    const userId = '11111111-1111-4111-8111-111111111111';
+    const profileId = '22222222-2222-4222-8222-222222222222';
+    const now = new Date();
+
+    mocks.userFindFirst.mockResolvedValue({
+      id: userId,
+      first_name: 'Sara',
+      last_name: 'Ali',
+      email: 'sara@example.com',
+      is_active: true,
+      verified_at: now,
+      created_at: now,
+      profiles: [
+        {
+          id: profileId,
+          job_title: 'Surgeon',
+          specialty: 'Orthopedics',
+          is_clinical: true,
+          account: {
+            id: '33333333-3333-4333-8333-333333333333',
+            name: 'Clinic',
+            specialities: ['Orthopedics'],
+            status: 'ACTIVE',
+          },
+          roles: [{ role: { id: 'role-1', name: 'OWNER' } }],
+          branches: [
+            {
+              branch: {
+                id: 'branch-1',
+                address: '123 Main St',
+                city: 'Cairo',
+                governorate: 'Cairo',
+                country: null,
+                is_main: true,
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const result = await service.getMe(userId, profileId);
+
+    expect(result).toMatchObject({
+      id: userId,
+      first_name: 'Sara',
+      last_name: 'Ali',
+      email: 'sara@example.com',
+      profiles: [
+        {
+          staff_id: profileId,
+          job_title: 'Surgeon',
+          specialty: 'Orthopedics',
+          is_clinical: true,
+          organization: {
+            id: '33333333-3333-4333-8333-333333333333',
+            name: 'Clinic',
+          },
+          roles: [{ id: 'role-1', name: 'OWNER' }],
+          branches: [
+            {
+              id: 'branch-1',
+              city: 'Cairo',
+              is_main: true,
+            },
+          ],
+        },
+      ],
+    });
+    expect(mocks.userFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: userId }),
+      }),
+    );
+  });
+
+  it('throws NotFoundException when user not found in getMe', async () => {
+    const { service, mocks } = createService();
+    mocks.userFindFirst.mockResolvedValue(null);
+
+    await expect(service.getMe('missing-user', 'any-profile')).rejects.toThrow(
+      'User not found',
+    );
+  });
 });

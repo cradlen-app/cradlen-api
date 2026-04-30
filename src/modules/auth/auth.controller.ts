@@ -8,13 +8,16 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator.js';
+import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import {
   ApiStandardResponse,
   ApiVoidResponse,
 } from '../../common/swagger/index.js';
+import type { AuthContext } from '../../common/interfaces/auth-context.interface.js';
 import { AuthService } from './auth.service.js';
+import { MeResponseDto } from './dto/me-response.dto.js';
 import { AuthTokensDto } from './dto/auth-tokens.dto.js';
 import { LoginDto } from './dto/login.dto.js';
 import { LogoutDto } from './dto/logout.dto.js';
@@ -33,6 +36,14 @@ import { SignupVerifyDto } from './dto/signup-verify.dto.js';
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  @Get('me')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get current authenticated user and active profile' })
+  @ApiStandardResponse(MeResponseDto)
+  getMe(@CurrentUser() user: AuthContext) {
+    return this.authService.getMe(user.userId, user.profileId);
+  }
 
   @Post('signup/start')
   @Public()
