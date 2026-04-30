@@ -148,11 +148,22 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         (Object.values(ERROR_CODES) as string[]).includes(rawCode)
           ? (rawCode as ErrorCode)
           : resolveCode(status);
+      const rawDetails =
+        raw !== null &&
+        typeof raw === 'object' &&
+        'details' in raw &&
+        typeof (raw as Record<string, unknown>)['details'] === 'object' &&
+        (raw as Record<string, unknown>)['details'] !== null
+          ? ((raw as Record<string, unknown>)['details'] as Record<
+              string,
+              unknown
+            >)
+          : {};
       body = {
         code: errorCode,
         message,
         statusCode: status,
-        details: {},
+        details: rawDetails,
       };
     } else {
       this.logger.error(

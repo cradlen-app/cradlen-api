@@ -27,6 +27,26 @@ export class SignupCompleteDto {
   @IsString()
   branch_name!: string;
 
+  @ApiProperty({ example: '123 Main St' })
+  @IsString()
+  @MinLength(1)
+  branch_address!: string;
+
+  @ApiProperty({ example: 'Cairo' })
+  @IsString()
+  @MinLength(1)
+  branch_city!: string;
+
+  @ApiProperty({ example: 'Giza' })
+  @IsString()
+  @MinLength(1)
+  branch_governorate!: string;
+
+  @ApiPropertyOptional({ example: 'Egypt' })
+  @IsOptional()
+  @IsString()
+  branch_country?: string;
+
   @ApiProperty({ type: [String], example: ['OWNER', 'DOCTOR'] })
   @IsArray()
   @ArrayNotEmpty()

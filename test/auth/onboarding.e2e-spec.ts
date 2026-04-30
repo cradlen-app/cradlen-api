@@ -57,19 +57,15 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
         account_name: 'Cradlen Clinic',
         specialties: ['Cardiology'],
         branch_name: 'Main Branch',
+        branch_address: '1 Clinic St',
+        branch_city: 'Cairo',
+        branch_governorate: 'Cairo',
+        branch_country: 'Egypt',
         roles: ['OWNER', 'DOCTOR'],
         specialty: 'Cardiology',
         job_title: 'Consultant',
       })
       .expect(201);
-
-    const selected = await request(app.getHttpServer())
-      .post('/v1/auth/profiles/select')
-      .send({
-        selection_token: complete.body.data.selection_token,
-        profile_id: complete.body.data.profiles[0].profile_id,
-      })
-      .expect(200);
 
     const selected = await request(app.getHttpServer())
       .post('/v1/auth/profiles/select')
@@ -114,6 +110,10 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
         account_name: 'Nour Clinic',
         specialties: [],
         branch_name: 'Main Branch',
+        branch_address: '1 Clinic St',
+        branch_city: 'Cairo',
+        branch_governorate: 'Cairo',
+        branch_country: 'Egypt',
         roles: ['OWNER'],
       })
       .expect(201);
@@ -202,7 +202,7 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
     await request(app.getHttpServer())
       .post('/v1/auth/signup/verify')
       .send({ signup_token: start.body.data.signup_token, code: originalOtp })
-      .expect(401);
+      .expect(400);
 
     await request(app.getHttpServer())
       .post('/v1/auth/signup/verify')
@@ -259,9 +259,22 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
         account_name: 'Nour Clinic',
         specialties: [],
         branch_name: 'Main Branch',
+        branch_address: '1 Clinic St',
+        branch_city: 'Cairo',
+        branch_governorate: 'Cairo',
+        branch_country: 'Egypt',
         roles: ['OWNER'],
       })
       .expect(201);
+
+    const selected = await request(app.getHttpServer())
+      .post('/v1/auth/profiles/select')
+      .send({
+        selection_token: complete.body.data.selection_token,
+        profile_id: complete.body.data.profiles[0].profile_id,
+        branch_id: complete.body.data.profiles[0].branches[0].branch_id,
+      })
+      .expect(200);
 
     await request(app.getHttpServer())
       .get('/v1/auth/registration/status')
