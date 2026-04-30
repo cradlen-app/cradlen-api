@@ -42,12 +42,14 @@ src/
 ├── app.module.ts          # Root — imports all feature modules; registers JwtAuthGuard globally
 ├── main.ts                # Bootstrap: Helmet, CORS, versioning, Swagger, pipes, locale
 ├── common/                # Shared infrastructure (never holds business logic)
+│   ├── authorization/     # AuthorizationService — role/branch access checks
 │   ├── constant/          # App constants and error codes
-│   ├── decorators/        # @Public() (skip auth), @CurrentUser() (inject User from request)
+│   ├── decorators/        # @Public() (skip auth), @CurrentUser() (inject AuthContext)
 │   ├── dto/               # ApiResponse interfaces, PaginatedPayload types
 │   ├── filters/           # GlobalExceptionFilter (maps Prisma errors → HTTP)
 │   ├── guards/            # JwtAuthGuard — applied globally via APP_GUARD
 │   ├── interceptor/       # ResponseInterceptor, LoggingInterceptor
+│   ├── interfaces/        # AuthContext interface
 │   ├── logger/            # Pino logger factory
 │   ├── middleware/        # RequestIdMiddleware (UUID per request)
 │   ├── swagger/           # ApiStandardResponse, ApiPaginatedResponse, ApiVoidResponse decorators
@@ -61,16 +63,27 @@ src/
 │   ├── database.module.ts # Global module — exports PrismaService everywhere
 │   └── prisma.service.ts  # PrismaClient with Neon adapter; exposes .db property
 └── modules/
-    ├── auth/              # JWT auth: 3-step registration, login, refresh, logout, /me
-    ├── mail/              # Resend-backed email (OTP verification emails)
+    ├── auth/              # Full auth flows: signup, login (email+phone), profile selection, refresh, logout, password reset
+    ├── accounts/          # Account CRUD (get, update)
+    ├── branches/          # Branch management
+    ├── invitations/       # Email invitations to join an account
+    ├── join-codes/        # One-time join codes for staff onboarding
+    ├── profiles/          # Profile management (/auth/me equivalent)
+    ├── roles/             # Role lookup
+    ├── users/             # User management
+    ├── mail/              # Resend-backed email (OTP and invitation emails)
     └── health/            # DB connectivity check (reference module)
 ```
 
 ### Key conventions
 
-**Response shape:** All responses wrapped by `ResponseInterceptor` → `{ data: T, meta: {} }`. For paginated responses return `paginated(items, { page, limit, total })` from `common/utils/pagination.utils.ts` — the interceptor detects the `items` + `meta` shape and restructures it to `{ data: items[], meta: { page, limit, total, totalPages } }`.
+**Response shape:** All responses wrapped by `ResponseInterceptor` → `{ data: T, meta: {} }`. Two exceptions: returning `undefined` passes through unwrapped (use for 204 No Content); returning an object that already has a `data` or `message` key bypasses wrapping and is returned as-is. For paginated responses return `paginated(items, { page, limit, total })` from `common/utils/pagination.utils.ts` — the interceptor detects a non-enumerable `__paginatedPayload` marker set by that helper (not by shape) and restructures to `{ data: items[], meta: { page, limit, total, totalPages } }`. Always use `paginated()` — do not construct the payload manually.
 
-**Error shape:** `GlobalExceptionFilter` returns `{ error: { code, message, statusCode, details, requestId } }`. Prisma error mappings: P2002 → 409, P2025 → 404, P2003 → 400. Validation errors include per-field `details`.
+**Error shape:** `GlobalExceptionFilter` returns `{ error: { code, message, statusCode, details, requestId } }`. Prisma error mappings: P2002 → 409, P2025 → 404, P2003 → 400. The `details` structure varies by error type:
+- Validation errors (`BadRequestException`): `{ fields: { [fieldName]: string[] } }`
+- P2002 unique conflict: `{ fields: string[] }` (conflicting column names)
+- P2003 foreign-key violation: `{ field: string }` (offending column name)
+- All other errors: `{}`
 
 **Database access:** Inject `PrismaService` and use `this.prismaService.db.<model>.<method>()`. `PrismaService` is globally provided — no need to import `DatabaseModule` in feature modules.
 
@@ -82,14 +95,45 @@ src/
 - `@ApiPaginatedResponse(DtoClass)` — list endpoints
 - `@ApiVoidResponse()` — 204 No Content endpoints
 
-**Authentication:** `JwtAuthGuard` is registered globally via `APP_GUARD` — every route requires a valid Bearer token by default. Use `@Public()` to opt out. Use `@CurrentUser()` to inject the full `User` Prisma record. The JWT strategy rejects tokens with `type: 'registration'` so registration tokens cannot call protected endpoints.
+**Authentication:** `JwtAuthGuard` is registered globally via `APP_GUARD` — every route requires a valid Bearer token by default. Use `@Public()` to opt out.
 
-**Registration flow (3 steps):**
-1. `POST /auth/register/personal` → creates `User` + `Profile`, sends OTP, returns `registration_token`
-2. `POST /auth/register/verify-email` → validates OTP, marks `verified_at`, returns fresh `registration_token`
-3. `POST /auth/register/organization` → creates `Organization`, main `Branch`, `Staff` (owner role), free-trial `Subscription`, returns access + refresh tokens
+**`@CurrentUser()`** injects an `AuthContext` object (not the raw Prisma `User`):
+```ts
+interface AuthContext {
+  userId: string;
+  profileId: string;
+  accountId: string;
+  roles: string[];      // e.g. ['OWNER', 'DOCTOR']
+  branchIds: string[];  // branch IDs the profile belongs to
+}
+```
+The JWT strategy (`jwt.strategy.ts`) rejects tokens with `type !== 'access'` and calls `AuthorizationService.getProfileContext()` to populate this context on every authenticated request.
 
-OTP resend: 60-second cooldown, max 5 attempts per 30-minute window. Refresh tokens use JTI rotation (each refresh revokes the old token).
+**Authorization:** `AuthorizationService` (in `common/authorization/`) provides:
+- `assertCanManageAccount(profileId, accountId)` — throws if not OWNER
+- `assertCanManageBranch(profileId, accountId, branchId)` — throws if not OWNER or not in branch
+- `assertCanManageStaff(profileId, accountId)` — throws if not OWNER
+- `canManage*` / `canAccess*` — boolean equivalents
+
+**Signup flow (3 steps):**
+1. `POST /auth/signup/start` → creates `User`, sends OTP, returns `signup_token`
+2. `POST /auth/signup/verify` → validates OTP, marks `verified_at`, returns fresh `signup_token`
+3. `POST /auth/signup/complete` → creates `Account`, main `Branch`, `Profile` (with roles + branch), free-trial `Subscription`, marks `onboarding_completed`, returns `ProfileSelectionResponse`
+
+Supported roles at signup: `OWNER` (required) and `DOCTOR` (optional). OWNER+DOCTOR means `is_clinical=true` and `specialty`/`job_title` are captured.
+
+**Login / profile-selection flow:**
+- `POST /auth/login` (email+password) or `POST /auth/phone/request-otp` → `POST /auth/phone/verify-otp`
+- Both return either:
+  - `{ type: 'profile_selection', selection_token, profiles[] }` — user has multiple profiles to choose from
+  - `{ type: 'ONBOARDING_REQUIRED', step: 'VERIFY_OTP' | 'COMPLETE_ONBOARDING' }` — incomplete registration
+- `POST /auth/profiles/select` — exchange `selection_token` + `profile_id` → `{ type: 'tokens', access_token, refresh_token, ... }`
+
+JWT tokens carry `{ userId, profileId, accountId, type }`. Refresh tokens use JTI rotation (each refresh revokes the old token and stores a bcrypt hash).
+
+**OTP:** 15-minute TTL, max 5 attempts. Resend cooldown: 60 seconds, max 5 resends per hour. `RegistrationCleanupService` purges PENDING users older than 24 hours (runs hourly via cron).
+
+**Password reset:** `POST /auth/forgot-password` → `POST /auth/verify-reset-code` → `POST /auth/reset-password`.
 
 **Versioning:** URI-based (`/v1/...`). Default version from `API_DEFAULT_VERSION` env var.
 
@@ -104,24 +148,29 @@ OTP resend: 60-second cooldown, max 5 attempts per 30-minute window. Refresh tok
 1. Create `src/modules/<feature>/` with controller, service, and module files.
 2. Import the module in `AppModule`.
 3. Inject `PrismaService` directly (globally provided).
-4. Use `paginated(items, { page, limit, total })` for list endpoints; return plain objects for single-resource endpoints.
-5. Decorate controller methods with the appropriate `@ApiStandardResponse` / `@ApiPaginatedResponse` / `@ApiVoidResponse`.
-6. Add Prisma models to `prisma/schema.prisma` and run `npx prisma migrate dev`.
+4. Use `@CurrentUser() user: AuthContext` to access the authenticated identity; inject `AuthorizationService` for role/branch checks.
+5. Use `paginated(items, { page, limit, total })` for list endpoints; return plain objects for single-resource endpoints.
+6. Decorate controller methods with the appropriate `@ApiStandardResponse` / `@ApiPaginatedResponse` / `@ApiVoidResponse`.
+7. Add Prisma models to `prisma/schema.prisma` and run `npx prisma migrate dev`.
 
 ### Data models (prisma/schema.prisma)
 
 Core entities and their relationships:
 
-- **Organization** → many **Branch**, many **Staff**, many **Subscription**
+- **Account** → many **Branch**, many **Profile**, many **Subscription**, many **Invitation**, many **JoinCode**
 - **SubscriptionPlan** → many **Subscription**
-- **Branch** → many **Staff** (unique constraint: `id + organization_id`)
-- **User** → one **Profile**, many **Staff** records, many **RefreshToken**, many **EmailVerification**
-- **Role** → many **Staff**
-- **Staff** unique constraint: `(user_id, organization_id, branch_id, role_id)`
-- **RefreshToken** — stores `jti` (UUID, unique), `token_hash` (bcrypt), `expires_at`, `is_revoked`
-- **EmailVerification** — stores `code_hash` (bcrypt), `expires_at`, `used_at` (null = unused)
+- **Branch** → many **ProfileBranch**, many **InvitationBranch**, many **JoinCodeBranch** (unique: `id + account_id`)
+- **User** → many **Profile**, many **RefreshToken**, many **VerificationCode**
+- **Role** → many **ProfileRole**, many **InvitationRole**, many **JoinCodeRole**
+- **Profile** — join of `User × Account`; unique `(user_id, account_id)` — carries `is_clinical`, `specialty`, `job_title`
+- **ProfileRole** — M2M: `Profile × Role`; unique `(profile_id, role_id)`
+- **ProfileBranch** — M2M: `Profile × Branch`; unique `(profile_id, branch_id)`
+- **Invitation** — `Account` sends email invitations with pre-assigned roles/branches
+- **JoinCode** — reusable (up to `max_uses`) codes with pre-assigned roles/branches
+- **RefreshToken** — stores `jti` (UUID, unique), `token_hash` (bcrypt), `profile_id`, `account_id`, `expires_at`, `is_revoked`
+- **VerificationCode** — stores `code_hash` (bcrypt), `expires_at`, `consumed_at` (null = unused), `attempts`, `purpose` (SIGNUP | LOGIN | PHONE_LOGIN | PASSWORD_RESET)
 
-All models have UUID primary keys, `created_at`/`updated_at` timestamps, and soft-delete fields (`is_deleted`, `deleted_at`). `SubscriptionPlan` and `Role` are seed-only lookup tables — the app expects `owner` role and `free_trial` plan to exist at runtime.
+All models have UUID primary keys, `created_at`/`updated_at` timestamps, and soft-delete fields (`is_deleted`, `deleted_at`). `SubscriptionPlan` and `Role` are seed-only lookup tables — the app expects `OWNER` and `DOCTOR` roles and a `free_trial` plan to exist at runtime.
 
 ## Environment variables
 
