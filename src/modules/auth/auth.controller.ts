@@ -26,11 +26,15 @@ import { RegistrationStatusQueryDto } from './dto/registration-status-query.dto.
 import { RegistrationStatusResponseDto } from './dto/registration-status-response.dto.js';
 import { ResendOtpDto } from './dto/resend-otp.dto.js';
 import { ResendOtpResponseDto } from './dto/resend-otp-response.dto.js';
-import { RequestPhoneOtpDto, VerifyPhoneOtpDto } from './dto/phone-otp.dto.js';
 import { SelectProfileDto } from './dto/select-profile.dto.js';
 import { SignupCompleteDto } from './dto/signup-complete.dto.js';
 import { SignupStartDto } from './dto/signup-start.dto.js';
 import { SignupVerifyDto } from './dto/signup-verify.dto.js';
+import { ForgotPasswordDto } from './dto/forgot-password.dto.js';
+import { ResendResetCodeDto } from './dto/resend-reset-code.dto.js';
+import { VerifyResetCodeDto } from './dto/verify-reset-code.dto.js';
+import { ResetPasswordDto } from './dto/reset-password.dto.js';
+import { ResetTokenResponseDto } from './dto/reset-token-response.dto.js';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -39,7 +43,9 @@ export class AuthController {
 
   @Get('me')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get current authenticated user and active profile' })
+  @ApiOperation({
+    summary: 'Get current authenticated user and active profile',
+  })
   @ApiStandardResponse(MeResponseDto)
   getMe(@CurrentUser() user: AuthContext) {
     return this.authService.getMe(user.userId, user.profileId);
@@ -107,22 +113,6 @@ export class AuthController {
     return this.authService.login(dto);
   }
 
-  @Post('phone/request-otp')
-  @Public()
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Request phone OTP login code' })
-  requestPhoneOtp(@Body() dto: RequestPhoneOtpDto) {
-    return this.authService.requestPhoneOtp(dto);
-  }
-
-  @Post('phone/verify-otp')
-  @Public()
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Verify phone OTP and return selectable profiles' })
-  verifyPhoneOtp(@Body() dto: VerifyPhoneOtpDto) {
-    return this.authService.verifyPhoneOtp(dto);
-  }
-
   @Post('profiles/select')
   @Public()
   @HttpCode(HttpStatus.OK)
@@ -148,5 +138,52 @@ export class AuthController {
   @ApiVoidResponse()
   async logout(@Body() dto: LogoutDto): Promise<void> {
     await this.authService.logout(dto.refresh_token);
+  }
+
+  @Post('forgot-password')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Send password reset code to email' })
+  @ApiStandardResponse(ResetTokenResponseDto)
+  forgotPassword(
+    @Body() dto: ForgotPasswordDto,
+  ): Promise<ResetTokenResponseDto> {
+    return this.authService.forgotPassword(dto);
+  }
+
+  @Post('forgot-password/resend')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Resend password reset code (rate limited: 60s cooldown, max 5/hr)',
+  })
+  @ApiStandardResponse(ResetTokenResponseDto)
+  resendPasswordResetCode(
+    @Body() dto: ResendResetCodeDto,
+  ): Promise<ResetTokenResponseDto> {
+    return this.authService.resendPasswordResetCode(dto);
+  }
+
+  @Post('verify-reset-code')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Verify password reset code and get verified reset token',
+  })
+  @ApiStandardResponse(ResetTokenResponseDto)
+  verifyResetCode(
+    @Body() dto: VerifyResetCodeDto,
+  ): Promise<ResetTokenResponseDto> {
+    return this.authService.verifyResetCode(dto);
+  }
+
+  @Post('reset-password')
+  @Public()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Set new password using verified reset token' })
+  @ApiVoidResponse()
+  async resetPassword(@Body() dto: ResetPasswordDto): Promise<void> {
+    await this.authService.resetPassword(dto);
   }
 }
