@@ -26,16 +26,18 @@ import type { ResendOtpDto } from './dto/resend-otp.dto.js';
 import type { SignupCompleteDto } from './dto/signup-complete.dto.js';
 import type { SignupStartDto } from './dto/signup-start.dto.js';
 import type { SignupVerifyDto } from './dto/signup-verify.dto.js';
-import type {
-  RequestPhoneOtpDto,
-  VerifyPhoneOtpDto,
-} from './dto/phone-otp.dto.js';
 import type { SelectProfileDto } from './dto/select-profile.dto.js';
 import type {
   JwtAccessPayload,
   JwtRefreshPayload,
+  PasswordResetTokenPayload,
   SignupTokenPayload,
 } from './interfaces/jwt-payload.interface.js';
+import type { ForgotPasswordDto } from './dto/forgot-password.dto.js';
+import type { VerifyResetCodeDto } from './dto/verify-reset-code.dto.js';
+import type { ResetPasswordDto } from './dto/reset-password.dto.js';
+import type { ResetTokenResponseDto } from './dto/reset-token-response.dto.js';
+import type { ResendResetCodeDto } from './dto/resend-reset-code.dto.js';
 
 const OTP_TTL_MINUTES = 15;
 const OTP_MAX_ATTEMPTS = 5;
@@ -348,46 +350,6 @@ export class AuthService {
     );
     if (!passwordMatches)
       throw new UnauthorizedException('Invalid credentials');
-    return this.buildLoginResponse(user);
-  }
-
-  async requestPhoneOtp(dto: RequestPhoneOtpDto) {
-    const user = await this.prismaService.db.user.findFirst({
-      where: {
-        phone_number: dto.phone_number,
-        is_deleted: false,
-        is_active: true,
-      },
-    });
-    if (!user) throw new UnauthorizedException('User not found');
-
-    await this.sendVerificationCode({
-      userId: user.id,
-      target: dto.phone_number,
-      channel: 'PHONE',
-      purpose: 'LOGIN',
-    });
-
-    return { message: 'OTP sent' };
-  }
-
-  async verifyPhoneOtp(dto: VerifyPhoneOtpDto) {
-    const user = await this.prismaService.db.user.findFirst({
-      where: {
-        phone_number: dto.phone_number,
-        is_deleted: false,
-        is_active: true,
-      },
-    });
-    if (!user) throw new UnauthorizedException('User not found');
-
-    await this.consumeVerificationCode({
-      userId: user.id,
-      target: dto.phone_number,
-      purpose: 'LOGIN',
-      code: dto.code,
-    });
-
     return this.buildLoginResponse(user);
   }
 
@@ -873,7 +835,10 @@ export class AuthService {
           specialities: profile.account.specialities,
           status: profile.account.status,
         },
-        roles: profile.roles.map((pr) => ({ id: pr.role.id, name: pr.role.name })),
+        roles: profile.roles.map((pr) => ({
+          id: pr.role.id,
+          name: pr.role.name,
+        })),
         branches: profile.branches.map((pb) => ({
           id: pb.branch.id,
           address: pb.branch.address,
@@ -884,6 +849,162 @@ export class AuthService {
         })),
       })),
     };
+  }
+
+  private issuePasswordResetToken(
+    userId: string,
+    target: string,
+    verified: boolean,
+  ): ResetTokenResponseDto {
+    const jti = randomUUID();
+    const payload: PasswordResetTokenPayload = {
+      userId,
+      target,
+      jti,
+      type: 'password_reset',
+      verified,
+    };
+    const expiresIn = this.parseDurationToSeconds(
+      this.authConfig.jwt.registrationExpiration,
+    );
+    const reset_token = this.jwtService.sign(payload, {
+      secret: this.authConfig.jwt.resetSecret,
+      expiresIn,
+    });
+    return { reset_token, expires_in: expiresIn };
+  }
+
+  private decodePasswordResetToken(
+    token: string,
+    expectedVerified: boolean,
+  ): { userId: string; target: string; jti: string } {
+    let payload: PasswordResetTokenPayload;
+    try {
+      payload = this.jwtService.verify<PasswordResetTokenPayload>(token, {
+        secret: this.authConfig.jwt.resetSecret,
+      });
+    } catch {
+      throw new UnauthorizedException('Invalid or expired reset token');
+    }
+    if (
+      payload.type !== 'password_reset' ||
+      payload.verified !== expectedVerified
+    ) {
+      throw new UnauthorizedException('Invalid reset token type or state');
+    }
+    return { userId: payload.userId, target: payload.target, jti: payload.jti };
+  }
+
+  async forgotPassword(dto: ForgotPasswordDto): Promise<ResetTokenResponseDto> {
+    const user = await this.prismaService.db.user.findFirst({
+      where: {
+        email: dto.email,
+        is_deleted: false,
+        is_active: true,
+        verified_at: { not: null },
+      },
+    });
+
+    if (!user?.email) {
+      return { reset_token: '', expires_in: 0 };
+    }
+
+    await this.sendVerificationCode({
+      userId: user.id,
+      target: user.email,
+      channel: 'EMAIL',
+      purpose: 'PASSWORD_RESET',
+    });
+
+    return this.issuePasswordResetToken(user.id, user.email, false);
+  }
+
+  async resendPasswordResetCode(
+    dto: ResendResetCodeDto,
+  ): Promise<ResetTokenResponseDto> {
+    const { userId, target } = this.decodePasswordResetToken(
+      dto.reset_token,
+      false,
+    );
+
+    const latestResend = await this.prismaService.db.verificationCode.findFirst(
+      {
+        where: { user_id: userId, purpose: 'PASSWORD_RESET', is_resend: true },
+        orderBy: { created_at: 'desc' },
+      },
+    );
+    if (
+      latestResend &&
+      latestResend.created_at.getTime() >
+        Date.now() - SIGNUP_RESEND_COOLDOWN_SECONDS * 1000
+    ) {
+      throw new HttpException(
+        'Please wait before requesting another code',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    const resendWindowStart = new Date(Date.now() - 60 * 60 * 1000);
+    const recentResendCount =
+      await this.prismaService.db.verificationCode.count({
+        where: {
+          user_id: userId,
+          purpose: 'PASSWORD_RESET',
+          is_resend: true,
+          created_at: { gte: resendWindowStart },
+        },
+      });
+    if (recentResendCount >= SIGNUP_RESEND_MAX_PER_HOUR) {
+      throw new HttpException(
+        'Too many resend requests',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    await this.sendVerificationCode({
+      userId,
+      target,
+      channel: 'EMAIL',
+      purpose: 'PASSWORD_RESET',
+      isResend: true,
+    });
+
+    return this.issuePasswordResetToken(userId, target, false);
+  }
+
+  async verifyResetCode(
+    dto: VerifyResetCodeDto,
+  ): Promise<ResetTokenResponseDto> {
+    const { userId, target } = this.decodePasswordResetToken(
+      dto.reset_token,
+      false,
+    );
+
+    await this.consumeVerificationCode({
+      userId,
+      target,
+      purpose: 'PASSWORD_RESET',
+      code: dto.code,
+    });
+
+    return this.issuePasswordResetToken(userId, target, true);
+  }
+
+  async resetPassword(dto: ResetPasswordDto): Promise<void> {
+    const { userId } = this.decodePasswordResetToken(dto.reset_token, true);
+
+    const passwordHash = await bcrypt.hash(dto.password, 10);
+
+    await this.prismaService.db.$transaction([
+      this.prismaService.db.user.update({
+        where: { id: userId },
+        data: { password_hashed: passwordHash },
+      }),
+      this.prismaService.db.refreshToken.updateMany({
+        where: { user_id: userId, is_revoked: false },
+        data: { is_revoked: true },
+      }),
+    ]);
   }
 
   private parseDurationToSeconds(duration: string): number {
