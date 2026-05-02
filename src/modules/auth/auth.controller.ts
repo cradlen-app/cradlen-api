@@ -35,6 +35,7 @@ import { ResendResetCodeDto } from './dto/resend-reset-code.dto.js';
 import { VerifyResetCodeDto } from './dto/verify-reset-code.dto.js';
 import { ResetPasswordDto } from './dto/reset-password.dto.js';
 import { ResetTokenResponseDto } from './dto/reset-token-response.dto.js';
+import { SwitchBranchDto } from './dto/switch-branch.dto.js';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -120,6 +121,18 @@ export class AuthController {
   @ApiStandardResponse(AuthTokensDto)
   selectProfile(@Body() dto: SelectProfileDto) {
     return this.authService.selectProfile(dto);
+  }
+
+  @Post('branches/switch')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Switch active branch and rotate token pair' })
+  @ApiStandardResponse(AuthTokensDto)
+  switchBranch(
+    @CurrentUser() user: AuthContext,
+    @Body() dto: SwitchBranchDto,
+  ): Promise<AuthTokensDto> {
+    return this.authService.switchBranch(user, dto);
   }
 
   @Post('refresh')
