@@ -13,6 +13,7 @@ export class AuthorizationService {
     userId: string,
     profileId: string,
     accountId: string,
+    activeBranchId?: string,
   ) {
     const profile = await this.prismaService.db.profile.findFirst({
       where: {
@@ -37,6 +38,7 @@ export class AuthorizationService {
       userId,
       profileId,
       accountId,
+      activeBranchId,
       roles: profile.roles.map((item) => item.role.name),
       branchIds: profile.branches.map((item) => item.branch_id),
     };
@@ -57,7 +59,11 @@ export class AuthorizationService {
     const [hasRole, hasBranch] = await Promise.all([
       this.hasAnyRole(profileId, accountId, BRANCH_MANAGER_ROLES),
       this.prismaService.db.profileBranch.findFirst({
-        where: { profile_id: profileId, account_id: accountId, branch_id: branchId },
+        where: {
+          profile_id: profileId,
+          account_id: accountId,
+          branch_id: branchId,
+        },
         select: { id: true },
       }),
     ]);
