@@ -101,4 +101,85 @@ export class BranchesService {
       });
     });
   }
+
+  async getBranch(profileId: string, accountId: string, branchId: string) {
+    await this.authorizationService.assertCanManageBranch(
+      profileId,
+      accountId,
+      branchId,
+    );
+    const branch = await this.prismaService.db.branch.findFirst({
+      where: { id: branchId, account_id: accountId, is_deleted: false },
+    });
+    if (!branch) throw new NotFoundException('Branch not found');
+    return branch;
+  }
+
+  async deleteBranch(profileId: string, accountId: string, branchId: string) {
+    await this.authorizationService.assertCanManageBranch(
+      profileId,
+      accountId,
+      branchId,
+    );
+    const branch = await this.prismaService.db.branch.findFirst({
+      where: { id: branchId, account_id: accountId, is_deleted: false },
+    });
+    if (!branch) throw new NotFoundException('Branch not found');
+
+    const remainingCount = await this.prismaService.db.branch.count({
+      where: { account_id: accountId, is_deleted: false },
+    });
+
+    const now = new Date();
+
+    if (remainingCount === 1) {
+      // Last branch — cascade delete the entire account
+      await this.prismaService.db.$transaction(async (tx) => {
+        await tx.branch.update({
+          where: { id: branchId },
+          data: { is_deleted: true, deleted_at: now },
+        });
+        await tx.profile.updateMany({
+          where: { account_id: accountId, is_deleted: false },
+          data: { is_deleted: true, deleted_at: now },
+        });
+        await tx.account.update({
+          where: { id: accountId },
+          data: { is_deleted: true, deleted_at: now },
+        });
+      });
+      return;
+    }
+
+    if (branch.is_main) {
+      // Main branch with siblings — promote the oldest remaining branch
+      await this.prismaService.db.$transaction(async (tx) => {
+        await tx.branch.update({
+          where: { id: branchId },
+          data: { is_deleted: true, deleted_at: now },
+        });
+        const oldest = await tx.branch.findFirst({
+          where: {
+            account_id: accountId,
+            id: { not: branchId },
+            is_deleted: false,
+          },
+          orderBy: { created_at: 'asc' },
+        });
+        if (oldest) {
+          await tx.branch.update({
+            where: { id: oldest.id },
+            data: { is_main: true },
+          });
+        }
+      });
+      return;
+    }
+
+    // Regular branch — soft-delete only
+    await this.prismaService.db.branch.update({
+      where: { id: branchId },
+      data: { is_deleted: true, deleted_at: now },
+    });
+  }
 }
