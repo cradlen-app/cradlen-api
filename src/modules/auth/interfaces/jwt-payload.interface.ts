@@ -2,6 +2,7 @@ export interface JwtAccessPayload {
   userId: string;
   profileId: string;
   accountId: string;
+  activeBranchId?: string;
   type: 'access';
   iat?: number;
   exp?: number;

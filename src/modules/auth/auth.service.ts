@@ -38,6 +38,9 @@ import type { VerifyResetCodeDto } from './dto/verify-reset-code.dto.js';
 import type { ResetPasswordDto } from './dto/reset-password.dto.js';
 import type { ResetTokenResponseDto } from './dto/reset-token-response.dto.js';
 import type { ResendResetCodeDto } from './dto/resend-reset-code.dto.js';
+import type { SwitchBranchDto } from './dto/switch-branch.dto.js';
+import type { AuthContext } from '../../common/interfaces/auth-context.interface.js';
+import { AuthorizationService } from '../../common/authorization/authorization.service.js';
 
 const OTP_TTL_MINUTES = 15;
 const OTP_MAX_ATTEMPTS = 5;
@@ -87,6 +90,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly mailService: MailService,
+    private readonly authorizationService: AuthorizationService,
   ) {
     const config = this.configService.get<AuthConfig>('auth');
     if (!config) throw new Error('Auth configuration not loaded');
@@ -391,7 +395,12 @@ export class AuthService {
       throw new ForbiddenException('Invalid branch selection');
     }
 
-    return this.issueTokenPair(profile.user, profile.id, profile.account_id);
+    return this.issueTokenPair(
+      profile.user,
+      profile.id,
+      profile.account_id,
+      branchId,
+    );
   }
 
   async refresh(dto: RefreshDto): Promise<AuthTokensDto> {
@@ -428,6 +437,7 @@ export class AuthService {
       stored.user,
       stored.profile_id,
       stored.account_id,
+      stored.active_branch_id ?? undefined,
     );
   }
 
@@ -448,6 +458,24 @@ export class AuthService {
     } catch {
       return;
     }
+  }
+
+  async switchBranch(
+    user: AuthContext,
+    dto: SwitchBranchDto,
+  ): Promise<AuthTokensDto> {
+    const canAccess = await this.authorizationService.canAccessBranch(
+      user.profileId,
+      dto.branch_id,
+    );
+    if (!canAccess) throw new ForbiddenException('Branch access denied');
+
+    return this.issueTokenPair(
+      { id: user.userId },
+      user.profileId,
+      user.accountId,
+      dto.branch_id,
+    );
   }
 
   private async buildLoginResponse(
@@ -729,6 +757,7 @@ export class AuthService {
     user: Pick<User, 'id'>,
     profileId: string,
     accountId: string,
+    activeBranchId?: string,
   ): Promise<AuthTokensDto> {
     await this.assertProfileBelongsToUser(user.id, profileId, accountId);
 
@@ -743,6 +772,7 @@ export class AuthService {
       userId: user.id,
       profileId,
       accountId,
+      ...(activeBranchId && { activeBranchId }),
       type: 'access',
     };
     const refreshPayload: JwtRefreshPayload = {
@@ -768,6 +798,7 @@ export class AuthService {
         user_id: user.id,
         profile_id: profileId,
         account_id: accountId,
+        active_branch_id: activeBranchId ?? null,
         expires_at: new Date(Date.now() + refreshExpiresIn * 1000),
       },
     });
@@ -809,9 +840,9 @@ export class AuthService {
             account: true,
             roles: { include: { role: true } },
             branches: {
-                where: { branch: { is_deleted: false } },
-                include: { branch: true },
-              },
+              where: { branch: { is_deleted: false } },
+              include: { branch: true },
+            },
           },
         },
       },
