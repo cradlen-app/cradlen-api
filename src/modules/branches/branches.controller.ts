@@ -1,7 +1,9 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -10,7 +12,10 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import type { AuthContext } from '../../common/interfaces/auth-context.interface.js';
-import { ApiStandardResponse } from '../../common/swagger/index.js';
+import {
+  ApiStandardResponse,
+  ApiVoidResponse,
+} from '../../common/swagger/index.js';
 import { BranchesService } from './branches.service.js';
 import { CreateBranchDto, UpdateBranchDto } from './dto/branch.dto.js';
 
@@ -41,6 +46,17 @@ export class BranchesController {
     return this.branchesService.createBranch(user.profileId, accountId, dto);
   }
 
+  @Get(':branchId')
+  @ApiOperation({ summary: 'Get branch by ID' })
+  @ApiStandardResponse(Object)
+  getBranch(
+    @CurrentUser() user: AuthContext,
+    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Param('branchId', ParseUUIDPipe) branchId: string,
+  ) {
+    return this.branchesService.getBranch(user.profileId, accountId, branchId);
+  }
+
   @Patch(':branchId')
   @ApiOperation({ summary: 'Update branch' })
   @ApiStandardResponse(Object)
@@ -55,6 +71,24 @@ export class BranchesController {
       accountId,
       branchId,
       dto,
+    );
+  }
+
+  @Delete(':branchId')
+  @HttpCode(204)
+  @ApiOperation({
+    summary: 'Delete branch (cascades to account if last branch)',
+  })
+  @ApiVoidResponse()
+  deleteBranch(
+    @CurrentUser() user: AuthContext,
+    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Param('branchId', ParseUUIDPipe) branchId: string,
+  ) {
+    return this.branchesService.deleteBranch(
+      user.profileId,
+      accountId,
+      branchId,
     );
   }
 }
