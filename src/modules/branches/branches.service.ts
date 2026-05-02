@@ -41,7 +41,7 @@ export class BranchesService {
           data: { is_main: false },
         });
       }
-      return tx.branch.create({
+      const branch = await tx.branch.create({
         data: {
           account_id: accountId,
           name: dto.name,
@@ -52,6 +52,10 @@ export class BranchesService {
           is_main: dto.is_main ?? false,
         },
       });
+      await tx.profileBranch.create({
+        data: { profile_id: profileId, branch_id: branch.id, account_id: accountId },
+      });
+      return branch;
     });
   }
 
