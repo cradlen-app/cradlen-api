@@ -220,9 +220,10 @@ model RefreshToken {
   jti        String    @unique @db.Uuid
   token_hash String
   user_id    String    @db.Uuid
-  profile_id String?   @db.Uuid
-  account_id String?   @db.Uuid
-  expires_at DateTime
+  profile_id       String?   @db.Uuid
+  account_id       String?   @db.Uuid
+  active_branch_id String?   @db.Uuid
+  expires_at       DateTime
   is_revoked Boolean   @default(false)
   revoked_at DateTime?
   created_at DateTime  @default(now())
