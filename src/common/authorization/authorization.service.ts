@@ -57,11 +57,7 @@ export class AuthorizationService {
     const [hasRole, hasBranch] = await Promise.all([
       this.hasAnyRole(profileId, accountId, BRANCH_MANAGER_ROLES),
       this.prismaService.db.profileBranch.findFirst({
-        where: {
-          profile_id: profileId,
-          account_id: accountId,
-          branch_id: branchId,
-        },
+        where: { profile_id: profileId, account_id: accountId, branch_id: branchId },
         select: { id: true },
       }),
     ]);
