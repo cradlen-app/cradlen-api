@@ -20,7 +20,11 @@ const sentryWritable = new Writable({
   write(chunk: Buffer, _encoding: string, callback: () => void) {
     try {
       const log = JSON.parse(chunk.toString()) as Record<string, unknown>;
-      const { level, msg, pid: _pid, hostname: _hostname, time: _time, ...attrs } = log;
+      const { level, msg, ...rest } = log;
+      const attrs = { ...rest };
+      delete (attrs as Record<string, unknown>)['pid'];
+      delete (attrs as Record<string, unknown>)['hostname'];
+      delete (attrs as Record<string, unknown>)['time'];
       Sentry.logger[pinoLevelToSentry(level as number)](String(msg), attrs);
     } catch {
       // ignore malformed lines (e.g. pino-pretty decorations)
@@ -30,13 +34,14 @@ const sentryWritable = new Writable({
 });
 
 const stdoutStream = isDev
-  ? pretty({ colorize: true, translateTime: 'SYS:standard', ignore: 'pid,hostname' })
+  ? pretty({
+      colorize: true,
+      translateTime: 'SYS:standard',
+      ignore: 'pid,hostname',
+    })
   : process.stdout;
 
 export const logger = pino(
   { level: process.env.LOG_LEVEL ?? 'info' },
-  pino.multistream([
-    { stream: stdoutStream },
-    { stream: sentryWritable },
-  ]),
+  pino.multistream([{ stream: stdoutStream }, { stream: sentryWritable }]),
 );

@@ -167,6 +167,9 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         statusCode: status,
         details: rawDetails,
       };
+      if ((status as number) >= 500) {
+        Sentry.captureException(exception);
+      }
     } else {
       this.logger.error(
         `Unhandled exception on ${request.method} ${request.url}`,
