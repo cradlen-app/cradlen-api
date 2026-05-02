@@ -53,7 +53,11 @@ export class BranchesService {
         },
       });
       await tx.profileBranch.create({
-        data: { profile_id: profileId, branch_id: branch.id, account_id: accountId },
+        data: {
+          profile_id: profileId,
+          branch_id: branch.id,
+          account_id: accountId,
+        },
       });
       return branch;
     });
