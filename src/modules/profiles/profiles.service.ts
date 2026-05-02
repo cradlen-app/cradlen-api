@@ -17,7 +17,10 @@ export class ProfilesService {
       include: {
         account: true,
         roles: { include: { role: true } },
-        branches: { include: { branch: true } },
+        branches: {
+          where: { is_deleted: false, branch: { is_deleted: false } },
+          include: { branch: true },
+        },
       },
       orderBy: { created_at: 'asc' },
     });
@@ -52,7 +55,10 @@ export class ProfilesService {
         user: true,
         account: true,
         roles: { include: { role: true } },
-        branches: { include: { branch: true } },
+        branches: {
+          where: { is_deleted: false, branch: { is_deleted: false } },
+          include: { branch: true },
+        },
       },
     });
     if (!profile) throw new NotFoundException('Profile not found');
