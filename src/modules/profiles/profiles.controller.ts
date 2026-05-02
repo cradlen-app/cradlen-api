@@ -1,9 +1,18 @@
-import { Controller, Get } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { ApiStandardResponse } from '../../common/swagger/index.js';
 import type { AuthContext } from '../../common/interfaces/auth-context.interface.js';
 import { ProfileResponseDto } from './dto/profile-response.dto.js';
+import { ProfileDetailResponseDto } from './dto/profile-detail-response.dto.js';
+import { UpdateProfileDto } from './dto/update-profile.dto.js';
 import { ProfilesService } from './profiles.service.js';
 
 @ApiTags('Profiles')
@@ -17,5 +26,16 @@ export class ProfilesController {
   @ApiStandardResponse(ProfileResponseDto)
   listProfiles(@CurrentUser() user: AuthContext) {
     return this.profilesService.listProfiles(user.userId);
+  }
+
+  @Patch(':profileId')
+  @ApiOperation({ summary: 'Update profile information' })
+  @ApiStandardResponse(ProfileDetailResponseDto)
+  updateProfile(
+    @CurrentUser() user: AuthContext,
+    @Param('profileId', ParseUUIDPipe) profileId: string,
+    @Body() dto: UpdateProfileDto,
+  ) {
+    return this.profilesService.updateProfile(user.userId, profileId, dto);
   }
 }
