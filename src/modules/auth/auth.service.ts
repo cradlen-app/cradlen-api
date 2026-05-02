@@ -808,7 +808,10 @@ export class AuthService {
           include: {
             account: true,
             roles: { include: { role: true } },
-            branches: { include: { branch: true } },
+            branches: {
+                where: { is_deleted: false, branch: { is_deleted: false } },
+                include: { branch: true },
+              },
           },
         },
       },
