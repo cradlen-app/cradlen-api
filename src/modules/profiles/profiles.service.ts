@@ -18,7 +18,7 @@ export class ProfilesService {
         account: true,
         roles: { include: { role: true } },
         branches: {
-          where: { is_deleted: false, branch: { is_deleted: false } },
+          where: { branch: { is_deleted: false } },
           include: { branch: true },
         },
       },
@@ -56,7 +56,7 @@ export class ProfilesService {
         account: true,
         roles: { include: { role: true } },
         branches: {
-          where: { is_deleted: false, branch: { is_deleted: false } },
+          where: { branch: { is_deleted: false } },
           include: { branch: true },
         },
       },
