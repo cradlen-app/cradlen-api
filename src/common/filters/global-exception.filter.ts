@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { Prisma } from '@prisma/client';
+import * as Sentry from '@sentry/nestjs';
 import { ERROR_CODES, type ErrorCode } from '../constant/error-codes.js';
 
 interface ValidationErrorResponse {
@@ -105,6 +106,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           `Prisma error ${code} on ${request.method} ${request.url}`,
           exception.stack,
         );
+        Sentry.captureException(exception);
         body = {
           code: ERROR_CODES.INTERNAL_SERVER_ERROR,
           message: 'A database error occurred',
@@ -170,6 +172,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         `Unhandled exception on ${request.method} ${request.url}`,
         exception instanceof Error ? exception.stack : String(exception),
       );
+      Sentry.captureException(exception);
       body = {
         code: ERROR_CODES.INTERNAL_SERVER_ERROR,
         message: 'An unexpected error occurred',
