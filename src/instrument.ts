@@ -1,13 +1,15 @@
+import type { Integration } from '@sentry/core';
 import * as Sentry from '@sentry/nestjs';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const integrations: any[] = [Sentry.prismaIntegration()];
+const integrations: Integration[] = [Sentry.prismaIntegration()];
 
 try {
   // Native binary only available on Linux (production). Silently skip on Windows dev.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { nodeProfilingIntegration } = require('@sentry/profiling-node') as { nodeProfilingIntegration: () => unknown };
-  integrations.push(nodeProfilingIntegration());
+  const { nodeProfilingIntegration } = require('@sentry/profiling-node') as {
+    nodeProfilingIntegration: () => unknown;
+  };
+  integrations.push(nodeProfilingIntegration() as Integration);
 } catch {
   // profiling native binary not available in this environment
 }
