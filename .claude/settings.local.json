@@ -22,7 +22,19 @@
       "Bash(git branch *)",
       "Skill(code-review:code-review)",
       "Skill(code-review:code-review:*)",
-      "Bash(xargs ls *)"
+      "Bash(xargs ls *)",
+      "Bash(Get-ChildItem -Path \"f:\\\\Cradlen\\\\cradlen-api\\\\src\\\\common\" -Recurse -Filter \"*.ts\")",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(npm list *)",
+      "PowerShell(Get-Process node -ErrorAction SilentlyContinue)",
+      "PowerShell(Stop-Process -Force 2>&1)",
+      "Bash(node -e \"const { PrismaInstrumentation } = require\\('@prisma/instrumentation'\\); const p = new PrismaInstrumentation\\(\\); console.log\\(Object.keys\\(p\\)\\); console.log\\(p.name\\); console.log\\(p.instrumentationName\\);\")",
+      "Bash(node -e \"const Sentry = require\\('@sentry/nestjs'\\); console.log\\(Object.keys\\(Sentry\\).filter\\(k => /prisma/i.test\\(k\\)\\)\\);\")",
+      "Bash(node -e \"const Sentry = require\\('@sentry/nestjs'\\); console.log\\(typeof Sentry.prismaIntegration\\(\\)\\);\")",
+      "Bash(node -e \"const s = require\\('@sentry/nestjs'\\); console.log\\(typeof s.prismaIntegration\\)\")",
+      "Bash(node -e \"const s = require\\('@sentry/nestjs'\\); console.log\\(Object.keys\\(s\\).filter\\(k => k.toLowerCase\\(\\).includes\\('prisma'\\)\\)\\)\")",
+      "Bash(node -e \"const s = require\\('@sentry/nestjs'\\); console.log\\(typeof s.logger, s.logger ? Object.keys\\(s.logger\\) : 'N/A'\\)\")",
+      "Bash(node -e ' *)"
     ]
   }
 }
