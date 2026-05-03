@@ -48,7 +48,7 @@ export class InvitationsController {
     @CurrentUser() user: AuthContext,
     @Param('accountId', ParseUUIDPipe) accountId: string,
   ) {
-    return this.invitationsService.listInvitations(user.profileId, accountId);
+    return this.invitationsService.listInvitations(user.profileId, accountId, user.activeBranchId);
   }
 
   @Post('invitations/accept')
