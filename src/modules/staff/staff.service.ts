@@ -9,7 +9,11 @@ import { Prisma } from '@prisma/client';
 import { AuthorizationService } from '../../common/authorization/authorization.service.js';
 import { PrismaService } from '../../database/prisma.service.js';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service.js';
-import type { BranchScheduleDto, CreateStaffDto } from './dto/staff.dto.js';
+import type {
+  BranchScheduleDto,
+  CreateStaffDto,
+  UpdateStaffDto,
+} from './dto/staff.dto.js';
 
 const STAFF_EMAIL_DOMAIN = 'cradlen.com';
 
@@ -142,7 +146,229 @@ export class StaffService {
       orderBy: { created_at: 'asc' },
     });
 
-    return profiles.map((p) => ({
+    return profiles.map((p) => this.toStaffResponse(p));
+  }
+
+  async updateStaff(
+    callerProfileId: string,
+    accountId: string,
+    staffProfileId: string,
+    dto: UpdateStaffDto,
+  ) {
+    await this.authorizationService.assertCanManageStaff(
+      callerProfileId,
+      accountId,
+    );
+
+    const profile = await this.prismaService.db.profile.findFirst({
+      where: { id: staffProfileId, account_id: accountId, is_deleted: false },
+      include: { user: true },
+    });
+    if (!profile) throw new NotFoundException('Staff member not found');
+
+    if (
+      dto.phone_number !== undefined &&
+      dto.phone_number !== profile.user.phone_number
+    ) {
+      const existingByPhone = await this.prismaService.db.user.findFirst({
+        where: {
+          phone_number: dto.phone_number,
+          is_deleted: false,
+          id: { not: profile.user_id },
+        },
+      });
+      if (existingByPhone) {
+        throw new ConflictException(
+          'A user with this phone number already exists',
+        );
+      }
+    }
+
+    let uniqueRoleIds: string[] | undefined;
+    let uniqueBranchIds: string[] | undefined;
+
+    if (dto.role_ids) {
+      uniqueRoleIds = [...new Set(dto.role_ids)];
+      await this.assertRolesExist(uniqueRoleIds);
+    }
+
+    if (dto.branch_ids) {
+      uniqueBranchIds = [...new Set(dto.branch_ids)];
+      await this.assertBranchesInAccount(accountId, uniqueBranchIds);
+    }
+
+    if (dto.schedule?.length) {
+      const effectiveBranchIds =
+        uniqueBranchIds ??
+        (
+          await this.prismaService.db.profileBranch.findMany({
+            where: { profile_id: staffProfileId },
+            select: { branch_id: true },
+          })
+        ).map((b) => b.branch_id);
+
+      const invalidIds = dto.schedule
+        .map((s) => s.branch_id)
+        .filter((id) => !effectiveBranchIds.includes(id));
+      if (invalidIds.length) {
+        throw new BadRequestException(
+          `Schedule branch_ids not in branch_ids: ${invalidIds.join(', ')}`,
+        );
+      }
+      this.assertShiftTimes(dto.schedule);
+    }
+
+    return this.prismaService.db.$transaction(async (tx) => {
+      if (
+        dto.first_name !== undefined ||
+        dto.last_name !== undefined ||
+        dto.phone_number !== undefined
+      ) {
+        await tx.user.update({
+          where: { id: profile.user_id },
+          data: {
+            ...(dto.first_name !== undefined && { first_name: dto.first_name }),
+            ...(dto.last_name !== undefined && { last_name: dto.last_name }),
+            ...(dto.phone_number !== undefined && {
+              phone_number: dto.phone_number,
+            }),
+          },
+        });
+      }
+
+      await tx.profile.update({
+        where: { id: staffProfileId },
+        data: {
+          ...(dto.job_title !== undefined && { job_title: dto.job_title }),
+          ...(dto.specialty !== undefined && { specialty: dto.specialty }),
+          ...(dto.is_clinical !== undefined && {
+            is_clinical: dto.is_clinical,
+          }),
+        },
+      });
+
+      if (uniqueRoleIds) {
+        await tx.profileRole.deleteMany({
+          where: { profile_id: staffProfileId },
+        });
+        await Promise.all(
+          uniqueRoleIds.map((role_id) =>
+            tx.profileRole.create({
+              data: { profile_id: staffProfileId, role_id },
+            }),
+          ),
+        );
+      }
+
+      if (uniqueBranchIds) {
+        await tx.profileBranch.deleteMany({
+          where: { profile_id: staffProfileId },
+        });
+        await Promise.all(
+          uniqueBranchIds.map((branch_id) =>
+            tx.profileBranch.create({
+              data: {
+                profile_id: staffProfileId,
+                branch_id,
+                account_id: accountId,
+              },
+            }),
+          ),
+        );
+      }
+
+      if (dto.schedule !== undefined) {
+        await tx.workingSchedule.deleteMany({
+          where: { profile_id: staffProfileId },
+        });
+        if (dto.schedule.length > 0) {
+          await this.createSchedules(tx, staffProfileId, dto.schedule);
+        }
+      }
+
+      const updated = await tx.profile.findFirst({
+        where: { id: staffProfileId },
+        include: {
+          user: {
+            select: {
+              id: true,
+              first_name: true,
+              last_name: true,
+              email: true,
+              phone_number: true,
+            },
+          },
+          roles: { include: { role: true } },
+          branches: {
+            where: { branch: { is_deleted: false } },
+            include: { branch: true },
+          },
+          workingSchedules: {
+            include: { days: { include: { shifts: true } } },
+          },
+        },
+      });
+
+      return this.toStaffResponse(updated!);
+    });
+  }
+
+  async deleteStaff(
+    callerProfileId: string,
+    accountId: string,
+    staffProfileId: string,
+  ) {
+    await this.authorizationService.assertCanManageStaff(
+      callerProfileId,
+      accountId,
+    );
+
+    if (staffProfileId === callerProfileId) {
+      throw new BadRequestException('Cannot delete your own staff profile');
+    }
+
+    const profile = await this.prismaService.db.profile.findFirst({
+      where: { id: staffProfileId, account_id: accountId, is_deleted: false },
+    });
+    if (!profile) throw new NotFoundException('Staff member not found');
+
+    await this.prismaService.db.profile.update({
+      where: { id: staffProfileId },
+      data: { is_deleted: true, deleted_at: new Date() },
+    });
+  }
+
+  private toStaffResponse(p: {
+    id: string;
+    user_id: string;
+    job_title: string | null;
+    specialty: string | null;
+    is_clinical: boolean;
+    user: {
+      id: string;
+      first_name: string;
+      last_name: string;
+      email: string | null;
+      phone_number: string | null;
+    };
+    roles: { role: { id: string; name: string } }[];
+    branches: {
+      branch: {
+        id: string;
+        name: string;
+        city: string;
+        governorate: string;
+      };
+    }[];
+    workingSchedules: {
+      branch_id: string;
+      days: {
+        day_of_week: string;
+        shifts: { start_time: string; end_time: string }[];
+      }[];
+    }[];
+  }) {
+    return {
       profile_id: p.id,
       user_id: p.user.id,
       first_name: p.user.first_name,
@@ -169,7 +395,7 @@ export class StaffService {
           })),
         })),
       })),
-    }));
+    };
   }
 
   private async createSchedules(
