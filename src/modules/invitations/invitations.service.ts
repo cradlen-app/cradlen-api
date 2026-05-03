@@ -251,6 +251,34 @@ export class InvitationsService {
     return result;
   }
 
+  async getInvitation(profileId: string, accountId: string, invitationId: string) {
+    await this.authorizationService.assertCanManageStaff(profileId, accountId);
+    const invitation = await this.prismaService.db.invitation.findFirst({
+      where: { id: invitationId, account_id: accountId, is_deleted: false },
+      include: this.includeInvitation(),
+    });
+    if (!invitation) throw new NotFoundException('Invitation not found');
+
+    let workingSchedule = null;
+    if (invitation.status === InvitationStatus.ACCEPTED) {
+      const user = await this.prismaService.db.user.findFirst({
+        where: { email: invitation.email, is_deleted: false },
+        select: { id: true },
+      });
+      if (user) {
+        const profile = await this.prismaService.db.profile.findFirst({
+          where: { user_id: user.id, account_id: accountId, is_deleted: false },
+          select: { id: true },
+        });
+        if (profile) {
+          workingSchedule = await this.fetchWorkingSchedule(profile.id);
+        }
+      }
+    }
+
+    return this.toResponse(invitation, workingSchedule);
+  }
+
   async cancelInvitation(
     profileId: string,
     accountId: string,
@@ -328,6 +356,7 @@ export class InvitationsService {
     return {
       roles: { include: { role: true } },
       branches: { include: { branch: true } },
+      invited_by: { select: { id: true, first_name: true, last_name: true, email: true } },
     } satisfies Prisma.InvitationInclude;
   }
 
@@ -341,6 +370,7 @@ export class InvitationsService {
     invitation: Prisma.InvitationGetPayload<{
       include: ReturnType<InvitationsService['includeInvitation']>;
     }>,
+    workingSchedule?: Awaited<ReturnType<InvitationsService['fetchWorkingSchedule']>> | null,
   ) {
     return {
       id: invitation.id,
@@ -348,8 +378,20 @@ export class InvitationsService {
       email: invitation.email,
       first_name: invitation.first_name,
       last_name: invitation.last_name,
+      phone_number: invitation.phone_number,
+      job_title: invitation.job_title,
+      specialty: invitation.specialty,
+      is_clinical: invitation.is_clinical,
       status: invitation.status,
+      invited_at: invitation.created_at,
       expires_at: invitation.expires_at,
+      accepted_at: invitation.accepted_at,
+      invited_by: {
+        id: invitation.invited_by.id,
+        first_name: invitation.invited_by.first_name,
+        last_name: invitation.invited_by.last_name,
+        email: invitation.invited_by.email,
+      },
       roles: invitation.roles.map((item) => ({
         id: item.role.id,
         name: item.role.name,
@@ -360,6 +402,28 @@ export class InvitationsService {
         city: item.branch.city,
         governorate: item.branch.governorate,
       })),
+      ...(workingSchedule !== undefined && {
+        working_schedule: workingSchedule?.map((ws) => ({
+          branch: ws.branch,
+          days: ws.days.map((d) => ({
+            day_of_week: d.day_of_week,
+            shifts: d.shifts.map((s) => ({
+              start_time: s.start_time,
+              end_time: s.end_time,
+            })),
+          })),
+        })) ?? null,
+      }),
     };
+  }
+
+  private fetchWorkingSchedule(profileId: string) {
+    return this.prismaService.db.workingSchedule.findMany({
+      where: { profile_id: profileId },
+      include: {
+        branch: { select: { id: true, name: true } },
+        days: { include: { shifts: true } },
+      },
+    });
   }
 }
