@@ -59,6 +59,18 @@ export class InvitationsController {
     return this.invitationsService.acceptInvitation(dto);
   }
 
+  @Get('accounts/:accountId/invitations/:invitationId')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get invitation details' })
+  @ApiStandardResponse(Object)
+  getInvitation(
+    @CurrentUser() user: AuthContext,
+    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Param('invitationId', ParseUUIDPipe) invitationId: string,
+  ) {
+    return this.invitationsService.getInvitation(user.profileId, accountId, invitationId);
+  }
+
   @Delete('accounts/:accountId/invitations/:invitationId')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Cancel invitation' })
