@@ -52,6 +52,15 @@ export class InvitationsService {
     await this.authorizationService.assertCanManageStaff(profileId, accountId);
     await this.subscriptionsService.assertStaffLimit(accountId);
 
+    const invitingUser = await this.prismaService.db.user.findUnique({
+      where: { id: currentUserId },
+      select: { email: true },
+    });
+
+    if (invitingUser?.email?.toLowerCase() === dto.email.toLowerCase()) {
+      throw new BadRequestException('You cannot invite yourself');
+    }
+
     const uniqueRoleIds = [...new Set(dto.role_ids)];
     const uniqueBranchIds = [...new Set(dto.branch_ids)];
 
