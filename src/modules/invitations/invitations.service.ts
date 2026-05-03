@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   GoneException,
   Injectable,
@@ -121,6 +122,18 @@ export class InvitationsService {
     if (invitation.expires_at < new Date())
       throw new GoneException('Invitation expired');
 
+    if (dto.schedule?.length) {
+      const invitationBranchIds = invitation.branches.map((b) => b.branch_id);
+      const invalidIds = dto.schedule
+        .map((s) => s.branch_id)
+        .filter((id) => !invitationBranchIds.includes(id));
+      if (invalidIds.length) {
+        throw new BadRequestException(
+          `Schedule branch_ids not assigned in this invitation: ${invalidIds.join(', ')}`,
+        );
+      }
+    }
+
     const result = await this.prismaService.db.$transaction(async (tx) => {
       const claimed = await tx.invitation.updateMany({
         where: {
@@ -183,6 +196,44 @@ export class InvitationsService {
       });
 
       await this.assignProfileAccess(tx, profile.id, invitation);
+
+      if (dto.schedule?.length) {
+        for (const branchSchedule of dto.schedule) {
+          const ws = await tx.workingSchedule.upsert({
+            where: {
+              profile_id_branch_id: {
+                profile_id: profile.id,
+                branch_id: branchSchedule.branch_id,
+              },
+            },
+            update: {},
+            create: { profile_id: profile.id, branch_id: branchSchedule.branch_id },
+          });
+
+          for (const day of branchSchedule.days) {
+            const wd = await tx.workingDay.upsert({
+              where: {
+                schedule_id_day_of_week: {
+                  schedule_id: ws.id,
+                  day_of_week: day.day_of_week,
+                },
+              },
+              update: {},
+              create: { schedule_id: ws.id, day_of_week: day.day_of_week },
+            });
+
+            await tx.workingShift.createMany({
+              data: day.shifts.map((s) => ({
+                day_id: wd.id,
+                start_time: s.start_time,
+                end_time: s.end_time,
+              })),
+              skipDuplicates: true,
+            });
+          }
+        }
+      }
+
       return {
         user_id: user.id,
         profile_id: profile.id,
