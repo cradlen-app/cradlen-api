@@ -8,6 +8,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
@@ -56,6 +57,7 @@ export class AuthController {
 
   @Post('signup/start')
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 600000 } })
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Start owner signup and send verification code' })
   @ApiStandardResponse(SignupTokenResponseDto)
@@ -65,6 +67,7 @@ export class AuthController {
 
   @Post('signup/verify')
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 600000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Verify signup code and activate identity' })
   @ApiStandardResponse(SignupTokenResponseDto)
@@ -86,6 +89,7 @@ export class AuthController {
 
   @Post('signup/resend')
   @Public()
+  @Throttle({ default: { limit: 3, ttl: 600000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Resend signup verification code' })
   @ApiStandardResponse(ResendOtpResponseDto)
@@ -110,6 +114,7 @@ export class AuthController {
 
   @Post('login')
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 600000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Validate email/password and return selectable profiles',
@@ -159,6 +164,7 @@ export class AuthController {
 
   @Post('forgot-password')
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 600000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Send password reset code to email' })
   @ApiStandardResponse(ResetTokenResponseDto)
@@ -170,6 +176,7 @@ export class AuthController {
 
   @Post('forgot-password/resend')
   @Public()
+  @Throttle({ default: { limit: 3, ttl: 600000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -184,6 +191,7 @@ export class AuthController {
 
   @Post('verify-reset-code')
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 600000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Verify password reset code and get verified reset token',
