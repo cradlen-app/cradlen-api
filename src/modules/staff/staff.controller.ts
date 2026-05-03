@@ -34,6 +34,6 @@ export class StaffController {
     @CurrentUser() user: AuthContext,
     @Param('accountId', ParseUUIDPipe) accountId: string,
   ) {
-    return this.staffService.listStaff(user.profileId, accountId);
+    return this.staffService.listStaff(user.profileId, accountId, user.activeBranchId);
   }
 }
