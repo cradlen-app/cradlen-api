@@ -78,6 +78,9 @@ export class MeResponseDto {
   @ApiProperty()
   email!: string;
 
+  @ApiPropertyOptional({ nullable: true })
+  phone!: string | null;
+
   @ApiProperty()
   is_active!: boolean;
 
