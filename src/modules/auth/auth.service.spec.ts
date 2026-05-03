@@ -3,7 +3,6 @@ import {
   ConflictException,
   ForbiddenException,
   HttpException,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
@@ -24,7 +23,6 @@ function createService(prismaOverrides: Record<string, unknown> = {}) {
   const profileFindMany = jest.fn();
   const refreshTokenCreate = jest.fn();
   const sendVerificationEmail = jest.fn();
-  const sendPhoneOtp = jest.fn();
 
   const prismaService = {
     db: {
@@ -32,6 +30,7 @@ function createService(prismaOverrides: Record<string, unknown> = {}) {
         findFirst: userFindFirst,
         create: userCreate,
         update: userUpdate,
+        updateMany: jest.fn(),
       },
       verificationCode: {
         updateMany: verificationUpdateMany,
@@ -71,7 +70,6 @@ function createService(prismaOverrides: Record<string, unknown> = {}) {
   };
   const mailService = {
     sendVerificationEmail,
-    sendPhoneOtp,
   } as unknown as MailService;
 
   return {
@@ -95,7 +93,6 @@ function createService(prismaOverrides: Record<string, unknown> = {}) {
       profileFindMany,
       refreshTokenCreate,
       sendVerificationEmail,
-      sendPhoneOtp,
     },
     jwtService,
   };
@@ -220,44 +217,6 @@ describe('AuthService', () => {
       }),
     );
     expect(mocks.sendVerificationEmail).toHaveBeenCalled();
-  });
-
-  it('rejects unknown phone OTP requests', async () => {
-    const { service, mocks } = createService();
-    mocks.userFindFirst.mockResolvedValue(null);
-
-    await expect(
-      service.requestPhoneOtp({ phone_number: '+201012345678' }),
-    ).rejects.toThrow(UnauthorizedException);
-  });
-
-  it('uses LOGIN purpose for phone OTP requests', async () => {
-    const { service, mocks } = createService();
-    mocks.userFindFirst.mockResolvedValue({
-      id: '11111111-1111-4111-8111-111111111111',
-    });
-    mocks.verificationUpdateMany.mockResolvedValue({ count: 0 });
-    mocks.verificationCreate.mockResolvedValue({});
-
-    await expect(
-      service.requestPhoneOtp({ phone_number: '+201012345678' }),
-    ).resolves.toEqual({ message: 'OTP sent' });
-
-    expect(mocks.verificationUpdateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          purpose: { in: ['LOGIN', 'PHONE_LOGIN'] },
-        }),
-      }),
-    );
-    expect(mocks.verificationCreate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          purpose: 'LOGIN',
-        }),
-      }),
-    );
-    expect(mocks.sendPhoneOtp).toHaveBeenCalled();
   });
 
   it('returns success for resend when email is unknown', async () => {
@@ -625,5 +584,119 @@ describe('AuthService', () => {
     await expect(service.getMe('missing-user', 'any-profile')).rejects.toThrow(
       'User not found',
     );
+  });
+
+  it('returns 409 and does not resend OTP when pending user found only by phone collision', async () => {
+    const { service, mocks } = createService();
+    // Existing PENDING user has a different email but same phone number
+    mocks.userFindFirst.mockResolvedValue({
+      id: 'other-user-id',
+      email: 'other@example.com',
+      phone_number: '+201012345678',
+      registration_status: 'PENDING',
+    });
+
+    await expect(
+      service.signupStart({
+        first_name: 'Sara',
+        last_name: 'Ali',
+        email: 'sara@example.com',
+        phone_number: '+201012345678',
+        password: 'Password1!',
+        confirm_password: 'Password1!',
+      }),
+    ).rejects.toThrow(ConflictException);
+
+    // Must never issue a token or send email for the phone-matched user
+    expect(mocks.userCreate).not.toHaveBeenCalled();
+    expect(mocks.sendVerificationEmail).not.toHaveBeenCalled();
+  });
+
+  it('resumes pending registration only when email matches, ignoring phone', async () => {
+    const { service, mocks } = createService();
+    const existingUser = {
+      id: '11111111-1111-4111-8111-111111111111',
+      email: 'sara@example.com',
+      phone_number: '+201012345678',
+      registration_status: 'PENDING',
+    };
+    // findFirst returns same user twice: once for the existence check, once inside resendOtp
+    mocks.userFindFirst
+      .mockResolvedValueOnce(existingUser)
+      .mockResolvedValueOnce(existingUser);
+    mocks.verificationFindFirst.mockResolvedValue(null);
+    mocks.verificationCount.mockResolvedValue(0);
+    mocks.verificationUpdateMany.mockResolvedValue({ count: 1 });
+    mocks.verificationCreate.mockResolvedValue({});
+
+    const result = await service.signupStart({
+      first_name: 'Sara',
+      last_name: 'Ali',
+      email: 'sara@example.com',
+      phone_number: '+201012345678',
+      password: 'Password1!',
+      confirm_password: 'Password1!',
+    });
+
+    expect(result.signup_token).toEqual(expect.any(String));
+    expect(mocks.userCreate).not.toHaveBeenCalled();
+    expect(mocks.sendVerificationEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns 409 on duplicate signupComplete without creating extra tenant records', async () => {
+    const accountCreate = jest.fn();
+    const txMock = {
+      user: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      account: { create: accountCreate },
+      branch: { create: jest.fn() },
+      profile: { create: jest.fn() },
+      subscription: { create: jest.fn() },
+    };
+    const { service, jwtService } = createService({
+      $transaction: jest
+        .fn()
+        .mockImplementation((fn: (tx: typeof txMock) => Promise<unknown>) =>
+          fn(txMock),
+        ),
+      user: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'user-id',
+          registration_status: 'ACTIVE',
+          verified_at: new Date(),
+          onboarding_completed: false,
+          is_active: true,
+        }),
+        updateMany: jest.fn(),
+      },
+      role: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id: 'role-id', name: 'OWNER' }),
+      },
+      subscriptionPlan: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'plan-id' }),
+      },
+    });
+
+    const signupToken = jwtService.sign(
+      { userId: 'user-id', type: 'signup' },
+      { secret: 'access-secret' },
+    );
+
+    await expect(
+      service.signupComplete({
+        signup_token: signupToken,
+        account_name: 'Clinic',
+        specialties: ['General Medicine'],
+        branch_name: 'Main Branch',
+        branch_address: '1 Clinic St',
+        branch_city: 'Cairo',
+        branch_governorate: 'Cairo',
+        roles: ['OWNER'],
+      }),
+    ).rejects.toThrow(ConflictException);
+
+    // Transaction was entered but no account was created
+    expect(accountCreate).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   GoneException,
   Injectable,
   NotFoundException,
@@ -10,11 +11,14 @@ import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import { InvitationStatus, Prisma } from '@prisma/client';
+import { ERROR_CODES } from '../../common/constant/error-codes.js';
 import { AuthorizationService } from '../../common/authorization/authorization.service.js';
 import type { AppConfig } from '../../config/app.config.js';
 import type { AuthConfig } from '../../config/auth.config.js';
 import { PrismaService } from '../../database/prisma.service.js';
 import { MailService } from '../mail/mail.service.js';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service.js';
+import type { BranchScheduleDto } from '../staff/dto/staff.dto.js';
 import type {
   AcceptInvitationDto,
   CreateInvitationDto,
@@ -29,6 +33,7 @@ export class InvitationsService {
     private readonly prismaService: PrismaService,
     private readonly authorizationService: AuthorizationService,
     private readonly mailService: MailService,
+    private readonly subscriptionsService: SubscriptionsService,
     configService: ConfigService,
   ) {
     const app = configService.get<AppConfig>('app');
@@ -45,18 +50,13 @@ export class InvitationsService {
     dto: CreateInvitationDto,
   ) {
     await this.authorizationService.assertCanManageStaff(profileId, accountId);
-    await this.assertBranchesInAccount(accountId, dto.branch_ids);
+    await this.subscriptionsService.assertStaffLimit(accountId);
 
-    const existing = await this.prismaService.db.invitation.findFirst({
-      where: {
-        account_id: accountId,
-        email: dto.email,
-        status: InvitationStatus.PENDING,
-        is_deleted: false,
-      },
-    });
-    if (existing)
-      throw new ConflictException('Pending invitation already exists');
+    const uniqueRoleIds = [...new Set(dto.role_ids)];
+    const uniqueBranchIds = [...new Set(dto.branch_ids)];
+
+    await this.assertBranchesInAccount(accountId, uniqueBranchIds);
+    await this.assertRolesExist(uniqueRoleIds);
 
     const rawToken = randomUUID();
     const tokenHash = await bcrypt.hash(rawToken, 10);
@@ -64,36 +64,55 @@ export class InvitationsService {
       Date.now() + this.authConfig.invitationExpireHours * 60 * 60 * 1000,
     );
 
-    const invitation = await this.prismaService.db.invitation.create({
-      data: {
-        account_id: accountId,
-        invited_by_id: currentUserId,
-        email: dto.email,
-        first_name: dto.first_name,
-        last_name: dto.last_name,
-        phone_number: dto.phone_number,
-        job_title: dto.job_title,
-        specialty: dto.specialty,
-        is_clinical: dto.is_clinical ?? false,
-        token_hash: tokenHash,
-        expires_at: expiresAt,
-        roles: { create: dto.role_ids.map((role_id) => ({ role_id })) },
-        branches: {
-          create: dto.branch_ids.map((branch_id) => ({
-            branch_id,
-            account_id: accountId,
-          })),
+    let invitation: Awaited<
+      ReturnType<InvitationsService['findInvitationShape']>
+    >;
+    try {
+      invitation = await this.prismaService.db.invitation.create({
+        data: {
+          account_id: accountId,
+          invited_by_id: currentUserId,
+          email: dto.email,
+          first_name: dto.first_name,
+          last_name: dto.last_name,
+          phone_number: dto.phone_number,
+          job_title: dto.job_title,
+          specialty: dto.specialty,
+          is_clinical: dto.is_clinical ?? false,
+          token_hash: tokenHash,
+          expires_at: expiresAt,
+          roles: { create: uniqueRoleIds.map((role_id) => ({ role_id })) },
+          branches: {
+            create: uniqueBranchIds.map((branch_id) => ({
+              branch_id,
+              account_id: accountId,
+            })),
+          },
         },
-      },
-      include: this.includeInvitation(),
-    });
+        include: this.includeInvitation(),
+      });
+    } catch (err: unknown) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'Pending invitation already exists for this email',
+        );
+      }
+      throw err;
+    }
 
     const inviteUrl = `${this.appConfig.appUrl}/invitations/accept?invitation=${invitation.id}&token=${rawToken}`;
     await this.mailService.sendStaffInvitationEmail(dto.email, inviteUrl);
     return this.toResponse(invitation);
   }
 
-  async listInvitations(profileId: string, accountId: string, branchId?: string) {
+  async listInvitations(
+    profileId: string,
+    accountId: string,
+    branchId?: string,
+  ) {
     await this.authorizationService.assertCanManageStaff(profileId, accountId);
     const where: Prisma.InvitationWhereInput = {
       account_id: accountId,
@@ -139,6 +158,7 @@ export class InvitationsService {
           `Schedule branch_ids not assigned in this invitation: ${invalidIds.join(', ')}`,
         );
       }
+      this.assertShiftTimes(dto.schedule);
     }
 
     const result = await this.prismaService.db.$transaction(async (tx) => {
@@ -153,6 +173,41 @@ export class InvitationsService {
       });
       if (claimed.count !== 1)
         throw new ConflictException('Invitation already accepted');
+
+      const [sub, activeStaff, pendingInvitations] = await Promise.all([
+        tx.subscription.findFirst({
+          where: { account_id: invitation.account_id, is_deleted: false },
+          include: { subscription_plan: true },
+          orderBy: { created_at: 'desc' },
+        }),
+        tx.profile.count({
+          where: {
+            account_id: invitation.account_id,
+            is_deleted: false,
+            is_active: true,
+          },
+        }),
+        tx.invitation.count({
+          where: {
+            account_id: invitation.account_id,
+            is_deleted: false,
+            status: InvitationStatus.PENDING,
+          },
+        }),
+      ]);
+      if (!sub) throw new NotFoundException('No active subscription found');
+      const staffTotal = activeStaff + pendingInvitations;
+      if (staffTotal >= sub.subscription_plan.max_staff) {
+        throw new ForbiddenException({
+          code: ERROR_CODES.SUBSCRIPTION_LIMIT_REACHED,
+          message: `Staff limit reached (${sub.subscription_plan.max_staff}). Upgrade your plan.`,
+          details: {
+            resource: 'staff',
+            limit: sub.subscription_plan.max_staff,
+            current: staffTotal,
+          },
+        });
+      }
 
       let user = await tx.user.findFirst({
         where: { email: invitation.email, is_deleted: false },
@@ -214,7 +269,10 @@ export class InvitationsService {
               },
             },
             update: {},
-            create: { profile_id: profile.id, branch_id: branchSchedule.branch_id },
+            create: {
+              profile_id: profile.id,
+              branch_id: branchSchedule.branch_id,
+            },
           });
 
           for (const day of branchSchedule.days) {
@@ -251,7 +309,11 @@ export class InvitationsService {
     return result;
   }
 
-  async getInvitation(profileId: string, accountId: string, invitationId: string) {
+  async getInvitation(
+    profileId: string,
+    accountId: string,
+    invitationId: string,
+  ) {
     await this.authorizationService.assertCanManageStaff(profileId, accountId);
     const invitation = await this.prismaService.db.invitation.findFirst({
       where: { id: invitationId, account_id: accountId, is_deleted: false },
@@ -279,7 +341,11 @@ export class InvitationsService {
     return this.toResponse(invitation, workingSchedule);
   }
 
-  async resendInvitation(profileId: string, accountId: string, invitationId: string) {
+  async resendInvitation(
+    profileId: string,
+    accountId: string,
+    invitationId: string,
+  ) {
     await this.authorizationService.assertCanManageStaff(profileId, accountId);
     const invitation = await this.prismaService.db.invitation.findFirst({
       where: { id: invitationId, account_id: accountId, is_deleted: false },
@@ -300,7 +366,10 @@ export class InvitationsService {
     });
 
     const inviteUrl = `${this.appConfig.appUrl}/invitations/accept?invitation=${invitation.id}&token=${rawToken}`;
-    await this.mailService.sendStaffInvitationEmail(invitation.email, inviteUrl);
+    await this.mailService.sendStaffInvitationEmail(
+      invitation.email,
+      inviteUrl,
+    );
   }
 
   async cancelInvitation(
@@ -311,16 +380,38 @@ export class InvitationsService {
     await this.authorizationService.assertCanManageStaff(profileId, accountId);
     const invitation = await this.prismaService.db.invitation.findFirst({
       where: { id: invitationId, account_id: accountId, is_deleted: false },
+      include: this.includeInvitation(),
     });
     if (!invitation) throw new NotFoundException('Invitation not found');
-    return this.prismaService.db.invitation.update({
+    if (invitation.status !== InvitationStatus.PENDING) {
+      throw new BadRequestException(
+        'Only pending invitations can be cancelled',
+      );
+    }
+    const updated = await this.prismaService.db.invitation.update({
       where: { id: invitationId },
       data: {
         status: InvitationStatus.CANCELLED,
         is_deleted: true,
         deleted_at: new Date(),
       },
+      include: this.includeInvitation(),
     });
+    return this.toResponse(updated);
+  }
+
+  private assertShiftTimes(schedule: BranchScheduleDto[]) {
+    for (const branch of schedule) {
+      for (const day of branch.days) {
+        for (const shift of day.shifts) {
+          if (shift.end_time <= shift.start_time) {
+            throw new BadRequestException(
+              `Shift end_time must be after start_time (${shift.start_time} – ${shift.end_time})`,
+            );
+          }
+        }
+      }
+    }
   }
 
   private async assertBranchesInAccount(
@@ -334,8 +425,17 @@ export class InvitationsService {
         is_deleted: false,
       },
     });
-    if (count !== new Set(branchIds).size) {
+    if (count !== branchIds.length) {
       throw new NotFoundException('One or more branches were not found');
+    }
+  }
+
+  private async assertRolesExist(roleIds: string[]) {
+    const count = await this.prismaService.db.role.count({
+      where: { id: { in: roleIds } },
+    });
+    if (count !== roleIds.length) {
+      throw new NotFoundException('One or more roles were not found');
     }
   }
 
@@ -380,7 +480,9 @@ export class InvitationsService {
     return {
       roles: { include: { role: true } },
       branches: { include: { branch: true } },
-      invited_by: { select: { id: true, first_name: true, last_name: true, email: true } },
+      invited_by: {
+        select: { id: true, first_name: true, last_name: true, email: true },
+      },
     } satisfies Prisma.InvitationInclude;
   }
 
@@ -394,7 +496,9 @@ export class InvitationsService {
     invitation: Prisma.InvitationGetPayload<{
       include: ReturnType<InvitationsService['includeInvitation']>;
     }>,
-    workingSchedule?: Awaited<ReturnType<InvitationsService['fetchWorkingSchedule']>> | null,
+    workingSchedule?: Awaited<
+      ReturnType<InvitationsService['fetchWorkingSchedule']>
+    > | null,
   ) {
     return {
       id: invitation.id,
@@ -427,16 +531,17 @@ export class InvitationsService {
         governorate: item.branch.governorate,
       })),
       ...(workingSchedule !== undefined && {
-        working_schedule: workingSchedule?.map((ws) => ({
-          branch: ws.branch,
-          days: ws.days.map((d) => ({
-            day_of_week: d.day_of_week,
-            shifts: d.shifts.map((s) => ({
-              start_time: s.start_time,
-              end_time: s.end_time,
+        working_schedule:
+          workingSchedule?.map((ws) => ({
+            branch: ws.branch,
+            days: ws.days.map((d) => ({
+              day_of_week: d.day_of_week,
+              shifts: d.shifts.map((s) => ({
+                start_time: s.start_time,
+                end_time: s.end_time,
+              })),
             })),
-          })),
-        })) ?? null,
+          })) ?? null,
       }),
     };
   }
