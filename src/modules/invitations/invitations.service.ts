@@ -279,6 +279,30 @@ export class InvitationsService {
     return this.toResponse(invitation, workingSchedule);
   }
 
+  async resendInvitation(profileId: string, accountId: string, invitationId: string) {
+    await this.authorizationService.assertCanManageStaff(profileId, accountId);
+    const invitation = await this.prismaService.db.invitation.findFirst({
+      where: { id: invitationId, account_id: accountId, is_deleted: false },
+    });
+    if (!invitation) throw new NotFoundException('Invitation not found');
+    if (invitation.status !== InvitationStatus.PENDING)
+      throw new BadRequestException('Only pending invitations can be resent');
+
+    const rawToken = randomUUID();
+    const tokenHash = await bcrypt.hash(rawToken, 10);
+    const expiresAt = new Date(
+      Date.now() + this.authConfig.invitationExpireHours * 60 * 60 * 1000,
+    );
+
+    await this.prismaService.db.invitation.update({
+      where: { id: invitationId },
+      data: { token_hash: tokenHash, expires_at: expiresAt },
+    });
+
+    const inviteUrl = `${this.appConfig.appUrl}/invitations/accept?invitation=${invitation.id}&token=${rawToken}`;
+    await this.mailService.sendStaffInvitationEmail(invitation.email, inviteUrl);
+  }
+
   async cancelInvitation(
     profileId: string,
     accountId: string,
