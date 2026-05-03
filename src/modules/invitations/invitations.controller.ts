@@ -3,6 +3,8 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Post,
@@ -11,7 +13,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Public } from '../../common/decorators/public.decorator.js';
 import type { AuthContext } from '../../common/interfaces/auth-context.interface.js';
-import { ApiStandardResponse } from '../../common/swagger/index.js';
+import { ApiStandardResponse, ApiVoidResponse } from '../../common/swagger/index.js';
 import {
   AcceptInvitationDto,
   CreateInvitationDto,
@@ -69,6 +71,19 @@ export class InvitationsController {
     @Param('invitationId', ParseUUIDPipe) invitationId: string,
   ) {
     return this.invitationsService.getInvitation(user.profileId, accountId, invitationId);
+  }
+
+  @Post('accounts/:accountId/invitations/:invitationId/resend')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Resend invitation email' })
+  @ApiVoidResponse()
+  resendInvitation(
+    @CurrentUser() user: AuthContext,
+    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Param('invitationId', ParseUUIDPipe) invitationId: string,
+  ) {
+    return this.invitationsService.resendInvitation(user.profileId, accountId, invitationId);
   }
 
   @Delete('accounts/:accountId/invitations/:invitationId')
