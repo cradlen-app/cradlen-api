@@ -93,10 +93,17 @@ export class InvitationsService {
     return this.toResponse(invitation);
   }
 
-  async listInvitations(profileId: string, accountId: string) {
+  async listInvitations(profileId: string, accountId: string, branchId?: string) {
     await this.authorizationService.assertCanManageStaff(profileId, accountId);
+    const where: Prisma.InvitationWhereInput = {
+      account_id: accountId,
+      is_deleted: false,
+    };
+    if (branchId) {
+      where.branches = { some: { branch_id: branchId } };
+    }
     const invitations = await this.prismaService.db.invitation.findMany({
-      where: { account_id: accountId, is_deleted: false },
+      where,
       include: this.includeInvitation(),
       orderBy: { created_at: 'desc' },
     });
