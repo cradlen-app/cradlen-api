@@ -1,0 +1,363 @@
+//// ------------------------------------------------------
+//// THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+//// ------------------------------------------------------
+
+Table subscription_plans {
+  id String [pk]
+  plan String [unique, not null]
+  max_accounts Int [not null]
+  max_branches Int [not null]
+  max_staff Int [not null]
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  subscriptions subscriptions [not null]
+}
+
+Table accounts {
+  id String [pk]
+  name String [not null]
+  specialities String[] [not null]
+  status AccountStatus [not null, default: 'ACTIVE']
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  branches branches [not null]
+  profiles profiles [not null]
+  invitations invitations [not null]
+  subscriptions subscriptions [not null]
+}
+
+Table branches {
+  id String [pk]
+  name String [not null]
+  address String [not null]
+  city String [not null]
+  governorate String [not null]
+  country String
+  is_main Boolean [not null, default: false]
+  status BranchStatus [not null, default: 'ACTIVE']
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  account_id String [not null]
+  account accounts [not null]
+  profileBranches profile_branches [not null]
+  invitationBranches invitation_branches [not null]
+  workingSchedules working_schedules [not null]
+
+  indexes {
+    (id, account_id) [unique]
+  }
+}
+
+Table users {
+  id String [pk]
+  first_name String [not null]
+  last_name String [not null]
+  email String [unique]
+  phone_number String
+  password_hashed String
+  is_active Boolean [not null, default: true]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  verified_at DateTime
+  registration_status RegistrationStatus [not null, default: 'PENDING']
+  onboarding_completed Boolean [not null, default: false]
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  profiles profiles [not null]
+  refreshTokens refresh_tokens [not null]
+  verificationCodes verification_codes [not null]
+  sentInvitations invitations [not null]
+}
+
+Table roles {
+  id String [pk]
+  name String [unique, not null]
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  profileRoles profile_roles [not null]
+  invitationRoles invitation_roles [not null]
+}
+
+Table profiles {
+  id String [pk]
+  user_id String [not null]
+  account_id String [not null]
+  job_title String
+  specialty String
+  is_clinical Boolean [not null, default: false]
+  is_active Boolean [not null, default: true]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  user users [not null]
+  account accounts [not null]
+  roles profile_roles [not null]
+  branches profile_branches [not null]
+  workingSchedules working_schedules [not null]
+
+  indexes {
+    (user_id, account_id) [unique]
+  }
+}
+
+Table profile_roles {
+  id String [pk]
+  profile_id String [not null]
+  role_id String [not null]
+  created_at DateTime [default: `now()`, not null]
+  profile profiles [not null]
+  role roles [not null]
+
+  indexes {
+    (profile_id, role_id) [unique]
+  }
+}
+
+Table profile_branches {
+  id String [pk]
+  profile_id String [not null]
+  branch_id String [not null]
+  account_id String [not null]
+  created_at DateTime [default: `now()`, not null]
+  profile profiles [not null]
+  branch branches [not null]
+
+  indexes {
+    (profile_id, branch_id) [unique]
+  }
+}
+
+Table subscriptions {
+  id String [pk]
+  account_id String [not null]
+  subscription_plan_id String [not null]
+  status SubscriptionStatus [not null, default: 'TRIAL']
+  starts_at DateTime [default: `now()`, not null]
+  ends_at DateTime
+  trial_ends_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  account accounts [not null]
+  subscription_plan subscription_plans [not null]
+}
+
+Table refresh_tokens {
+  id String [pk]
+  jti String [unique, not null]
+  token_hash String [not null]
+  user_id String [not null]
+  profile_id String
+  account_id String
+  active_branch_id String
+  expires_at DateTime [not null]
+  is_revoked Boolean [not null, default: false]
+  revoked_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  user users [not null]
+}
+
+Table verification_codes {
+  id String [pk]
+  user_id String
+  channel VerificationChannel [not null]
+  purpose VerificationPurpose [not null]
+  target String [not null]
+  code_hash String [not null]
+  attempts Int [not null, default: 0]
+  max_attempts Int [not null, default: 5]
+  is_resend Boolean [not null, default: false]
+  expires_at DateTime [not null]
+  consumed_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  user users
+}
+
+Table invitations {
+  id String [pk]
+  account_id String [not null]
+  invited_by_id String [not null]
+  email String [not null]
+  first_name String [not null]
+  last_name String [not null]
+  phone_number String
+  job_title String
+  specialty String
+  is_clinical Boolean [not null, default: false]
+  token_hash String [not null]
+  status InvitationStatus [not null, default: 'PENDING']
+  expires_at DateTime [not null]
+  accepted_at DateTime
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  account accounts [not null]
+  invited_by users [not null]
+  roles invitation_roles [not null]
+  branches invitation_branches [not null]
+}
+
+Table invitation_roles {
+  id String [pk]
+  invitation_id String [not null]
+  role_id String [not null]
+  created_at DateTime [default: `now()`, not null]
+  invitation invitations [not null]
+  role roles [not null]
+
+  indexes {
+    (invitation_id, role_id) [unique]
+  }
+}
+
+Table invitation_branches {
+  id String [pk]
+  invitation_id String [not null]
+  branch_id String [not null]
+  account_id String [not null]
+  created_at DateTime [default: `now()`, not null]
+  invitation invitations [not null]
+  branch branches [not null]
+
+  indexes {
+    (invitation_id, branch_id) [unique]
+  }
+}
+
+Table working_schedules {
+  id String [pk]
+  profile_id String [not null]
+  branch_id String [not null]
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  profile profiles [not null]
+  branch branches [not null]
+  days working_days [not null]
+
+  indexes {
+    (profile_id, branch_id) [unique]
+  }
+}
+
+Table working_days {
+  id String [pk]
+  schedule_id String [not null]
+  day_of_week DayOfWeek [not null]
+  created_at DateTime [default: `now()`, not null]
+  schedule working_schedules [not null]
+  shifts working_shifts [not null]
+
+  indexes {
+    (schedule_id, day_of_week) [unique]
+  }
+}
+
+Table working_shifts {
+  id String [pk]
+  day_id String [not null]
+  start_time String [not null]
+  end_time String [not null]
+  created_at DateTime [default: `now()`, not null]
+  day working_days [not null]
+}
+
+Enum RegistrationStatus {
+  PENDING
+  ACTIVE
+}
+
+Enum AccountStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+Enum BranchStatus {
+  ACTIVE
+  INACTIVE
+}
+
+Enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+Enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  CANCELLED
+}
+
+Enum DayOfWeek {
+  MON
+  TUE
+  WED
+  THU
+  FRI
+  SAT
+  SUN
+}
+
+Enum VerificationChannel {
+  EMAIL
+  PHONE
+}
+
+Enum VerificationPurpose {
+  SIGNUP
+  LOGIN
+  PHONE_LOGIN
+  PASSWORD_RESET
+}
+
+Ref: branches.account_id > accounts.id [delete: Cascade]
+
+Ref: profiles.user_id > users.id [delete: Cascade]
+
+Ref: profiles.account_id > accounts.id [delete: Cascade]
+
+Ref: profile_roles.profile_id > profiles.id [delete: Cascade]
+
+Ref: profile_roles.role_id > roles.id [delete: Cascade]
+
+Ref: profile_branches.profile_id > profiles.id [delete: Cascade]
+
+Ref: profile_branches.(branch_id, account_id) > branches.(id, account_id) [delete: Cascade]
+
+Ref: subscriptions.account_id > accounts.id [delete: Cascade]
+
+Ref: subscriptions.subscription_plan_id > subscription_plans.id
+
+Ref: refresh_tokens.user_id > users.id [delete: Cascade]
+
+Ref: verification_codes.user_id > users.id [delete: Cascade]
+
+Ref: invitations.account_id > accounts.id [delete: Cascade]
+
+Ref: invitations.invited_by_id > users.id
+
+Ref: invitation_roles.invitation_id > invitations.id [delete: Cascade]
+
+Ref: invitation_roles.role_id > roles.id [delete: Cascade]
+
+Ref: invitation_branches.invitation_id > invitations.id [delete: Cascade]
+
+Ref: invitation_branches.(branch_id, account_id) > branches.(id, account_id) [delete: Cascade]
+
+Ref: working_schedules.profile_id > profiles.id [delete: Cascade]
+
+Ref: working_schedules.branch_id > branches.id [delete: Cascade]
+
+Ref: working_days.schedule_id > working_schedules.id [delete: Cascade]
+
+Ref: working_shifts.day_id > working_days.id [delete: Cascade]
