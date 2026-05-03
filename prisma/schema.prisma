@@ -61,6 +61,7 @@ enum VerificationPurpose {
 model SubscriptionPlan {
   id            String         @id @default(uuid()) @db.Uuid
   plan          String         @unique
+  max_accounts  Int
   max_branches  Int
   max_staff     Int
   created_at    DateTime       @default(now())

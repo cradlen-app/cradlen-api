@@ -29,7 +29,9 @@ import { ResendOtpResponseDto } from './dto/resend-otp-response.dto.js';
 import { SelectProfileDto } from './dto/select-profile.dto.js';
 import { SignupCompleteDto } from './dto/signup-complete.dto.js';
 import { SignupStartDto } from './dto/signup-start.dto.js';
+import { SignupTokenResponseDto } from './dto/signup-token-response.dto.js';
 import { SignupVerifyDto } from './dto/signup-verify.dto.js';
+import { ProfileSelectionResponseDto } from './dto/profile-selection-response.dto.js';
 import { ForgotPasswordDto } from './dto/forgot-password.dto.js';
 import { ResendResetCodeDto } from './dto/resend-reset-code.dto.js';
 import { VerifyResetCodeDto } from './dto/verify-reset-code.dto.js';
@@ -56,6 +58,7 @@ export class AuthController {
   @Public()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Start owner signup and send verification code' })
+  @ApiStandardResponse(SignupTokenResponseDto)
   signupStart(@Body() dto: SignupStartDto) {
     return this.authService.signupStart(dto);
   }
@@ -64,6 +67,7 @@ export class AuthController {
   @Public()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Verify signup code and activate identity' })
+  @ApiStandardResponse(SignupTokenResponseDto)
   signupVerify(@Body() dto: SignupVerifyDto) {
     return this.authService.signupVerify(dto);
   }
@@ -75,7 +79,7 @@ export class AuthController {
     summary:
       'Create account, branch, profile, roles, subscription, and return selectable profiles',
   })
-  @ApiStandardResponse(Object)
+  @ApiStandardResponse(ProfileSelectionResponseDto)
   signupComplete(@Body() dto: SignupCompleteDto) {
     return this.authService.signupComplete(dto);
   }
