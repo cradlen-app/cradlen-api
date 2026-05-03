@@ -56,6 +56,63 @@ export class BranchScheduleDto {
   days!: WorkingDayDto[];
 }
 
+export class UpdateStaffDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  first_name?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  last_name?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  phone_number?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  job_title?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  specialty?: string;
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  is_clinical?: boolean;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsUUID('4', { each: true })
+  role_ids?: string[];
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsUUID('4', { each: true })
+  branch_ids?: string[];
+
+  @ApiPropertyOptional({
+    type: [BranchScheduleDto],
+    description:
+      'Optional per-branch working schedule. Each branch_id must be present in the effective branch set.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BranchScheduleDto)
+  schedule?: BranchScheduleDto[];
+}
+
 export class CreateStaffDto {
   @ApiProperty()
   @IsString()
