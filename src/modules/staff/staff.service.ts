@@ -1,12 +1,14 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
+import { Prisma } from '@prisma/client';
 import { AuthorizationService } from '../../common/authorization/authorization.service.js';
 import { PrismaService } from '../../database/prisma.service.js';
-import type { CreateStaffDto } from './dto/staff.dto.js';
+import type { BranchScheduleDto, CreateStaffDto } from './dto/staff.dto.js';
 
 const STAFF_EMAIL_DOMAIN = 'cradlen.com';
 
@@ -20,6 +22,17 @@ export class StaffService {
   async createStaff(profileId: string, accountId: string, dto: CreateStaffDto) {
     await this.authorizationService.assertCanManageStaff(profileId, accountId);
     await this.assertBranchesInAccount(accountId, dto.branch_ids);
+
+    if (dto.schedule?.length) {
+      const invalidIds = dto.schedule
+        .map((s) => s.branch_id)
+        .filter((id) => !dto.branch_ids.includes(id));
+      if (invalidIds.length) {
+        throw new BadRequestException(
+          `Schedule branch_ids not in branch_ids: ${invalidIds.join(', ')}`,
+        );
+      }
+    }
 
     const existingByPhone = await this.prismaService.db.user.findFirst({
       where: { phone_number: dto.phone_number, is_deleted: false },
@@ -65,6 +78,10 @@ export class StaffService {
         ),
       ]);
 
+      if (dto.schedule?.length) {
+        await this.createSchedules(tx, profile.id, dto.schedule);
+      }
+
       return {
         user_id: user.id,
         profile_id: profile.id,
@@ -94,6 +111,13 @@ export class StaffService {
           where: { branch: { is_deleted: false } },
           include: { branch: true },
         },
+        workingSchedules: {
+          include: {
+            days: {
+              include: { shifts: true },
+            },
+          },
+        },
       },
       orderBy: { created_at: 'asc' },
     });
@@ -115,7 +139,43 @@ export class StaffService {
         city: b.branch.city,
         governorate: b.branch.governorate,
       })),
+      schedule: p.workingSchedules.map((ws) => ({
+        branch_id: ws.branch_id,
+        days: ws.days.map((d) => ({
+          day_of_week: d.day_of_week,
+          shifts: d.shifts.map((s) => ({
+            start_time: s.start_time,
+            end_time: s.end_time,
+          })),
+        })),
+      })),
     }));
+  }
+
+  private async createSchedules(
+    tx: Prisma.TransactionClient,
+    profileId: string,
+    schedule: BranchScheduleDto[],
+  ) {
+    for (const branchSchedule of schedule) {
+      const ws = await tx.workingSchedule.create({
+        data: { profile_id: profileId, branch_id: branchSchedule.branch_id },
+      });
+
+      for (const day of branchSchedule.days) {
+        const wd = await tx.workingDay.create({
+          data: { schedule_id: ws.id, day_of_week: day.day_of_week },
+        });
+
+        await tx.workingShift.createMany({
+          data: day.shifts.map((s) => ({
+            day_id: wd.id,
+            start_time: s.start_time,
+            end_time: s.end_time,
+          })),
+        });
+      }
+    }
   }
 
   private async generateUniqueEmail(
