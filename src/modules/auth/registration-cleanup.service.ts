@@ -30,6 +30,8 @@ export class RegistrationCleanupService {
         });
         if (staleUsers.length === 0) break;
 
+        // Hard delete intentional: PENDING users have no committed data.
+        // Cascade on User→VerificationCode and User→RefreshToken cleans child rows.
         const deleted = await this.prismaService.db.user.deleteMany({
           where: { id: { in: staleUsers.map((user) => user.id) } },
         });

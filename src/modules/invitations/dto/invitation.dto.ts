@@ -10,11 +10,14 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { BranchScheduleDto } from '../../staff/dto/staff.dto.js';
 
 export class CreateInvitationDto {
   @ApiProperty()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.toLowerCase().trim() : value,
+  )
   @IsEmail()
   email!: string;
 
@@ -85,7 +88,8 @@ export class AcceptInvitationDto {
 
   @ApiPropertyOptional({
     type: [BranchScheduleDto],
-    description: 'Optional per-branch working schedule. branch_id must be one of the invitation\'s assigned branches.',
+    description:
+      "Optional per-branch working schedule. branch_id must be one of the invitation's assigned branches.",
   })
   @IsOptional()
   @IsArray()

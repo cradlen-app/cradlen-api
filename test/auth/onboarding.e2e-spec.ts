@@ -108,7 +108,7 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
       .send({
         signup_token: verified.body.data.signup_token,
         account_name: 'Nour Clinic',
-        specialties: [],
+        specialties: ['General Medicine'],
         branch_name: 'Main Branch',
         branch_address: '1 Clinic St',
         branch_city: 'Cairo',
@@ -257,7 +257,7 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
       .send({
         signup_token: verified.body.data.signup_token,
         account_name: 'Nour Clinic',
-        specialties: [],
+        specialties: ['General Medicine'],
         branch_name: 'Main Branch',
         branch_address: '1 Clinic St',
         branch_city: 'Cairo',
