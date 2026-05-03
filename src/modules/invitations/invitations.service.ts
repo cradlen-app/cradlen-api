@@ -57,7 +57,7 @@ export class InvitationsService {
       select: { email: true },
     });
 
-    if (invitingUser?.email.toLowerCase() === dto.email.toLowerCase()) {
+    if (invitingUser?.email?.toLowerCase() === dto.email.toLowerCase()) {
       throw new BadRequestException('You cannot invite yourself');
     }
 
