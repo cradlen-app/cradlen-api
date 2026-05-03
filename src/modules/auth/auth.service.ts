@@ -105,10 +105,36 @@ export class AuthService {
           { email: dto.email },
           ...(dto.phone_number ? [{ phone_number: dto.phone_number }] : []),
         ],
-        is_deleted: false,
       },
     });
     if (existing) {
+      // Reactivate a previously deleted user so they can re-join with a new organization.
+      if (existing.is_deleted) {
+        const password_hashed = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
+        await this.prismaService.db.user.update({
+          where: { id: existing.id },
+          data: {
+            is_deleted: false,
+            deleted_at: null,
+            is_active: true,
+            registration_status: 'PENDING',
+            onboarding_completed: false,
+            verified_at: null,
+            first_name: dto.first_name,
+            last_name: dto.last_name,
+            password_hashed,
+            phone_number: dto.phone_number ?? null,
+          },
+        });
+        await this.sendVerificationCode({
+          userId: existing.id,
+          target: dto.email,
+          channel: 'EMAIL',
+          purpose: 'SIGNUP',
+        });
+        return this.issueSignupToken(existing.id, 'signup');
+      }
+
       // Only resume a pending registration when the submitted email matches.
       // A phone-only collision (different email) must never issue a token for
       // the matched user — treat it the same as any other conflict.

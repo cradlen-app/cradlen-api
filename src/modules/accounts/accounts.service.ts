@@ -184,7 +184,9 @@ export class AccountsService {
           }),
         ),
       );
-      const orphanedUserIds = userIds.filter((_, i) => remainingCounts[i] === 0);
+      const orphanedUserIds = userIds.filter(
+        (_, i) => remainingCounts[i] === 0,
+      );
 
       if (orphanedUserIds.length > 0) {
         await tx.user.updateMany({
