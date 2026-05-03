@@ -158,6 +158,12 @@ export class AccountsService {
 
     const now = new Date();
     await this.prismaService.db.$transaction(async (tx) => {
+      const profiles = await tx.profile.findMany({
+        where: { account_id: accountId, is_deleted: false },
+        select: { user_id: true },
+      });
+      const userIds = [...new Set(profiles.map((p) => p.user_id))];
+
       await tx.branch.updateMany({
         where: { account_id: accountId, is_deleted: false },
         data: { is_deleted: true, deleted_at: now },
@@ -166,6 +172,31 @@ export class AccountsService {
         where: { account_id: accountId, is_deleted: false },
         data: { is_deleted: true, deleted_at: now },
       });
+
+      const remainingCounts = await Promise.all(
+        userIds.map((userId) =>
+          tx.profile.count({
+            where: {
+              user_id: userId,
+              is_deleted: false,
+              account_id: { not: accountId },
+            },
+          }),
+        ),
+      );
+      const orphanedUserIds = userIds.filter((_, i) => remainingCounts[i] === 0);
+
+      if (orphanedUserIds.length > 0) {
+        await tx.user.updateMany({
+          where: { id: { in: orphanedUserIds } },
+          data: { is_deleted: true, deleted_at: now, is_active: false },
+        });
+        await tx.refreshToken.updateMany({
+          where: { user_id: { in: orphanedUserIds }, is_revoked: false },
+          data: { is_revoked: true },
+        });
+      }
+
       await tx.account.update({
         where: { id: accountId },
         data: { is_deleted: true, deleted_at: now },
