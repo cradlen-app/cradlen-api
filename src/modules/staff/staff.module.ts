@@ -1,12 +1,12 @@
 import { Module } from '@nestjs/common';
 import { AuthorizationModule } from '../../common/authorization/authorization.module.js';
 import { DatabaseModule } from '../../database/database.module.js';
-import { JoinCodesController } from './join-codes.controller.js';
-import { JoinCodesService } from './join-codes.service.js';
+import { StaffController } from './staff.controller.js';
+import { StaffService } from './staff.service.js';
 
 @Module({
   imports: [DatabaseModule, AuthorizationModule],
-  controllers: [JoinCodesController],
-  providers: [JoinCodesService],
+  controllers: [StaffController],
+  providers: [StaffService],
 })
-export class JoinCodesModule {}
+export class StaffModule {}
