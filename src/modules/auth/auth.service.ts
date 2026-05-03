@@ -109,7 +109,9 @@ export class AuthService {
     });
     if (existing) {
       // Reactivate a previously deleted user so they can re-join with a new organization.
-      if (existing.is_deleted) {
+      // Only reactivate when the email matches — a phone-only collision with a different
+      // email must not reactivate a foreign identity or send OTP to the wrong address.
+      if (existing.is_deleted && existing.email === dto.email) {
         const password_hashed = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
         await this.prismaService.db.user.update({
           where: { id: existing.id },
