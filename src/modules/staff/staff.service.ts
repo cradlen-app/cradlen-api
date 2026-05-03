@@ -91,11 +91,20 @@ export class StaffService {
     });
   }
 
-  async listStaff(profileId: string, accountId: string) {
+  async listStaff(profileId: string, accountId: string, branchId?: string) {
     await this.authorizationService.assertCanManageStaff(profileId, accountId);
 
+    const where: Prisma.ProfileWhereInput = {
+      account_id: accountId,
+      is_deleted: false,
+      is_active: true,
+    };
+    if (branchId) {
+      where.branches = { some: { branch_id: branchId } };
+    }
+
     const profiles = await this.prismaService.db.profile.findMany({
-      where: { account_id: accountId, is_deleted: false, is_active: true },
+      where,
       include: {
         user: {
           select: {
