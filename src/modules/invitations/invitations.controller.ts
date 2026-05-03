@@ -8,12 +8,16 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Public } from '../../common/decorators/public.decorator.js';
 import type { AuthContext } from '../../common/interfaces/auth-context.interface.js';
-import { ApiStandardResponse, ApiVoidResponse } from '../../common/swagger/index.js';
+import {
+  ApiStandardResponse,
+  ApiVoidResponse,
+} from '../../common/swagger/index.js';
 import {
   AcceptInvitationDto,
   CreateInvitationDto,
@@ -49,8 +53,13 @@ export class InvitationsController {
   listInvitations(
     @CurrentUser() user: AuthContext,
     @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Query('branch_id') branchId?: string,
   ) {
-    return this.invitationsService.listInvitations(user.profileId, accountId, user.activeBranchId);
+    return this.invitationsService.listInvitations(
+      user.profileId,
+      accountId,
+      branchId,
+    );
   }
 
   @Post('invitations/accept')
@@ -70,7 +79,11 @@ export class InvitationsController {
     @Param('accountId', ParseUUIDPipe) accountId: string,
     @Param('invitationId', ParseUUIDPipe) invitationId: string,
   ) {
-    return this.invitationsService.getInvitation(user.profileId, accountId, invitationId);
+    return this.invitationsService.getInvitation(
+      user.profileId,
+      accountId,
+      invitationId,
+    );
   }
 
   @Post('accounts/:accountId/invitations/:invitationId/resend')
@@ -83,7 +96,11 @@ export class InvitationsController {
     @Param('accountId', ParseUUIDPipe) accountId: string,
     @Param('invitationId', ParseUUIDPipe) invitationId: string,
   ) {
-    return this.invitationsService.resendInvitation(user.profileId, accountId, invitationId);
+    return this.invitationsService.resendInvitation(
+      user.profileId,
+      accountId,
+      invitationId,
+    );
   }
 
   @Delete('accounts/:accountId/invitations/:invitationId')

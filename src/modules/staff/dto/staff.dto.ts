@@ -17,12 +17,16 @@ import { DayOfWeek } from '@prisma/client';
 export class WorkingShiftDto {
   @ApiProperty({ example: '09:00', description: 'HH:MM 24-hour format' })
   @IsString()
-  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'start_time must be HH:MM format' })
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, {
+    message: 'start_time must be HH:MM format',
+  })
   start_time!: string;
 
   @ApiProperty({ example: '17:00', description: 'HH:MM 24-hour format' })
   @IsString()
-  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'end_time must be HH:MM format' })
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, {
+    message: 'end_time must be HH:MM format',
+  })
   end_time!: string;
 }
 
@@ -65,7 +69,9 @@ export class CreateStaffDto {
   @IsString()
   phone_number!: string;
 
-  @ApiProperty({ description: 'Min 8 chars. Admin shares this with the staff member.' })
+  @ApiProperty({
+    description: 'Min 8 chars. Admin shares this with the staff member.',
+  })
   @IsString()
   @MinLength(8)
   password!: string;
@@ -99,7 +105,8 @@ export class CreateStaffDto {
 
   @ApiPropertyOptional({
     type: [BranchScheduleDto],
-    description: 'Optional per-branch working schedule. Each branch_id must be present in branch_ids.',
+    description:
+      'Optional per-branch working schedule. Each branch_id must be present in branch_ids.',
   })
   @IsOptional()
   @IsArray()

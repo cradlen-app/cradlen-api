@@ -42,6 +42,7 @@ import type { SwitchBranchDto } from './dto/switch-branch.dto.js';
 import type { AuthContext } from '../../common/interfaces/auth-context.interface.js';
 import { AuthorizationService } from '../../common/authorization/authorization.service.js';
 
+const BCRYPT_ROUNDS = 12;
 const OTP_TTL_MINUTES = 15;
 const OTP_MAX_ATTEMPTS = 5;
 const SIGNUP_RESEND_COOLDOWN_SECONDS = 60;
@@ -108,8 +109,18 @@ export class AuthService {
       },
     });
     if (existing) {
-      if (existing.registration_status === 'PENDING' && existing.email) {
-        await this.resendOtp({ email: existing.email });
+      // Only resume a pending registration when the submitted email matches.
+      // A phone-only collision (different email) must never issue a token for
+      // the matched user — treat it the same as any other conflict.
+      if (
+        existing.registration_status === 'PENDING' &&
+        existing.email === dto.email
+      ) {
+        try {
+          await this.resendOtp({ email: existing.email });
+        } catch {
+          // swallow rate-limit errors — caller gets token regardless
+        }
         return this.issueSignupToken(existing.id, 'signup');
       }
       const conflictFields = [
@@ -125,7 +136,7 @@ export class AuthService {
       });
     }
 
-    const password_hashed = await bcrypt.hash(dto.password, 12);
+    const password_hashed = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
     const user = await this.prismaService.db.user.create({
       data: {
         first_name: dto.first_name,
@@ -154,6 +165,9 @@ export class AuthService {
       where: { id: userId, is_deleted: false },
     });
     if (!user?.email) throw new UnauthorizedException('User not found');
+    if (user.registration_status !== 'PENDING') {
+      throw new ConflictException('Email already verified');
+    }
 
     await this.consumeVerificationCode({
       userId,
@@ -185,12 +199,14 @@ export class AuthService {
     if (user.registration_status !== 'ACTIVE' || !user.verified_at) {
       throw new ForbiddenException('Signup has not been verified');
     }
-    if (user.onboarding_completed) {
-      throw new ConflictException('Onboarding already completed');
-    }
 
     const requestedRoles = this.resolveSignupCompleteRoles(dto.roles);
     const isDoctor = requestedRoles.includes('DOCTOR');
+    if (isDoctor && (!dto.specialty?.trim() || !dto.job_title?.trim())) {
+      throw new BadRequestException(
+        'specialty and job_title are required when DOCTOR role is selected',
+      );
+    }
 
     const [roles, freePlan] = await Promise.all([
       Promise.all(requestedRoles.map((role) => this.findRole(role))),
@@ -205,6 +221,22 @@ export class AuthService {
     trialEndsAt.setDate(trialEndsAt.getDate() + this.authConfig.freeTrialDays);
 
     const result = await this.prismaService.db.$transaction(async (tx) => {
+      // Atomically claim onboarding. If another concurrent request already
+      // claimed it, updateMany returns count=0 and we abort before creating
+      // any tenant records, preventing duplicate account/profile/subscription.
+      const claimed = await tx.user.updateMany({
+        where: {
+          id: userId,
+          registration_status: 'ACTIVE',
+          verified_at: { not: null },
+          onboarding_completed: false,
+        },
+        data: { onboarding_completed: true },
+      });
+      if (claimed.count === 0) {
+        throw new ConflictException('Onboarding already completed');
+      }
+
       const account = await tx.account.create({
         data: {
           name: dto.account_name,
@@ -224,7 +256,7 @@ export class AuthService {
       });
       const profile = await tx.profile.create({
         data: {
-          user_id: user.id,
+          user_id: userId,
           account_id: account.id,
           is_clinical: isDoctor,
           specialty: isDoctor ? dto.specialty : null,
@@ -244,11 +276,7 @@ export class AuthService {
           trial_ends_at: trialEndsAt,
         },
       });
-      await tx.user.update({
-        where: { id: user.id },
-        data: { onboarding_completed: true },
-      });
-      return { accountId: account.id, profileId: profile.id, userId: user.id };
+      return { accountId: account.id, profileId: profile.id, userId };
     });
 
     return this.buildProfileSelectionResponse(result.userId);
@@ -790,7 +818,7 @@ export class AuthService {
       secret: this.authConfig.jwt.refreshSecret,
       expiresIn: refreshExpiresIn,
     });
-    const token_hash = await bcrypt.hash(refresh_token, 10);
+    const token_hash = await bcrypt.hash(refresh_token, BCRYPT_ROUNDS);
     await this.prismaService.db.refreshToken.create({
       data: {
         jti,
@@ -1027,7 +1055,7 @@ export class AuthService {
   async resetPassword(dto: ResetPasswordDto): Promise<void> {
     const { userId } = this.decodePasswordResetToken(dto.reset_token, true);
 
-    const passwordHash = await bcrypt.hash(dto.password, 10);
+    const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
     await this.prismaService.db.$transaction([
       this.prismaService.db.user.update({
