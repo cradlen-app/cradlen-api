@@ -36,13 +36,6 @@ enum InvitationStatus {
   CANCELLED
 }
 
-enum JoinCodeStatus {
-  ACTIVE
-  USED
-  EXPIRED
-  REVOKED
-}
-
 enum VerificationChannel {
   EMAIL
   PHONE
@@ -79,7 +72,6 @@ model Account {
   branches      Branch[]
   profiles      Profile[]
   invitations   Invitation[]
-  joinCodes     JoinCode[]
   subscriptions Subscription[]
 
   @@index([status, is_deleted])
@@ -103,7 +95,6 @@ model Branch {
   account            Account            @relation(fields: [account_id], references: [id], onDelete: Cascade)
   profileBranches    ProfileBranch[]
   invitationBranches InvitationBranch[]
-  joinCodeBranches   JoinCodeBranch[]
 
   @@unique([id, account_id])
   @@index([account_id, is_deleted])
@@ -141,7 +132,6 @@ model Role {
   updated_at      DateTime         @updatedAt
   profileRoles    ProfileRole[]
   invitationRoles InvitationRole[]
-  joinCodeRoles   JoinCodeRole[]
 
   @@map("roles")
 }
@@ -307,57 +297,4 @@ model InvitationBranch {
   @@unique([invitation_id, branch_id])
   @@index([account_id, branch_id])
   @@map("invitation_branches")
-}
-
-model JoinCode {
-  id            String           @id @default(uuid()) @db.Uuid
-  account_id    String           @db.Uuid
-  created_by_id String           @db.Uuid
-  code_lookup   String           @unique
-  code_hash     String
-  first_name    String?
-  last_name     String?
-  job_title     String?
-  specialty     String?
-  is_clinical   Boolean          @default(false)
-  status        JoinCodeStatus   @default(ACTIVE)
-  max_uses      Int              @default(1)
-  used_count    Int              @default(0)
-  expires_at    DateTime
-  revoked_at    DateTime?
-  created_at    DateTime         @default(now())
-  updated_at    DateTime         @updatedAt
-  account       Account          @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  roles         JoinCodeRole[]
-  branches      JoinCodeBranch[]
-
-  @@index([account_id, status])
-  @@index([expires_at])
-  @@map("join_codes")
-}
-
-model JoinCodeRole {
-  id           String   @id @default(uuid()) @db.Uuid
-  join_code_id String   @db.Uuid
-  role_id      String   @db.Uuid
-  created_at   DateTime @default(now())
-  joinCode     JoinCode @relation(fields: [join_code_id], references: [id], onDelete: Cascade)
-  role         Role     @relation(fields: [role_id], references: [id], onDelete: Cascade)
-
-  @@unique([join_code_id, role_id])
-  @@map("join_code_roles")
-}
-
-model JoinCodeBranch {
-  id           String   @id @default(uuid()) @db.Uuid
-  join_code_id String   @db.Uuid
-  branch_id    String   @db.Uuid
-  account_id   String   @db.Uuid
-  created_at   DateTime @default(now())
-  joinCode     JoinCode @relation(fields: [join_code_id], references: [id], onDelete: Cascade)
-  branch       Branch   @relation(fields: [branch_id, account_id], references: [id, account_id], onDelete: Cascade)
-
-  @@unique([join_code_id, branch_id])
-  @@index([account_id, branch_id])
-  @@map("join_code_branches")
 }
