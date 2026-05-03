@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service.js';
 import { AuthorizationService } from '../../common/authorization/authorization.service.js';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service.js';
 import type { CreateBranchDto, UpdateBranchDto } from './dto/branch.dto.js';
 
 @Injectable()
@@ -12,6 +13,7 @@ export class BranchesService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly authorizationService: AuthorizationService,
+    private readonly subscriptionsService: SubscriptionsService,
   ) {}
 
   async listBranches(profileId: string, accountId: string) {
@@ -34,6 +36,7 @@ export class BranchesService {
       profileId,
       accountId,
     );
+    await this.subscriptionsService.assertBranchLimit(accountId);
     return this.prismaService.db.$transaction(async (tx) => {
       if (dto.is_main) {
         await tx.branch.updateMany({

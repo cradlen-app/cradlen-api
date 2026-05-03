@@ -13,8 +13,6 @@ describe('AuthController', () => {
       | 'resendOtp'
       | 'getRegistrationStatus'
       | 'login'
-      | 'requestPhoneOtp'
-      | 'verifyPhoneOtp'
       | 'selectProfile'
       | 'refresh'
       | 'logout'
@@ -30,8 +28,6 @@ describe('AuthController', () => {
       resendOtp: jest.fn(),
       getRegistrationStatus: jest.fn(),
       login: jest.fn(),
-      requestPhoneOtp: jest.fn(),
-      verifyPhoneOtp: jest.fn(),
       selectProfile: jest.fn(),
       refresh: jest.fn(),
       logout: jest.fn(),
@@ -64,7 +60,7 @@ describe('AuthController', () => {
     const dto = {
       signup_token: 'token',
       account_name: 'Clinic',
-      specialties: [],
+      specialties: ['General Medicine'],
       branch_name: 'Main',
       roles: ['OWNER'],
     };

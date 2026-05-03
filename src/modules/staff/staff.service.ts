@@ -8,6 +8,7 @@ import * as bcrypt from 'bcryptjs';
 import { Prisma } from '@prisma/client';
 import { AuthorizationService } from '../../common/authorization/authorization.service.js';
 import { PrismaService } from '../../database/prisma.service.js';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service.js';
 import type { BranchScheduleDto, CreateStaffDto } from './dto/staff.dto.js';
 
 const STAFF_EMAIL_DOMAIN = 'cradlen.com';
@@ -17,28 +18,38 @@ export class StaffService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly authorizationService: AuthorizationService,
+    private readonly subscriptionsService: SubscriptionsService,
   ) {}
 
   async createStaff(profileId: string, accountId: string, dto: CreateStaffDto) {
     await this.authorizationService.assertCanManageStaff(profileId, accountId);
-    await this.assertBranchesInAccount(accountId, dto.branch_ids);
+    await this.subscriptionsService.assertStaffLimit(accountId);
+
+    const uniqueRoleIds = [...new Set(dto.role_ids)];
+    const uniqueBranchIds = [...new Set(dto.branch_ids)];
+
+    await this.assertBranchesInAccount(accountId, uniqueBranchIds);
+    await this.assertRolesExist(uniqueRoleIds);
 
     if (dto.schedule?.length) {
       const invalidIds = dto.schedule
         .map((s) => s.branch_id)
-        .filter((id) => !dto.branch_ids.includes(id));
+        .filter((id) => !uniqueBranchIds.includes(id));
       if (invalidIds.length) {
         throw new BadRequestException(
           `Schedule branch_ids not in branch_ids: ${invalidIds.join(', ')}`,
         );
       }
+      this.assertShiftTimes(dto.schedule);
     }
 
     const existingByPhone = await this.prismaService.db.user.findFirst({
       where: { phone_number: dto.phone_number, is_deleted: false },
     });
     if (existingByPhone) {
-      throw new ConflictException('A user with this phone number already exists');
+      throw new ConflictException(
+        'A user with this phone number already exists',
+      );
     }
 
     const email = await this.generateUniqueEmail(dto.first_name, dto.last_name);
@@ -68,10 +79,10 @@ export class StaffService {
       });
 
       await Promise.all([
-        ...dto.role_ids.map((role_id) =>
+        ...uniqueRoleIds.map((role_id) =>
           tx.profileRole.create({ data: { profile_id: profile.id, role_id } }),
         ),
-        ...dto.branch_ids.map((branch_id) =>
+        ...uniqueBranchIds.map((branch_id) =>
           tx.profileBranch.create({
             data: { profile_id: profile.id, branch_id, account_id: accountId },
           }),
@@ -223,8 +234,31 @@ export class StaffService {
         is_deleted: false,
       },
     });
-    if (count !== new Set(branchIds).size) {
+    if (count !== branchIds.length) {
       throw new NotFoundException('One or more branches were not found');
+    }
+  }
+
+  private assertShiftTimes(schedule: BranchScheduleDto[]) {
+    for (const branch of schedule) {
+      for (const day of branch.days) {
+        for (const shift of day.shifts) {
+          if (shift.end_time <= shift.start_time) {
+            throw new BadRequestException(
+              `Shift end_time must be after start_time (${shift.start_time} – ${shift.end_time})`,
+            );
+          }
+        }
+      }
+    }
+  }
+
+  private async assertRolesExist(roleIds: string[]) {
+    const count = await this.prismaService.db.role.count({
+      where: { id: { in: roleIds } },
+    });
+    if (count !== roleIds.length) {
+      throw new NotFoundException('One or more roles were not found');
     }
   }
 }
