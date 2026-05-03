@@ -79,7 +79,7 @@ export class MeResponseDto {
   email!: string;
 
   @ApiPropertyOptional({ nullable: true })
-  phone!: string | null;
+  phone_number!: string | null;
 
   @ApiProperty()
   is_active!: boolean;
