@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import type { AuthContext } from '../../common/interfaces/auth-context.interface.js';
@@ -16,7 +24,7 @@ export class StaffController {
   @ApiOperation({
     summary: 'Directly create a staff member',
     description:
-      'Creates a user + profile immediately. A system email is auto-generated (e.g. sara-ahmed4821@cradlen.com). Staff log in via phone OTP.',
+      'Creates a user + profile immediately. A system email is auto-generated (e.g. sara-ahmed4821@cradlen.com). Staff log in with the password set here.',
   })
   @ApiStandardResponse(Object)
   createStaff(
@@ -33,7 +41,8 @@ export class StaffController {
   listStaff(
     @CurrentUser() user: AuthContext,
     @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Query('branch_id') branchId?: string,
   ) {
-    return this.staffService.listStaff(user.profileId, accountId, user.activeBranchId);
+    return this.staffService.listStaff(user.profileId, accountId, branchId);
   }
 }

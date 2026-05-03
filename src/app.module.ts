@@ -16,6 +16,7 @@ import { ProfilesModule } from './modules/profiles/profiles.module.js';
 import { InvitationsModule } from './modules/invitations/invitations.module.js';
 import { StaffModule } from './modules/staff/staff.module.js';
 import { UsersModule } from './modules/users/users.module.js';
+import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import type { AppConfig } from './config/app.config';
 
@@ -46,6 +47,7 @@ import type { AppConfig } from './config/app.config';
     BranchesModule,
     InvitationsModule,
     StaffModule,
+    SubscriptionsModule,
   ],
   controllers: [],
   providers: [

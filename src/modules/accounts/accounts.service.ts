@@ -6,6 +6,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service.js';
 import { AuthorizationService } from '../../common/authorization/authorization.service.js';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service.js';
 import type { AuthConfig } from '../../config/auth.config.js';
 import type { CreateAccountDto } from './dto/create-account.dto.js';
 import type { UpdateAccountDto } from './dto/update-account.dto.js';
@@ -17,6 +18,7 @@ export class AccountsService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly authorizationService: AuthorizationService,
+    private readonly subscriptionsService: SubscriptionsService,
     private readonly configService: ConfigService,
   ) {
     const authConfig = this.configService.get<AuthConfig>('auth');
@@ -58,6 +60,7 @@ export class AccountsService {
   }
 
   async createAccount(userId: string, dto: CreateAccountDto) {
+    await this.subscriptionsService.assertAccountLimit(userId);
     const isDoctor = dto.roles.includes('DOCTOR');
 
     const [roles, freePlan] = await Promise.all([
