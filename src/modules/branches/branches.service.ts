@@ -16,37 +16,41 @@ export class BranchesService {
     private readonly subscriptionsService: SubscriptionsService,
   ) {}
 
-  async listBranches(profileId: string, accountId: string) {
-    await this.authorizationService.assertCanManageAccount(
+  async listBranches(profileId: string, organizationId: string) {
+    await this.authorizationService.assertCanManageOrganization(
       profileId,
-      accountId,
+      organizationId,
     );
     return this.prismaService.db.branch.findMany({
-      where: { account_id: accountId, is_deleted: false },
+      where: { organization_id: organizationId, is_deleted: false },
       orderBy: [{ is_main: 'desc' }, { created_at: 'asc' }],
     });
   }
 
   async createBranch(
     profileId: string,
-    accountId: string,
+    organizationId: string,
     dto: CreateBranchDto,
   ) {
-    await this.authorizationService.assertCanManageAccount(
+    await this.authorizationService.assertCanManageOrganization(
       profileId,
-      accountId,
+      organizationId,
     );
-    await this.subscriptionsService.assertBranchLimit(accountId);
+    await this.subscriptionsService.assertBranchLimit(organizationId);
     return this.prismaService.db.$transaction(async (tx) => {
       if (dto.is_main) {
         await tx.branch.updateMany({
-          where: { account_id: accountId, is_deleted: false, is_main: true },
+          where: {
+            organization_id: organizationId,
+            is_deleted: false,
+            is_main: true,
+          },
           data: { is_main: false },
         });
       }
       const branch = await tx.branch.create({
         data: {
-          account_id: accountId,
+          organization_id: organizationId,
           name: dto.name,
           address: dto.address,
           city: dto.city,
@@ -59,7 +63,7 @@ export class BranchesService {
         data: {
           profile_id: profileId,
           branch_id: branch.id,
-          account_id: accountId,
+          organization_id: organizationId,
         },
       });
       return branch;
@@ -68,17 +72,21 @@ export class BranchesService {
 
   async updateBranch(
     profileId: string,
-    accountId: string,
+    organizationId: string,
     branchId: string,
     dto: UpdateBranchDto,
   ) {
     await this.authorizationService.assertCanManageBranch(
       profileId,
-      accountId,
+      organizationId,
       branchId,
     );
     const branch = await this.prismaService.db.branch.findFirst({
-      where: { id: branchId, account_id: accountId, is_deleted: false },
+      where: {
+        id: branchId,
+        organization_id: organizationId,
+        is_deleted: false,
+      },
     });
     if (!branch) throw new NotFoundException('Branch not found');
     if (branch.is_main && dto.is_main === false) {
@@ -89,7 +97,7 @@ export class BranchesService {
       if (dto.is_main) {
         await tx.branch.updateMany({
           where: {
-            account_id: accountId,
+            organization_id: organizationId,
             id: { not: branchId },
             is_deleted: false,
             is_main: true,
@@ -113,49 +121,61 @@ export class BranchesService {
     });
   }
 
-  async getBranch(profileId: string, accountId: string, branchId: string) {
+  async getBranch(profileId: string, organizationId: string, branchId: string) {
     await this.authorizationService.assertCanManageBranch(
       profileId,
-      accountId,
+      organizationId,
       branchId,
     );
     const branch = await this.prismaService.db.branch.findFirst({
-      where: { id: branchId, account_id: accountId, is_deleted: false },
+      where: {
+        id: branchId,
+        organization_id: organizationId,
+        is_deleted: false,
+      },
     });
     if (!branch) throw new NotFoundException('Branch not found');
     return branch;
   }
 
-  async deleteBranch(profileId: string, accountId: string, branchId: string) {
+  async deleteBranch(
+    profileId: string,
+    organizationId: string,
+    branchId: string,
+  ) {
     await this.authorizationService.assertCanManageBranch(
       profileId,
-      accountId,
+      organizationId,
       branchId,
     );
     const branch = await this.prismaService.db.branch.findFirst({
-      where: { id: branchId, account_id: accountId, is_deleted: false },
+      where: {
+        id: branchId,
+        organization_id: organizationId,
+        is_deleted: false,
+      },
     });
     if (!branch) throw new NotFoundException('Branch not found');
 
     const remainingCount = await this.prismaService.db.branch.count({
-      where: { account_id: accountId, is_deleted: false },
+      where: { organization_id: organizationId, is_deleted: false },
     });
 
     const now = new Date();
 
     if (remainingCount === 1) {
-      // Last branch — cascade delete the entire account
+      // Last branch — cascade delete the entire organization
       await this.prismaService.db.$transaction(async (tx) => {
         await tx.branch.update({
           where: { id: branchId },
           data: { is_deleted: true, deleted_at: now },
         });
         await tx.profile.updateMany({
-          where: { account_id: accountId, is_deleted: false },
+          where: { organization_id: organizationId, is_deleted: false },
           data: { is_deleted: true, deleted_at: now },
         });
-        await tx.account.update({
-          where: { id: accountId },
+        await tx.organization.update({
+          where: { id: organizationId },
           data: { is_deleted: true, deleted_at: now },
         });
       });
@@ -171,7 +191,7 @@ export class BranchesService {
         });
         const oldest = await tx.branch.findFirst({
           where: {
-            account_id: accountId,
+            organization_id: organizationId,
             id: { not: branchId },
             is_deleted: false,
           },

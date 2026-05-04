@@ -10,7 +10,7 @@ import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { RolesModule } from './modules/roles/roles.module';
-import { AccountsModule } from './modules/accounts/accounts.module.js';
+import { OrganizationsModule } from './modules/organizations/organizations.module.js';
 import { BranchesModule } from './modules/branches/branches.module.js';
 import { ProfilesModule } from './modules/profiles/profiles.module.js';
 import { InvitationsModule } from './modules/invitations/invitations.module.js';
@@ -42,7 +42,7 @@ import type { AppConfig } from './config/app.config';
     AuthModule,
     RolesModule,
     UsersModule,
-    AccountsModule,
+    OrganizationsModule,
     ProfilesModule,
     BranchesModule,
     InvitationsModule,
