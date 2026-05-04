@@ -39,7 +39,7 @@ export class StaffService {
     const uniqueRoleIds = [...new Set(dto.role_ids)];
     const uniqueBranchIds = [...new Set(dto.branch_ids)];
 
-    await this.assertBranchesInAccount(organizationId, uniqueBranchIds);
+    await this.assertBranchesInOrganization(organizationId, uniqueBranchIds);
     await this.assertRolesExist(uniqueRoleIds);
 
     if (dto.schedule?.length) {
@@ -216,7 +216,7 @@ export class StaffService {
 
     if (dto.branch_ids) {
       uniqueBranchIds = [...new Set(dto.branch_ids)];
-      await this.assertBranchesInAccount(organizationId, uniqueBranchIds);
+      await this.assertBranchesInOrganization(organizationId, uniqueBranchIds);
     }
 
     if (dto.schedule?.length) {
@@ -475,7 +475,7 @@ export class StaffService {
     return `${base}${Date.now()}@${STAFF_EMAIL_DOMAIN}`;
   }
 
-  private async assertBranchesInAccount(
+  private async assertBranchesInOrganization(
     organizationId: string,
     branchIds: string[],
   ) {
