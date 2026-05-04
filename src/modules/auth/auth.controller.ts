@@ -80,7 +80,7 @@ export class AuthController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary:
-      'Create account, branch, profile, roles, subscription, and return selectable profiles',
+      'Create organization, branch, profile, roles, subscription, and return selectable profiles',
   })
   @ApiStandardResponse(ProfileSelectionResponseDto)
   signupComplete(@Body() dto: SignupCompleteDto) {

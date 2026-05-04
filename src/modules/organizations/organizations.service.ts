@@ -8,11 +8,11 @@ import { PrismaService } from '../../database/prisma.service.js';
 import { AuthorizationService } from '../../common/authorization/authorization.service.js';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service.js';
 import type { AuthConfig } from '../../config/auth.config.js';
-import type { CreateAccountDto } from './dto/create-account.dto.js';
-import type { UpdateAccountDto } from './dto/update-account.dto.js';
+import type { CreateOrganizationDto } from './dto/create-organization.dto.js';
+import type { UpdateOrganizationDto } from './dto/update-organization.dto.js';
 
 @Injectable()
-export class AccountsService {
+export class OrganizationsService {
   private readonly freeTrialDays: number;
 
   constructor(
@@ -26,29 +26,29 @@ export class AccountsService {
     this.freeTrialDays = authConfig.freeTrialDays;
   }
 
-  async getAccount(profileId: string, accountId: string) {
-    await this.authorizationService.assertCanManageAccount(
+  async getOrganization(profileId: string, organizationId: string) {
+    await this.authorizationService.assertCanManageOrganization(
       profileId,
-      accountId,
+      organizationId,
     );
-    const account = await this.prismaService.db.account.findFirst({
-      where: { id: accountId, is_deleted: false },
+    const organization = await this.prismaService.db.organization.findFirst({
+      where: { id: organizationId, is_deleted: false },
     });
-    if (!account) throw new NotFoundException('Account not found');
-    return account;
+    if (!organization) throw new NotFoundException('Organization not found');
+    return organization;
   }
 
-  async updateAccount(
+  async updateOrganization(
     profileId: string,
-    accountId: string,
-    dto: UpdateAccountDto,
+    organizationId: string,
+    dto: UpdateOrganizationDto,
   ) {
-    await this.authorizationService.assertCanManageAccount(
+    await this.authorizationService.assertCanManageOrganization(
       profileId,
-      accountId,
+      organizationId,
     );
-    return this.prismaService.db.account.update({
-      where: { id: accountId },
+    return this.prismaService.db.organization.update({
+      where: { id: organizationId },
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
         ...(dto.specialities !== undefined && {
@@ -59,8 +59,8 @@ export class AccountsService {
     });
   }
 
-  async createAccount(userId: string, dto: CreateAccountDto) {
-    await this.subscriptionsService.assertAccountLimit(userId);
+  async createOrganization(userId: string, dto: CreateOrganizationDto) {
+    await this.subscriptionsService.assertOrganizationLimit(userId);
     const isDoctor = dto.roles.includes('DOCTOR');
 
     const [roles, freePlan] = await Promise.all([
@@ -85,15 +85,15 @@ export class AccountsService {
     trialEndsAt.setDate(trialEndsAt.getDate() + this.freeTrialDays);
 
     return this.prismaService.db.$transaction(async (tx) => {
-      const account = await tx.account.create({
+      const organization = await tx.organization.create({
         data: {
-          name: dto.account_name,
+          name: dto.organization_name,
           specialities: dto.specialties ?? [],
         },
       });
       const branch = await tx.branch.create({
         data: {
-          account_id: account.id,
+          organization_id: organization.id,
           name: dto.branch_name,
           address: dto.branch_address,
           city: dto.branch_city,
@@ -105,7 +105,7 @@ export class AccountsService {
       const profile = await tx.profile.create({
         data: {
           user_id: userId,
-          account_id: account.id,
+          organization_id: organization.id,
           is_clinical: isDoctor,
           specialty: isDoctor ? (dto.specialty ?? null) : null,
           job_title: isDoctor ? (dto.job_title ?? null) : null,
@@ -113,23 +113,23 @@ export class AccountsService {
             create: roles.map((role) => ({ role_id: role.id })),
           },
           branches: {
-            create: { branch_id: branch.id, account_id: account.id },
+            create: { branch_id: branch.id, organization_id: organization.id },
           },
         },
       });
       await tx.subscription.create({
         data: {
-          account_id: account.id,
+          organization_id: organization.id,
           subscription_plan_id: freePlan.id,
           trial_ends_at: trialEndsAt,
         },
       });
       return {
-        account: {
-          id: account.id,
-          name: account.name,
-          specialities: account.specialities,
-          status: account.status,
+        organization: {
+          id: organization.id,
+          name: organization.name,
+          specialities: organization.specialities,
+          status: organization.status,
         },
         profile: {
           id: profile.id,
@@ -146,30 +146,30 @@ export class AccountsService {
     });
   }
 
-  async deleteAccount(profileId: string, accountId: string) {
-    await this.authorizationService.assertCanManageAccount(
+  async deleteOrganization(profileId: string, organizationId: string) {
+    await this.authorizationService.assertCanManageOrganization(
       profileId,
-      accountId,
+      organizationId,
     );
-    const account = await this.prismaService.db.account.findFirst({
-      where: { id: accountId, is_deleted: false },
+    const organization = await this.prismaService.db.organization.findFirst({
+      where: { id: organizationId, is_deleted: false },
     });
-    if (!account) throw new NotFoundException('Account not found');
+    if (!organization) throw new NotFoundException('Organization not found');
 
     const now = new Date();
     await this.prismaService.db.$transaction(async (tx) => {
       const profiles = await tx.profile.findMany({
-        where: { account_id: accountId, is_deleted: false },
+        where: { organization_id: organizationId, is_deleted: false },
         select: { user_id: true },
       });
       const userIds = [...new Set(profiles.map((p) => p.user_id))];
 
       await tx.branch.updateMany({
-        where: { account_id: accountId, is_deleted: false },
+        where: { organization_id: organizationId, is_deleted: false },
         data: { is_deleted: true, deleted_at: now },
       });
       await tx.profile.updateMany({
-        where: { account_id: accountId, is_deleted: false },
+        where: { organization_id: organizationId, is_deleted: false },
         data: { is_deleted: true, deleted_at: now },
       });
 
@@ -179,7 +179,7 @@ export class AccountsService {
             where: {
               user_id: userId,
               is_deleted: false,
-              account_id: { not: accountId },
+              organization_id: { not: organizationId },
             },
           }),
         ),
@@ -199,8 +199,8 @@ export class AccountsService {
         });
       }
 
-      await tx.account.update({
-        where: { id: accountId },
+      await tx.organization.update({
+        where: { id: organizationId },
         data: { is_deleted: true, deleted_at: now },
       });
     });

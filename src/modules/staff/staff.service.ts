@@ -25,14 +25,21 @@ export class StaffService {
     private readonly subscriptionsService: SubscriptionsService,
   ) {}
 
-  async createStaff(profileId: string, accountId: string, dto: CreateStaffDto) {
-    await this.authorizationService.assertCanManageStaff(profileId, accountId);
-    await this.subscriptionsService.assertStaffLimit(accountId);
+  async createStaff(
+    profileId: string,
+    organizationId: string,
+    dto: CreateStaffDto,
+  ) {
+    await this.authorizationService.assertCanManageStaff(
+      profileId,
+      organizationId,
+    );
+    await this.subscriptionsService.assertStaffLimit(organizationId);
 
     const uniqueRoleIds = [...new Set(dto.role_ids)];
     const uniqueBranchIds = [...new Set(dto.branch_ids)];
 
-    await this.assertBranchesInAccount(accountId, uniqueBranchIds);
+    await this.assertBranchesInAccount(organizationId, uniqueBranchIds);
     await this.assertRolesExist(uniqueRoleIds);
 
     if (dto.schedule?.length) {
@@ -75,7 +82,7 @@ export class StaffService {
       const profile = await tx.profile.create({
         data: {
           user_id: user.id,
-          account_id: accountId,
+          organization_id: organizationId,
           job_title: dto.job_title ?? null,
           specialty: dto.specialty ?? null,
           is_clinical: dto.is_clinical ?? false,
@@ -88,7 +95,11 @@ export class StaffService {
         ),
         ...uniqueBranchIds.map((branch_id) =>
           tx.profileBranch.create({
-            data: { profile_id: profile.id, branch_id, account_id: accountId },
+            data: {
+              profile_id: profile.id,
+              branch_id,
+              organization_id: organizationId,
+            },
           }),
         ),
       ]);
@@ -100,17 +111,24 @@ export class StaffService {
       return {
         user_id: user.id,
         profile_id: profile.id,
-        account_id: accountId,
+        organization_id: organizationId,
         generated_email: email,
       };
     });
   }
 
-  async listStaff(profileId: string, accountId: string, branchId?: string) {
-    await this.authorizationService.assertCanManageStaff(profileId, accountId);
+  async listStaff(
+    profileId: string,
+    organizationId: string,
+    branchId?: string,
+  ) {
+    await this.authorizationService.assertCanManageStaff(
+      profileId,
+      organizationId,
+    );
 
     const where: Prisma.ProfileWhereInput = {
-      account_id: accountId,
+      organization_id: organizationId,
       is_deleted: false,
       is_active: true,
     };
@@ -151,17 +169,21 @@ export class StaffService {
 
   async updateStaff(
     callerProfileId: string,
-    accountId: string,
+    organizationId: string,
     staffProfileId: string,
     dto: UpdateStaffDto,
   ) {
     await this.authorizationService.assertCanManageStaff(
       callerProfileId,
-      accountId,
+      organizationId,
     );
 
     const profile = await this.prismaService.db.profile.findFirst({
-      where: { id: staffProfileId, account_id: accountId, is_deleted: false },
+      where: {
+        id: staffProfileId,
+        organization_id: organizationId,
+        is_deleted: false,
+      },
       include: { user: true },
     });
     if (!profile) throw new NotFoundException('Staff member not found');
@@ -194,7 +216,7 @@ export class StaffService {
 
     if (dto.branch_ids) {
       uniqueBranchIds = [...new Set(dto.branch_ids)];
-      await this.assertBranchesInAccount(accountId, uniqueBranchIds);
+      await this.assertBranchesInAccount(organizationId, uniqueBranchIds);
     }
 
     if (dto.schedule?.length) {
@@ -270,7 +292,7 @@ export class StaffService {
               data: {
                 profile_id: staffProfileId,
                 branch_id,
-                account_id: accountId,
+                organization_id: organizationId,
               },
             }),
           ),
@@ -315,12 +337,12 @@ export class StaffService {
 
   async deleteStaff(
     callerProfileId: string,
-    accountId: string,
+    organizationId: string,
     staffProfileId: string,
   ) {
     await this.authorizationService.assertCanManageStaff(
       callerProfileId,
-      accountId,
+      organizationId,
     );
 
     if (staffProfileId === callerProfileId) {
@@ -328,7 +350,11 @@ export class StaffService {
     }
 
     const profile = await this.prismaService.db.profile.findFirst({
-      where: { id: staffProfileId, account_id: accountId, is_deleted: false },
+      where: {
+        id: staffProfileId,
+        organization_id: organizationId,
+        is_deleted: false,
+      },
     });
     if (!profile) throw new NotFoundException('Staff member not found');
 
@@ -450,13 +476,13 @@ export class StaffService {
   }
 
   private async assertBranchesInAccount(
-    accountId: string,
+    organizationId: string,
     branchIds: string[],
   ) {
     const count = await this.prismaService.db.branch.count({
       where: {
         id: { in: branchIds },
-        account_id: accountId,
+        organization_id: organizationId,
         is_deleted: false,
       },
     });

@@ -8,7 +8,7 @@ export class ProfileDetailResponseDto {
   specialty!: string | null;
   is_clinical!: boolean;
   roles!: string[];
-  account!: { id: string; name: string };
+  organization!: { id: string; name: string };
   branches!: {
     id: string;
     name: string;
