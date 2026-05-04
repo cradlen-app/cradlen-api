@@ -50,14 +50,7 @@ const SIGNUP_RESEND_MAX_PER_HOUR = 5;
 const SIGNUP_COMPLETE_ROLES = ['OWNER', 'DOCTOR'] as const;
 
 type SignupCompleteRole = (typeof SIGNUP_COMPLETE_ROLES)[number];
-type VerificationPurposeInput =
-  | 'SIGNUP'
-  | 'LOGIN'
-  | 'PHONE_LOGIN'
-  | 'PASSWORD_RESET';
-type VerificationPurposeFilter =
-  | VerificationPurpose
-  | { in: VerificationPurpose[] };
+type VerificationPurposeInput = 'SIGNUP' | 'LOGIN' | 'PASSWORD_RESET';
 
 export interface SelectableProfile {
   profile_id: string;
@@ -131,7 +124,6 @@ export class AuthService {
         await this.sendVerificationCode({
           userId: existing.id,
           target: dto.email,
-          channel: 'EMAIL',
           purpose: 'SIGNUP',
         });
         return this.issueSignupToken(existing.id, 'signup');
@@ -180,7 +172,6 @@ export class AuthService {
     await this.sendVerificationCode({
       userId: user.id,
       target: dto.email,
-      channel: 'EMAIL',
       purpose: 'SIGNUP',
     });
 
@@ -360,7 +351,6 @@ export class AuthService {
     await this.sendVerificationCode({
       userId: user.id,
       target: dto.email,
-      channel: 'EMAIL',
       purpose: 'SIGNUP',
       isResend: true,
     });
@@ -628,26 +618,16 @@ export class AuthService {
     throw new BadRequestException('branch_id is required');
   }
 
-  private getVerificationPurposeFilter(
-    purpose: VerificationPurposeInput,
-  ): VerificationPurposeFilter {
-    if (purpose === 'LOGIN' || purpose === 'PHONE_LOGIN') {
-      return { in: ['LOGIN', 'PHONE_LOGIN'] as VerificationPurpose[] };
-    }
-    return purpose as VerificationPurpose;
-  }
-
   private async sendVerificationCode(input: {
     userId: string;
     target: string;
-    channel: 'EMAIL' | 'PHONE';
     purpose: VerificationPurposeInput;
     isResend?: boolean;
   }) {
     await this.prismaService.db.verificationCode.updateMany({
       where: {
         user_id: input.userId,
-        purpose: this.getVerificationPurposeFilter(input.purpose),
+        purpose: input.purpose as VerificationPurpose,
         consumed_at: null,
       },
       data: { consumed_at: new Date() },
@@ -660,8 +640,8 @@ export class AuthService {
       data: {
         user_id: input.userId,
         target: input.target,
-        channel: input.channel,
-        purpose: input.purpose,
+        channel: 'EMAIL',
+        purpose: input.purpose as VerificationPurpose,
         code_hash,
         expires_at,
         max_attempts: OTP_MAX_ATTEMPTS,
@@ -669,11 +649,7 @@ export class AuthService {
       },
     });
 
-    if (input.channel === 'EMAIL') {
-      await this.mailService.sendVerificationEmail(input.target, code);
-    } else {
-      await this.mailService.sendPhoneOtp(input.target, code);
-    }
+    await this.mailService.sendVerificationEmail(input.target, code);
   }
 
   private async consumeVerificationCode(input: {
@@ -686,7 +662,7 @@ export class AuthService {
       where: {
         user_id: input.userId,
         target: input.target,
-        purpose: this.getVerificationPurposeFilter(input.purpose),
+        purpose: input.purpose as VerificationPurpose,
         consumed_at: null,
       },
       orderBy: { created_at: 'desc' },
@@ -1003,7 +979,6 @@ export class AuthService {
     await this.sendVerificationCode({
       userId: user.id,
       target: user.email,
-      channel: 'EMAIL',
       purpose: 'PASSWORD_RESET',
     });
 
@@ -1055,7 +1030,6 @@ export class AuthService {
     await this.sendVerificationCode({
       userId,
       target,
-      channel: 'EMAIL',
       purpose: 'PASSWORD_RESET',
       isResend: true,
     });
