@@ -644,10 +644,10 @@ describe('AuthService', () => {
   });
 
   it('returns 409 on duplicate signupComplete without creating extra tenant records', async () => {
-    const accountCreate = jest.fn();
+    const organizationCreate = jest.fn();
     const txMock = {
       user: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
-      organization: { create: accountCreate },
+      organization: { create: organizationCreate },
       branch: { create: jest.fn() },
       profile: { create: jest.fn() },
       subscription: { create: jest.fn() },
@@ -696,7 +696,7 @@ describe('AuthService', () => {
       }),
     ).rejects.toThrow(ConflictException);
 
-    // Transaction was entered but no account was created
-    expect(accountCreate).not.toHaveBeenCalled();
+    // Transaction was entered but no organization was created
+    expect(organizationCreate).not.toHaveBeenCalled();
   });
 });
