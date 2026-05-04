@@ -11,10 +11,10 @@ import { PrismaService } from '../../database/prisma.service.js';
 export class SubscriptionsService {
   constructor(private readonly prismaService: PrismaService) {}
 
-  async assertBranchLimit(accountId: string): Promise<void> {
-    const plan = await this.getActivePlan(accountId);
+  async assertBranchLimit(organizationId: string): Promise<void> {
+    const plan = await this.getActivePlan(organizationId);
     const current = await this.prismaService.db.branch.count({
-      where: { account_id: accountId, is_deleted: false },
+      where: { organization_id: organizationId, is_deleted: false },
     });
     if (current >= plan.max_branches) {
       throw new ForbiddenException({
@@ -25,14 +25,22 @@ export class SubscriptionsService {
     }
   }
 
-  async assertStaffLimit(accountId: string): Promise<void> {
-    const plan = await this.getActivePlan(accountId);
+  async assertStaffLimit(organizationId: string): Promise<void> {
+    const plan = await this.getActivePlan(organizationId);
     const [activeStaff, pendingInvitations] = await Promise.all([
       this.prismaService.db.profile.count({
-        where: { account_id: accountId, is_deleted: false, is_active: true },
+        where: {
+          organization_id: organizationId,
+          is_deleted: false,
+          is_active: true,
+        },
       }),
       this.prismaService.db.invitation.count({
-        where: { account_id: accountId, is_deleted: false, status: 'PENDING' },
+        where: {
+          organization_id: organizationId,
+          is_deleted: false,
+          status: 'PENDING',
+        },
       }),
     ]);
     const current = activeStaff + pendingInvitations;
@@ -45,36 +53,39 @@ export class SubscriptionsService {
     }
   }
 
-  async assertAccountLimit(userId: string): Promise<void> {
+  async assertOrganizationLimit(userId: string): Promise<void> {
     const ownerRole = await this.prismaService.db.role.findUnique({
       where: { name: 'OWNER' },
     });
     if (!ownerRole)
       throw new InternalServerErrorException('OWNER role not seeded');
 
-    const ownedAccountIds = await this.prismaService.db.profile
+    const ownedOrganizationIds = await this.prismaService.db.profile
       .findMany({
         where: {
           user_id: userId,
           is_deleted: false,
           is_active: true,
           roles: { some: { role_id: ownerRole.id } },
-          account: { is_deleted: false, status: 'ACTIVE' },
+          organization: { is_deleted: false, status: 'ACTIVE' },
         },
-        select: { account_id: true },
+        select: { organization_id: true },
       })
-      .then((rows) => rows.map((r) => r.account_id));
+      .then((rows) => rows.map((r) => r.organization_id));
 
-    const current = ownedAccountIds.length;
+    const current = ownedOrganizationIds.length;
 
     let maxAllowed: number;
-    if (ownedAccountIds.length > 0) {
+    if (ownedOrganizationIds.length > 0) {
       const subs = await this.prismaService.db.subscription.findMany({
-        where: { account_id: { in: ownedAccountIds }, is_deleted: false },
-        select: { subscription_plan: { select: { max_accounts: true } } },
+        where: {
+          organization_id: { in: ownedOrganizationIds },
+          is_deleted: false,
+        },
+        select: { subscription_plan: { select: { max_organizations: true } } },
       });
       maxAllowed = Math.max(
-        ...subs.map((s) => s.subscription_plan.max_accounts),
+        ...subs.map((s) => s.subscription_plan.max_organizations),
         0,
       );
     } else {
@@ -83,26 +94,26 @@ export class SubscriptionsService {
       });
       if (!freePlan)
         throw new InternalServerErrorException('Free trial plan not seeded');
-      maxAllowed = freePlan.max_accounts;
+      maxAllowed = freePlan.max_organizations;
     }
 
     if (current >= maxAllowed) {
       throw new ForbiddenException({
         code: ERROR_CODES.SUBSCRIPTION_LIMIT_REACHED,
-        message: `Account limit reached (${maxAllowed}). Upgrade your plan.`,
-        details: { resource: 'accounts', limit: maxAllowed, current },
+        message: `Organization limit reached (${maxAllowed}). Upgrade your plan.`,
+        details: { resource: 'organizations', limit: maxAllowed, current },
       });
     }
   }
 
-  private async getActivePlan(accountId: string) {
+  private async getActivePlan(organizationId: string) {
     const sub = await this.prismaService.db.subscription.findFirst({
-      where: { account_id: accountId, is_deleted: false },
+      where: { organization_id: organizationId, is_deleted: false },
       include: { subscription_plan: true },
       orderBy: { created_at: 'desc' },
     });
     if (!sub)
-      throw new NotFoundException('No active subscription found for account');
+      throw new NotFoundException('No active subscription found for organization');
     return sub.subscription_plan;
   }
 }

@@ -38,7 +38,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     return this.authorizationService.getProfileContext(
       payload.userId,
       payload.profileId,
-      payload.accountId,
+      payload.organizationId,
       payload.activeBranchId,
     );
   }
