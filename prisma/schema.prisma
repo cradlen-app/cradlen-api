@@ -52,13 +52,11 @@ enum DayOfWeek {
 
 enum VerificationChannel {
   EMAIL
-  PHONE
 }
 
 enum VerificationPurpose {
   SIGNUP
   LOGIN
-  PHONE_LOGIN
   PASSWORD_RESET
 }
 
