@@ -54,7 +54,7 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
       .post('/v1/auth/signup/complete')
       .send({
         signup_token: verified.body.data.signup_token,
-        account_name: 'Cradlen Clinic',
+        organization_name: 'Cradlen Clinic',
         specialties: ['Cardiology'],
         branch_name: 'Main Branch',
         branch_address: '1 Clinic St',
@@ -94,7 +94,7 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
       })
       .expect(201);
 
-    expect(await getTestPrisma().account.count()).toBe(0);
+    expect(await getTestPrisma().organization.count()).toBe(0);
     expect(await getTestPrisma().profile.count()).toBe(0);
 
     const otp = mailMock.mock.calls[0][1] as string;
@@ -107,7 +107,7 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
       .post('/v1/auth/signup/complete')
       .send({
         signup_token: verified.body.data.signup_token,
-        account_name: 'Nour Clinic',
+        organization_name: 'Nour Clinic',
         specialties: ['General Medicine'],
         branch_name: 'Main Branch',
         branch_address: '1 Clinic St',
@@ -125,8 +125,8 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
         profiles: [
           expect.objectContaining({
             profile_id: expect.any(String),
-            account_id: expect.any(String),
-            account_name: 'Nour Clinic',
+            organization_id: expect.any(String),
+            organization_name: 'Nour Clinic',
             roles: ['OWNER'],
             branches: [
               expect.objectContaining({
@@ -140,7 +140,7 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
       }),
     );
 
-    expect(await getTestPrisma().account.count()).toBe(1);
+    expect(await getTestPrisma().organization.count()).toBe(1);
     expect(await getTestPrisma().profile.count()).toBe(1);
     expect(await getTestPrisma().profileRole.count()).toBe(1);
     expect(await getTestPrisma().profileBranch.count()).toBe(1);
@@ -256,7 +256,7 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
       .post('/v1/auth/signup/complete')
       .send({
         signup_token: verified.body.data.signup_token,
-        account_name: 'Nour Clinic',
+        organization_name: 'Nour Clinic',
         specialties: ['General Medicine'],
         branch_name: 'Main Branch',
         branch_address: '1 Clinic St',
@@ -308,8 +308,8 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
     expect(login.body.data.profiles).toEqual([
       expect.objectContaining({
         profile_id: expect.any(String),
-        account_id: expect.any(String),
-        account_name: 'Cradlen Clinic',
+        organization_id: expect.any(String),
+        organization_name: 'Cradlen Clinic',
         roles: expect.arrayContaining(['OWNER', 'DOCTOR']),
         branches: [
           expect.objectContaining({
@@ -339,7 +339,7 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
     const profile = await getTestPrisma().profile.findFirstOrThrow();
     const extraBranch = await getTestPrisma().branch.create({
       data: {
-        account_id: profile.account_id,
+        organization_id: profile.organization_id,
         name: 'Giza Branch',
         address: '2 Side St',
         city: 'Giza',
@@ -350,7 +350,7 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
       data: {
         profile_id: profile.id,
         branch_id: extraBranch.id,
-        account_id: profile.account_id,
+        organization_id: profile.organization_id,
       },
     });
 
@@ -380,12 +380,12 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
   it('rejects branch selection outside the selected profile', async () => {
     await completeOwnerSignup();
     const profile = await getTestPrisma().profile.findFirstOrThrow();
-    const otherAccount = await getTestPrisma().account.create({
+    const otherOrganization = await getTestPrisma().organization.create({
       data: { name: 'Other Clinic' },
     });
     const otherBranch = await getTestPrisma().branch.create({
       data: {
-        account_id: otherAccount.id,
+        organization_id: otherOrganization.id,
         name: 'Other Branch',
         address: '3 Other St',
         city: 'Cairo',
@@ -408,12 +408,12 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
       .expect(403);
   });
 
-  it('allows owner to create and list account branches', async () => {
+  it('allows owner to create and list organization branches', async () => {
     const tokens = await completeOwnerSignup();
     const profile = await getTestPrisma().profile.findFirstOrThrow();
 
     await request(app.getHttpServer())
-      .post(`/v1/accounts/${profile.account_id}/branches`)
+      .post(`/v1/organizations/${profile.organization_id}/branches`)
       .set('Authorization', `Bearer ${tokens.access_token}`)
       .send({
         name: 'Giza Branch',
@@ -425,7 +425,7 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
       .expect(201);
 
     const branches = await request(app.getHttpServer())
-      .get(`/v1/accounts/${profile.account_id}/branches`)
+      .get(`/v1/organizations/${profile.organization_id}/branches`)
       .set('Authorization', `Bearer ${tokens.access_token}`)
       .expect(200);
 

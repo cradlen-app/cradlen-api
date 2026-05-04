@@ -1,7 +1,7 @@
 export interface AuthContext {
   userId: string;
   profileId: string;
-  accountId: string;
+  organizationId: string;
   activeBranchId?: string;
   roles: string[];
   branchIds: string[];

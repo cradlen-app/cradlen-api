@@ -15,7 +15,7 @@ enum RegistrationStatus {
   ACTIVE
 }
 
-enum AccountStatus {
+enum OrganizationStatus {
   ACTIVE
   INACTIVE
   SUSPENDED
@@ -63,7 +63,7 @@ enum VerificationPurpose {
 model SubscriptionPlan {
   id            String         @id @default(uuid()) @db.Uuid
   plan          String         @unique
-  max_accounts  Int
+  max_organizations Int
   max_branches  Int
   max_staff     Int
   created_at    DateTime       @default(now())
@@ -73,11 +73,11 @@ model SubscriptionPlan {
   @@map("subscription_plans")
 }
 
-model Account {
+model Organization {
   id            String             @id @default(uuid()) @db.Uuid
   name          String
   specialities  String[]           @default([])
-  status        AccountStatus      @default(ACTIVE)
+  status        OrganizationStatus @default(ACTIVE)
   is_deleted    Boolean            @default(false)
   deleted_at    DateTime?
   created_at    DateTime           @default(now())
@@ -88,7 +88,7 @@ model Account {
   subscriptions Subscription[]
 
   @@index([status, is_deleted])
-  @@map("accounts")
+  @@map("organizations")
 }
 
 model Branch {
@@ -104,14 +104,14 @@ model Branch {
   deleted_at         DateTime?
   created_at         DateTime           @default(now())
   updated_at         DateTime           @updatedAt
-  account_id         String             @db.Uuid
-  account            Account            @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  organization_id    String             @db.Uuid
+  organization       Organization       @relation(fields: [organization_id], references: [id], onDelete: Cascade)
   profileBranches    ProfileBranch[]
   invitationBranches InvitationBranch[]
   workingSchedules   WorkingSchedule[]
 
-  @@unique([id, account_id])
-  @@index([account_id, is_deleted])
+  @@unique([id, organization_id])
+  @@index([organization_id, is_deleted])
   @@map("branches")
 }
 
@@ -153,7 +153,7 @@ model Role {
 model Profile {
   id              String          @id @default(uuid()) @db.Uuid
   user_id         String          @db.Uuid
-  account_id      String          @db.Uuid
+  organization_id String          @db.Uuid
   job_title       String?
   specialty       String?
   is_clinical     Boolean         @default(false)
@@ -163,13 +163,13 @@ model Profile {
   created_at      DateTime        @default(now())
   updated_at      DateTime        @updatedAt
   user            User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  account         Account         @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  organization    Organization    @relation(fields: [organization_id], references: [id], onDelete: Cascade)
   roles            ProfileRole[]
   branches         ProfileBranch[]
   workingSchedules WorkingSchedule[]
 
-  @@unique([user_id, account_id])
-  @@index([account_id, is_deleted])
+  @@unique([user_id, organization_id])
+  @@index([organization_id, is_deleted])
   @@index([user_id, is_deleted])
   @@map("profiles")
 }
@@ -189,21 +189,21 @@ model ProfileRole {
 
 model ProfileBranch {
   id         String   @id @default(uuid()) @db.Uuid
-  profile_id String   @db.Uuid
-  branch_id  String   @db.Uuid
-  account_id String   @db.Uuid
-  created_at DateTime @default(now())
-  profile    Profile  @relation(fields: [profile_id], references: [id], onDelete: Cascade)
-  branch     Branch   @relation(fields: [branch_id, account_id], references: [id, account_id], onDelete: Cascade)
+  profile_id      String   @db.Uuid
+  branch_id       String   @db.Uuid
+  organization_id String   @db.Uuid
+  created_at      DateTime @default(now())
+  profile         Profile  @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+  branch          Branch   @relation(fields: [branch_id, organization_id], references: [id, organization_id], onDelete: Cascade)
 
   @@unique([profile_id, branch_id])
-  @@index([account_id, branch_id])
+  @@index([organization_id, branch_id])
   @@map("profile_branches")
 }
 
 model Subscription {
   id                   String             @id @default(uuid()) @db.Uuid
-  account_id           String             @db.Uuid
+  organization_id      String             @db.Uuid
   subscription_plan_id String             @db.Uuid
   status               SubscriptionStatus @default(TRIAL)
   starts_at            DateTime           @default(now())
@@ -213,10 +213,10 @@ model Subscription {
   updated_at           DateTime           @updatedAt
   is_deleted           Boolean            @default(false)
   deleted_at           DateTime?
-  account              Account            @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  organization         Organization       @relation(fields: [organization_id], references: [id], onDelete: Cascade)
   subscription_plan    SubscriptionPlan   @relation(fields: [subscription_plan_id], references: [id])
 
-  @@index([account_id, is_deleted])
+  @@index([organization_id, is_deleted])
   @@map("subscriptions")
 }
 
@@ -226,7 +226,7 @@ model RefreshToken {
   token_hash String
   user_id    String    @db.Uuid
   profile_id       String?   @db.Uuid
-  account_id       String?   @db.Uuid
+  organization_id  String?   @db.Uuid
   active_branch_id String?   @db.Uuid
   expires_at       DateTime
   is_revoked Boolean   @default(false)
@@ -260,29 +260,29 @@ model VerificationCode {
 
 model Invitation {
   id            String           @id @default(uuid()) @db.Uuid
-  account_id    String           @db.Uuid
-  invited_by_id String           @db.Uuid
-  email         String
-  first_name    String
-  last_name     String
-  phone_number  String?
-  job_title     String?
-  specialty     String?
-  is_clinical   Boolean          @default(false)
-  token_hash    String
-  status        InvitationStatus @default(PENDING)
-  expires_at    DateTime
-  accepted_at   DateTime?
-  is_deleted    Boolean          @default(false)
-  deleted_at    DateTime?
-  created_at    DateTime         @default(now())
-  updated_at    DateTime         @updatedAt
-  account       Account          @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  invited_by    User             @relation("InvitedBy", fields: [invited_by_id], references: [id])
-  roles         InvitationRole[]
-  branches      InvitationBranch[]
+  organization_id String           @db.Uuid
+  invited_by_id   String           @db.Uuid
+  email           String
+  first_name      String
+  last_name       String
+  phone_number    String?
+  job_title       String?
+  specialty       String?
+  is_clinical     Boolean          @default(false)
+  token_hash      String
+  status          InvitationStatus @default(PENDING)
+  expires_at      DateTime
+  accepted_at     DateTime?
+  is_deleted      Boolean          @default(false)
+  deleted_at      DateTime?
+  created_at      DateTime         @default(now())
+  updated_at      DateTime         @updatedAt
+  organization    Organization     @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  invited_by      User             @relation("InvitedBy", fields: [invited_by_id], references: [id])
+  roles           InvitationRole[]
+  branches        InvitationBranch[]
 
-  @@index([account_id, status])
+  @@index([organization_id, status])
   @@index([email])
   @@index([expires_at])
   @@map("invitations")
@@ -302,15 +302,15 @@ model InvitationRole {
 
 model InvitationBranch {
   id            String     @id @default(uuid()) @db.Uuid
-  invitation_id String     @db.Uuid
-  branch_id     String     @db.Uuid
-  account_id    String     @db.Uuid
-  created_at    DateTime   @default(now())
-  invitation    Invitation @relation(fields: [invitation_id], references: [id], onDelete: Cascade)
-  branch        Branch     @relation(fields: [branch_id, account_id], references: [id, account_id], onDelete: Cascade)
+  invitation_id   String     @db.Uuid
+  branch_id       String     @db.Uuid
+  organization_id String     @db.Uuid
+  created_at      DateTime   @default(now())
+  invitation      Invitation @relation(fields: [invitation_id], references: [id], onDelete: Cascade)
+  branch          Branch     @relation(fields: [branch_id, organization_id], references: [id, organization_id], onDelete: Cascade)
 
   @@unique([invitation_id, branch_id])
-  @@index([account_id, branch_id])
+  @@index([organization_id, branch_id])
   @@map("invitation_branches")
 }
 

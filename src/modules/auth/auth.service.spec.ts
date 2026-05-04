@@ -340,7 +340,7 @@ describe('AuthService', () => {
       {
         userId: '11111111-1111-4111-8111-111111111111',
         profileId: '22222222-2222-4222-8222-222222222222',
-        accountId: '33333333-3333-4333-8333-333333333333',
+        organizationId: '33333333-3333-4333-8333-333333333333',
         type: 'access',
       },
       { secret: 'access-secret' },
@@ -406,7 +406,7 @@ describe('AuthService', () => {
     mocks.profileFindMany.mockResolvedValue([
       {
         id: '22222222-2222-4222-8222-222222222222',
-        account: {
+        organization: {
           id: '33333333-3333-4333-8333-333333333333',
           name: 'Clinic',
         },
@@ -432,8 +432,8 @@ describe('AuthService', () => {
       profiles: [
         {
           profile_id: '22222222-2222-4222-8222-222222222222',
-          account_id: '33333333-3333-4333-8333-333333333333',
-          account_name: 'Clinic',
+          organization_id: '33333333-3333-4333-8333-333333333333',
+          organization_name: 'Clinic',
           roles: ['OWNER'],
           branches: [
             {
@@ -458,7 +458,7 @@ describe('AuthService', () => {
     );
     mocks.profileFindFirst.mockResolvedValue({
       id: '22222222-2222-4222-8222-222222222222',
-      account_id: '33333333-3333-4333-8333-333333333333',
+      organization_id: '33333333-3333-4333-8333-333333333333',
       user: { id: '11111111-1111-4111-8111-111111111111' },
       branches: [
         { branch_id: '44444444-4444-4444-8444-444444444444' },
@@ -485,7 +485,7 @@ describe('AuthService', () => {
     );
     mocks.profileFindFirst.mockResolvedValue({
       id: '22222222-2222-4222-8222-222222222222',
-      account_id: '33333333-3333-4333-8333-333333333333',
+      organization_id: '33333333-3333-4333-8333-333333333333',
       user: { id: '11111111-1111-4111-8111-111111111111' },
       branches: [{ branch_id: '44444444-4444-4444-8444-444444444444' }],
     });
@@ -519,7 +519,7 @@ describe('AuthService', () => {
           job_title: 'Surgeon',
           specialty: 'Orthopedics',
           is_clinical: true,
-          account: {
+          organization: {
             id: '33333333-3333-4333-8333-333333333333',
             name: 'Clinic',
             specialities: ['Orthopedics'],
@@ -647,7 +647,7 @@ describe('AuthService', () => {
     const accountCreate = jest.fn();
     const txMock = {
       user: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
-      account: { create: accountCreate },
+      organization: { create: accountCreate },
       branch: { create: jest.fn() },
       profile: { create: jest.fn() },
       subscription: { create: jest.fn() },
@@ -686,7 +686,7 @@ describe('AuthService', () => {
     await expect(
       service.signupComplete({
         signup_token: signupToken,
-        account_name: 'Clinic',
+        organization_name: 'Clinic',
         specialties: ['General Medicine'],
         branch_name: 'Main Branch',
         branch_address: '1 Clinic St',

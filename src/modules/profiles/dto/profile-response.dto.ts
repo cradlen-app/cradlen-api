@@ -1,6 +1,6 @@
 export class ProfileResponseDto {
   id!: string;
-  account!: {
+  organization!: {
     id: string;
     name: string;
     specialities: string[];

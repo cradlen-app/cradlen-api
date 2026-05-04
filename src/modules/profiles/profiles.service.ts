@@ -12,10 +12,10 @@ export class ProfilesService {
         user_id: userId,
         is_deleted: false,
         is_active: true,
-        account: { is_deleted: false, status: 'ACTIVE' },
+        organization: { is_deleted: false, status: 'ACTIVE' },
       },
       include: {
-        account: true,
+        organization: true,
         roles: { include: { role: true } },
         branches: {
           where: { branch: { is_deleted: false } },
@@ -27,11 +27,11 @@ export class ProfilesService {
 
     return profiles.map((profile) => ({
       id: profile.id,
-      account: {
-        id: profile.account.id,
-        name: profile.account.name,
-        specialities: profile.account.specialities,
-        status: profile.account.status,
+      organization: {
+        id: profile.organization.id,
+        name: profile.organization.name,
+        specialities: profile.organization.specialities,
+        status: profile.organization.status,
       },
       roles: profile.roles.map((item) => item.role.name),
       branches: profile.branches.map((item) => ({
@@ -53,7 +53,7 @@ export class ProfilesService {
       where: { id: profileId, user_id: userId, is_deleted: false },
       include: {
         user: true,
-        account: true,
+        organization: true,
         roles: { include: { role: true } },
         branches: {
           where: { branch: { is_deleted: false } },
@@ -115,7 +115,10 @@ export class ProfilesService {
       specialty: updatedProfile.specialty,
       is_clinical: updatedProfile.is_clinical,
       roles: profile.roles.map((item) => item.role.name),
-      account: { id: profile.account.id, name: profile.account.name },
+      organization: {
+        id: profile.organization.id,
+        name: profile.organization.name,
+      },
       branches: profile.branches.map((item) => ({
         id: item.branch.id,
         name: item.branch.name,
