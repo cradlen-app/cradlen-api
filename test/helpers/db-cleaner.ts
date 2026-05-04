@@ -10,14 +10,14 @@ const TABLES = [
   'invitation_roles',
   'invitation_branches',
   'invitations',
-  'join_code_roles',
-  'join_code_branches',
-  'join_codes',
+  'working_shifts',
+  'working_days',
+  'working_schedules',
   'subscriptions',
   'profiles',
   'branches',
   'users',
-  'accounts',
+  'organizations',
 ];
 
 export async function cleanDatabase(prisma: PrismaClient): Promise<void> {

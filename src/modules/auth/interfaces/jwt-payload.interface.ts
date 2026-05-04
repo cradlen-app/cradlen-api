@@ -1,7 +1,7 @@
 export interface JwtAccessPayload {
   userId: string;
   profileId: string;
-  accountId: string;
+  organizationId: string;
   activeBranchId?: string;
   type: 'access';
   iat?: number;
@@ -11,7 +11,7 @@ export interface JwtAccessPayload {
 export interface JwtRefreshPayload {
   userId: string;
   profileId?: string;
-  accountId?: string;
+  organizationId?: string;
   jti: string;
   type: 'refresh';
   iat?: number;

@@ -46,11 +46,14 @@ export class InvitationsService {
   async createInvitation(
     currentUserId: string,
     profileId: string,
-    accountId: string,
+    organizationId: string,
     dto: CreateInvitationDto,
   ) {
-    await this.authorizationService.assertCanManageStaff(profileId, accountId);
-    await this.subscriptionsService.assertStaffLimit(accountId);
+    await this.authorizationService.assertCanManageStaff(
+      profileId,
+      organizationId,
+    );
+    await this.subscriptionsService.assertStaffLimit(organizationId);
 
     const invitingUser = await this.prismaService.db.user.findUnique({
       where: { id: currentUserId },
@@ -64,7 +67,7 @@ export class InvitationsService {
     const uniqueRoleIds = [...new Set(dto.role_ids)];
     const uniqueBranchIds = [...new Set(dto.branch_ids)];
 
-    await this.assertBranchesInAccount(accountId, uniqueBranchIds);
+    await this.assertBranchesInAccount(organizationId, uniqueBranchIds);
     await this.assertRolesExist(uniqueRoleIds);
 
     const rawToken = randomUUID();
@@ -79,7 +82,7 @@ export class InvitationsService {
     try {
       invitation = await this.prismaService.db.invitation.create({
         data: {
-          account_id: accountId,
+          organization_id: organizationId,
           invited_by_id: currentUserId,
           email: dto.email,
           first_name: dto.first_name,
@@ -94,7 +97,7 @@ export class InvitationsService {
           branches: {
             create: uniqueBranchIds.map((branch_id) => ({
               branch_id,
-              account_id: accountId,
+              organization_id: organizationId,
             })),
           },
         },
@@ -119,12 +122,15 @@ export class InvitationsService {
 
   async listInvitations(
     profileId: string,
-    accountId: string,
+    organizationId: string,
     branchId?: string,
   ) {
-    await this.authorizationService.assertCanManageStaff(profileId, accountId);
+    await this.authorizationService.assertCanManageStaff(
+      profileId,
+      organizationId,
+    );
     const where: Prisma.InvitationWhereInput = {
-      account_id: accountId,
+      organization_id: organizationId,
       is_deleted: false,
     };
     if (branchId) {
@@ -185,20 +191,23 @@ export class InvitationsService {
 
       const [sub, activeStaff, pendingInvitations] = await Promise.all([
         tx.subscription.findFirst({
-          where: { account_id: invitation.account_id, is_deleted: false },
+          where: {
+            organization_id: invitation.organization_id,
+            is_deleted: false,
+          },
           include: { subscription_plan: true },
           orderBy: { created_at: 'desc' },
         }),
         tx.profile.count({
           where: {
-            account_id: invitation.account_id,
+            organization_id: invitation.organization_id,
             is_deleted: false,
             is_active: true,
           },
         }),
         tx.invitation.count({
           where: {
-            account_id: invitation.account_id,
+            organization_id: invitation.organization_id,
             is_deleted: false,
             status: InvitationStatus.PENDING,
           },
@@ -244,9 +253,9 @@ export class InvitationsService {
 
       const profile = await tx.profile.upsert({
         where: {
-          user_id_account_id: {
+          user_id_organization_id: {
             user_id: user.id,
-            account_id: invitation.account_id,
+            organization_id: invitation.organization_id,
           },
         },
         update: {
@@ -259,7 +268,7 @@ export class InvitationsService {
         },
         create: {
           user_id: user.id,
-          account_id: invitation.account_id,
+          organization_id: invitation.organization_id,
           job_title: invitation.job_title,
           specialty: invitation.specialty,
           is_clinical: invitation.is_clinical,
@@ -311,7 +320,7 @@ export class InvitationsService {
       return {
         user_id: user.id,
         profile_id: profile.id,
-        account_id: invitation.account_id,
+        organization_id: invitation.organization_id,
       };
     });
 
@@ -320,12 +329,19 @@ export class InvitationsService {
 
   async getInvitation(
     profileId: string,
-    accountId: string,
+    organizationId: string,
     invitationId: string,
   ) {
-    await this.authorizationService.assertCanManageStaff(profileId, accountId);
+    await this.authorizationService.assertCanManageStaff(
+      profileId,
+      organizationId,
+    );
     const invitation = await this.prismaService.db.invitation.findFirst({
-      where: { id: invitationId, account_id: accountId, is_deleted: false },
+      where: {
+        id: invitationId,
+        organization_id: organizationId,
+        is_deleted: false,
+      },
       include: this.includeInvitation(),
     });
     if (!invitation) throw new NotFoundException('Invitation not found');
@@ -338,7 +354,11 @@ export class InvitationsService {
       });
       if (user) {
         const profile = await this.prismaService.db.profile.findFirst({
-          where: { user_id: user.id, account_id: accountId, is_deleted: false },
+          where: {
+            user_id: user.id,
+            organization_id: organizationId,
+            is_deleted: false,
+          },
           select: { id: true },
         });
         if (profile) {
@@ -352,12 +372,19 @@ export class InvitationsService {
 
   async resendInvitation(
     profileId: string,
-    accountId: string,
+    organizationId: string,
     invitationId: string,
   ) {
-    await this.authorizationService.assertCanManageStaff(profileId, accountId);
+    await this.authorizationService.assertCanManageStaff(
+      profileId,
+      organizationId,
+    );
     const invitation = await this.prismaService.db.invitation.findFirst({
-      where: { id: invitationId, account_id: accountId, is_deleted: false },
+      where: {
+        id: invitationId,
+        organization_id: organizationId,
+        is_deleted: false,
+      },
     });
     if (!invitation) throw new NotFoundException('Invitation not found');
     if (invitation.status !== InvitationStatus.PENDING)
@@ -383,12 +410,19 @@ export class InvitationsService {
 
   async cancelInvitation(
     profileId: string,
-    accountId: string,
+    organizationId: string,
     invitationId: string,
   ) {
-    await this.authorizationService.assertCanManageStaff(profileId, accountId);
+    await this.authorizationService.assertCanManageStaff(
+      profileId,
+      organizationId,
+    );
     const invitation = await this.prismaService.db.invitation.findFirst({
-      where: { id: invitationId, account_id: accountId, is_deleted: false },
+      where: {
+        id: invitationId,
+        organization_id: organizationId,
+        is_deleted: false,
+      },
       include: this.includeInvitation(),
     });
     if (!invitation) throw new NotFoundException('Invitation not found');
@@ -424,13 +458,13 @@ export class InvitationsService {
   }
 
   private async assertBranchesInAccount(
-    accountId: string,
+    organizationId: string,
     branchIds: string[],
   ) {
     const count = await this.prismaService.db.branch.count({
       where: {
         id: { in: branchIds },
-        account_id: accountId,
+        organization_id: organizationId,
         is_deleted: false,
       },
     });
@@ -478,7 +512,7 @@ export class InvitationsService {
           create: {
             profile_id: profileId,
             branch_id: item.branch_id,
-            account_id: invitation.account_id,
+            organization_id: invitation.organization_id,
           },
         }),
       ),
@@ -511,7 +545,7 @@ export class InvitationsService {
   ) {
     return {
       id: invitation.id,
-      account_id: invitation.account_id,
+      organization_id: invitation.organization_id,
       email: invitation.email,
       first_name: invitation.first_name,
       last_name: invitation.last_name,

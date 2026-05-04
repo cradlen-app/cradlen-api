@@ -29,35 +29,35 @@ import { InvitationsService } from './invitations.service.js';
 export class InvitationsController {
   constructor(private readonly invitationsService: InvitationsService) {}
 
-  @Post('accounts/:accountId/invitations')
+  @Post('organizations/:organizationId/invitations')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Create staff invitation' })
   @ApiStandardResponse(Object)
   createInvitation(
     @CurrentUser() user: AuthContext,
-    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Body() dto: CreateInvitationDto,
   ) {
     return this.invitationsService.createInvitation(
       user.userId,
       user.profileId,
-      accountId,
+      organizationId,
       dto,
     );
   }
 
-  @Get('accounts/:accountId/invitations')
+  @Get('organizations/:organizationId/invitations')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'List account invitations' })
+  @ApiOperation({ summary: 'List organization invitations' })
   @ApiStandardResponse(Object)
   listInvitations(
     @CurrentUser() user: AuthContext,
-    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Query('branch_id') branchId?: string,
   ) {
     return this.invitationsService.listInvitations(
       user.profileId,
-      accountId,
+      organizationId,
       branchId,
     );
   }
@@ -70,51 +70,51 @@ export class InvitationsController {
     return this.invitationsService.acceptInvitation(dto);
   }
 
-  @Get('accounts/:accountId/invitations/:invitationId')
+  @Get('organizations/:organizationId/invitations/:invitationId')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get invitation details' })
   @ApiStandardResponse(Object)
   getInvitation(
     @CurrentUser() user: AuthContext,
-    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('invitationId', ParseUUIDPipe) invitationId: string,
   ) {
     return this.invitationsService.getInvitation(
       user.profileId,
-      accountId,
+      organizationId,
       invitationId,
     );
   }
 
-  @Post('accounts/:accountId/invitations/:invitationId/resend')
+  @Post('organizations/:organizationId/invitations/:invitationId/resend')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Resend invitation email' })
   @ApiVoidResponse()
   resendInvitation(
     @CurrentUser() user: AuthContext,
-    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('invitationId', ParseUUIDPipe) invitationId: string,
   ) {
     return this.invitationsService.resendInvitation(
       user.profileId,
-      accountId,
+      organizationId,
       invitationId,
     );
   }
 
-  @Delete('accounts/:accountId/invitations/:invitationId')
+  @Delete('organizations/:organizationId/invitations/:invitationId')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Cancel invitation' })
   @ApiStandardResponse(Object)
   cancelInvitation(
     @CurrentUser() user: AuthContext,
-    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('invitationId', ParseUUIDPipe) invitationId: string,
   ) {
     return this.invitationsService.cancelInvitation(
       user.profileId,
-      accountId,
+      organizationId,
       invitationId,
     );
   }

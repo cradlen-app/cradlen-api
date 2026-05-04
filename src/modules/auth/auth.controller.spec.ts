@@ -59,7 +59,7 @@ describe('AuthController', () => {
   it('delegates signup completion', async () => {
     const dto = {
       signup_token: 'token',
-      account_name: 'Clinic',
+      organization_name: 'Clinic',
       specialties: ['General Medicine'],
       branch_name: 'Main',
       roles: ['OWNER'],
@@ -128,7 +128,7 @@ describe('AuthController', () => {
     const user: AuthContext = {
       userId: 'user-uuid',
       profileId: 'profile-uuid',
-      accountId: 'account-uuid',
+      organizationId: 'organization-uuid',
       roles: ['OWNER'],
       branchIds: ['branch-uuid'],
     };

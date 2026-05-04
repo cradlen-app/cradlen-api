@@ -30,18 +30,18 @@ async function main() {
 
   await prisma.subscriptionPlan.upsert({
     where: { plan: 'free_trial' },
-    update: { max_accounts: 1, max_branches: 1, max_staff: 5 },
-    create: { plan: 'free_trial', max_accounts: 1, max_branches: 1, max_staff: 5 },
+    update: { max_organizations: 1, max_branches: 1, max_staff: 5 },
+    create: { plan: 'free_trial', max_organizations: 1, max_branches: 1, max_staff: 5 },
   });
   await prisma.subscriptionPlan.upsert({
     where: { plan: 'plus' },
-    update: { max_accounts: 3, max_branches: 3, max_staff: 15 },
-    create: { plan: 'plus', max_accounts: 3, max_branches: 3, max_staff: 15 },
+    update: { max_organizations: 3, max_branches: 3, max_staff: 15 },
+    create: { plan: 'plus', max_organizations: 3, max_branches: 3, max_staff: 15 },
   });
   await prisma.subscriptionPlan.upsert({
     where: { plan: 'pro' },
-    update: { max_accounts: 5, max_branches: 5, max_staff: 25 },
-    create: { plan: 'pro', max_accounts: 5, max_branches: 5, max_staff: 25 },
+    update: { max_organizations: 5, max_branches: 5, max_staff: 25 },
+    create: { plan: 'pro', max_organizations: 5, max_branches: 5, max_staff: 25 },
   });
 
   console.log('Seed complete.');

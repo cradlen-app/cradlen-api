@@ -16,10 +16,10 @@ class SelectableProfileDto {
   profile_id!: string;
 
   @ApiProperty()
-  account_id!: string;
+  organization_id!: string;
 
   @ApiProperty()
-  account_name!: string;
+  organization_name!: string;
 
   @ApiProperty({ type: [String] })
   roles!: string[];

@@ -20,7 +20,7 @@ export class SignupCompleteDto {
   )
   @IsString()
   @MinLength(1)
-  account_name!: string;
+  organization_name!: string;
 
   @ApiProperty({ type: [String] })
   @Transform(({ value }: { value: unknown }) =>
