@@ -242,7 +242,7 @@ export class AuthService {
     const result = await this.prismaService.db.$transaction(async (tx) => {
       // Atomically claim onboarding. If another concurrent request already
       // claimed it, updateMany returns count=0 and we abort before creating
-      // any tenant records, preventing duplicate account/profile/subscription.
+      // any tenant records, preventing duplicate organization/profile/subscription.
       const claimed = await tx.user.updateMany({
         where: {
           id: userId,
