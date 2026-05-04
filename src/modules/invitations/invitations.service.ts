@@ -67,7 +67,7 @@ export class InvitationsService {
     const uniqueRoleIds = [...new Set(dto.role_ids)];
     const uniqueBranchIds = [...new Set(dto.branch_ids)];
 
-    await this.assertBranchesInAccount(organizationId, uniqueBranchIds);
+    await this.assertBranchesInOrganization(organizationId, uniqueBranchIds);
     await this.assertRolesExist(uniqueRoleIds);
 
     const rawToken = randomUUID();
@@ -457,7 +457,7 @@ export class InvitationsService {
     }
   }
 
-  private async assertBranchesInAccount(
+  private async assertBranchesInOrganization(
     organizationId: string,
     branchIds: string[],
   ) {
