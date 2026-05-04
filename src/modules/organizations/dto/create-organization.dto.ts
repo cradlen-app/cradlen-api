@@ -8,11 +8,11 @@ import {
   MinLength,
 } from 'class-validator';
 
-export class CreateAccountDto {
+export class CreateOrganizationDto {
   @ApiProperty()
   @IsString()
   @MinLength(1)
-  account_name!: string;
+  organization_name!: string;
 
   @ApiPropertyOptional()
   @IsOptional()

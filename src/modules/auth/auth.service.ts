@@ -54,8 +54,8 @@ type VerificationPurposeInput = 'SIGNUP' | 'LOGIN' | 'PASSWORD_RESET';
 
 export interface SelectableProfile {
   profile_id: string;
-  account_id: string;
-  account_name: string;
+  organization_id: string;
+  organization_name: string;
   roles: string[];
   branches: {
     branch_id: string;
@@ -256,15 +256,15 @@ export class AuthService {
         throw new ConflictException('Onboarding already completed');
       }
 
-      const account = await tx.account.create({
+      const organization = await tx.organization.create({
         data: {
-          name: dto.account_name,
+          name: dto.organization_name,
           specialities: dto.specialties,
         },
       });
       const branch = await tx.branch.create({
         data: {
-          account_id: account.id,
+          organization_id: organization.id,
           name: dto.branch_name,
           address: dto.branch_address,
           city: dto.branch_city,
@@ -276,7 +276,7 @@ export class AuthService {
       const profile = await tx.profile.create({
         data: {
           user_id: userId,
-          account_id: account.id,
+          organization_id: organization.id,
           is_clinical: isDoctor,
           specialty: isDoctor ? dto.specialty : null,
           job_title: isDoctor ? dto.job_title : null,
@@ -284,18 +284,18 @@ export class AuthService {
             create: roles.map((role) => ({ role_id: role.id })),
           },
           branches: {
-            create: { branch_id: branch.id, account_id: account.id },
+            create: { branch_id: branch.id, organization_id: organization.id },
           },
         },
       });
       await tx.subscription.create({
         data: {
-          account_id: account.id,
+          organization_id: organization.id,
           subscription_plan_id: freePlan.id,
           trial_ends_at: trialEndsAt,
         },
       });
-      return { accountId: account.id, profileId: profile.id, userId };
+      return { organizationId: organization.id, profileId: profile.id, userId };
     });
 
     return this.buildProfileSelectionResponse(result.userId);
@@ -414,7 +414,7 @@ export class AuthService {
         user_id: userId,
         is_deleted: false,
         is_active: true,
-        account: { status: 'ACTIVE', is_deleted: false },
+        organization: { status: 'ACTIVE', is_deleted: false },
       },
       include: {
         user: true,
@@ -437,14 +437,17 @@ export class AuthService {
     const selectedBranch = profile.branches.find(
       (item) => item.branch_id === branchId,
     );
-    if (!selectedBranch || selectedBranch.account_id !== profile.account_id) {
+    if (
+      !selectedBranch ||
+      selectedBranch.organization_id !== profile.organization_id
+    ) {
       throw new ForbiddenException('Invalid branch selection');
     }
 
     return this.issueTokenPair(
       profile.user,
       profile.id,
-      profile.account_id,
+      profile.organization_id,
       branchId,
     );
   }
@@ -470,7 +473,7 @@ export class AuthService {
     }
     const matches = await bcrypt.compare(dto.refresh_token, stored.token_hash);
     if (!matches) throw new UnauthorizedException('Refresh token mismatch');
-    if (!stored.profile_id || !stored.account_id) {
+    if (!stored.profile_id || !stored.organization_id) {
       throw new UnauthorizedException('Refresh token has no profile context');
     }
 
@@ -482,7 +485,7 @@ export class AuthService {
     return this.issueTokenPair(
       stored.user,
       stored.profile_id,
-      stored.account_id,
+      stored.organization_id,
       stored.active_branch_id ?? undefined,
     );
   }
@@ -519,7 +522,7 @@ export class AuthService {
     return this.issueTokenPair(
       { id: user.userId },
       user.profileId,
-      user.accountId,
+      user.organizationId,
       dto.branch_id,
     );
   }
@@ -567,10 +570,10 @@ export class AuthService {
         user_id: userId,
         is_deleted: false,
         is_active: true,
-        account: { is_deleted: false, status: 'ACTIVE' },
+        organization: { is_deleted: false, status: 'ACTIVE' },
       },
       include: {
-        account: true,
+        organization: true,
         roles: { include: { role: true } },
         branches: {
           where: {
@@ -584,8 +587,8 @@ export class AuthService {
 
     return profiles.map((profile) => ({
       profile_id: profile.id,
-      account_id: profile.account.id,
-      account_name: profile.account.name,
+      organization_id: profile.organization.id,
+      organization_name: profile.organization.name,
       roles: profile.roles.map((item) => item.role.name),
       branches: profile.branches.map((item) => ({
         branch_id: item.branch.id,
@@ -788,10 +791,10 @@ export class AuthService {
   private async issueTokenPair(
     user: Pick<User, 'id'>,
     profileId: string,
-    accountId: string,
+    organizationId: string,
     activeBranchId?: string,
   ): Promise<AuthTokensDto> {
-    await this.assertProfileBelongsToUser(user.id, profileId, accountId);
+    await this.assertProfileBelongsToUser(user.id, profileId, organizationId);
 
     const jti = randomUUID();
     const accessExpiresIn = this.parseDurationToSeconds(
@@ -803,14 +806,14 @@ export class AuthService {
     const accessPayload: JwtAccessPayload = {
       userId: user.id,
       profileId,
-      accountId,
+      organizationId,
       ...(activeBranchId && { activeBranchId }),
       type: 'access',
     };
     const refreshPayload: JwtRefreshPayload = {
       userId: user.id,
       profileId,
-      accountId,
+      organizationId,
       jti,
       type: 'refresh',
     };
@@ -829,7 +832,7 @@ export class AuthService {
         token_hash,
         user_id: user.id,
         profile_id: profileId,
-        account_id: accountId,
+        organization_id: organizationId,
         active_branch_id: activeBranchId ?? null,
         expires_at: new Date(Date.now() + refreshExpiresIn * 1000),
       },
@@ -847,13 +850,13 @@ export class AuthService {
   private async assertProfileBelongsToUser(
     userId: string,
     profileId: string,
-    accountId: string,
+    organizationId: string,
   ) {
     const profile = await this.prismaService.db.profile.findFirst({
       where: {
         id: profileId,
         user_id: userId,
-        account_id: accountId,
+        organization_id: organizationId,
         is_deleted: false,
         is_active: true,
       },
@@ -869,7 +872,7 @@ export class AuthService {
         profiles: {
           where: { id: profileId, is_deleted: false },
           include: {
-            account: true,
+            organization: true,
             roles: { include: { role: true } },
             branches: {
               where: { branch: { is_deleted: false } },
@@ -897,10 +900,10 @@ export class AuthService {
         specialty: profile.specialty,
         is_clinical: profile.is_clinical,
         organization: {
-          id: profile.account.id,
-          name: profile.account.name,
-          specialities: profile.account.specialities,
-          status: profile.account.status,
+          id: profile.organization.id,
+          name: profile.organization.name,
+          specialities: profile.organization.specialities,
+          status: profile.organization.status,
         },
         roles: profile.roles.map((pr) => ({
           id: pr.role.id,

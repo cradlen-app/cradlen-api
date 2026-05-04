@@ -9,8 +9,11 @@ export class RolesService {
     private readonly authorizationService: AuthorizationService,
   ) {}
 
-  async listRoles(profileId: string, accountId: string) {
-    await this.authorizationService.assertCanManageStaff(profileId, accountId);
+  async listRoles(profileId: string, organizationId: string) {
+    await this.authorizationService.assertCanManageStaff(
+      profileId,
+      organizationId,
+    );
     return this.prismaService.db.role.findMany({
       select: { id: true, name: true },
       orderBy: { name: 'asc' },

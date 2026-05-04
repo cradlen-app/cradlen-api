@@ -5,7 +5,7 @@
 Table subscription_plans {
   id String [pk]
   plan String [unique, not null]
-  max_accounts Int [not null]
+  max_organizations Int [not null]
   max_branches Int [not null]
   max_staff Int [not null]
   created_at DateTime [default: `now()`, not null]
@@ -13,11 +13,11 @@ Table subscription_plans {
   subscriptions subscriptions [not null]
 }
 
-Table accounts {
+Table organizations {
   id String [pk]
   name String [not null]
   specialities String[] [not null]
-  status AccountStatus [not null, default: 'ACTIVE']
+  status OrganizationStatus [not null, default: 'ACTIVE']
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
@@ -41,14 +41,14 @@ Table branches {
   deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
-  account_id String [not null]
-  account accounts [not null]
+  organization_id String [not null]
+  organization organizations [not null]
   profileBranches profile_branches [not null]
   invitationBranches invitation_branches [not null]
   workingSchedules working_schedules [not null]
 
   indexes {
-    (id, account_id) [unique]
+    (id, organization_id) [unique]
   }
 }
 
@@ -85,7 +85,7 @@ Table roles {
 Table profiles {
   id String [pk]
   user_id String [not null]
-  account_id String [not null]
+  organization_id String [not null]
   job_title String
   specialty String
   is_clinical Boolean [not null, default: false]
@@ -95,13 +95,13 @@ Table profiles {
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   user users [not null]
-  account accounts [not null]
+  organization organizations [not null]
   roles profile_roles [not null]
   branches profile_branches [not null]
   workingSchedules working_schedules [not null]
 
   indexes {
-    (user_id, account_id) [unique]
+    (user_id, organization_id) [unique]
   }
 }
 
@@ -122,7 +122,7 @@ Table profile_branches {
   id String [pk]
   profile_id String [not null]
   branch_id String [not null]
-  account_id String [not null]
+  organization_id String [not null]
   created_at DateTime [default: `now()`, not null]
   profile profiles [not null]
   branch branches [not null]
@@ -134,7 +134,7 @@ Table profile_branches {
 
 Table subscriptions {
   id String [pk]
-  account_id String [not null]
+  organization_id String [not null]
   subscription_plan_id String [not null]
   status SubscriptionStatus [not null, default: 'TRIAL']
   starts_at DateTime [default: `now()`, not null]
@@ -144,7 +144,7 @@ Table subscriptions {
   updated_at DateTime [not null]
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
-  account accounts [not null]
+  organization organizations [not null]
   subscription_plan subscription_plans [not null]
 }
 
@@ -154,7 +154,7 @@ Table refresh_tokens {
   token_hash String [not null]
   user_id String [not null]
   profile_id String
-  account_id String
+  organization_id String
   active_branch_id String
   expires_at DateTime [not null]
   is_revoked Boolean [not null, default: false]
@@ -181,7 +181,7 @@ Table verification_codes {
 
 Table invitations {
   id String [pk]
-  account_id String [not null]
+  organization_id String [not null]
   invited_by_id String [not null]
   email String [not null]
   first_name String [not null]
@@ -198,7 +198,7 @@ Table invitations {
   deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
-  account accounts [not null]
+  organization organizations [not null]
   invited_by users [not null]
   roles invitation_roles [not null]
   branches invitation_branches [not null]
@@ -221,7 +221,7 @@ Table invitation_branches {
   id String [pk]
   invitation_id String [not null]
   branch_id String [not null]
-  account_id String [not null]
+  organization_id String [not null]
   created_at DateTime [default: `now()`, not null]
   invitation invitations [not null]
   branch branches [not null]
@@ -273,7 +273,7 @@ Enum RegistrationStatus {
   ACTIVE
 }
 
-Enum AccountStatus {
+Enum OrganizationStatus {
   ACTIVE
   INACTIVE
   SUSPENDED
@@ -310,21 +310,19 @@ Enum DayOfWeek {
 
 Enum VerificationChannel {
   EMAIL
-  PHONE
 }
 
 Enum VerificationPurpose {
   SIGNUP
   LOGIN
-  PHONE_LOGIN
   PASSWORD_RESET
 }
 
-Ref: branches.account_id > accounts.id [delete: Cascade]
+Ref: branches.organization_id > organizations.id [delete: Cascade]
 
 Ref: profiles.user_id > users.id [delete: Cascade]
 
-Ref: profiles.account_id > accounts.id [delete: Cascade]
+Ref: profiles.organization_id > organizations.id [delete: Cascade]
 
 Ref: profile_roles.profile_id > profiles.id [delete: Cascade]
 
@@ -332,9 +330,9 @@ Ref: profile_roles.role_id > roles.id [delete: Cascade]
 
 Ref: profile_branches.profile_id > profiles.id [delete: Cascade]
 
-Ref: profile_branches.(branch_id, account_id) > branches.(id, account_id) [delete: Cascade]
+Ref: profile_branches.(branch_id, organization_id) > branches.(id, organization_id) [delete: Cascade]
 
-Ref: subscriptions.account_id > accounts.id [delete: Cascade]
+Ref: subscriptions.organization_id > organizations.id [delete: Cascade]
 
 Ref: subscriptions.subscription_plan_id > subscription_plans.id
 
@@ -342,7 +340,7 @@ Ref: refresh_tokens.user_id > users.id [delete: Cascade]
 
 Ref: verification_codes.user_id > users.id [delete: Cascade]
 
-Ref: invitations.account_id > accounts.id [delete: Cascade]
+Ref: invitations.organization_id > organizations.id [delete: Cascade]
 
 Ref: invitations.invited_by_id > users.id
 
@@ -352,7 +350,7 @@ Ref: invitation_roles.role_id > roles.id [delete: Cascade]
 
 Ref: invitation_branches.invitation_id > invitations.id [delete: Cascade]
 
-Ref: invitation_branches.(branch_id, account_id) > branches.(id, account_id) [delete: Cascade]
+Ref: invitation_branches.(branch_id, organization_id) > branches.(id, organization_id) [delete: Cascade]
 
 Ref: working_schedules.profile_id > profiles.id [delete: Cascade]
 

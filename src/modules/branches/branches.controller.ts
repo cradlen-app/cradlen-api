@@ -21,18 +21,18 @@ import { CreateBranchDto, UpdateBranchDto } from './dto/branch.dto.js';
 
 @ApiTags('Branches')
 @ApiBearerAuth()
-@Controller('accounts/:accountId/branches')
+@Controller('organizations/:organizationId/branches')
 export class BranchesController {
   constructor(private readonly branchesService: BranchesService) {}
 
   @Get()
-  @ApiOperation({ summary: 'List account branches' })
+  @ApiOperation({ summary: 'List organization branches' })
   @ApiStandardResponse(Object)
   listBranches(
     @CurrentUser() user: AuthContext,
-    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
   ) {
-    return this.branchesService.listBranches(user.profileId, accountId);
+    return this.branchesService.listBranches(user.profileId, organizationId);
   }
 
   @Post()
@@ -40,10 +40,14 @@ export class BranchesController {
   @ApiStandardResponse(Object)
   createBranch(
     @CurrentUser() user: AuthContext,
-    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Body() dto: CreateBranchDto,
   ) {
-    return this.branchesService.createBranch(user.profileId, accountId, dto);
+    return this.branchesService.createBranch(
+      user.profileId,
+      organizationId,
+      dto,
+    );
   }
 
   @Get(':branchId')
@@ -51,10 +55,14 @@ export class BranchesController {
   @ApiStandardResponse(Object)
   getBranch(
     @CurrentUser() user: AuthContext,
-    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('branchId', ParseUUIDPipe) branchId: string,
   ) {
-    return this.branchesService.getBranch(user.profileId, accountId, branchId);
+    return this.branchesService.getBranch(
+      user.profileId,
+      organizationId,
+      branchId,
+    );
   }
 
   @Patch(':branchId')
@@ -62,13 +70,13 @@ export class BranchesController {
   @ApiStandardResponse(Object)
   updateBranch(
     @CurrentUser() user: AuthContext,
-    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('branchId', ParseUUIDPipe) branchId: string,
     @Body() dto: UpdateBranchDto,
   ) {
     return this.branchesService.updateBranch(
       user.profileId,
-      accountId,
+      organizationId,
       branchId,
       dto,
     );
@@ -77,17 +85,17 @@ export class BranchesController {
   @Delete(':branchId')
   @HttpCode(204)
   @ApiOperation({
-    summary: 'Delete branch (cascades to account if last branch)',
+    summary: 'Delete branch (cascades to organization if last branch)',
   })
   @ApiVoidResponse()
   deleteBranch(
     @CurrentUser() user: AuthContext,
-    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('branchId', ParseUUIDPipe) branchId: string,
   ) {
     return this.branchesService.deleteBranch(
       user.profileId,
-      accountId,
+      organizationId,
       branchId,
     );
   }

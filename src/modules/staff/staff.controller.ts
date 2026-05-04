@@ -26,7 +26,7 @@ import { StaffService } from './staff.service.js';
 export class StaffController {
   constructor(private readonly staffService: StaffService) {}
 
-  @Post('accounts/:accountId/staff')
+  @Post('organizations/:organizationId/staff')
   @ApiOperation({
     summary: 'Directly create a staff member',
     description:
@@ -35,52 +35,56 @@ export class StaffController {
   @ApiStandardResponse(Object)
   createStaff(
     @CurrentUser() user: AuthContext,
-    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Body() dto: CreateStaffDto,
   ) {
-    return this.staffService.createStaff(user.profileId, accountId, dto);
+    return this.staffService.createStaff(user.profileId, organizationId, dto);
   }
 
-  @Get('accounts/:accountId/staff')
-  @ApiOperation({ summary: 'List all active staff in an account' })
+  @Get('organizations/:organizationId/staff')
+  @ApiOperation({ summary: 'List all active staff in an organization' })
   @ApiStandardResponse(Object)
   listStaff(
     @CurrentUser() user: AuthContext,
-    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Query('branch_id') branchId?: string,
   ) {
-    return this.staffService.listStaff(user.profileId, accountId, branchId);
+    return this.staffService.listStaff(
+      user.profileId,
+      organizationId,
+      branchId,
+    );
   }
 
-  @Patch('accounts/:accountId/staff/:staffProfileId')
+  @Patch('organizations/:organizationId/staff/:staffProfileId')
   @ApiOperation({ summary: 'Update a staff member' })
   @ApiStandardResponse(Object)
   updateStaff(
     @CurrentUser() user: AuthContext,
-    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('staffProfileId', ParseUUIDPipe) staffProfileId: string,
     @Body() dto: UpdateStaffDto,
   ) {
     return this.staffService.updateStaff(
       user.profileId,
-      accountId,
+      organizationId,
       staffProfileId,
       dto,
     );
   }
 
-  @Delete('accounts/:accountId/staff/:staffProfileId')
+  @Delete('organizations/:organizationId/staff/:staffProfileId')
   @HttpCode(204)
   @ApiOperation({ summary: 'Soft-delete a staff member' })
   @ApiVoidResponse()
   deleteStaff(
     @CurrentUser() user: AuthContext,
-    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('staffProfileId', ParseUUIDPipe) staffProfileId: string,
   ) {
     return this.staffService.deleteStaff(
       user.profileId,
-      accountId,
+      organizationId,
       staffProfileId,
     );
   }
