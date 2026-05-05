@@ -14,6 +14,7 @@ import type {
   CreateStaffDto,
   UpdateStaffDto,
 } from './dto/staff.dto.js';
+import { persistSchedules } from './schedule.helpers.js';
 
 const STAFF_EMAIL_DOMAIN = 'cradlen.com';
 
@@ -429,25 +430,7 @@ export class StaffService {
     profileId: string,
     schedule: BranchScheduleDto[],
   ) {
-    for (const branchSchedule of schedule) {
-      const ws = await tx.workingSchedule.create({
-        data: { profile_id: profileId, branch_id: branchSchedule.branch_id },
-      });
-
-      for (const day of branchSchedule.days) {
-        const wd = await tx.workingDay.create({
-          data: { schedule_id: ws.id, day_of_week: day.day_of_week },
-        });
-
-        await tx.workingShift.createMany({
-          data: day.shifts.map((s) => ({
-            day_id: wd.id,
-            start_time: s.start_time,
-            end_time: s.end_time,
-          })),
-        });
-      }
-    }
+    await persistSchedules(tx, profileId, schedule);
   }
 
   private async generateUniqueEmail(
