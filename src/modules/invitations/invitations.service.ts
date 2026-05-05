@@ -178,6 +178,18 @@ export class InvitationsService {
       this.assertShiftTimes(dto.schedule);
     }
 
+    const existingUser = await this.prismaService.db.user.findFirst({
+      where: { email: invitation.email, is_deleted: false },
+    });
+    if (existingUser?.password_hashed) {
+      const matches = await bcrypt.compare(
+        dto.password,
+        existingUser.password_hashed,
+      );
+      if (!matches) throw new UnauthorizedException('Invalid credentials');
+    }
+    const passwordHash = await bcrypt.hash(dto.password, 12);
+
     const result = await this.prismaService.db.$transaction(async (tx) => {
       const claimed = await tx.invitation.updateMany({
         where: {
@@ -239,18 +251,12 @@ export class InvitationsService {
             last_name: dto.last_name ?? invitation.last_name,
             email: invitation.email,
             phone_number: invitation.phone_number,
-            password_hashed: await bcrypt.hash(dto.password, 12),
+            password_hashed: passwordHash,
             registration_status: 'ACTIVE',
             onboarding_completed: true,
             verified_at: new Date(),
           },
         });
-      } else if (user.password_hashed) {
-        const matches = await bcrypt.compare(
-          dto.password,
-          user.password_hashed,
-        );
-        if (!matches) throw new UnauthorizedException('Invalid credentials');
       }
 
       const profile = await tx.profile.upsert({
