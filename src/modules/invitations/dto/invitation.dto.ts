@@ -4,6 +4,7 @@ import {
   IsArray,
   IsBoolean,
   IsEmail,
+  IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
@@ -11,7 +12,71 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
+import { InvitationStatus } from '@prisma/client';
 import { BranchScheduleDto } from '../../staff/dto/staff.dto.js';
+
+export class PreviewInvitationQueryDto {
+  @ApiProperty()
+  @IsUUID('4')
+  invitation!: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  token!: string;
+}
+
+export class InvitationPreviewResponseDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty({ enum: InvitationStatus })
+  status!: InvitationStatus;
+
+  @ApiProperty()
+  expires_at!: Date;
+
+  @ApiProperty()
+  email!: string;
+
+  @ApiProperty()
+  first_name!: string;
+
+  @ApiProperty()
+  last_name!: string;
+
+  @ApiProperty()
+  is_clinical!: boolean;
+
+  @ApiPropertyOptional()
+  job_title!: string | null;
+
+  @ApiPropertyOptional()
+  specialty!: string | null;
+
+  @ApiProperty()
+  organization!: { id: string; name: string };
+
+  @ApiProperty()
+  invited_by!: { first_name: string; last_name: string };
+
+  @ApiProperty()
+  roles!: { id: string; name: string }[];
+
+  @ApiProperty()
+  branches!: { id: string; name: string; city: string; governorate: string }[];
+}
+
+export class DeclineInvitationDto {
+  @ApiProperty()
+  @IsUUID('4')
+  invitation!: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  token!: string;
+}
 
 export class CreateInvitationDto {
   @ApiProperty()

@@ -21,6 +21,9 @@ import {
 import {
   AcceptInvitationDto,
   CreateInvitationDto,
+  DeclineInvitationDto,
+  InvitationPreviewResponseDto,
+  PreviewInvitationQueryDto,
 } from './dto/invitation.dto.js';
 import { InvitationsService } from './invitations.service.js';
 
@@ -62,12 +65,29 @@ export class InvitationsController {
     );
   }
 
+  @Get('invitations/preview')
+  @Public()
+  @ApiOperation({ summary: 'Get public invitation preview (no auth required)' })
+  @ApiStandardResponse(InvitationPreviewResponseDto)
+  previewInvitation(@Query() query: PreviewInvitationQueryDto) {
+    return this.invitationsService.previewInvitation(query);
+  }
+
   @Post('invitations/accept')
   @Public()
   @ApiOperation({ summary: 'Accept invitation' })
   @ApiStandardResponse(Object)
   acceptInvitation(@Body() dto: AcceptInvitationDto) {
     return this.invitationsService.acceptInvitation(dto);
+  }
+
+  @Post('invitations/decline')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Decline invitation' })
+  @ApiStandardResponse(Object)
+  declineInvitation(@Body() dto: DeclineInvitationDto) {
+    return this.invitationsService.declineInvitation(dto);
   }
 
   @Get('organizations/:organizationId/invitations/:invitationId')
