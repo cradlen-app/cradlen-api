@@ -22,6 +22,8 @@ import type { BranchScheduleDto } from '../staff/dto/staff.dto.js';
 import type {
   AcceptInvitationDto,
   CreateInvitationDto,
+  DeclineInvitationDto,
+  PreviewInvitationQueryDto,
 } from './dto/invitation.dto.js';
 
 @Injectable()
@@ -527,6 +529,94 @@ export class InvitationsService {
         select: { id: true, first_name: true, last_name: true, email: true },
       },
     } satisfies Prisma.InvitationInclude;
+  }
+
+  private includePreview() {
+    return {
+      roles: { include: { role: true } },
+      branches: { include: { branch: true } },
+      invited_by: {
+        select: { first_name: true, last_name: true },
+      },
+      organization: {
+        select: { id: true, name: true },
+      },
+    } satisfies Prisma.InvitationInclude;
+  }
+
+  async declineInvitation(dto: DeclineInvitationDto) {
+    const invitation = await this.prismaService.db.invitation.findFirst({
+      where: { id: dto.invitation, is_deleted: false },
+      select: { id: true, status: true, token_hash: true },
+    });
+
+    if (!invitation) throw new UnauthorizedException('Invalid invitation');
+
+    const tokenMatches = await bcrypt.compare(dto.token, invitation.token_hash);
+    if (!tokenMatches) throw new UnauthorizedException('Invalid invitation token');
+
+    if (invitation.status !== InvitationStatus.PENDING) {
+      throw new ConflictException('Invitation is not pending');
+    }
+
+    await this.prismaService.db.invitation.update({
+      where: { id: invitation.id },
+      data: { status: InvitationStatus.CANCELLED },
+    });
+
+    return { message: 'Invitation declined' };
+  }
+
+  async previewInvitation(dto: PreviewInvitationQueryDto) {
+    const invitation = await this.prismaService.db.invitation.findFirst({
+      where: { id: dto.invitation, is_deleted: false },
+      include: this.includePreview(),
+    });
+
+    if (!invitation) throw new UnauthorizedException('Invalid invitation');
+
+    const tokenMatches = await bcrypt.compare(dto.token, invitation.token_hash);
+    if (!tokenMatches)
+      throw new UnauthorizedException('Invalid invitation token');
+
+    if (invitation.status === InvitationStatus.ACCEPTED)
+      throw new ConflictException('Invitation already accepted');
+
+    if (invitation.status !== InvitationStatus.PENDING)
+      throw new UnauthorizedException('Invitation is not active');
+
+    if (invitation.expires_at < new Date())
+      throw new GoneException('Invitation expired');
+
+    return {
+      id: invitation.id,
+      status: invitation.status,
+      expires_at: invitation.expires_at,
+      email: invitation.email,
+      first_name: invitation.first_name,
+      last_name: invitation.last_name,
+      is_clinical: invitation.is_clinical,
+      job_title: invitation.job_title,
+      specialty: invitation.specialty,
+      organization: {
+        id: invitation.organization.id,
+        name: invitation.organization.name,
+      },
+      invited_by: {
+        first_name: invitation.invited_by.first_name,
+        last_name: invitation.invited_by.last_name,
+      },
+      roles: invitation.roles.map((r) => ({
+        id: r.role.id,
+        name: r.role.name,
+      })),
+      branches: invitation.branches.map((b) => ({
+        id: b.branch.id,
+        name: b.branch.name,
+        city: b.branch.city,
+        governorate: b.branch.governorate,
+      })),
+    };
   }
 
   private findInvitationShape() {
