@@ -134,6 +134,7 @@ model User {
   refreshTokens        RefreshToken[]
   verificationCodes    VerificationCode[]
   sentInvitations      Invitation[]         @relation("InvitedBy")
+  notifications        Notification[]
 
   @@index([registration_status, onboarding_completed])
   @@map("users")
@@ -312,6 +313,25 @@ model InvitationBranch {
   @@unique([invitation_id, branch_id])
   @@index([organization_id, branch_id])
   @@map("invitation_branches")
+}
+
+model Notification {
+  id         String    @id @default(uuid()) @db.Uuid
+  user_id    String    @db.Uuid
+  type       String
+  title      String
+  body       String
+  is_read    Boolean   @default(false)
+  read_at    DateTime?
+  metadata   Json?
+  is_deleted Boolean   @default(false)
+  deleted_at DateTime?
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  user       User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, is_read, is_deleted])
+  @@map("notifications")
 }
 
 model WorkingSchedule {

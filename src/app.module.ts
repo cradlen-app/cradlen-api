@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { SentryModule } from '@sentry/nestjs/setup';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
@@ -17,12 +18,14 @@ import { InvitationsModule } from './modules/invitations/invitations.module.js';
 import { StaffModule } from './modules/staff/staff.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module.js';
+import { NotificationsModule } from './modules/notifications/notifications.module.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import type { AppConfig } from './config/app.config';
 
 @Module({
   imports: [
     SentryModule.forRoot(),
+    EventEmitterModule.forRoot({ wildcard: false, ignoreErrors: true }),
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: [`.env.${process.env.NODE_ENV ?? 'development'}`, '.env'],
@@ -48,6 +51,7 @@ import type { AppConfig } from './config/app.config';
     InvitationsModule,
     StaffModule,
     SubscriptionsModule,
+    NotificationsModule,
   ],
   controllers: [],
   providers: [

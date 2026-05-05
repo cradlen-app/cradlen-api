@@ -8,6 +8,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import { InvitationStatus, Prisma } from '@prisma/client';
@@ -26,6 +27,8 @@ import type {
   DeclineInvitationDto,
   PreviewInvitationQueryDto,
 } from './dto/invitation.dto.js';
+import { InvitationAcceptedEvent } from '../notifications/events/invitation-accepted.event.js';
+import { InvitationDeclinedEvent } from '../notifications/events/invitation-declined.event.js';
 
 @Injectable()
 export class InvitationsService {
@@ -37,6 +40,7 @@ export class InvitationsService {
     private readonly authorizationService: AuthorizationService,
     private readonly mailService: MailService,
     private readonly subscriptionsService: SubscriptionsService,
+    private readonly eventEmitter: EventEmitter2,
     configService: ConfigService,
   ) {
     const app = configService.get<AppConfig>('app');
@@ -297,6 +301,13 @@ export class InvitationsService {
       };
     });
 
+    const event = Object.assign(new InvitationAcceptedEvent(), {
+      invitationId: invitation.id,
+      inviterId: invitation.invited_by_id,
+      inviteeName: `${invitation.first_name} ${invitation.last_name}`,
+    });
+    this.eventEmitter.emit('invitation.accepted', event);
+
     return result;
   }
 
@@ -518,7 +529,14 @@ export class InvitationsService {
   async declineInvitation(dto: DeclineInvitationDto) {
     const invitation = await this.prismaService.db.invitation.findFirst({
       where: { id: dto.invitation, is_deleted: false },
-      select: { id: true, status: true, token_hash: true },
+      select: {
+        id: true,
+        status: true,
+        token_hash: true,
+        invited_by_id: true,
+        first_name: true,
+        last_name: true,
+      },
     });
 
     if (!invitation) throw new UnauthorizedException('Invalid invitation');
@@ -535,6 +553,13 @@ export class InvitationsService {
       where: { id: invitation.id },
       data: { status: InvitationStatus.CANCELLED },
     });
+
+    const event = Object.assign(new InvitationDeclinedEvent(), {
+      invitationId: invitation.id,
+      inviterId: invitation.invited_by_id,
+      inviteeName: `${invitation.first_name} ${invitation.last_name}`,
+    });
+    this.eventEmitter.emit('invitation.declined', event);
 
     return { message: 'Invitation declined' };
   }

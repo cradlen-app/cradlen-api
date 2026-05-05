@@ -71,6 +71,7 @@ Table users {
   refreshTokens refresh_tokens [not null]
   verificationCodes verification_codes [not null]
   sentInvitations invitations [not null]
+  notifications notifications [not null]
 }
 
 Table roles {
@@ -231,6 +232,22 @@ Table invitation_branches {
   }
 }
 
+Table notifications {
+  id String [pk]
+  user_id String [not null]
+  type String [not null]
+  title String [not null]
+  body String [not null]
+  is_read Boolean [not null, default: false]
+  read_at DateTime
+  metadata Json
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  user users [not null]
+}
+
 Table working_schedules {
   id String [pk]
   profile_id String [not null]
@@ -351,6 +368,8 @@ Ref: invitation_roles.role_id > roles.id [delete: Cascade]
 Ref: invitation_branches.invitation_id > invitations.id [delete: Cascade]
 
 Ref: invitation_branches.(branch_id, organization_id) > branches.(id, organization_id) [delete: Cascade]
+
+Ref: notifications.user_id > users.id [delete: Cascade]
 
 Ref: working_schedules.profile_id > profiles.id [delete: Cascade]
 
