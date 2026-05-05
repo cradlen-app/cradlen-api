@@ -295,26 +295,22 @@ export class InvitationsService {
             },
           });
 
+          await tx.workingDay.deleteMany({ where: { schedule_id: ws.id } });
+
           for (const day of branchSchedule.days) {
-            const wd = await tx.workingDay.upsert({
-              where: {
-                schedule_id_day_of_week: {
-                  schedule_id: ws.id,
-                  day_of_week: day.day_of_week,
-                },
-              },
-              update: {},
-              create: { schedule_id: ws.id, day_of_week: day.day_of_week },
+            const wd = await tx.workingDay.create({
+              data: { schedule_id: ws.id, day_of_week: day.day_of_week },
             });
 
-            await tx.workingShift.createMany({
-              data: day.shifts.map((s) => ({
-                day_id: wd.id,
-                start_time: s.start_time,
-                end_time: s.end_time,
-              })),
-              skipDuplicates: true,
-            });
+            if (day.shifts.length > 0) {
+              await tx.workingShift.createMany({
+                data: day.shifts.map((s) => ({
+                  day_id: wd.id,
+                  start_time: s.start_time,
+                  end_time: s.end_time,
+                })),
+              });
+            }
           }
         }
       }
@@ -553,7 +549,8 @@ export class InvitationsService {
     if (!invitation) throw new UnauthorizedException('Invalid invitation');
 
     const tokenMatches = await bcrypt.compare(dto.token, invitation.token_hash);
-    if (!tokenMatches) throw new UnauthorizedException('Invalid invitation token');
+    if (!tokenMatches)
+      throw new UnauthorizedException('Invalid invitation token');
 
     if (invitation.status !== InvitationStatus.PENDING) {
       throw new ConflictException('Invitation is not pending');
