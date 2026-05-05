@@ -15,9 +15,10 @@ export class NotificationsListener {
     try {
       await this.notificationsService.create({
         userId: event.inviterId,
-        type: 'INVITATION_ACCEPTED',
+        category: 'staff',
         title: 'Invitation Accepted',
-        body: `${event.inviteeName} accepted your invitation.`,
+        description: `${event.inviteeName} accepted your invitation.`,
+        navigateTo: this.buildInvitationPath(event),
         metadata: {
           invitationId: event.invitationId,
           inviteeName: event.inviteeName,
@@ -36,9 +37,10 @@ export class NotificationsListener {
     try {
       await this.notificationsService.create({
         userId: event.inviterId,
-        type: 'INVITATION_DECLINED',
+        category: 'staff',
         title: 'Invitation Declined',
-        body: `${event.inviteeName} declined your invitation.`,
+        description: `${event.inviteeName} declined your invitation.`,
+        navigateTo: this.buildInvitationPath(event),
         metadata: {
           invitationId: event.invitationId,
           inviteeName: event.inviteeName,
@@ -50,5 +52,13 @@ export class NotificationsListener {
         err,
       );
     }
+  }
+
+  private buildInvitationPath(
+    event: InvitationAcceptedEvent | InvitationDeclinedEvent,
+  ): string {
+    const base = `/${event.organizationId}`;
+    const branch = event.branchId ? `/${event.branchId}` : '';
+    return `${base}${branch}/dashboard/staff/invitations/${event.invitationId}`;
   }
 }

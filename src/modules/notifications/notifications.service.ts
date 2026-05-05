@@ -5,9 +5,10 @@ import { paginated } from '../../common/utils/pagination.utils.js';
 
 interface CreateNotificationInput {
   userId: string;
-  type: string;
+  category: string;
   title: string;
-  body: string;
+  description: string;
+  navigateTo?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -19,16 +20,22 @@ export class NotificationsService {
     return this.prismaService.db.notification.create({
       data: {
         user_id: input.userId,
-        type: input.type,
+        category: input.category,
         title: input.title,
-        body: input.body,
+        description: input.description,
+        navigate_to: input.navigateTo,
         metadata: input.metadata as Prisma.InputJsonValue | undefined,
       },
     });
   }
 
-  async list(userId: string, page: number, limit: number) {
-    const where = { user_id: userId, is_deleted: false };
+  async list(userId: string, page: number, limit: number, category?: string) {
+    const where: Prisma.NotificationWhereInput = {
+      user_id: userId,
+      is_deleted: false,
+      ...(category ? { category } : {}),
+    };
+
     const [items, total, unreadCount] = await Promise.all([
       this.prismaService.db.notification.findMany({
         where,
@@ -38,7 +45,7 @@ export class NotificationsService {
       }),
       this.prismaService.db.notification.count({ where }),
       this.prismaService.db.notification.count({
-        where: { ...where, is_read: false },
+        where: { user_id: userId, is_deleted: false, is_read: false },
       }),
     ]);
 

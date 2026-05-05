@@ -33,7 +33,12 @@ export class NotificationsController {
     @CurrentUser() user: AuthContext,
     @Query() query: ListNotificationsQueryDto,
   ) {
-    return this.notificationsService.list(user.userId, query.page, query.limit);
+    return this.notificationsService.list(
+      user.userId,
+      query.page,
+      query.limit,
+      query.category,
+    );
   }
 
   @Patch('read-all')
