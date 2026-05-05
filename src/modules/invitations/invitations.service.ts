@@ -305,6 +305,8 @@ export class InvitationsService {
       invitationId: invitation.id,
       inviterId: invitation.invited_by_id,
       inviteeName: `${invitation.first_name} ${invitation.last_name}`,
+      organizationId: invitation.organization_id,
+      branchId: invitation.branches[0]?.branch_id ?? null,
     });
     this.eventEmitter.emit('invitation.accepted', event);
 
@@ -536,6 +538,8 @@ export class InvitationsService {
         invited_by_id: true,
         first_name: true,
         last_name: true,
+        organization_id: true,
+        branches: { select: { branch_id: true } },
       },
     });
 
@@ -558,6 +562,8 @@ export class InvitationsService {
       invitationId: invitation.id,
       inviterId: invitation.invited_by_id,
       inviteeName: `${invitation.first_name} ${invitation.last_name}`,
+      organizationId: invitation.organization_id,
+      branchId: invitation.branches[0]?.branch_id ?? null,
     });
     this.eventEmitter.emit('invitation.declined', event);
 
