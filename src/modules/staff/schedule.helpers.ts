@@ -31,10 +31,14 @@ export async function persistSchedules(
       : [];
 
   const allSchedules = [...existing, ...created];
-  const scheduleByBranch = new Map(allSchedules.map((ws) => [ws.branch_id, ws]));
+  const scheduleByBranch = new Map(
+    allSchedules.map((ws) => [ws.branch_id, ws]),
+  );
   const scheduleIds = allSchedules.map((ws) => ws.id);
 
-  await tx.workingDay.deleteMany({ where: { schedule_id: { in: scheduleIds } } });
+  await tx.workingDay.deleteMany({
+    where: { schedule_id: { in: scheduleIds } },
+  });
 
   const allDayData = schedule.flatMap((bs) => {
     const ws = scheduleByBranch.get(bs.branch_id)!;
@@ -50,7 +54,10 @@ export async function persistSchedules(
     data: allDayData,
   });
 
-  const shiftsByKey = new Map<string, BranchScheduleDto['days'][number]['shifts']>();
+  const shiftsByKey = new Map<
+    string,
+    BranchScheduleDto['days'][number]['shifts']
+  >();
   for (const bs of schedule) {
     const ws = scheduleByBranch.get(bs.branch_id)!;
     for (const day of bs.days) {
