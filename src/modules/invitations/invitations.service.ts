@@ -19,6 +19,7 @@ import { PrismaService } from '../../database/prisma.service.js';
 import { MailService } from '../mail/mail.service.js';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service.js';
 import type { BranchScheduleDto } from '../staff/dto/staff.dto.js';
+import { persistSchedules } from '../staff/schedule.helpers.js';
 import type {
   AcceptInvitationDto,
   CreateInvitationDto,
@@ -286,39 +287,7 @@ export class InvitationsService {
       await this.assignProfileAccess(tx, profile.id, invitation);
 
       if (dto.schedule?.length) {
-        for (const branchSchedule of dto.schedule) {
-          const ws = await tx.workingSchedule.upsert({
-            where: {
-              profile_id_branch_id: {
-                profile_id: profile.id,
-                branch_id: branchSchedule.branch_id,
-              },
-            },
-            update: {},
-            create: {
-              profile_id: profile.id,
-              branch_id: branchSchedule.branch_id,
-            },
-          });
-
-          await tx.workingDay.deleteMany({ where: { schedule_id: ws.id } });
-
-          for (const day of branchSchedule.days) {
-            const wd = await tx.workingDay.create({
-              data: { schedule_id: ws.id, day_of_week: day.day_of_week },
-            });
-
-            if (day.shifts.length > 0) {
-              await tx.workingShift.createMany({
-                data: day.shifts.map((s) => ({
-                  day_id: wd.id,
-                  start_time: s.start_time,
-                  end_time: s.end_time,
-                })),
-              });
-            }
-          }
-        }
+        await persistSchedules(tx, profile.id, dto.schedule);
       }
 
       return {
