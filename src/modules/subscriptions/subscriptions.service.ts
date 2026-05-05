@@ -113,7 +113,9 @@ export class SubscriptionsService {
       orderBy: { created_at: 'desc' },
     });
     if (!sub)
-      throw new NotFoundException('No active subscription found for organization');
+      throw new NotFoundException(
+        'No active subscription found for organization',
+      );
     return sub.subscription_plan;
   }
 }
