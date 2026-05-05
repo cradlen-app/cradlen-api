@@ -316,21 +316,23 @@ model InvitationBranch {
 }
 
 model Notification {
-  id         String    @id @default(uuid()) @db.Uuid
-  user_id    String    @db.Uuid
-  type       String
-  title      String
-  body       String
-  is_read    Boolean   @default(false)
-  read_at    DateTime?
-  metadata   Json?
-  is_deleted Boolean   @default(false)
-  deleted_at DateTime?
-  created_at DateTime  @default(now())
-  updated_at DateTime  @updatedAt
-  user       User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  id          String    @id @default(uuid()) @db.Uuid
+  user_id     String    @db.Uuid
+  category    String
+  title       String
+  description String
+  navigate_to String?
+  is_read     Boolean   @default(false)
+  read_at     DateTime?
+  metadata    Json?
+  is_deleted  Boolean   @default(false)
+  deleted_at  DateTime?
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+  user        User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@index([user_id, is_read, is_deleted])
+  @@index([user_id, category, is_deleted])
   @@map("notifications")
 }
 
