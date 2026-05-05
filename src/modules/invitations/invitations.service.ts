@@ -412,17 +412,14 @@ export class InvitationsService {
       include: this.includeInvitation(),
     });
     if (!invitation) throw new NotFoundException('Invitation not found');
-    if (invitation.status !== InvitationStatus.PENDING) {
-      throw new BadRequestException(
-        'Only pending invitations can be cancelled',
-      );
-    }
     const updated = await this.prismaService.db.invitation.update({
       where: { id: invitationId },
       data: {
-        status: InvitationStatus.CANCELLED,
         is_deleted: true,
         deleted_at: new Date(),
+        ...(invitation.status === InvitationStatus.PENDING && {
+          status: InvitationStatus.CANCELLED,
+        }),
       },
       include: this.includeInvitation(),
     });
