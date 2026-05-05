@@ -235,9 +235,10 @@ Table invitation_branches {
 Table notifications {
   id String [pk]
   user_id String [not null]
-  type String [not null]
+  category String [not null]
   title String [not null]
-  body String [not null]
+  description String [not null]
+  navigate_to String
   is_read Boolean [not null, default: false]
   read_at DateTime
   metadata Json
