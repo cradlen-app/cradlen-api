@@ -122,6 +122,7 @@ export class StaffService {
     profileId: string,
     organizationId: string,
     branchId?: string,
+    role?: string,
   ) {
     await this.authorizationService.assertCanManageStaff(
       profileId,
@@ -135,6 +136,9 @@ export class StaffService {
     };
     if (branchId) {
       where.branches = { some: { branch_id: branchId } };
+    }
+    if (role) {
+      where.roles = { some: { role: { name: role.toUpperCase() } } };
     }
 
     const profiles = await this.prismaService.db.profile.findMany({
