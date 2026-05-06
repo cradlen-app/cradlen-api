@@ -10,7 +10,12 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import type { AuthContext } from '../../common/interfaces/auth-context.interface.js';
 import {
@@ -43,16 +48,24 @@ export class StaffController {
 
   @Get('organizations/:organizationId/staff')
   @ApiOperation({ summary: 'List all active staff in an organization' })
+  @ApiQuery({
+    name: 'role',
+    required: false,
+    enum: ['OWNER', 'DOCTOR', 'RECEPTIONIST'],
+    description: 'Filter staff by role name',
+  })
   @ApiStandardResponse(Object)
   listStaff(
     @CurrentUser() user: AuthContext,
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Query('branch_id') branchId?: string,
+    @Query('role') role?: string,
   ) {
     return this.staffService.listStaff(
       user.profileId,
       organizationId,
       branchId,
+      role,
     );
   }
 
