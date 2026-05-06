@@ -26,6 +26,7 @@ Table organizations {
   profiles profiles [not null]
   invitations invitations [not null]
   subscriptions subscriptions [not null]
+  patient_journeys patient_journeys [not null]
 }
 
 Table branches {
@@ -46,6 +47,7 @@ Table branches {
   profileBranches profile_branches [not null]
   invitationBranches invitation_branches [not null]
   workingSchedules working_schedules [not null]
+  visits visits [not null]
 
   indexes {
     (id, organization_id) [unique]
@@ -100,6 +102,9 @@ Table profiles {
   roles profile_roles [not null]
   branches profile_branches [not null]
   workingSchedules working_schedules [not null]
+  created_journeys patient_journeys [not null]
+  doctor_visits visits [not null]
+  created_visits visits [not null]
 
   indexes {
     (user_id, organization_id) [unique]
@@ -286,6 +291,117 @@ Table working_shifts {
   day working_days [not null]
 }
 
+Table specialties {
+  id String [pk]
+  name String [unique, not null]
+  code String [unique, not null]
+  description String
+  templates journey_templates [not null]
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
+Table journey_templates {
+  id String [pk]
+  specialty_id String [not null]
+  specialty specialties [not null]
+  name String [unique, not null]
+  type JourneyTemplateType [not null]
+  description String
+  episodes episode_templates [not null]
+  journeys patient_journeys [not null]
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
+Table episode_templates {
+  id String [pk]
+  journey_template_id String [not null]
+  journey_template journey_templates [not null]
+  name String [not null]
+  order Int [not null]
+  episodes patient_episodes [not null]
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
+Table patients {
+  id String [pk]
+  national_id String [unique, not null]
+  full_name String [not null]
+  husband_name String
+  date_of_birth DateTime [not null]
+  phone_number String [not null]
+  address String [not null]
+  journeys patient_journeys [not null]
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+}
+
+Table patient_journeys {
+  id String [pk]
+  patient_id String [not null]
+  patient patients [not null]
+  organization_id String [not null]
+  organization organizations [not null]
+  journey_template_id String [not null]
+  journey_template journey_templates [not null]
+  created_by_id String [not null]
+  created_by profiles [not null]
+  status JourneyStatus [not null, default: 'ACTIVE']
+  started_at DateTime [default: `now()`, not null]
+  ended_at DateTime
+  episodes patient_episodes [not null]
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+}
+
+Table patient_episodes {
+  id String [pk]
+  journey_id String [not null]
+  journey patient_journeys [not null]
+  episode_template_id String [not null]
+  episode_template episode_templates [not null]
+  name String [not null]
+  order Int [not null]
+  status EpisodeStatus [not null, default: 'PENDING']
+  started_at DateTime
+  ended_at DateTime
+  visits visits [not null]
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+}
+
+Table visits {
+  id String [pk]
+  episode_id String [not null]
+  episode patient_episodes [not null]
+  assigned_doctor_id String [not null]
+  assigned_doctor profiles [not null]
+  branch_id String [not null]
+  branch branches [not null]
+  created_by_id String [not null]
+  created_by profiles [not null]
+  visit_type VisitType [not null]
+  priority VisitPriority [not null]
+  status VisitStatus [not null, default: 'SCHEDULED']
+  scheduled_at DateTime [not null]
+  checked_in_at DateTime
+  started_at DateTime
+  completed_at DateTime
+  notes String
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+}
+
 Enum RegistrationStatus {
   PENDING
   ACTIVE
@@ -336,6 +452,49 @@ Enum VerificationPurpose {
   PASSWORD_RESET
 }
 
+Enum JourneyTemplateType {
+  PREGNANCY
+  GENERAL_GYN
+  SURGICAL
+  CHRONIC_CONDITION
+}
+
+Enum JourneyStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+Enum EpisodeStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+}
+
+Enum VisitType {
+  INITIAL
+  FOLLOW_UP
+  ROUTINE
+  EMERGENCY
+  PROCEDURE
+}
+
+Enum VisitPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+Enum VisitStatus {
+  SCHEDULED
+  CHECKED_IN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
 Ref: branches.organization_id > organizations.id [delete: Cascade]
 
 Ref: profiles.user_id > users.id [delete: Cascade]
@@ -379,3 +538,27 @@ Ref: working_schedules.branch_id > branches.id [delete: Cascade]
 Ref: working_days.schedule_id > working_schedules.id [delete: Cascade]
 
 Ref: working_shifts.day_id > working_days.id [delete: Cascade]
+
+Ref: journey_templates.specialty_id > specialties.id
+
+Ref: episode_templates.journey_template_id > journey_templates.id
+
+Ref: patient_journeys.patient_id > patients.id
+
+Ref: patient_journeys.organization_id > organizations.id
+
+Ref: patient_journeys.journey_template_id > journey_templates.id
+
+Ref: patient_journeys.created_by_id > profiles.id
+
+Ref: patient_episodes.journey_id > patient_journeys.id
+
+Ref: patient_episodes.episode_template_id > episode_templates.id
+
+Ref: visits.episode_id > patient_episodes.id
+
+Ref: visits.assigned_doctor_id > profiles.id
+
+Ref: visits.branch_id > branches.id
+
+Ref: visits.created_by_id > profiles.id

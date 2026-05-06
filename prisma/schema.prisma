@@ -60,6 +60,49 @@ enum VerificationPurpose {
   PASSWORD_RESET
 }
 
+enum JourneyTemplateType {
+  PREGNANCY
+  GENERAL_GYN
+  SURGICAL
+  CHRONIC_CONDITION
+}
+
+enum JourneyStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum EpisodeStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+}
+
+enum VisitType {
+  INITIAL
+  FOLLOW_UP
+  ROUTINE
+  EMERGENCY
+  PROCEDURE
+}
+
+enum VisitPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum VisitStatus {
+  SCHEDULED
+  CHECKED_IN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
 model SubscriptionPlan {
   id            String         @id @default(uuid()) @db.Uuid
   plan          String         @unique
@@ -85,7 +128,8 @@ model Organization {
   branches      Branch[]
   profiles      Profile[]
   invitations   Invitation[]
-  subscriptions Subscription[]
+  subscriptions   Subscription[]
+  patient_journeys PatientJourney[]
 
   @@index([status, is_deleted])
   @@map("organizations")
@@ -109,6 +153,7 @@ model Branch {
   profileBranches    ProfileBranch[]
   invitationBranches InvitationBranch[]
   workingSchedules   WorkingSchedule[]
+  visits             Visit[]
 
   @@unique([id, organization_id])
   @@index([organization_id, is_deleted])
@@ -168,6 +213,9 @@ model Profile {
   roles            ProfileRole[]
   branches         ProfileBranch[]
   workingSchedules WorkingSchedule[]
+  created_journeys PatientJourney[]
+  doctor_visits    Visit[]           @relation("DoctorVisits")
+  created_visits   Visit[]           @relation("CreatedVisits")
 
   @@unique([user_id, organization_id])
   @@index([organization_id, is_deleted])
@@ -372,4 +420,137 @@ model WorkingShift {
   day        WorkingDay @relation(fields: [day_id], references: [id], onDelete: Cascade)
 
   @@map("working_shifts")
+}
+
+model Specialty {
+  id          String            @id @default(uuid()) @db.Uuid
+  name        String            @unique
+  code        String            @unique
+  description String?
+  templates   JourneyTemplate[]
+  created_at  DateTime          @default(now())
+  updated_at  DateTime          @updatedAt
+
+  @@map("specialties")
+}
+
+model JourneyTemplate {
+  id           String              @id @default(uuid()) @db.Uuid
+  specialty_id String              @db.Uuid
+  specialty    Specialty           @relation(fields: [specialty_id], references: [id])
+  name         String              @unique
+  type         JourneyTemplateType
+  description  String?
+  episodes     EpisodeTemplate[]
+  journeys     PatientJourney[]
+  created_at   DateTime            @default(now())
+  updated_at   DateTime            @updatedAt
+
+  @@index([specialty_id])
+  @@map("journey_templates")
+}
+
+model EpisodeTemplate {
+  id                  String           @id @default(uuid()) @db.Uuid
+  journey_template_id String           @db.Uuid
+  journey_template    JourneyTemplate  @relation(fields: [journey_template_id], references: [id])
+  name                String
+  order               Int
+  episodes            PatientEpisode[]
+  created_at          DateTime         @default(now())
+  updated_at          DateTime         @updatedAt
+
+  @@index([journey_template_id])
+  @@map("episode_templates")
+}
+
+model Patient {
+  id            String           @id @default(uuid()) @db.Uuid
+  national_id   String           @unique
+  full_name     String
+  husband_name  String?
+  date_of_birth DateTime         @db.Date
+  phone_number  String
+  address       String
+  journeys      PatientJourney[]
+  created_at    DateTime         @default(now())
+  updated_at    DateTime         @updatedAt
+  is_deleted    Boolean          @default(false)
+  deleted_at    DateTime?
+
+  @@index([national_id])
+  @@map("patients")
+}
+
+model PatientJourney {
+  id                  String           @id @default(uuid()) @db.Uuid
+  patient_id          String           @db.Uuid
+  patient             Patient          @relation(fields: [patient_id], references: [id])
+  organization_id     String           @db.Uuid
+  organization        Organization     @relation(fields: [organization_id], references: [id])
+  journey_template_id String           @db.Uuid
+  journey_template    JourneyTemplate  @relation(fields: [journey_template_id], references: [id])
+  created_by_id       String           @db.Uuid
+  created_by          Profile          @relation(fields: [created_by_id], references: [id])
+  status              JourneyStatus    @default(ACTIVE)
+  started_at          DateTime         @default(now())
+  ended_at            DateTime?
+  episodes            PatientEpisode[]
+  created_at          DateTime         @default(now())
+  updated_at          DateTime         @updatedAt
+  is_deleted          Boolean          @default(false)
+  deleted_at          DateTime?
+
+  @@index([patient_id, organization_id, is_deleted])
+  @@index([organization_id, status, is_deleted])
+  @@map("patient_journeys")
+}
+
+model PatientEpisode {
+  id                  String          @id @default(uuid()) @db.Uuid
+  journey_id          String          @db.Uuid
+  journey             PatientJourney  @relation(fields: [journey_id], references: [id])
+  episode_template_id String          @db.Uuid
+  episode_template    EpisodeTemplate @relation(fields: [episode_template_id], references: [id])
+  name                String
+  order               Int
+  status              EpisodeStatus   @default(PENDING)
+  started_at          DateTime?
+  ended_at            DateTime?
+  visits              Visit[]
+  created_at          DateTime        @default(now())
+  updated_at          DateTime        @updatedAt
+  is_deleted          Boolean         @default(false)
+  deleted_at          DateTime?
+
+  @@index([journey_id, is_deleted])
+  @@map("patient_episodes")
+}
+
+model Visit {
+  id                 String         @id @default(uuid()) @db.Uuid
+  episode_id         String         @db.Uuid
+  episode            PatientEpisode @relation(fields: [episode_id], references: [id])
+  assigned_doctor_id String         @db.Uuid
+  assigned_doctor    Profile        @relation("DoctorVisits", fields: [assigned_doctor_id], references: [id])
+  branch_id          String         @db.Uuid
+  branch             Branch         @relation(fields: [branch_id], references: [id])
+  created_by_id      String         @db.Uuid
+  created_by         Profile        @relation("CreatedVisits", fields: [created_by_id], references: [id])
+  visit_type         VisitType
+  priority           VisitPriority
+  status             VisitStatus    @default(SCHEDULED)
+  scheduled_at       DateTime
+  checked_in_at      DateTime?
+  started_at         DateTime?
+  completed_at       DateTime?
+  notes              String?
+  created_at         DateTime       @default(now())
+  updated_at         DateTime       @updatedAt
+  is_deleted         Boolean        @default(false)
+  deleted_at         DateTime?
+
+  @@index([episode_id, is_deleted])
+  @@index([assigned_doctor_id, is_deleted])
+  @@map("visits")
 }
