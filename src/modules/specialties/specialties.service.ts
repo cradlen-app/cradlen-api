@@ -7,21 +7,28 @@ export class SpecialtiesService {
 
   findAll() {
     return this.prismaService.db.specialty.findMany({
+      where: { is_deleted: false },
       include: {
         templates: {
-          include: { episodes: { orderBy: { order: 'asc' } } },
+          where: { is_deleted: false },
+          include: {
+            episodes: {
+              where: { is_deleted: false },
+              orderBy: { order: 'asc' },
+            },
+          },
         },
       },
     });
   }
 
   async findJourneyTemplates(id: string) {
-    const specialty = await this.prismaService.db.specialty.findUnique({
-      where: { id },
+    const specialty = await this.prismaService.db.specialty.findFirst({
+      where: { id, is_deleted: false },
     });
     if (!specialty) throw new NotFoundException(`Specialty ${id} not found`);
     return this.prismaService.db.journeyTemplate.findMany({
-      where: { specialty_id: id },
+      where: { specialty_id: id, is_deleted: false },
       include: { episodes: { orderBy: { order: 'asc' } } },
     });
   }

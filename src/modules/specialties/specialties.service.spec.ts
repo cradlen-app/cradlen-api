@@ -22,7 +22,7 @@ const mockSpecialty = {
 describe('SpecialtiesService', () => {
   let service: SpecialtiesService;
   let db: {
-    specialty: { findMany: jest.Mock; findUnique: jest.Mock };
+    specialty: { findMany: jest.Mock; findFirst: jest.Mock };
     journeyTemplate: { findMany: jest.Mock };
   };
 
@@ -30,7 +30,7 @@ describe('SpecialtiesService', () => {
     db = {
       specialty: {
         findMany: jest.fn(),
-        findUnique: jest.fn(),
+        findFirst: jest.fn(),
       },
       journeyTemplate: { findMany: jest.fn() },
     };
@@ -49,9 +49,16 @@ describe('SpecialtiesService', () => {
       const result = await service.findAll();
       expect(result).toEqual([mockSpecialty]);
       expect(db.specialty.findMany).toHaveBeenCalledWith({
+        where: { is_deleted: false },
         include: {
           templates: {
-            include: { episodes: { orderBy: { order: 'asc' } } },
+            where: { is_deleted: false },
+            include: {
+              episodes: {
+                where: { is_deleted: false },
+                orderBy: { order: 'asc' },
+              },
+            },
           },
         },
       });
@@ -60,14 +67,14 @@ describe('SpecialtiesService', () => {
 
   describe('findJourneyTemplates', () => {
     it('returns journey templates for a specialty', async () => {
-      db.specialty.findUnique.mockResolvedValue(mockSpecialty);
+      db.specialty.findFirst.mockResolvedValue(mockSpecialty);
       db.journeyTemplate.findMany.mockResolvedValue(mockSpecialty.templates);
       const result = await service.findJourneyTemplates('spec-uuid');
       expect(result).toEqual(mockSpecialty.templates);
     });
 
     it('throws NotFoundException when specialty not found', async () => {
-      db.specialty.findUnique.mockResolvedValue(null);
+      db.specialty.findFirst.mockResolvedValue(null);
       await expect(service.findJourneyTemplates('bad-id')).rejects.toThrow(
         NotFoundException,
       );
