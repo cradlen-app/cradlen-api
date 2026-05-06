@@ -46,7 +46,8 @@ class ListVisitsQueryDto {
 
 class ListBranchVisitsQueryDto {
   @IsNotEmpty() @IsEnum(VisitStatus) status!: VisitStatus;
-  @IsOptional() @IsDateString() date?: string;
+  @IsOptional() @IsDateString() from?: string;
+  @IsOptional() @IsDateString() to?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number = 1;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit?: number =
     20;
@@ -113,7 +114,8 @@ export class VisitsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'List visits for a branch filtered by status' })
   @ApiQuery({ name: 'status', enum: VisitStatus, required: true })
-  @ApiQuery({ name: 'date', required: false, description: 'ISO date (e.g. 2026-05-06) to filter by scheduled_at' })
+  @ApiQuery({ name: 'from', required: false, description: 'ISO datetime with timezone offset (e.g. 2026-05-06T00:00:00+03:00)' })
+  @ApiQuery({ name: 'to', required: false, description: 'ISO datetime with timezone offset (e.g. 2026-05-06T23:59:59+03:00)' })
   @ApiPaginatedResponse(VisitDto)
   findAllForBranch(
     @Param('branchId', ParseUUIDPipe) branchId: string,
@@ -123,7 +125,7 @@ export class VisitsController {
     return this.visitsService.findAllForBranch(
       branchId,
       query.status,
-      { page: query.page, limit: query.limit, date: query.date },
+      { page: query.page, limit: query.limit, from: query.from, to: query.to },
       user,
     );
   }
