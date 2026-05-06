@@ -1,14 +1,19 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { AuthorizationService } from '../../common/authorization/authorization.service.js';
 import { AuthContext } from '../../common/interfaces/auth-context.interface';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
 import { ListPatientsQueryDto } from './dto/list-patients-query.dto';
+import { ListBranchPatientsQueryDto } from './dto/list-branch-patients-query.dto';
 import { paginated } from '../../common/utils/pagination.utils';
 
 @Injectable()
 export class PatientsService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly authorizationService: AuthorizationService,
+  ) {}
 
   async create(dto: CreatePatientDto) {
     return this.prismaService.db.patient.create({
@@ -92,6 +97,127 @@ export class PatientsService {
     });
 
     return paginated(shaped, { page, limit, total });
+  }
+
+  async findAllForBranch(
+    branchId: string,
+    query: ListBranchPatientsQueryDto,
+    user: AuthContext,
+  ) {
+    await this.authorizationService.assertCanAccessBranch(
+      user.profileId,
+      branchId,
+    );
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+
+    const journeyWhere = {
+      organization_id: user.organizationId,
+      is_deleted: false,
+      ...(query.journey_status && { status: query.journey_status }),
+      ...(query.journey_type && {
+        journey_template: { type: query.journey_type },
+      }),
+    };
+
+    const branchVisitFilter = {
+      some: {
+        is_deleted: false,
+        visits: { some: { branch_id: branchId, is_deleted: false } },
+      },
+    };
+
+    const where = {
+      is_deleted: false,
+      journeys: {
+        some: {
+          ...journeyWhere,
+          episodes: branchVisitFilter,
+        },
+      },
+      ...(query.search && {
+        OR: [
+          {
+            full_name: {
+              contains: query.search,
+              mode: 'insensitive' as const,
+            },
+          },
+          { national_id: { contains: query.search } },
+        ],
+      }),
+    };
+
+    const [patients, total] = await this.prismaService.db.$transaction([
+      this.prismaService.db.patient.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { created_at: 'desc' },
+        include: {
+          journeys: {
+            where: {
+              ...journeyWhere,
+              episodes: branchVisitFilter,
+            },
+            take: 1,
+            orderBy: { started_at: 'desc' },
+            include: {
+              journey_template: { select: { type: true } },
+            },
+          },
+        },
+      }),
+      this.prismaService.db.patient.count({ where }),
+    ]);
+
+    const patientIds = patients.map((p) => p.id);
+    const lastVisitMap = await this.getLastVisitDates(patientIds, branchId);
+
+    const shaped = patients.map(({ journeys, ...rest }) => {
+      const j = journeys[0] ?? null;
+      return {
+        ...rest,
+        journey: j
+          ? { id: j.id, type: j.journey_template.type, status: j.status }
+          : null,
+        last_visit_date: lastVisitMap.get(rest.id) ?? null,
+      };
+    });
+
+    return paginated(shaped, { page, limit, total });
+  }
+
+  private async getLastVisitDates(
+    patientIds: string[],
+    branchId: string,
+  ): Promise<Map<string, Date>> {
+    if (patientIds.length === 0) return new Map();
+
+    const visits = await this.prismaService.db.visit.findMany({
+      where: {
+        branch_id: branchId,
+        is_deleted: false,
+        status: 'COMPLETED',
+        episode: {
+          is_deleted: false,
+          journey: { patient_id: { in: patientIds }, is_deleted: false },
+        },
+      },
+      select: {
+        scheduled_at: true,
+        episode: { select: { journey: { select: { patient_id: true } } } },
+      },
+      orderBy: { scheduled_at: 'desc' },
+    });
+
+    const map = new Map<string, Date>();
+    for (const v of visits) {
+      const pid = v.episode.journey.patient_id;
+      if (!map.has(pid)) map.set(pid, v.scheduled_at);
+    }
+    return map;
   }
 
   async findOne(id: string) {

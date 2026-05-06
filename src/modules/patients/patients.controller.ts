@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -12,7 +13,8 @@ import { PatientsService } from './patients.service';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
 import { ListPatientsQueryDto } from './dto/list-patients-query.dto';
-import { PatientDto } from './dto/patient.dto';
+import { ListBranchPatientsQueryDto } from './dto/list-branch-patients-query.dto';
+import { PatientDto, BranchPatientDto } from './dto/patient.dto';
 import {
   ApiStandardResponse,
   ApiPaginatedResponse,
@@ -21,17 +23,17 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthContext } from '../../common/interfaces/auth-context.interface';
 
 @ApiTags('Patients')
-@Controller('patients')
+@Controller()
 export class PatientsController {
   constructor(private readonly patientsService: PatientsService) {}
 
-  @Post()
+  @Post('/patients')
   @ApiStandardResponse(PatientDto)
   create(@Body() dto: CreatePatientDto) {
     return this.patientsService.create(dto);
   }
 
-  @Get()
+  @Get('/patients')
   @ApiPaginatedResponse(PatientDto)
   findAll(
     @Query() query: ListPatientsQueryDto,
@@ -40,15 +42,28 @@ export class PatientsController {
     return this.patientsService.findAll(query, user);
   }
 
-  @Get(':id')
+  @Get('/patients/:id')
   @ApiStandardResponse(PatientDto)
-  findOne(@Param('id') id: string) {
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.patientsService.findOne(id);
   }
 
-  @Patch(':id')
+  @Patch('/patients/:id')
   @ApiStandardResponse(PatientDto)
-  update(@Param('id') id: string, @Body() dto: UpdatePatientDto) {
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdatePatientDto,
+  ) {
     return this.patientsService.update(id, dto);
+  }
+
+  @Get('/branches/:branchId/patients')
+  @ApiPaginatedResponse(BranchPatientDto)
+  findAllForBranch(
+    @Param('branchId', ParseUUIDPipe) branchId: string,
+    @Query() query: ListBranchPatientsQueryDto,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.patientsService.findAllForBranch(branchId, query, user);
   }
 }
