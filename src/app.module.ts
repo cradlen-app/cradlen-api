@@ -19,6 +19,11 @@ import { StaffModule } from './modules/staff/staff.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module.js';
 import { NotificationsModule } from './modules/notifications/notifications.module.js';
+import { SpecialtiesModule } from './modules/specialties/specialties.module';
+import { JourneyTemplatesModule } from './modules/journey-templates/journey-templates.module';
+import { PatientsModule } from './modules/patients/patients.module';
+import { JourneysModule } from './modules/journeys/journeys.module';
+import { VisitsModule } from './modules/visits/visits.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import type { AppConfig } from './config/app.config';
 
@@ -52,6 +57,11 @@ import type { AppConfig } from './config/app.config';
     StaffModule,
     SubscriptionsModule,
     NotificationsModule,
+    SpecialtiesModule,
+    JourneyTemplatesModule,
+    PatientsModule,
+    JourneysModule,
+    VisitsModule,
   ],
   controllers: [],
   providers: [

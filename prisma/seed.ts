@@ -44,6 +44,120 @@ async function main() {
     create: { plan: 'pro', max_organizations: 5, max_branches: 5, max_staff: 25 },
   });
 
+  // Specialty: GYN
+  const gynSpecialty = await prisma.specialty.upsert({
+    where: { code: 'GYN' },
+    update: {},
+    create: { name: 'Gynecology', code: 'GYN', description: 'Obstetrics and Gynecology' },
+  });
+
+  // Journey Templates
+  const pregnancyTemplate = await prisma.journeyTemplate.upsert({
+    where: { name: 'Pregnancy Journey' },
+    update: {},
+    create: {
+      specialty_id: gynSpecialty.id,
+      name: 'Pregnancy Journey',
+      type: 'PREGNANCY',
+      description: 'Full antenatal and postnatal pregnancy pathway',
+    },
+  });
+
+  const generalGynTemplate = await prisma.journeyTemplate.upsert({
+    where: { name: 'General GYN Journey' },
+    update: {},
+    create: {
+      specialty_id: gynSpecialty.id,
+      name: 'General GYN Journey',
+      type: 'GENERAL_GYN',
+      description: 'General gynecology consultations and follow-ups',
+    },
+  });
+
+  const surgicalTemplate = await prisma.journeyTemplate.upsert({
+    where: { name: 'Surgical Journey' },
+    update: {},
+    create: {
+      specialty_id: gynSpecialty.id,
+      name: 'Surgical Journey',
+      type: 'SURGICAL',
+      description: 'Pre-operative, surgical, and post-operative care',
+    },
+  });
+
+  const chronicTemplate = await prisma.journeyTemplate.upsert({
+    where: { name: 'Chronic Condition Journey' },
+    update: {},
+    create: {
+      specialty_id: gynSpecialty.id,
+      name: 'Chronic Condition Journey',
+      type: 'CHRONIC_CONDITION',
+      description: 'Long-term management of chronic gynecological conditions',
+    },
+  });
+
+  // Episode Templates — upsert by template + order pair
+  const pregnancyEpisodes = [
+    { name: 'First Trimester', order: 1 },
+    { name: 'Second Trimester', order: 2 },
+    { name: 'Third Trimester', order: 3 },
+    { name: 'Delivery', order: 4 },
+    { name: 'Postpartum', order: 5 },
+  ];
+  for (const ep of pregnancyEpisodes) {
+    const existing = await prisma.episodeTemplate.findFirst({
+      where: { journey_template_id: pregnancyTemplate.id, order: ep.order },
+    });
+    if (!existing) {
+      await prisma.episodeTemplate.create({
+        data: { journey_template_id: pregnancyTemplate.id, ...ep },
+      });
+    }
+  }
+
+  const generalGynEpisodes = [{ name: 'General Consultation', order: 1 }];
+  for (const ep of generalGynEpisodes) {
+    const existing = await prisma.episodeTemplate.findFirst({
+      where: { journey_template_id: generalGynTemplate.id, order: ep.order },
+    });
+    if (!existing) {
+      await prisma.episodeTemplate.create({
+        data: { journey_template_id: generalGynTemplate.id, ...ep },
+      });
+    }
+  }
+
+  const surgicalEpisodes = [
+    { name: 'Pre-operative', order: 1 },
+    { name: 'Surgery', order: 2 },
+    { name: 'Post-operative', order: 3 },
+  ];
+  for (const ep of surgicalEpisodes) {
+    const existing = await prisma.episodeTemplate.findFirst({
+      where: { journey_template_id: surgicalTemplate.id, order: ep.order },
+    });
+    if (!existing) {
+      await prisma.episodeTemplate.create({
+        data: { journey_template_id: surgicalTemplate.id, ...ep },
+      });
+    }
+  }
+
+  const chronicEpisodes = [
+    { name: 'Diagnosis & Stabilization', order: 1 },
+    { name: 'Ongoing Management', order: 2 },
+  ];
+  for (const ep of chronicEpisodes) {
+    const existing = await prisma.episodeTemplate.findFirst({
+      where: { journey_template_id: chronicTemplate.id, order: ep.order },
+    });
+    if (!existing) {
+      await prisma.episodeTemplate.create({
+        data: { journey_template_id: chronicTemplate.id, ...ep },
+      });
+    }
+  }
+
   console.log('Seed complete.');
 }
 
