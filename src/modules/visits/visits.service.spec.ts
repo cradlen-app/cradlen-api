@@ -49,8 +49,9 @@ describe('VisitsService', () => {
       update: jest.Mock;
       count: jest.Mock;
     };
+    $transaction: jest.Mock;
   };
-  let prismaMock: { db: typeof db; $transaction: jest.Mock };
+  let prismaMock: { db: typeof db };
 
   beforeEach(async () => {
     db = {
@@ -62,8 +63,9 @@ describe('VisitsService', () => {
         update: jest.fn(),
         count: jest.fn(),
       },
+      $transaction: jest.fn(),
     };
-    prismaMock = { db, $transaction: jest.fn() };
+    prismaMock = { db };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         VisitsService,
@@ -110,6 +112,29 @@ describe('VisitsService', () => {
           },
           mockUser,
         ),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('findAllForEpisode', () => {
+    it('returns paginated visits for an episode in the user org', async () => {
+      db.patientEpisode.findUnique.mockResolvedValue(mockEpisodeWithJourney);
+      db.$transaction.mockResolvedValue([[mockVisit], 1]);
+      const result = await service.findAllForEpisode('ep-uuid', mockUser, {
+        page: 1,
+        limit: 20,
+      });
+      expect(result.items).toHaveLength(1);
+      expect(result.meta.total).toBe(1);
+    });
+
+    it('throws NotFoundException when episode is in a different org', async () => {
+      db.patientEpisode.findUnique.mockResolvedValue({
+        ...mockEpisodeWithJourney,
+        journey: { organization_id: 'other-org' },
+      });
+      await expect(
+        service.findAllForEpisode('ep-uuid', mockUser, {}),
       ).rejects.toThrow(NotFoundException);
     });
   });
