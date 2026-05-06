@@ -48,11 +48,13 @@ export class StaffController {
     @CurrentUser() user: AuthContext,
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Query('branch_id') branchId?: string,
+    @Query('role') role?: string,
   ) {
     return this.staffService.listStaff(
       user.profileId,
       organizationId,
       branchId,
+      role,
     );
   }
 
