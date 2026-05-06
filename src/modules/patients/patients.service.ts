@@ -23,9 +23,12 @@ export class PatientsService {
     });
   }
 
-  async findAll(query: ListPatientsQueryDto) {
+  async findAll(query: ListPatientsQueryDto, user: AuthContext) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
+    const isClinicianRole =
+      user.roles.includes('DOCTOR') || user.roles.includes('OWNER');
+
     const where = {
       is_deleted: false,
       ...(query.search
@@ -43,53 +46,52 @@ export class PatientsService {
           }
         : {}),
     };
+
     const [patients, total] = await this.prismaService.db.$transaction([
       this.prismaService.db.patient.findMany({
         where,
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { created_at: 'desc' },
+        include: {
+          journeys: {
+            where: {
+              organization_id: user.organizationId,
+              status: 'ACTIVE',
+              is_deleted: false,
+            },
+            take: 1,
+            include: {
+              episodes: {
+                where: { is_deleted: false },
+                orderBy: { order: 'asc' },
+              },
+            },
+          },
+        },
       }),
       this.prismaService.db.patient.count({ where }),
     ]);
-    return paginated(patients, { page, limit, total });
-  }
 
-  async lookup(nationalId: string, user: AuthContext) {
-    const patient = await this.prismaService.db.patient.findUnique({
-      where: { national_id: nationalId, is_deleted: false },
-    });
-    if (!patient) throw new NotFoundException('Patient not found');
-
-    const isClinicianRole =
-      user.roles.includes('DOCTOR') || user.roles.includes('OWNER');
-
-    const activeJourney = await this.prismaService.db.patientJourney.findFirst({
-      where: {
-        patient_id: patient.id,
-        organization_id: user.organizationId,
-        status: 'ACTIVE',
-        is_deleted: false,
-      },
+    const shaped = patients.map((patient) => {
+      const { journeys, ...rest } = patient;
+      const activeJourney = journeys[0] ?? null;
+      if (isClinicianRole) {
+        return { ...rest, active_journey: activeJourney };
+      }
+      return {
+        ...rest,
+        active_episodes: activeJourney
+          ? activeJourney.episodes.map((e) => ({
+              id: e.id,
+              name: e.name,
+              order: e.order,
+            }))
+          : [],
+      };
     });
 
-    if (isClinicianRole && activeJourney) {
-      const episodes = await this.prismaService.db.patientEpisode.findMany({
-        where: { journey_id: activeJourney.id, is_deleted: false },
-        orderBy: { order: 'asc' },
-      });
-      return { ...patient, active_journey: { ...activeJourney, episodes } };
-    }
-
-    const activeEpisodes = activeJourney
-      ? await this.prismaService.db.patientEpisode.findMany({
-          where: { journey_id: activeJourney.id, is_deleted: false },
-          select: { id: true, name: true, order: true },
-          orderBy: { order: 'asc' },
-        })
-      : [];
-
-    return { ...patient, active_episodes: activeEpisodes };
+    return paginated(shaped, { page, limit, total });
   }
 
   async findOne(id: string) {
