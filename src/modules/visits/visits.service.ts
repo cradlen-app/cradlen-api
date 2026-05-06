@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -228,6 +229,64 @@ export class VisitsService {
       }),
       this.prismaService.db.visit.count({ where }),
     ]);
+    return paginated(visits, { page, limit, total });
+  }
+
+  async findAllForBranch(
+    branchId: string,
+    status: VisitStatus,
+    query: { page?: number; limit?: number },
+    user: AuthContext,
+  ) {
+    const branch = await this.prismaService.db.branch.findFirst({
+      where: {
+        id: branchId,
+        organization_id: user.organizationId,
+        is_deleted: false,
+      },
+      select: { id: true },
+    });
+    if (!branch) throw new NotFoundException(`Branch ${branchId} not found`);
+
+    const isOwner = user.roles.includes('OWNER');
+    const isInBranch = user.branchIds.includes(branchId);
+    if (!isOwner && !isInBranch) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const where = { branch_id: branchId, status, is_deleted: false };
+
+    const [visits, total] = await this.prismaService.db.$transaction([
+      this.prismaService.db.visit.findMany({
+        where,
+        orderBy: { scheduled_at: 'asc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          assigned_doctor: {
+            select: {
+              id: true,
+              specialty: true,
+              user: { select: { id: true, first_name: true, last_name: true } },
+            },
+          },
+          episode: {
+            select: {
+              id: true,
+              journey: {
+                select: {
+                  patient: { select: { id: true, full_name: true } },
+                },
+              },
+            },
+          },
+        },
+      }),
+      this.prismaService.db.visit.count({ where }),
+    ]);
+
     return paginated(visits, { page, limit, total });
   }
 

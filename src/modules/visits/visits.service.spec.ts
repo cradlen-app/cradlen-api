@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { VisitsService } from './visits.service';
@@ -101,6 +102,7 @@ describe('VisitsService', () => {
       update: jest.Mock;
       count: jest.Mock;
     };
+    branch: { findFirst: jest.Mock };
     $transaction: jest.Mock;
   };
   let prismaMock: { db: typeof db };
@@ -122,6 +124,7 @@ describe('VisitsService', () => {
         update: jest.fn(),
         count: jest.fn(),
       },
+      branch: { findFirst: jest.fn() },
       $transaction: jest.fn(),
     };
     prismaMock = { db };
@@ -534,6 +537,114 @@ describe('VisitsService', () => {
         'doctor-uuid',
         expect.any(Object),
       );
+    });
+  });
+
+  describe('findAllForBranch', () => {
+    const ownerUser: AuthContext = {
+      userId: 'user-uuid',
+      profileId: 'profile-uuid',
+      organizationId: 'org-uuid',
+      activeBranchId: 'branch-uuid',
+      roles: ['OWNER'],
+      branchIds: ['branch-uuid'],
+    };
+
+    const doctorUser: AuthContext = {
+      userId: 'user-uuid-2',
+      profileId: 'profile-uuid-2',
+      organizationId: 'org-uuid',
+      activeBranchId: 'branch-uuid',
+      roles: ['DOCTOR'],
+      branchIds: ['branch-uuid'],
+    };
+
+    const outsiderUser: AuthContext = {
+      userId: 'user-uuid-3',
+      profileId: 'profile-uuid-3',
+      organizationId: 'org-uuid',
+      activeBranchId: 'other-branch',
+      roles: ['DOCTOR'],
+      branchIds: ['other-branch'],
+    };
+
+    const mockBranch = { id: 'branch-uuid' };
+
+    const mockVisitRow = {
+      id: 'visit-uuid',
+      visit_type: 'VISIT',
+      priority: 'NORMAL',
+      status: 'SCHEDULED',
+      scheduled_at: new Date(),
+      notes: null,
+      assigned_doctor: {
+        id: 'doctor-uuid',
+        specialty: 'Gynecology',
+        user: { id: 'user-uuid', first_name: 'Ahmed', last_name: 'Ali' },
+      },
+      episode: {
+        id: 'ep-uuid',
+        journey: {
+          patient: { id: 'patient-uuid', full_name: 'Fatima Hassan' },
+        },
+      },
+    };
+
+    it('returns paginated visits for OWNER', async () => {
+      db.branch.findFirst.mockResolvedValue(mockBranch);
+      db.$transaction.mockResolvedValue([[mockVisitRow], 1]);
+      const result = await service.findAllForBranch(
+        'branch-uuid',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        'SCHEDULED' as any,
+        { page: 1, limit: 20 },
+        ownerUser,
+      );
+      expect(result.items).toHaveLength(1);
+      expect(result.meta.total).toBe(1);
+      expect(result.items[0].assigned_doctor.user.first_name).toBe('Ahmed');
+      expect(result.items[0].episode.journey.patient.full_name).toBe(
+        'Fatima Hassan',
+      );
+    });
+
+    it('returns paginated visits for DOCTOR in branch', async () => {
+      db.branch.findFirst.mockResolvedValue(mockBranch);
+      db.$transaction.mockResolvedValue([[mockVisitRow], 1]);
+      const result = await service.findAllForBranch(
+        'branch-uuid',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        'SCHEDULED' as any,
+        {},
+        doctorUser,
+      );
+      expect(result.items).toHaveLength(1);
+    });
+
+    it('throws ForbiddenException when caller is not in branch and not OWNER', async () => {
+      db.branch.findFirst.mockResolvedValue(mockBranch);
+      await expect(
+        service.findAllForBranch(
+          'branch-uuid',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          'SCHEDULED' as any,
+          {},
+          outsiderUser,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('throws NotFoundException when branch does not belong to org', async () => {
+      db.branch.findFirst.mockResolvedValue(null);
+      await expect(
+        service.findAllForBranch(
+          'branch-uuid',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          'SCHEDULED' as any,
+          {},
+          ownerUser,
+        ),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 });
