@@ -129,6 +129,13 @@ export class StaffService {
       organizationId,
     );
 
+    const VALID_ROLES = ['OWNER', 'DOCTOR'];
+    if (role !== undefined && !VALID_ROLES.includes(role.toUpperCase())) {
+      throw new BadRequestException(
+        `Invalid role: ${role}. Valid values: ${VALID_ROLES.join(', ')}`,
+      );
+    }
+
     const where: Prisma.ProfileWhereInput = {
       organization_id: organizationId,
       is_deleted: false,
