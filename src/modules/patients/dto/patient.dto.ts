@@ -1,3 +1,5 @@
+import { JourneyStatus, JourneyTemplateType } from '@prisma/client';
+
 export class PatientDto {
   id!: string;
   national_id!: string;
@@ -21,8 +23,8 @@ export class PatientLookupDto extends PatientDto {
 
 export class ActiveJourneyDto {
   id!: string;
-  type!: string;
-  status!: string;
+  type!: JourneyTemplateType;
+  status!: JourneyStatus;
 }
 
 export class BranchPatientDto extends PatientDto {
