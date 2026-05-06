@@ -80,18 +80,14 @@ enum EpisodeStatus {
 }
 
 enum VisitType {
-  INITIAL
+  VISIT
   FOLLOW_UP
-  ROUTINE
-  EMERGENCY
-  PROCEDURE
+  MEDICAL_REP
 }
 
 enum VisitPriority {
-  LOW
   NORMAL
-  HIGH
-  URGENT
+  EMERGENCY
 }
 
 enum VisitStatus {
