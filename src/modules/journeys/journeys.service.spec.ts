@@ -45,6 +45,7 @@ describe('JourneysService', () => {
       findFirst: jest.Mock;
       findUnique: jest.Mock;
       findMany: jest.Mock;
+      count: jest.Mock;
       create: jest.Mock;
       update: jest.Mock;
     };
@@ -66,6 +67,7 @@ describe('JourneysService', () => {
         findFirst: jest.fn(),
         findUnique: jest.fn(),
         findMany: jest.fn(),
+        count: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
       },
@@ -153,6 +155,19 @@ describe('JourneysService', () => {
       await expect(service.findOne('journey-uuid', mockUser)).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('findAllForPatient', () => {
+    it('returns paginated journeys', async () => {
+      db.$transaction.mockResolvedValue([[mockJourney], 1]);
+      const result = await service.findAllForPatient('patient-uuid', mockUser, {
+        page: 1,
+        limit: 20,
+      });
+      expect(db.$transaction).toHaveBeenCalledTimes(1);
+      expect(result).toHaveProperty('items');
+      expect(result).toHaveProperty('meta');
     });
   });
 
