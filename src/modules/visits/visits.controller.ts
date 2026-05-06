@@ -8,7 +8,12 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import {
   IsEnum,
   IsInt,
@@ -103,6 +108,9 @@ export class VisitsController {
   }
 
   @Get('branches/:branchId/visits')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'List visits for a branch filtered by status' })
+  @ApiQuery({ name: 'status', enum: VisitStatus, required: true })
   @ApiPaginatedResponse(VisitDto)
   findAllForBranch(
     @Param('branchId', ParseUUIDPipe) branchId: string,
