@@ -98,6 +98,7 @@ describe('VisitsService', () => {
     visit: {
       create: jest.Mock;
       findMany: jest.Mock;
+      findFirst: jest.Mock;
       findUnique: jest.Mock;
       update: jest.Mock;
       count: jest.Mock;
@@ -120,6 +121,7 @@ describe('VisitsService', () => {
       visit: {
         create: jest.fn(),
         findMany: jest.fn(),
+        findFirst: jest.fn(),
         findUnique: jest.fn(),
         update: jest.fn(),
         count: jest.fn(),
@@ -220,6 +222,13 @@ describe('VisitsService', () => {
   });
 
   describe('updateStatus', () => {
+    beforeEach(() => {
+      db.$transaction.mockImplementation(
+        async (cb: (tx: typeof db) => Promise<unknown>) => cb(db),
+      );
+      db.visit.findFirst.mockResolvedValue(null);
+    });
+
     it('throws BadRequestException on invalid status transition', async () => {
       db.visit.findUnique.mockResolvedValue({
         ...mockVisit,
@@ -235,7 +244,7 @@ describe('VisitsService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('sets checked_in_at when transitioning to CHECKED_IN', async () => {
+    it('sets checked_in_at and queue_number when transitioning to CHECKED_IN', async () => {
       db.visit.findUnique.mockResolvedValue({
         ...mockVisit,
         status: 'SCHEDULED',
@@ -244,6 +253,7 @@ describe('VisitsService', () => {
         ...mockVisit,
         status: 'CHECKED_IN',
         checked_in_at: new Date(),
+        queue_number: 1,
         assigned_doctor_id: 'doctor-uuid',
       });
 
@@ -258,10 +268,12 @@ describe('VisitsService', () => {
           data: expect.objectContaining({
             status: 'CHECKED_IN',
             checked_in_at: expect.any(Date),
+            queue_number: 1,
           }),
         }),
       );
       expect(result.status).toBe('CHECKED_IN');
+      expect(result.queue_number).toBe(1);
     });
 
     it('sets started_at when transitioning to IN_PROGRESS', async () => {
