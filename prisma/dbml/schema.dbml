@@ -299,6 +299,8 @@ Table specialties {
   templates journey_templates [not null]
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
 }
 
 Table journey_templates {
@@ -312,6 +314,8 @@ Table journey_templates {
   journeys patient_journeys [not null]
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
 }
 
 Table episode_templates {
@@ -323,6 +327,8 @@ Table episode_templates {
   episodes patient_episodes [not null]
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
 }
 
 Table patients {
@@ -539,26 +545,26 @@ Ref: working_days.schedule_id > working_schedules.id [delete: Cascade]
 
 Ref: working_shifts.day_id > working_days.id [delete: Cascade]
 
-Ref: journey_templates.specialty_id > specialties.id
+Ref: journey_templates.specialty_id > specialties.id [delete: Cascade]
 
-Ref: episode_templates.journey_template_id > journey_templates.id
+Ref: episode_templates.journey_template_id > journey_templates.id [delete: Cascade]
 
-Ref: patient_journeys.patient_id > patients.id
+Ref: patient_journeys.patient_id > patients.id [delete: Cascade]
 
-Ref: patient_journeys.organization_id > organizations.id
+Ref: patient_journeys.organization_id > organizations.id [delete: Cascade]
 
-Ref: patient_journeys.journey_template_id > journey_templates.id
+Ref: patient_journeys.journey_template_id > journey_templates.id [delete: Cascade]
 
-Ref: patient_journeys.created_by_id > profiles.id
+Ref: patient_journeys.created_by_id > profiles.id [delete: Cascade]
 
-Ref: patient_episodes.journey_id > patient_journeys.id
+Ref: patient_episodes.journey_id > patient_journeys.id [delete: Cascade]
 
-Ref: patient_episodes.episode_template_id > episode_templates.id
+Ref: patient_episodes.episode_template_id > episode_templates.id [delete: Cascade]
 
-Ref: visits.episode_id > patient_episodes.id
+Ref: visits.episode_id > patient_episodes.id [delete: Cascade]
 
-Ref: visits.assigned_doctor_id > profiles.id
+Ref: visits.assigned_doctor_id > profiles.id [delete: Cascade]
 
-Ref: visits.branch_id > branches.id
+Ref: visits.branch_id > branches.id [delete: Cascade]
 
-Ref: visits.created_by_id > profiles.id
+Ref: visits.created_by_id > profiles.id [delete: Cascade]
