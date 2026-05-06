@@ -36,6 +36,7 @@ describe('PatientsService', () => {
       create: jest.Mock;
       update: jest.Mock;
     };
+    visit: { findMany: jest.Mock };
     $transaction: jest.Mock;
   };
   let authMock: { assertCanAccessBranch: jest.Mock };
@@ -49,6 +50,7 @@ describe('PatientsService', () => {
         create: jest.fn(),
         update: jest.fn(),
       },
+      visit: { findMany: jest.fn().mockResolvedValue([]) },
       $transaction: jest.fn(),
     };
     authMock = { assertCanAccessBranch: jest.fn() };
@@ -147,7 +149,9 @@ describe('PatientsService', () => {
 
     it('throws NotFoundException when not found', async () => {
       db.patient.findUnique.mockResolvedValue(null);
-      await expect(service.findOne('bad-id')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('bad-id')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -173,7 +177,11 @@ describe('PatientsService', () => {
     it('returns paginated patients with journey when found', async () => {
       authMock.assertCanAccessBranch.mockResolvedValue(undefined);
       db.$transaction.mockResolvedValue([[patientWithJourney], 1]);
-      const result = await service.findAllForBranch('branch-uuid', {}, mockUser);
+      const result = await service.findAllForBranch(
+        'branch-uuid',
+        {},
+        mockUser,
+      );
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const first = (result as any).items[0];
       expect(first.journey).toEqual({
@@ -186,7 +194,11 @@ describe('PatientsService', () => {
     it('returns journey: null when patient has no matching journey', async () => {
       authMock.assertCanAccessBranch.mockResolvedValue(undefined);
       db.$transaction.mockResolvedValue([[patientNoJourney], 1]);
-      const result = await service.findAllForBranch('branch-uuid', {}, mockUser);
+      const result = await service.findAllForBranch(
+        'branch-uuid',
+        {},
+        mockUser,
+      );
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       expect((result as any).items[0].journey).toBeNull();
     });
@@ -199,6 +211,30 @@ describe('PatientsService', () => {
         'profile-uuid',
         'branch-uuid',
       );
+    });
+
+    it('returns last_visit_date from most recent completed visit', async () => {
+      authMock.assertCanAccessBranch.mockResolvedValue(undefined);
+      db.$transaction.mockResolvedValue([[patientWithJourney], 1]);
+      const lastDate = new Date('2026-04-01');
+      db.visit.findMany.mockResolvedValue([
+        {
+          scheduled_at: lastDate,
+          episode: { journey: { patient_id: 'patient-uuid' } },
+        },
+      ]);
+      const result = await service.findAllForBranch('branch-uuid', {}, mockUser);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((result as any).items[0].last_visit_date).toEqual(lastDate);
+    });
+
+    it('returns last_visit_date: null when no completed visits exist', async () => {
+      authMock.assertCanAccessBranch.mockResolvedValue(undefined);
+      db.$transaction.mockResolvedValue([[patientWithJourney], 1]);
+      db.visit.findMany.mockResolvedValue([]);
+      const result = await service.findAllForBranch('branch-uuid', {}, mockUser);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((result as any).items[0].last_visit_date).toBeNull();
     });
   });
 });

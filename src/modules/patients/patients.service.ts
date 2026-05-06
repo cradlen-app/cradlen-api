@@ -172,6 +172,9 @@ export class PatientsService {
       this.prismaService.db.patient.count({ where }),
     ]);
 
+    const patientIds = patients.map((p) => p.id);
+    const lastVisitMap = await this.getLastVisitDates(patientIds, branchId);
+
     const shaped = patients.map(({ journeys, ...rest }) => {
       const j = journeys[0] ?? null;
       return {
@@ -179,10 +182,42 @@ export class PatientsService {
         journey: j
           ? { id: j.id, type: j.journey_template.type, status: j.status }
           : null,
+        last_visit_date: lastVisitMap.get(rest.id) ?? null,
       };
     });
 
     return paginated(shaped, { page, limit, total });
+  }
+
+  private async getLastVisitDates(
+    patientIds: string[],
+    branchId: string,
+  ): Promise<Map<string, Date>> {
+    if (patientIds.length === 0) return new Map();
+
+    const visits = await this.prismaService.db.visit.findMany({
+      where: {
+        branch_id: branchId,
+        is_deleted: false,
+        status: 'COMPLETED',
+        episode: {
+          is_deleted: false,
+          journey: { patient_id: { in: patientIds }, is_deleted: false },
+        },
+      },
+      select: {
+        scheduled_at: true,
+        episode: { select: { journey: { select: { patient_id: true } } } },
+      },
+      orderBy: { scheduled_at: 'desc' },
+    });
+
+    const map = new Map<string, Date>();
+    for (const v of visits) {
+      const pid = v.episode.journey.patient_id;
+      if (!map.has(pid)) map.set(pid, v.scheduled_at);
+    }
+    return map;
   }
 
   async findOne(id: string) {
