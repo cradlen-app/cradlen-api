@@ -402,6 +402,7 @@ Table visits {
   started_at DateTime
   completed_at DateTime
   notes String
+  queue_number Int
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   is_deleted Boolean [not null, default: false]
