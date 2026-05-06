@@ -285,12 +285,13 @@ export class VisitsService {
       branch_id: branchId,
       status,
       is_deleted: false,
-      ...(query.from && query.to && {
-        scheduled_at: {
-          gte: new Date(query.from),
-          lte: new Date(query.to),
-        },
-      }),
+      ...(query.from &&
+        query.to && {
+          scheduled_at: {
+            gte: new Date(query.from),
+            lte: new Date(query.to),
+          },
+        }),
     };
 
     const orderBy =
@@ -384,26 +385,28 @@ export class VisitsService {
     const timestampField = STATUS_TIMESTAMPS[dto.status];
     const now = new Date();
 
-    const updatedVisit = await this.prismaService.db.$transaction(async (tx) => {
-      const queueNumber =
-        dto.status === 'CHECKED_IN'
-          ? await this.getNextQueueNumber(
-              tx,
-              visit.assigned_doctor_id,
-              visit.branch_id,
-              now,
-            )
-          : undefined;
+    const updatedVisit = await this.prismaService.db.$transaction(
+      async (tx) => {
+        const queueNumber =
+          dto.status === 'CHECKED_IN'
+            ? await this.getNextQueueNumber(
+                tx,
+                visit.assigned_doctor_id,
+                visit.branch_id,
+                now,
+              )
+            : undefined;
 
-      return tx.visit.update({
-        where: { id },
-        data: {
-          status: dto.status,
-          ...(timestampField ? { [timestampField]: now } : {}),
-          ...(queueNumber !== undefined ? { queue_number: queueNumber } : {}),
-        },
-      });
-    });
+        return tx.visit.update({
+          where: { id },
+          data: {
+            status: dto.status,
+            ...(timestampField ? { [timestampField]: now } : {}),
+            ...(queueNumber !== undefined ? { queue_number: queueNumber } : {}),
+          },
+        });
+      },
+    );
 
     this.visitsGateway.emitVisitStatusUpdated(
       updatedVisit.assigned_doctor_id,
