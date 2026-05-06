@@ -352,7 +352,7 @@ describe('VisitsService', () => {
       address: '123 Main St',
       assigned_doctor_id: 'doctor-uuid',
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      visit_type: 'INITIAL' as any,
+      visit_type: 'VISIT' as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       priority: 'NORMAL' as any,
       scheduled_at: new Date().toISOString(),
@@ -370,7 +370,7 @@ describe('VisitsService', () => {
           {
             assigned_doctor_id: 'doc',
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            visit_type: 'INITIAL' as any,
+            visit_type: 'VISIT' as any,
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             priority: 'NORMAL' as any,
             scheduled_at: new Date().toISOString(),
