@@ -1,16 +1,16 @@
 export class VisitDto {
-  id: string;
-  episode_id: string;
-  assigned_doctor_id: string;
-  branch_id: string;
-  visit_type: string;
-  priority: string;
-  status: string;
-  scheduled_at: Date;
-  checked_in_at: Date | null;
-  started_at: Date | null;
-  completed_at: Date | null;
-  notes: string | null;
-  created_by_id: string;
-  created_at: Date;
+  id!: string;
+  episode_id!: string;
+  assigned_doctor_id!: string;
+  branch_id!: string;
+  visit_type!: string;
+  priority!: string;
+  status!: string;
+  scheduled_at!: Date;
+  checked_in_at!: Date | null;
+  started_at!: Date | null;
+  completed_at!: Date | null;
+  notes!: string | null;
+  created_by_id!: string;
+  created_at!: Date;
 }
