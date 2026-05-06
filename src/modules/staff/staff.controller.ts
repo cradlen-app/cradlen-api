@@ -51,7 +51,7 @@ export class StaffController {
   @ApiQuery({
     name: 'role',
     required: false,
-    enum: ['OWNER', 'DOCTOR'],
+    enum: ['OWNER', 'DOCTOR', 'RECEPTIONIST'],
     description: 'Filter staff by role name',
   })
   @ApiStandardResponse(Object)
