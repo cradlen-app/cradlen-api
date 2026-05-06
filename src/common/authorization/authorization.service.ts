@@ -4,6 +4,7 @@ import { PrismaService } from '../../database/prisma.service.js';
 const ORGANIZATION_MANAGER_ROLES = ['OWNER'];
 const BRANCH_MANAGER_ROLES = ['OWNER'];
 const STAFF_MANAGER_ROLES = ['OWNER'];
+const STAFF_VIEWER_ROLES = ['OWNER', 'DOCTOR', 'RECEPTIONIST'];
 
 @Injectable()
 export class AuthorizationService {
@@ -123,6 +124,22 @@ export class AuthorizationService {
   ): Promise<void> {
     if (!(await this.canManageStaff(profileId, organizationId))) {
       throw new ForbiddenException('Staff management access denied');
+    }
+  }
+
+  async canViewStaff(
+    profileId: string,
+    organizationId: string,
+  ): Promise<boolean> {
+    return this.hasAnyRole(profileId, organizationId, STAFF_VIEWER_ROLES);
+  }
+
+  async assertCanViewStaff(
+    profileId: string,
+    organizationId: string,
+  ): Promise<void> {
+    if (!(await this.canViewStaff(profileId, organizationId))) {
+      throw new ForbiddenException('Staff view access denied');
     }
   }
 

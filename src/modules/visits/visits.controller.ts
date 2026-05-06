@@ -3,13 +3,27 @@ import {
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
-import { IsInt, IsOptional, Max, Min } from 'class-validator';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
+import {
+  IsEnum,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  Max,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
+import { VisitStatus } from '@prisma/client';
 import { VisitsService } from './visits.service';
 import { BookVisitDto } from './dto/book-visit.dto';
 import { CreateVisitDto } from './dto/create-visit.dto';
@@ -24,6 +38,13 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthContext } from '../../common/interfaces/auth-context.interface';
 
 class ListVisitsQueryDto {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number = 1;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit?: number =
+    20;
+}
+
+class ListBranchVisitsQueryDto {
+  @IsNotEmpty() @IsEnum(VisitStatus) status!: VisitStatus;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number = 1;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit?: number =
     20;
@@ -84,5 +105,23 @@ export class VisitsController {
     @CurrentUser() user: AuthContext,
   ) {
     return this.visitsService.updateStatus(id, dto, user);
+  }
+
+  @Get('branches/:branchId/visits')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'List visits for a branch filtered by status' })
+  @ApiQuery({ name: 'status', enum: VisitStatus, required: true })
+  @ApiPaginatedResponse(VisitDto)
+  findAllForBranch(
+    @Param('branchId', ParseUUIDPipe) branchId: string,
+    @Query() query: ListBranchVisitsQueryDto,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.visitsService.findAllForBranch(
+      branchId,
+      query.status,
+      { page: query.page, limit: query.limit },
+      user,
+    );
   }
 }
