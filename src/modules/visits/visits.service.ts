@@ -260,7 +260,7 @@ export class VisitsService {
   async findAllForBranch(
     branchId: string,
     status: VisitStatus,
-    query: { page?: number; limit?: number; date?: string },
+    query: { page?: number; limit?: number; from?: string; to?: string },
     user: AuthContext,
   ) {
     const branch = await this.prismaService.db.branch.findFirst({
@@ -285,10 +285,10 @@ export class VisitsService {
       branch_id: branchId,
       status,
       is_deleted: false,
-      ...(query.date && {
+      ...(query.from && query.to && {
         scheduled_at: {
-          gte: new Date(`${query.date}T00:00:00.000Z`),
-          lte: new Date(`${query.date}T23:59:59.999Z`),
+          gte: new Date(query.from),
+          lte: new Date(query.to),
         },
       }),
     };
