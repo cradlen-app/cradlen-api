@@ -9,6 +9,7 @@ import { AuthContext } from '../../common/interfaces/auth-context.interface';
 import { CreateJourneyDto } from './dto/create-journey.dto';
 import { UpdateJourneyStatusDto } from './dto/update-journey-status.dto';
 import { UpdateEpisodeStatusDto } from './dto/update-episode-status.dto';
+import { paginated } from '../../common/utils/pagination.utils';
 
 @Injectable()
 export class JourneysService {
@@ -38,8 +39,10 @@ export class JourneysService {
     }
 
     const template = await this.prismaService.db.journeyTemplate.findUnique({
-      where: { id: dto.journey_template_id },
-      include: { episodes: { orderBy: { order: 'asc' } } },
+      where: { id: dto.journey_template_id, is_deleted: false },
+      include: {
+        episodes: { where: { is_deleted: false }, orderBy: { order: 'asc' } },
+      },
     });
     if (!template)
       throw new NotFoundException(
@@ -78,18 +81,31 @@ export class JourneysService {
     });
   }
 
-  findAllForPatient(patientId: string, user: AuthContext) {
-    return this.prismaService.db.patientJourney.findMany({
-      where: {
-        patient_id: patientId,
-        organization_id: user.organizationId,
-        is_deleted: false,
-      },
-      include: {
-        episodes: { where: { is_deleted: false }, orderBy: { order: 'asc' } },
-      },
-      orderBy: { created_at: 'desc' },
-    });
+  async findAllForPatient(
+    patientId: string,
+    user: AuthContext,
+    query: { page?: number; limit?: number },
+  ) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const where = {
+      patient_id: patientId,
+      organization_id: user.organizationId,
+      is_deleted: false,
+    };
+    const [journeys, total] = await this.prismaService.db.$transaction([
+      this.prismaService.db.patientJourney.findMany({
+        where,
+        include: {
+          episodes: { where: { is_deleted: false }, orderBy: { order: 'asc' } },
+        },
+        orderBy: { created_at: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prismaService.db.patientJourney.count({ where }),
+    ]);
+    return paginated(journeys, { page, limit, total });
   }
 
   async findOne(id: string, user: AuthContext) {
@@ -114,6 +130,9 @@ export class JourneysService {
     return this.prismaService.db.patientJourney.update({
       where: { id },
       data: { status: dto.status, ended_at: new Date() },
+      include: {
+        episodes: { where: { is_deleted: false }, orderBy: { order: 'asc' } },
+      },
     });
   }
 
@@ -153,7 +172,7 @@ export class JourneysService {
       }
     }
 
-    return this.prismaService.db.patientEpisode.update({
+    await this.prismaService.db.patientEpisode.update({
       where: { id: episodeId },
       data: {
         status: dto.status,
@@ -161,5 +180,7 @@ export class JourneysService {
         ended_at: dto.status === 'COMPLETED' ? new Date() : undefined,
       },
     });
+
+    return this.findOne(journeyId, user);
   }
 }

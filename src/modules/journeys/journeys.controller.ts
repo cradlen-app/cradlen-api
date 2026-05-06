@@ -1,9 +1,18 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { JourneysService } from './journeys.service';
 import { CreateJourneyDto } from './dto/create-journey.dto';
 import { UpdateJourneyStatusDto } from './dto/update-journey-status.dto';
 import { UpdateEpisodeStatusDto } from './dto/update-episode-status.dto';
+import { ListJourneysQueryDto } from './dto/list-journeys-query.dto';
 import { JourneyDto } from './dto/journey.dto';
 import {
   ApiStandardResponse,
@@ -31,9 +40,10 @@ export class JourneysController {
   @ApiPaginatedResponse(JourneyDto)
   findAllForPatient(
     @Param('patientId') patientId: string,
+    @Query() query: ListJourneysQueryDto,
     @CurrentUser() user: AuthContext,
   ) {
-    return this.journeysService.findAllForPatient(patientId, user);
+    return this.journeysService.findAllForPatient(patientId, user, query);
   }
 
   @Get('journeys/:id')
