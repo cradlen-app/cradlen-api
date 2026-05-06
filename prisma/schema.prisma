@@ -546,6 +546,7 @@ model Visit {
   started_at         DateTime?
   completed_at       DateTime?
   notes              String?
+  queue_number       Int?
   created_at         DateTime       @default(now())
   updated_at         DateTime       @updatedAt
   is_deleted         Boolean        @default(false)
@@ -554,5 +555,6 @@ model Visit {
   @@index([episode_id, is_deleted])
   @@index([assigned_doctor_id, is_deleted])
   @@index([branch_id, status, is_deleted])
+  @@index([assigned_doctor_id, branch_id, checked_in_at, is_deleted])
   @@map("visits")
 }
