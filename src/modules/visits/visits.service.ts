@@ -11,6 +11,8 @@ import { UpdateVisitDto } from './dto/update-visit.dto';
 import { UpdateVisitStatusDto } from './dto/update-visit-status.dto';
 import { paginated } from '../../common/utils/pagination.utils';
 
+const TERMINAL_STATES: VisitStatus[] = ['COMPLETED', 'CANCELLED', 'NO_SHOW'];
+
 const VALID_TRANSITIONS: Record<VisitStatus, VisitStatus[]> = {
   SCHEDULED: ['CHECKED_IN', 'CANCELLED', 'NO_SHOW'],
   CHECKED_IN: ['IN_PROGRESS', 'CANCELLED', 'NO_SHOW'],
@@ -35,7 +37,11 @@ export class VisitsService {
       where: { id: episodeId, is_deleted: false },
       include: { journey: { select: { organization_id: true } } },
     });
-    if (!episode || episode.journey.organization_id !== organizationId) {
+    if (
+      !episode ||
+      !episode.journey ||
+      episode.journey.organization_id !== organizationId
+    ) {
       throw new NotFoundException(`Episode ${episodeId} not found`);
     }
     return episode;
@@ -99,7 +105,12 @@ export class VisitsService {
   }
 
   async update(id: string, dto: UpdateVisitDto, user: AuthContext) {
-    await this.findOne(id, user);
+    const visit = await this.findOne(id, user);
+    if (TERMINAL_STATES.includes(visit.status)) {
+      throw new BadRequestException(
+        `Cannot update a visit in terminal status: ${visit.status}`,
+      );
+    }
     return this.prismaService.db.visit.update({
       where: { id },
       data: {
