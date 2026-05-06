@@ -92,6 +92,15 @@ export class AuthorizationService {
     return !!match;
   }
 
+  async assertCanAccessBranch(
+    profileId: string,
+    branchId: string,
+  ): Promise<void> {
+    if (!(await this.canAccessBranch(profileId, branchId))) {
+      throw new ForbiddenException('Branch access denied');
+    }
+  }
+
   async canManageStaff(
     profileId: string,
     organizationId: string,
