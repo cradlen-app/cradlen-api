@@ -44,8 +44,8 @@ describe('AuthorizationService.assertCanViewStaff', () => {
 
   it('throws ForbiddenException when no matching role', async () => {
     profileRole.findFirst.mockResolvedValue(null);
-    await expect(
-      service.assertCanViewStaff('prof-4', 'org-1'),
-    ).rejects.toThrow(ForbiddenException);
+    await expect(service.assertCanViewStaff('prof-4', 'org-1')).rejects.toThrow(
+      ForbiddenException,
+    );
   });
 });

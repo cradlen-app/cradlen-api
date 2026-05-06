@@ -122,7 +122,12 @@ describe('StaffService.listStaff', () => {
 
   it('adds RECEPTIONIST role filter to where clause', async () => {
     db.profile.findMany.mockResolvedValue([]);
-    await service.listStaff('caller-uuid', 'org-uuid', undefined, 'RECEPTIONIST');
+    await service.listStaff(
+      'caller-uuid',
+      'org-uuid',
+      undefined,
+      'RECEPTIONIST',
+    );
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
