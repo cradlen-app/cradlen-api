@@ -12,7 +12,7 @@ import { PatientsService } from './patients.service';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
 import { ListPatientsQueryDto } from './dto/list-patients-query.dto';
-import { PatientDto, PatientLookupDto } from './dto/patient.dto';
+import { PatientDto } from './dto/patient.dto';
 import {
   ApiStandardResponse,
   ApiPaginatedResponse,
@@ -33,17 +33,11 @@ export class PatientsController {
 
   @Get()
   @ApiPaginatedResponse(PatientDto)
-  findAll(@Query() query: ListPatientsQueryDto) {
-    return this.patientsService.findAll(query);
-  }
-
-  @Get('lookup')
-  @ApiStandardResponse(PatientLookupDto)
-  lookup(
-    @Query('nationalId') nationalId: string,
+  findAll(
+    @Query() query: ListPatientsQueryDto,
     @CurrentUser() user: AuthContext,
   ) {
-    return this.patientsService.lookup(nationalId, user);
+    return this.patientsService.findAll(query, user);
   }
 
   @Get(':id')

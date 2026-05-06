@@ -35,8 +35,6 @@ describe('PatientsService', () => {
       create: jest.Mock;
       update: jest.Mock;
     };
-    patientJourney: { findFirst: jest.Mock };
-    patientEpisode: { findMany: jest.Mock };
     $transaction: jest.Mock;
   };
 
@@ -49,8 +47,6 @@ describe('PatientsService', () => {
         create: jest.fn(),
         update: jest.fn(),
       },
-      patientJourney: { findFirst: jest.fn() },
-      patientEpisode: { findMany: jest.fn() },
       $transaction: jest.fn(),
     };
     const module: TestingModule = await Test.createTestingModule({
@@ -87,49 +83,53 @@ describe('PatientsService', () => {
     });
   });
 
-  describe('lookup', () => {
-    it('returns patient with episode summaries for non-clinical role', async () => {
-      const mockActiveEpisodes = [
+  describe('findAll', () => {
+    const mockEpisodes = [
+      { id: 'ep-uuid', name: 'First Trimester', order: 1, is_deleted: false },
+    ];
+    const mockJourney = {
+      id: 'journey-uuid',
+      status: 'ACTIVE',
+      episodes: mockEpisodes,
+    };
+    const patientWithJourney = { ...mockPatient, journeys: [mockJourney] };
+    const patientNoJourney = { ...mockPatient, journeys: [] };
+
+    it('returns episode summaries (id, name, order) for non-clinical roles', async () => {
+      db.$transaction.mockResolvedValue([[patientWithJourney], 1]);
+      const result = await service.findAll({}, mockUser);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const first = (result as any).items[0];
+      expect(first.active_episodes).toEqual([
         { id: 'ep-uuid', name: 'First Trimester', order: 1 },
-      ];
-      db.patient.findUnique.mockResolvedValue(mockPatient);
-      db.patientJourney.findFirst.mockResolvedValue({ id: 'journey-uuid' });
-      db.patientEpisode.findMany.mockResolvedValue(mockActiveEpisodes);
-      const result = await service.lookup('12345678', mockUser);
-      expect(result).toMatchObject({ national_id: '12345678' });
-      expect(
-        (result as unknown as { active_episodes: unknown[] }).active_episodes,
-      ).toEqual(mockActiveEpisodes);
+      ]);
+      expect(first.active_journey).toBeUndefined();
     });
 
-    it('returns patient with full journey and episodes for DOCTOR role', async () => {
-      const doctorUser: AuthContext = {
-        userId: 'user-uuid',
-        profileId: 'profile-uuid',
-        organizationId: 'org-uuid',
-        roles: ['DOCTOR'],
-        branchIds: ['branch-uuid'],
-      };
-      const mockEpisodes = [
-        { id: 'ep-uuid', name: 'First Trimester', order: 1, status: 'ACTIVE' },
-      ];
-      const mockJourney = { id: 'journey-uuid', status: 'ACTIVE' };
-      db.patient.findUnique.mockResolvedValue(mockPatient);
-      db.patientJourney.findFirst.mockResolvedValue(mockJourney);
-      db.patientEpisode.findMany.mockResolvedValue(mockEpisodes);
-      const result = await service.lookup('12345678', doctorUser);
-      expect(result).toMatchObject({ national_id: '12345678' });
-      expect(
-        (result as unknown as { active_journey: { episodes: unknown[] } })
-          .active_journey.episodes,
-      ).toEqual(mockEpisodes);
+    it('returns empty active_episodes when patient has no active journey', async () => {
+      db.$transaction.mockResolvedValue([[patientNoJourney], 1]);
+      const result = await service.findAll({}, mockUser);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((result as any).items[0].active_episodes).toEqual([]);
     });
 
-    it('throws NotFoundException when patient not found', async () => {
-      db.patient.findUnique.mockResolvedValue(null);
-      await expect(service.lookup('99999999', mockUser)).rejects.toThrow(
-        NotFoundException,
-      );
+    it('returns full active_journey with episodes for DOCTOR role', async () => {
+      const doctorUser: AuthContext = { ...mockUser, roles: ['DOCTOR'] };
+      db.$transaction.mockResolvedValue([[patientWithJourney], 1]);
+      const result = await service.findAll({}, doctorUser);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const first = (result as any).items[0];
+      expect(first.active_journey).toMatchObject({ id: 'journey-uuid' });
+      expect(first.active_journey.episodes).toEqual(mockEpisodes);
+      expect(first.active_episodes).toBeUndefined();
+    });
+
+    it('returns active_journey: null for DOCTOR when patient has no active journey', async () => {
+      const doctorUser: AuthContext = { ...mockUser, roles: ['DOCTOR'] };
+      db.$transaction.mockResolvedValue([[patientNoJourney], 1]);
+      const result = await service.findAll({}, doctorUser);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((result as any).items[0].active_journey).toBeNull();
     });
   });
 
