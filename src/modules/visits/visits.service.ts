@@ -186,6 +186,8 @@ export class VisitsService {
             is_deleted: false,
           },
         });
+        if (!episode)
+          throw new NotFoundException('General Consultation episode not found');
       }
 
       const visit = await tx.visit.create({
