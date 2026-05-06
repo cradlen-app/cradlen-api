@@ -11,6 +11,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { IsInt, IsOptional, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { VisitsService } from './visits.service';
+import { BookVisitDto } from './dto/book-visit.dto';
 import { CreateVisitDto } from './dto/create-visit.dto';
 import { UpdateVisitDto } from './dto/update-visit.dto';
 import { UpdateVisitStatusDto } from './dto/update-visit-status.dto';
@@ -51,6 +52,12 @@ export class VisitsController {
     @CurrentUser() user: AuthContext,
   ) {
     return this.visitsService.findAllForEpisode(episodeId, user, query);
+  }
+
+  @Post('visits/book')
+  @ApiStandardResponse(VisitDto)
+  bookVisit(@Body() dto: BookVisitDto, @CurrentUser() user: AuthContext) {
+    return this.visitsService.bookVisit(dto, user);
   }
 
   @Get('visits/:id')
