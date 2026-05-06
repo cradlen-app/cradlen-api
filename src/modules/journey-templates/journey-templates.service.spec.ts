@@ -40,7 +40,7 @@ describe('JourneyTemplatesService', () => {
       const result = await service.findAll(undefined);
       expect(result).toEqual([mockTemplate]);
       expect(db.journeyTemplate.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: {} }),
+        expect.objectContaining({ where: { is_deleted: false } }),
       );
     });
 
@@ -48,7 +48,9 @@ describe('JourneyTemplatesService', () => {
       db.journeyTemplate.findMany.mockResolvedValue([mockTemplate]);
       await service.findAll('spec-uuid');
       expect(db.journeyTemplate.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { specialty_id: 'spec-uuid' } }),
+        expect.objectContaining({
+          where: { specialty_id: 'spec-uuid', is_deleted: false },
+        }),
       );
     });
   });

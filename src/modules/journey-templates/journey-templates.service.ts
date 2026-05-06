@@ -7,18 +7,25 @@ export class JourneyTemplatesService {
 
   findAll(specialtyId: string | undefined) {
     return this.prismaService.db.journeyTemplate.findMany({
-      where: specialtyId ? { specialty_id: specialtyId } : {},
-      include: { episodes: { orderBy: { order: 'asc' } } },
+      where: specialtyId
+        ? { specialty_id: specialtyId, is_deleted: false }
+        : { is_deleted: false },
+      include: {
+        episodes: { where: { is_deleted: false }, orderBy: { order: 'asc' } },
+      },
     });
   }
 
   async findOne(id: string) {
     const template = await this.prismaService.db.journeyTemplate.findUnique({
       where: { id },
-      include: { episodes: { orderBy: { order: 'asc' } } },
+      include: {
+        episodes: { where: { is_deleted: false }, orderBy: { order: 'asc' } },
+      },
     });
-    if (!template)
+    if (!template || template.is_deleted) {
       throw new NotFoundException(`Journey template ${id} not found`);
+    }
     return template;
   }
 }
