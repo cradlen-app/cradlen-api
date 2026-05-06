@@ -430,6 +430,8 @@ model Specialty {
   templates   JourneyTemplate[]
   created_at  DateTime          @default(now())
   updated_at  DateTime          @updatedAt
+  is_deleted  Boolean           @default(false)
+  deleted_at  DateTime?
 
   @@map("specialties")
 }
@@ -437,7 +439,7 @@ model Specialty {
 model JourneyTemplate {
   id           String              @id @default(uuid()) @db.Uuid
   specialty_id String              @db.Uuid
-  specialty    Specialty           @relation(fields: [specialty_id], references: [id])
+  specialty    Specialty           @relation(fields: [specialty_id], references: [id], onDelete: Cascade)
   name         String              @unique
   type         JourneyTemplateType
   description  String?
@@ -445,6 +447,8 @@ model JourneyTemplate {
   journeys     PatientJourney[]
   created_at   DateTime            @default(now())
   updated_at   DateTime            @updatedAt
+  is_deleted   Boolean             @default(false)
+  deleted_at   DateTime?
 
   @@index([specialty_id])
   @@map("journey_templates")
@@ -453,12 +457,14 @@ model JourneyTemplate {
 model EpisodeTemplate {
   id                  String           @id @default(uuid()) @db.Uuid
   journey_template_id String           @db.Uuid
-  journey_template    JourneyTemplate  @relation(fields: [journey_template_id], references: [id])
+  journey_template    JourneyTemplate  @relation(fields: [journey_template_id], references: [id], onDelete: Cascade)
   name                String
   order               Int
   episodes            PatientEpisode[]
   created_at          DateTime         @default(now())
   updated_at          DateTime         @updatedAt
+  is_deleted          Boolean          @default(false)
+  deleted_at          DateTime?
 
   @@index([journey_template_id])
   @@map("episode_templates")
@@ -478,20 +484,19 @@ model Patient {
   is_deleted    Boolean          @default(false)
   deleted_at    DateTime?
 
-  @@index([national_id])
   @@map("patients")
 }
 
 model PatientJourney {
   id                  String           @id @default(uuid()) @db.Uuid
   patient_id          String           @db.Uuid
-  patient             Patient          @relation(fields: [patient_id], references: [id])
+  patient             Patient          @relation(fields: [patient_id], references: [id], onDelete: Cascade)
   organization_id     String           @db.Uuid
-  organization        Organization     @relation(fields: [organization_id], references: [id])
+  organization        Organization     @relation(fields: [organization_id], references: [id], onDelete: Cascade)
   journey_template_id String           @db.Uuid
-  journey_template    JourneyTemplate  @relation(fields: [journey_template_id], references: [id])
+  journey_template    JourneyTemplate  @relation(fields: [journey_template_id], references: [id], onDelete: Cascade)
   created_by_id       String           @db.Uuid
-  created_by          Profile          @relation(fields: [created_by_id], references: [id])
+  created_by          Profile          @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
   status              JourneyStatus    @default(ACTIVE)
   started_at          DateTime         @default(now())
   ended_at            DateTime?
@@ -509,9 +514,9 @@ model PatientJourney {
 model PatientEpisode {
   id                  String          @id @default(uuid()) @db.Uuid
   journey_id          String          @db.Uuid
-  journey             PatientJourney  @relation(fields: [journey_id], references: [id])
+  journey             PatientJourney  @relation(fields: [journey_id], references: [id], onDelete: Cascade)
   episode_template_id String          @db.Uuid
-  episode_template    EpisodeTemplate @relation(fields: [episode_template_id], references: [id])
+  episode_template    EpisodeTemplate @relation(fields: [episode_template_id], references: [id], onDelete: Cascade)
   name                String
   order               Int
   status              EpisodeStatus   @default(PENDING)
@@ -530,13 +535,13 @@ model PatientEpisode {
 model Visit {
   id                 String         @id @default(uuid()) @db.Uuid
   episode_id         String         @db.Uuid
-  episode            PatientEpisode @relation(fields: [episode_id], references: [id])
+  episode            PatientEpisode @relation(fields: [episode_id], references: [id], onDelete: Cascade)
   assigned_doctor_id String         @db.Uuid
-  assigned_doctor    Profile        @relation("DoctorVisits", fields: [assigned_doctor_id], references: [id])
+  assigned_doctor    Profile        @relation("DoctorVisits", fields: [assigned_doctor_id], references: [id], onDelete: Cascade)
   branch_id          String         @db.Uuid
-  branch             Branch         @relation(fields: [branch_id], references: [id])
+  branch             Branch         @relation(fields: [branch_id], references: [id], onDelete: Cascade)
   created_by_id      String         @db.Uuid
-  created_by         Profile        @relation("CreatedVisits", fields: [created_by_id], references: [id])
+  created_by         Profile        @relation("CreatedVisits", fields: [created_by_id], references: [id], onDelete: Cascade)
   visit_type         VisitType
   priority           VisitPriority
   status             VisitStatus    @default(SCHEDULED)
@@ -552,5 +557,6 @@ model Visit {
 
   @@index([episode_id, is_deleted])
   @@index([assigned_doctor_id, is_deleted])
+  @@index([branch_id, status, is_deleted])
   @@map("visits")
 }
