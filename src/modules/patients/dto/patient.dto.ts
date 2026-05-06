@@ -29,4 +29,5 @@ export class ActiveJourneyDto {
 
 export class BranchPatientDto extends PatientDto {
   journey!: ActiveJourneyDto | null;
+  last_visit_date!: Date | null;
 }
