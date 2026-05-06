@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { StaffService } from './staff.service';
 import { PrismaService } from '../../database/prisma.service';
 import { AuthorizationService } from '../../common/authorization/authorization.service';
@@ -67,6 +67,7 @@ describe('StaffService.listStaff', () => {
       }),
     );
     expect(result).toHaveLength(1);
+    expect(db.profile.findMany).toHaveBeenCalledTimes(1);
   });
 
   it('adds role filter to where clause when role is provided', async () => {
@@ -98,5 +99,24 @@ describe('StaffService.listStaff', () => {
     await expect(service.listStaff('caller-uuid', 'org-uuid')).rejects.toThrow(
       ForbiddenException,
     );
+  });
+
+  it('applies both branchId and role filters together', async () => {
+    db.profile.findMany.mockResolvedValue([mockDoctorProfile]);
+    await service.listStaff('caller-uuid', 'org-uuid', 'branch-uuid', 'DOCTOR');
+    expect(db.profile.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          branches: { some: { branch_id: 'branch-uuid' } },
+          roles: { some: { role: { name: 'DOCTOR' } } },
+        }),
+      }),
+    );
+  });
+
+  it('throws BadRequestException for an unknown role', async () => {
+    await expect(
+      service.listStaff('caller-uuid', 'org-uuid', undefined, 'INVALID'),
+    ).rejects.toThrow(BadRequestException);
   });
 });
