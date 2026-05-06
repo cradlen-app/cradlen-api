@@ -139,6 +139,19 @@ describe('VisitsService', () => {
     });
   });
 
+  describe('update', () => {
+    it('throws BadRequestException when updating a visit in a terminal status', async () => {
+      db.visit.findUnique.mockResolvedValue({
+        ...mockVisit,
+        status: 'COMPLETED',
+        episode: { journey: { organization_id: 'org-uuid' } },
+      });
+      await expect(
+        service.update('visit-uuid', { notes: 'changed' }, mockUser),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
   describe('updateStatus', () => {
     it('throws BadRequestException on invalid status transition', async () => {
       db.visit.findUnique.mockResolvedValue({
