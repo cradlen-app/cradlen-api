@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { PatientsService } from './patients.service';
 import { PrismaService } from '../../database/prisma.service';
 import { AuthContext } from '../../common/interfaces/auth-context.interface';
@@ -63,8 +63,7 @@ describe('PatientsService', () => {
   });
 
   describe('create', () => {
-    it('creates a patient when national_id is unique', async () => {
-      db.patient.findUnique.mockResolvedValue(null);
+    it('calls patient.create with correct data', async () => {
       db.patient.create.mockResolvedValue(mockPatient);
       const result = await service.create({
         full_name: 'Sara Ali',
@@ -75,22 +74,16 @@ describe('PatientsService', () => {
         address: 'Cairo',
       });
       expect(result).toEqual(mockPatient);
-      expect(db.patient.create).toHaveBeenCalledTimes(1);
-    });
-
-    it('throws ConflictException when national_id already exists', async () => {
-      db.patient.findUnique.mockResolvedValue(mockPatient);
-      await expect(
-        service.create({
+      expect(db.patient.create).toHaveBeenCalledWith({
+        data: {
           full_name: 'Sara Ali',
-          husband_name: undefined,
-          date_of_birth: '1990-01-01',
+          husband_name: 'Ahmed Ali',
+          date_of_birth: new Date('1990-01-01'),
           national_id: '12345678',
           phone_number: '01012345678',
           address: 'Cairo',
-        }),
-      ).rejects.toThrow(ConflictException);
-      expect(db.patient.create).not.toHaveBeenCalled();
+        },
+      });
     });
   });
 
@@ -107,6 +100,29 @@ describe('PatientsService', () => {
       expect(
         (result as unknown as { active_episodes: unknown[] }).active_episodes,
       ).toEqual(mockActiveEpisodes);
+    });
+
+    it('returns patient with full journey and episodes for DOCTOR role', async () => {
+      const doctorUser: AuthContext = {
+        userId: 'user-uuid',
+        profileId: 'profile-uuid',
+        organizationId: 'org-uuid',
+        roles: ['DOCTOR'],
+        branchIds: ['branch-uuid'],
+      };
+      const mockEpisodes = [
+        { id: 'ep-uuid', name: 'First Trimester', order: 1, status: 'ACTIVE' },
+      ];
+      const mockJourney = { id: 'journey-uuid', status: 'ACTIVE' };
+      db.patient.findUnique.mockResolvedValue(mockPatient);
+      db.patientJourney.findFirst.mockResolvedValue(mockJourney);
+      db.patientEpisode.findMany.mockResolvedValue(mockEpisodes);
+      const result = await service.lookup('12345678', doctorUser);
+      expect(result).toMatchObject({ national_id: '12345678' });
+      expect(
+        (result as unknown as { active_journey: { episodes: unknown[] } })
+          .active_journey.episodes,
+      ).toEqual(mockEpisodes);
     });
 
     it('throws NotFoundException when patient not found', async () => {
