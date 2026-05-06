@@ -1,10 +1,7 @@
 import { Controller, Get, Param } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { SpecialtiesService } from './specialties.service.js';
-import {
-  ApiPaginatedResponse,
-  ApiStandardResponse,
-} from '../../common/swagger/index.js';
+import { ApiStandardResponse } from '../../common/swagger/index.js';
 import {
   SpecialtyDto,
   JourneyTemplateInSpecialtyDto,
@@ -16,7 +13,7 @@ export class SpecialtiesController {
   constructor(private readonly specialtiesService: SpecialtiesService) {}
 
   @Get()
-  @ApiPaginatedResponse(SpecialtyDto)
+  @ApiStandardResponse(SpecialtyDto)
   findAll() {
     return this.specialtiesService.findAll();
   }
