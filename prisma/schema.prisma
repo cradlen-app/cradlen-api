@@ -104,31 +104,31 @@ enum VisitStatus {
 }
 
 model SubscriptionPlan {
-  id            String         @id @default(uuid()) @db.Uuid
-  plan          String         @unique
+  id                String         @id @default(uuid()) @db.Uuid
+  plan              String         @unique
   max_organizations Int
-  max_branches  Int
-  max_staff     Int
-  created_at    DateTime       @default(now())
-  updated_at    DateTime       @updatedAt
-  subscriptions Subscription[]
+  max_branches      Int
+  max_staff         Int
+  created_at        DateTime       @default(now())
+  updated_at        DateTime       @updatedAt
+  subscriptions     Subscription[]
 
   @@map("subscription_plans")
 }
 
 model Organization {
-  id            String             @id @default(uuid()) @db.Uuid
-  name          String
-  specialities  String[]           @default([])
-  status        OrganizationStatus @default(ACTIVE)
-  is_deleted    Boolean            @default(false)
-  deleted_at    DateTime?
-  created_at    DateTime           @default(now())
-  updated_at    DateTime           @updatedAt
-  branches      Branch[]
-  profiles      Profile[]
-  invitations   Invitation[]
-  subscriptions   Subscription[]
+  id               String             @id @default(uuid()) @db.Uuid
+  name             String
+  specialities     String[]           @default([])
+  status           OrganizationStatus @default(ACTIVE)
+  is_deleted       Boolean            @default(false)
+  deleted_at       DateTime?
+  created_at       DateTime           @default(now())
+  updated_at       DateTime           @updatedAt
+  branches         Branch[]
+  profiles         Profile[]
+  invitations      Invitation[]
+  subscriptions    Subscription[]
   patient_journeys PatientJourney[]
 
   @@index([status, is_deleted])
@@ -161,24 +161,24 @@ model Branch {
 }
 
 model User {
-  id                   String              @id @default(uuid()) @db.Uuid
+  id                   String             @id @default(uuid()) @db.Uuid
   first_name           String
   last_name            String
-  email                String?             @unique
+  email                String?            @unique
   phone_number         String?
   password_hashed      String?
-  is_active            Boolean             @default(true)
-  is_deleted           Boolean             @default(false)
+  is_active            Boolean            @default(true)
+  is_deleted           Boolean            @default(false)
   deleted_at           DateTime?
   verified_at          DateTime?
-  registration_status  RegistrationStatus  @default(PENDING)
-  onboarding_completed Boolean             @default(false)
-  created_at           DateTime            @default(now())
-  updated_at           DateTime            @updatedAt
+  registration_status  RegistrationStatus @default(PENDING)
+  onboarding_completed Boolean            @default(false)
+  created_at           DateTime           @default(now())
+  updated_at           DateTime           @updatedAt
   profiles             Profile[]
   refreshTokens        RefreshToken[]
   verificationCodes    VerificationCode[]
-  sentInvitations      Invitation[]         @relation("InvitedBy")
+  sentInvitations      Invitation[]       @relation("InvitedBy")
   notifications        Notification[]
 
   @@index([registration_status, onboarding_completed])
@@ -197,19 +197,19 @@ model Role {
 }
 
 model Profile {
-  id              String          @id @default(uuid()) @db.Uuid
-  user_id         String          @db.Uuid
-  organization_id String          @db.Uuid
-  job_title       String?
-  specialty       String?
-  is_clinical     Boolean         @default(false)
-  is_active       Boolean         @default(true)
-  is_deleted      Boolean         @default(false)
-  deleted_at      DateTime?
-  created_at      DateTime        @default(now())
-  updated_at      DateTime        @updatedAt
-  user            User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  organization    Organization    @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  id               String            @id @default(uuid()) @db.Uuid
+  user_id          String            @db.Uuid
+  organization_id  String            @db.Uuid
+  job_title        String?
+  specialty        String?
+  is_clinical      Boolean           @default(false)
+  is_active        Boolean           @default(true)
+  is_deleted       Boolean           @default(false)
+  deleted_at       DateTime?
+  created_at       DateTime          @default(now())
+  updated_at       DateTime          @updatedAt
+  user             User              @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  organization     Organization      @relation(fields: [organization_id], references: [id], onDelete: Cascade)
   roles            ProfileRole[]
   branches         ProfileBranch[]
   workingSchedules WorkingSchedule[]
@@ -237,7 +237,7 @@ model ProfileRole {
 }
 
 model ProfileBranch {
-  id         String   @id @default(uuid()) @db.Uuid
+  id              String   @id @default(uuid()) @db.Uuid
   profile_id      String   @db.Uuid
   branch_id       String   @db.Uuid
   organization_id String   @db.Uuid
@@ -270,37 +270,37 @@ model Subscription {
 }
 
 model RefreshToken {
-  id         String    @id @default(uuid()) @db.Uuid
-  jti        String    @unique @db.Uuid
-  token_hash String
-  user_id    String    @db.Uuid
+  id               String    @id @default(uuid()) @db.Uuid
+  jti              String    @unique @db.Uuid
+  token_hash       String
+  user_id          String    @db.Uuid
   profile_id       String?   @db.Uuid
   organization_id  String?   @db.Uuid
   active_branch_id String?   @db.Uuid
   expires_at       DateTime
-  is_revoked Boolean   @default(false)
-  revoked_at DateTime?
-  created_at DateTime  @default(now())
-  user       User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  is_revoked       Boolean   @default(false)
+  revoked_at       DateTime?
+  created_at       DateTime  @default(now())
+  user             User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@index([user_id, is_revoked])
   @@map("refresh_tokens")
 }
 
 model VerificationCode {
-  id          String              @id @default(uuid()) @db.Uuid
-  user_id     String?             @db.Uuid
-  channel     VerificationChannel
-  purpose     VerificationPurpose
-  target      String
-  code_hash   String
-  attempts    Int                 @default(0)
-  max_attempts Int                @default(5)
-  is_resend   Boolean             @default(false)
-  expires_at  DateTime
-  consumed_at DateTime?
-  created_at  DateTime            @default(now())
-  user        User?               @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  id           String              @id @default(uuid()) @db.Uuid
+  user_id      String?             @db.Uuid
+  channel      VerificationChannel
+  purpose      VerificationPurpose
+  target       String
+  code_hash    String
+  attempts     Int                 @default(0)
+  max_attempts Int                 @default(5)
+  is_resend    Boolean             @default(false)
+  expires_at   DateTime
+  consumed_at  DateTime?
+  created_at   DateTime            @default(now())
+  user         User?               @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@index([target, purpose, consumed_at])
   @@index([user_id, purpose])
@@ -308,26 +308,26 @@ model VerificationCode {
 }
 
 model Invitation {
-  id            String           @id @default(uuid()) @db.Uuid
-  organization_id String           @db.Uuid
-  invited_by_id   String           @db.Uuid
+  id              String             @id @default(uuid()) @db.Uuid
+  organization_id String             @db.Uuid
+  invited_by_id   String             @db.Uuid
   email           String
   first_name      String
   last_name       String
   phone_number    String?
   job_title       String?
   specialty       String?
-  is_clinical     Boolean          @default(false)
+  is_clinical     Boolean            @default(false)
   token_hash      String
-  status          InvitationStatus @default(PENDING)
+  status          InvitationStatus   @default(PENDING)
   expires_at      DateTime
   accepted_at     DateTime?
-  is_deleted      Boolean          @default(false)
+  is_deleted      Boolean            @default(false)
   deleted_at      DateTime?
-  created_at      DateTime         @default(now())
-  updated_at      DateTime         @updatedAt
-  organization    Organization     @relation(fields: [organization_id], references: [id], onDelete: Cascade)
-  invited_by      User             @relation("InvitedBy", fields: [invited_by_id], references: [id])
+  created_at      DateTime           @default(now())
+  updated_at      DateTime           @updatedAt
+  organization    Organization       @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  invited_by      User               @relation("InvitedBy", fields: [invited_by_id], references: [id])
   roles           InvitationRole[]
   branches        InvitationBranch[]
 
@@ -350,7 +350,7 @@ model InvitationRole {
 }
 
 model InvitationBranch {
-  id            String     @id @default(uuid()) @db.Uuid
+  id              String     @id @default(uuid()) @db.Uuid
   invitation_id   String     @db.Uuid
   branch_id       String     @db.Uuid
   organization_id String     @db.Uuid
