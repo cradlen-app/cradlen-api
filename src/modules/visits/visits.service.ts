@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { VisitStatus } from '@prisma/client';
+import { Prisma, VisitStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { AuthContext } from '../../common/interfaces/auth-context.interface';
 import { CreateVisitDto } from './dto/create-visit.dto';
@@ -38,6 +38,31 @@ export class VisitsService {
     private readonly prismaService: PrismaService,
     private readonly visitsGateway: VisitsGateway,
   ) {}
+
+  private async getNextQueueNumber(
+    tx: Prisma.TransactionClient,
+    assignedDoctorId: string,
+    branchId: string,
+    date: Date,
+  ): Promise<number> {
+    const dayStart = new Date(date);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(date);
+    dayEnd.setHours(23, 59, 59, 999);
+
+    const last = await tx.visit.findFirst({
+      where: {
+        assigned_doctor_id: assignedDoctorId,
+        branch_id: branchId,
+        checked_in_at: { gte: dayStart, lte: dayEnd },
+        is_deleted: false,
+      },
+      orderBy: { queue_number: 'desc' },
+      select: { queue_number: true },
+    });
+
+    return (last?.queue_number ?? 0) + 1;
+  }
 
   private async assertEpisodeInOrg(episodeId: string, organizationId: string) {
     const episode = await this.prismaService.db.patientEpisode.findUnique({
@@ -235,7 +260,7 @@ export class VisitsService {
   async findAllForBranch(
     branchId: string,
     status: VisitStatus,
-    query: { page?: number; limit?: number },
+    query: { page?: number; limit?: number; date?: string },
     user: AuthContext,
   ) {
     const branch = await this.prismaService.db.branch.findFirst({
@@ -256,12 +281,27 @@ export class VisitsService {
 
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
-    const where = { branch_id: branchId, status, is_deleted: false };
+    const where = {
+      branch_id: branchId,
+      status,
+      is_deleted: false,
+      ...(query.date && {
+        scheduled_at: {
+          gte: new Date(`${query.date}T00:00:00.000Z`),
+          lte: new Date(`${query.date}T23:59:59.999Z`),
+        },
+      }),
+    };
+
+    const orderBy =
+      status === 'CHECKED_IN'
+        ? { queue_number: 'asc' as const }
+        : { scheduled_at: 'asc' as const };
 
     const [visits, total] = await this.prismaService.db.$transaction([
       this.prismaService.db.visit.findMany({
         where,
-        orderBy: { scheduled_at: 'asc' },
+        orderBy,
         skip: (page - 1) * limit,
         take: limit,
         include: {
@@ -342,13 +382,29 @@ export class VisitsService {
       );
     }
     const timestampField = STATUS_TIMESTAMPS[dto.status];
-    const updatedVisit = await this.prismaService.db.visit.update({
-      where: { id },
-      data: {
-        status: dto.status,
-        ...(timestampField ? { [timestampField]: new Date() } : {}),
-      },
+    const now = new Date();
+
+    const updatedVisit = await this.prismaService.db.$transaction(async (tx) => {
+      const queueNumber =
+        dto.status === 'CHECKED_IN'
+          ? await this.getNextQueueNumber(
+              tx,
+              visit.assigned_doctor_id,
+              visit.branch_id,
+              now,
+            )
+          : undefined;
+
+      return tx.visit.update({
+        where: { id },
+        data: {
+          status: dto.status,
+          ...(timestampField ? { [timestampField]: now } : {}),
+          ...(queueNumber !== undefined ? { queue_number: queueNumber } : {}),
+        },
+      });
     });
+
     this.visitsGateway.emitVisitStatusUpdated(
       updatedVisit.assigned_doctor_id,
       updatedVisit,
