@@ -124,12 +124,12 @@ export class StaffService {
     branchId?: string,
     role?: string,
   ) {
-    await this.authorizationService.assertCanManageStaff(
+    await this.authorizationService.assertCanViewStaff(
       profileId,
       organizationId,
     );
 
-    const VALID_ROLES = ['OWNER', 'DOCTOR'];
+    const VALID_ROLES = ['OWNER', 'DOCTOR', 'RECEPTIONIST'];
     if (role !== undefined && !VALID_ROLES.includes(role.toUpperCase())) {
       throw new BadRequestException(
         `Invalid role: ${role}. Valid values: ${VALID_ROLES.join(', ')}`,
