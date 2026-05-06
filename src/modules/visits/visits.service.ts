@@ -97,6 +97,7 @@ export class VisitsService {
     });
     if (
       !visit ||
+      !visit.episode?.journey ||
       visit.episode.journey.organization_id !== user.organizationId
     ) {
       throw new NotFoundException(`Visit ${id} not found`);
