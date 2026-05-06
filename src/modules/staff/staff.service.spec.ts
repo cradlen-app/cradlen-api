@@ -37,11 +37,11 @@ describe('StaffService.listStaff', () => {
   let db: {
     profile: { findMany: jest.Mock };
   };
-  let authMock: { assertCanManageStaff: jest.Mock };
+  let authMock: { assertCanViewStaff: jest.Mock };
 
   beforeEach(async () => {
     db = { profile: { findMany: jest.fn() } };
-    authMock = { assertCanManageStaff: jest.fn().mockResolvedValue(undefined) };
+    authMock = { assertCanViewStaff: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -94,8 +94,8 @@ describe('StaffService.listStaff', () => {
     );
   });
 
-  it('throws ForbiddenException when caller is not OWNER', async () => {
-    authMock.assertCanManageStaff.mockRejectedValue(new ForbiddenException());
+  it('throws ForbiddenException when caller lacks viewer role', async () => {
+    authMock.assertCanViewStaff.mockRejectedValue(new ForbiddenException());
     await expect(service.listStaff('caller-uuid', 'org-uuid')).rejects.toThrow(
       ForbiddenException,
     );
@@ -118,5 +118,17 @@ describe('StaffService.listStaff', () => {
     await expect(
       service.listStaff('caller-uuid', 'org-uuid', undefined, 'INVALID'),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  it('adds RECEPTIONIST role filter to where clause', async () => {
+    db.profile.findMany.mockResolvedValue([]);
+    await service.listStaff('caller-uuid', 'org-uuid', undefined, 'RECEPTIONIST');
+    expect(db.profile.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          roles: { some: { role: { name: 'RECEPTIONIST' } } },
+        }),
+      }),
+    );
   });
 });
