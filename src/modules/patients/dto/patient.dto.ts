@@ -18,3 +18,13 @@ export class EpisodeSummaryDto {
 export class PatientLookupDto extends PatientDto {
   active_episodes!: EpisodeSummaryDto[];
 }
+
+export class ActiveJourneyDto {
+  id!: string;
+  type!: string;
+  status!: string;
+}
+
+export class BranchPatientDto extends PatientDto {
+  journey!: ActiveJourneyDto | null;
+}
