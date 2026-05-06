@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PatientsService } from './patients.service';
 import { PrismaService } from '../../database/prisma.service';
+import { AuthorizationService } from '../../common/authorization/authorization.service';
 import { AuthContext } from '../../common/interfaces/auth-context.interface';
 
 const mockUser: AuthContext = {
@@ -37,6 +38,7 @@ describe('PatientsService', () => {
     };
     $transaction: jest.Mock;
   };
+  let authMock: { assertCanAccessBranch: jest.Mock };
 
   beforeEach(async () => {
     db = {
@@ -49,10 +51,13 @@ describe('PatientsService', () => {
       },
       $transaction: jest.fn(),
     };
+    authMock = { assertCanAccessBranch: jest.fn() };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PatientsService,
         { provide: PrismaService, useValue: { db } },
+        { provide: AuthorizationService, useValue: authMock },
       ],
     }).compile();
     service = module.get<PatientsService>(PatientsService);
@@ -142,8 +147,57 @@ describe('PatientsService', () => {
 
     it('throws NotFoundException when not found', async () => {
       db.patient.findUnique.mockResolvedValue(null);
-      await expect(service.findOne('bad-id')).rejects.toThrow(
-        NotFoundException,
+      await expect(service.findOne('bad-id')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('findAllForBranch', () => {
+    const mockJourneyTemplate = { type: 'PREGNANCY' };
+    const mockJourney = {
+      id: 'journey-uuid',
+      status: 'ACTIVE',
+      journey_template: mockJourneyTemplate,
+    };
+    const patientWithJourney = { ...mockPatient, journeys: [mockJourney] };
+    const patientNoJourney = { ...mockPatient, journeys: [] };
+
+    it('throws ForbiddenException when assertCanAccessBranch rejects', async () => {
+      authMock.assertCanAccessBranch.mockRejectedValue(
+        new ForbiddenException('Branch access denied'),
+      );
+      await expect(
+        service.findAllForBranch('branch-uuid', {}, mockUser),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('returns paginated patients with journey when found', async () => {
+      authMock.assertCanAccessBranch.mockResolvedValue(undefined);
+      db.$transaction.mockResolvedValue([[patientWithJourney], 1]);
+      const result = await service.findAllForBranch('branch-uuid', {}, mockUser);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const first = (result as any).items[0];
+      expect(first.journey).toEqual({
+        id: 'journey-uuid',
+        type: 'PREGNANCY',
+        status: 'ACTIVE',
+      });
+    });
+
+    it('returns journey: null when patient has no matching journey', async () => {
+      authMock.assertCanAccessBranch.mockResolvedValue(undefined);
+      db.$transaction.mockResolvedValue([[patientNoJourney], 1]);
+      const result = await service.findAllForBranch('branch-uuid', {}, mockUser);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((result as any).items[0].journey).toBeNull();
+    });
+
+    it('calls assertCanAccessBranch with profileId and branchId', async () => {
+      authMock.assertCanAccessBranch.mockResolvedValue(undefined);
+      db.$transaction.mockResolvedValue([[], 0]);
+      await service.findAllForBranch('branch-uuid', {}, mockUser);
+      expect(authMock.assertCanAccessBranch).toHaveBeenCalledWith(
+        'profile-uuid',
+        'branch-uuid',
       );
     });
   });
