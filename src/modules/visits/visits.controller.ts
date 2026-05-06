@@ -114,8 +114,18 @@ export class VisitsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'List visits for a branch filtered by status' })
   @ApiQuery({ name: 'status', enum: VisitStatus, required: true })
-  @ApiQuery({ name: 'from', required: false, description: 'ISO datetime with timezone offset (e.g. 2026-05-06T00:00:00+03:00)' })
-  @ApiQuery({ name: 'to', required: false, description: 'ISO datetime with timezone offset (e.g. 2026-05-06T23:59:59+03:00)' })
+  @ApiQuery({
+    name: 'from',
+    required: false,
+    description:
+      'ISO datetime with timezone offset (e.g. 2026-05-06T00:00:00+03:00)',
+  })
+  @ApiQuery({
+    name: 'to',
+    required: false,
+    description:
+      'ISO datetime with timezone offset (e.g. 2026-05-06T23:59:59+03:00)',
+  })
   @ApiPaginatedResponse(VisitDto)
   findAllForBranch(
     @Param('branchId', ParseUUIDPipe) branchId: string,
