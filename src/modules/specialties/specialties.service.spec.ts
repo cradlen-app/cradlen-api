@@ -21,7 +21,10 @@ const mockSpecialty = {
 
 describe('SpecialtiesService', () => {
   let service: SpecialtiesService;
-  let db: any;
+  let db: {
+    specialty: { findMany: jest.Mock; findUnique: jest.Mock };
+    journeyTemplate: { findMany: jest.Mock };
+  };
 
   beforeEach(async () => {
     db = {
