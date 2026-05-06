@@ -602,6 +602,10 @@ describe('VisitsService', () => {
       );
       expect(result.items).toHaveLength(1);
       expect(result.meta.total).toBe(1);
+      expect(result.items[0].assigned_doctor.user.first_name).toBe('Ahmed');
+      expect(result.items[0].episode.journey.patient.full_name).toBe(
+        'Fatima Hassan',
+      );
     });
 
     it('returns paginated visits for DOCTOR in branch', async () => {
