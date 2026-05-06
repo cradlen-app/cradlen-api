@@ -11,6 +11,7 @@ export class VisitDto {
   started_at!: Date | null;
   completed_at!: Date | null;
   notes!: string | null;
+  queue_number!: number | null;
   created_by_id!: string;
   created_at!: Date;
 }
