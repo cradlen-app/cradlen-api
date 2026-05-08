@@ -32,6 +32,9 @@ const eventInclude = {
   participants: {
     select: { id: true, profile_id: true, role: true },
   },
+  patient: {
+    select: { id: true, full_name: true },
+  },
 } satisfies Prisma.CalendarEventInclude;
 
 @Injectable()
