@@ -24,6 +24,7 @@ import { JourneyTemplatesModule } from './modules/journey-templates/journey-temp
 import { PatientsModule } from './modules/patients/patients.module';
 import { JourneysModule } from './modules/journeys/journeys.module';
 import { VisitsModule } from './modules/visits/visits.module';
+import { CalendarModule } from './modules/calendar/calendar.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import type { AppConfig } from './config/app.config';
 
@@ -62,6 +63,7 @@ import type { AppConfig } from './config/app.config';
     PatientsModule,
     JourneysModule,
     VisitsModule,
+    CalendarModule,
   ],
   controllers: [],
   providers: [

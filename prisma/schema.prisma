@@ -99,6 +99,25 @@ enum VisitStatus {
   NO_SHOW
 }
 
+enum CalendarEventType {
+  SURGERY
+  MEETING
+  PERSONAL
+  LEAVE
+}
+
+enum CalendarEventStatus {
+  SCHEDULED
+  CANCELLED
+  COMPLETED
+}
+
+enum CalendarParticipantRole {
+  PRIMARY_DOCTOR
+  ASSISTANT
+  ATTENDEE
+}
+
 model SubscriptionPlan {
   id                String         @id @default(uuid()) @db.Uuid
   plan              String         @unique
@@ -126,6 +145,7 @@ model Organization {
   invitations      Invitation[]
   subscriptions    Subscription[]
   patient_journeys PatientJourney[]
+  calendar_events  CalendarEvent[]
 
   @@index([status, is_deleted])
   @@map("organizations")
@@ -150,6 +170,7 @@ model Branch {
   invitationBranches InvitationBranch[]
   workingSchedules   WorkingSchedule[]
   visits             Visit[]
+  calendar_events    CalendarEvent[]
 
   @@unique([id, organization_id])
   @@index([organization_id, is_deleted])
@@ -212,6 +233,8 @@ model Profile {
   created_journeys PatientJourney[]
   doctor_visits    Visit[]           @relation("DoctorVisits")
   created_visits   Visit[]           @relation("CreatedVisits")
+  created_calendar_events     CalendarEvent[]            @relation("CreatedCalendarEvents")
+  calendar_event_participations CalendarEventParticipant[]
 
   @@unique([user_id, organization_id])
   @@index([organization_id, is_deleted])
@@ -475,6 +498,7 @@ model Patient {
   phone_number  String
   address       String
   journeys      PatientJourney[]
+  calendar_events CalendarEvent[]
   created_at    DateTime         @default(now())
   updated_at    DateTime         @updatedAt
   is_deleted    Boolean          @default(false)
@@ -557,4 +581,49 @@ model Visit {
   @@index([branch_id, status, is_deleted])
   @@index([assigned_doctor_id, branch_id, checked_in_at, is_deleted])
   @@map("visits")
+}
+
+model CalendarEvent {
+  id              String              @id @default(uuid()) @db.Uuid
+  organization_id String              @db.Uuid
+  branch_id       String?             @db.Uuid
+  created_by_id   String              @db.Uuid
+  patient_id      String?             @db.Uuid
+  type            CalendarEventType
+  title           String
+  description     String?
+  starts_at       DateTime
+  ends_at         DateTime
+  all_day         Boolean             @default(false)
+  status          CalendarEventStatus @default(SCHEDULED)
+  details         Json                @default("{}")
+  created_at      DateTime            @default(now())
+  updated_at      DateTime            @updatedAt
+  is_deleted      Boolean             @default(false)
+  deleted_at      DateTime?
+  organization    Organization        @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  branch          Branch?             @relation(fields: [branch_id], references: [id], onDelete: SetNull)
+  created_by      Profile             @relation("CreatedCalendarEvents", fields: [created_by_id], references: [id], onDelete: Cascade)
+  patient         Patient?            @relation(fields: [patient_id], references: [id], onDelete: SetNull)
+  participants    CalendarEventParticipant[]
+
+  @@index([organization_id, branch_id, starts_at])
+  @@index([created_by_id, starts_at])
+  @@index([patient_id])
+  @@index([type])
+  @@map("calendar_events")
+}
+
+model CalendarEventParticipant {
+  id         String                  @id @default(uuid()) @db.Uuid
+  event_id   String                  @db.Uuid
+  profile_id String                  @db.Uuid
+  role       CalendarParticipantRole
+  created_at DateTime                @default(now())
+  event      CalendarEvent           @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  profile    Profile                 @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+
+  @@unique([event_id, profile_id])
+  @@index([profile_id])
+  @@map("calendar_event_participants")
 }
