@@ -27,6 +27,7 @@ Table organizations {
   invitations invitations [not null]
   subscriptions subscriptions [not null]
   patient_journeys patient_journeys [not null]
+  calendar_events calendar_events [not null]
 }
 
 Table branches {
@@ -48,6 +49,7 @@ Table branches {
   invitationBranches invitation_branches [not null]
   workingSchedules working_schedules [not null]
   visits visits [not null]
+  calendar_events calendar_events [not null]
 
   indexes {
     (id, organization_id) [unique]
@@ -105,6 +107,8 @@ Table profiles {
   created_journeys patient_journeys [not null]
   doctor_visits visits [not null]
   created_visits visits [not null]
+  created_calendar_events calendar_events [not null]
+  calendar_event_participations calendar_event_participants [not null]
 
   indexes {
     (user_id, organization_id) [unique]
@@ -340,6 +344,7 @@ Table patients {
   phone_number String [not null]
   address String [not null]
   journeys patient_journeys [not null]
+  calendar_events calendar_events [not null]
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   is_deleted Boolean [not null, default: false]
@@ -407,6 +412,45 @@ Table visits {
   updated_at DateTime [not null]
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
+}
+
+Table calendar_events {
+  id String [pk]
+  organization_id String [not null]
+  branch_id String
+  created_by_id String [not null]
+  patient_id String
+  type CalendarEventType [not null]
+  title String [not null]
+  description String
+  starts_at DateTime [not null]
+  ends_at DateTime [not null]
+  all_day Boolean [not null, default: false]
+  status CalendarEventStatus [not null, default: 'SCHEDULED']
+  details Json [not null, default: '{}']
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  organization organizations [not null]
+  branch branches
+  created_by profiles [not null]
+  patient patients
+  participants calendar_event_participants [not null]
+}
+
+Table calendar_event_participants {
+  id String [pk]
+  event_id String [not null]
+  profile_id String [not null]
+  role CalendarParticipantRole [not null]
+  created_at DateTime [default: `now()`, not null]
+  event calendar_events [not null]
+  profile profiles [not null]
+
+  indexes {
+    (event_id, profile_id) [unique]
+  }
 }
 
 Enum RegistrationStatus {
@@ -498,6 +542,25 @@ Enum VisitStatus {
   NO_SHOW
 }
 
+Enum CalendarEventType {
+  SURGERY
+  MEETING
+  PERSONAL
+  LEAVE
+}
+
+Enum CalendarEventStatus {
+  SCHEDULED
+  CANCELLED
+  COMPLETED
+}
+
+Enum CalendarParticipantRole {
+  PRIMARY_DOCTOR
+  ASSISTANT
+  ATTENDEE
+}
+
 Ref: branches.organization_id > organizations.id [delete: Cascade]
 
 Ref: profiles.user_id > users.id [delete: Cascade]
@@ -565,3 +628,15 @@ Ref: visits.assigned_doctor_id > profiles.id [delete: Cascade]
 Ref: visits.branch_id > branches.id [delete: Cascade]
 
 Ref: visits.created_by_id > profiles.id [delete: Cascade]
+
+Ref: calendar_events.organization_id > organizations.id [delete: Cascade]
+
+Ref: calendar_events.branch_id > branches.id [delete: Set Null]
+
+Ref: calendar_events.created_by_id > profiles.id [delete: Cascade]
+
+Ref: calendar_events.patient_id > patients.id [delete: Set Null]
+
+Ref: calendar_event_participants.event_id > calendar_events.id [delete: Cascade]
+
+Ref: calendar_event_participants.profile_id > profiles.id [delete: Cascade]

@@ -13,19 +13,25 @@ CREATE TYPE "VerificationChannel" AS ENUM ('EMAIL');
 ALTER TABLE "verification_codes" ALTER COLUMN "channel" TYPE "VerificationChannel" USING "channel"::text::"VerificationChannel";
 DROP TYPE "VerificationChannel_old";
 
--- Remove PHONE_LOGIN from VerificationPurpose enum
+-- Remove PHONE_LOGIN from VerificationPurpose enum (keep LOGIN)
 ALTER TYPE "VerificationPurpose" RENAME TO "VerificationPurpose_old";
-CREATE TYPE "VerificationPurpose" AS ENUM ('SIGNUP', 'PASSWORD_RESET');
+CREATE TYPE "VerificationPurpose" AS ENUM ('SIGNUP', 'LOGIN', 'PASSWORD_RESET');
 ALTER TABLE "verification_codes" ALTER COLUMN "purpose" TYPE "VerificationPurpose" USING "purpose"::text::"VerificationPurpose";
 DROP TYPE "VerificationPurpose_old";
 
 -- Rename AccountStatus → OrganizationStatus
 ALTER TYPE "AccountStatus" RENAME TO "OrganizationStatus";
 
--- Rename table accounts → organizations
+-- Rename table accounts → organizations (also rename PK constraint)
 ALTER TABLE "accounts" RENAME TO "organizations";
+ALTER TABLE "organizations" RENAME CONSTRAINT "accounts_pkey" TO "organizations_pkey";
 DROP INDEX "accounts_status_is_deleted_idx";
 CREATE INDEX "organizations_status_is_deleted_idx" ON "organizations"("status", "is_deleted");
+
+-- Drop dependent FKs that reference the composite unique index on branches
+-- (will be re-created later with the renamed column).
+ALTER TABLE "profile_branches" DROP CONSTRAINT "profile_branches_branch_id_account_id_fkey";
+ALTER TABLE "invitation_branches" DROP CONSTRAINT "invitation_branches_branch_id_account_id_fkey";
 
 -- Rename account_id → organization_id on branches
 ALTER TABLE "branches" RENAME COLUMN "account_id" TO "organization_id";
@@ -43,9 +49,8 @@ CREATE INDEX "profiles_organization_id_is_deleted_idx" ON "profiles"("organizati
 DROP INDEX "profiles_user_id_account_id_key";
 CREATE UNIQUE INDEX "profiles_user_id_organization_id_key" ON "profiles"("user_id", "organization_id");
 
--- Rename account_id → organization_id on profile_branches
+-- Rename account_id → organization_id on profile_branches (re-create FK to renamed columns)
 ALTER TABLE "profile_branches" RENAME COLUMN "account_id" TO "organization_id";
-ALTER TABLE "profile_branches" DROP CONSTRAINT "profile_branches_branch_id_account_id_fkey";
 ALTER TABLE "profile_branches" ADD CONSTRAINT "profile_branches_branch_id_organization_id_fkey" FOREIGN KEY ("branch_id", "organization_id") REFERENCES "branches"("id", "organization_id") ON DELETE CASCADE ON UPDATE CASCADE;
 DROP INDEX "profile_branches_account_id_branch_id_idx";
 CREATE INDEX "profile_branches_organization_id_branch_id_idx" ON "profile_branches"("organization_id", "branch_id");
@@ -68,15 +73,15 @@ ALTER TABLE "invitations" RENAME CONSTRAINT "invitations_account_id_fkey" TO "in
 DROP INDEX "invitations_account_id_status_idx";
 CREATE INDEX "invitations_organization_id_status_idx" ON "invitations"("organization_id", "status");
 
--- Rename account_id → organization_id on invitation_branches
+-- Rename account_id → organization_id on invitation_branches (re-create FK to renamed columns)
 ALTER TABLE "invitation_branches" RENAME COLUMN "account_id" TO "organization_id";
-ALTER TABLE "invitation_branches" DROP CONSTRAINT "invitation_branches_branch_id_account_id_fkey";
 ALTER TABLE "invitation_branches" ADD CONSTRAINT "invitation_branches_branch_id_organization_id_fkey" FOREIGN KEY ("branch_id", "organization_id") REFERENCES "branches"("id", "organization_id") ON DELETE CASCADE ON UPDATE CASCADE;
 DROP INDEX "invitation_branches_account_id_branch_id_idx";
 CREATE INDEX "invitation_branches_organization_id_branch_id_idx" ON "invitation_branches"("organization_id", "branch_id");
 
--- Rename max_accounts → max_organizations on subscription_plans
+-- Rename max_accounts → max_organizations on subscription_plans, drop the legacy default
 ALTER TABLE "subscription_plans" RENAME COLUMN "max_accounts" TO "max_organizations";
+ALTER TABLE "subscription_plans" ALTER COLUMN "max_organizations" DROP DEFAULT;
 
 -- Add DayOfWeek enum
 CREATE TYPE "DayOfWeek" AS ENUM ('MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN');
