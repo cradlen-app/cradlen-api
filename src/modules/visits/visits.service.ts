@@ -331,6 +331,158 @@ export class VisitsService {
     return paginated(visits, { page, limit, total });
   }
 
+  private todayBounds() {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+    return { start, end };
+  }
+
+  private listInclude = {
+    assigned_doctor: {
+      select: {
+        id: true,
+        specialty: true,
+        user: { select: { id: true, first_name: true, last_name: true } },
+      },
+    },
+    episode: {
+      select: {
+        id: true,
+        journey: {
+          select: {
+            patient: { select: { id: true, full_name: true } },
+          },
+        },
+      },
+    },
+  } as const;
+
+  private async assertBranchAccess(branchId: string, user: AuthContext) {
+    const branch = await this.prismaService.db.branch.findFirst({
+      where: {
+        id: branchId,
+        organization_id: user.organizationId,
+        is_deleted: false,
+      },
+      select: { id: true },
+    });
+    if (!branch) throw new NotFoundException(`Branch ${branchId} not found`);
+
+    const isOwner = user.roles.includes('OWNER');
+    const isInBranch = user.branchIds.includes(branchId);
+    if (!isOwner && !isInBranch) {
+      throw new ForbiddenException('Access denied');
+    }
+  }
+
+  async findBranchWaitingList(
+    branchId: string,
+    query: { page?: number; limit?: number },
+    user: AuthContext,
+  ) {
+    await this.assertBranchAccess(branchId, user);
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const { start, end } = this.todayBounds();
+    const where: Prisma.VisitWhereInput = {
+      branch_id: branchId,
+      is_deleted: false,
+      status: { in: ['SCHEDULED', 'CHECKED_IN'] },
+      scheduled_at: { gte: start, lte: end },
+    };
+
+    const [visits, total] = await this.prismaService.db.$transaction([
+      this.prismaService.db.visit.findMany({
+        where,
+        orderBy: [
+          { status: 'asc' },
+          { queue_number: 'asc' },
+          { scheduled_at: 'asc' },
+        ],
+        skip: (page - 1) * limit,
+        take: limit,
+        include: this.listInclude,
+      }),
+      this.prismaService.db.visit.count({ where }),
+    ]);
+    return paginated(visits, { page, limit, total });
+  }
+
+  async findBranchInProgress(
+    branchId: string,
+    query: { page?: number; limit?: number },
+    user: AuthContext,
+  ) {
+    await this.assertBranchAccess(branchId, user);
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const { start, end } = this.todayBounds();
+    const where: Prisma.VisitWhereInput = {
+      branch_id: branchId,
+      is_deleted: false,
+      status: 'IN_PROGRESS',
+      started_at: { gte: start, lte: end },
+    };
+
+    const [visits, total] = await this.prismaService.db.$transaction([
+      this.prismaService.db.visit.findMany({
+        where,
+        orderBy: { started_at: 'asc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: this.listInclude,
+      }),
+      this.prismaService.db.visit.count({ where }),
+    ]);
+    return paginated(visits, { page, limit, total });
+  }
+
+  async findMyWaitingList(
+    query: { page?: number; limit?: number },
+    user: AuthContext,
+  ) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const { start, end } = this.todayBounds();
+    const where: Prisma.VisitWhereInput = {
+      assigned_doctor_id: user.profileId,
+      is_deleted: false,
+      status: { in: ['SCHEDULED', 'CHECKED_IN'] },
+      scheduled_at: { gte: start, lte: end },
+    };
+
+    const [visits, total] = await this.prismaService.db.$transaction([
+      this.prismaService.db.visit.findMany({
+        where,
+        orderBy: [
+          { status: 'asc' },
+          { queue_number: 'asc' },
+          { scheduled_at: 'asc' },
+        ],
+        skip: (page - 1) * limit,
+        take: limit,
+        include: this.listInclude,
+      }),
+      this.prismaService.db.visit.count({ where }),
+    ]);
+    return paginated(visits, { page, limit, total });
+  }
+
+  async findMyCurrent(user: AuthContext) {
+    const visit = await this.prismaService.db.visit.findFirst({
+      where: {
+        assigned_doctor_id: user.profileId,
+        status: 'IN_PROGRESS',
+        is_deleted: false,
+      },
+      orderBy: { started_at: 'desc' },
+      include: this.listInclude,
+    });
+    return { data: visit };
+  }
+
   async findOne(id: string, user: AuthContext) {
     const visit = await this.prismaService.db.visit.findUnique({
       where: { id, is_deleted: false },
