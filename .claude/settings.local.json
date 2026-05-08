@@ -34,7 +34,9 @@
       "Bash(node -e \"const s = require\\('@sentry/nestjs'\\); console.log\\(typeof s.prismaIntegration\\)\")",
       "Bash(node -e \"const s = require\\('@sentry/nestjs'\\); console.log\\(Object.keys\\(s\\).filter\\(k => k.toLowerCase\\(\\).includes\\('prisma'\\)\\)\\)\")",
       "Bash(node -e \"const s = require\\('@sentry/nestjs'\\); console.log\\(typeof s.logger, s.logger ? Object.keys\\(s.logger\\) : 'N/A'\\)\")",
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "Bash(node -e \"const fs=require\\('fs'\\);const crypto=require\\('crypto'\\);const data=fs.readFileSync\\('prisma/migrations/20260504000000_rename_account_to_organization/migration.sql'\\);console.log\\(crypto.createHash\\('sha256'\\).update\\(data\\).digest\\('hex'\\)\\);\")",
+      "Bash(node -e \"const fs=require\\('fs'\\);const crypto=require\\('crypto'\\);const data=fs.readFileSync\\('prisma/migrations/20260508100000_add_visit_queue_number/migration.sql'\\);console.log\\(crypto.createHash\\('sha256'\\).update\\(data\\).digest\\('hex'\\)\\);\")"
     ]
   }
 }
