@@ -85,6 +85,7 @@ describe('VisitsService', () => {
   let gatewayMock: {
     emitVisitBooked: jest.Mock;
     emitVisitStatusUpdated: jest.Mock;
+    emitVisitUpdated: jest.Mock;
   };
   let db: {
     patientEpisode: {
@@ -133,6 +134,7 @@ describe('VisitsService', () => {
     gatewayMock = {
       emitVisitBooked: jest.fn(),
       emitVisitStatusUpdated: jest.fn(),
+      emitVisitUpdated: jest.fn(),
     };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -352,7 +354,7 @@ describe('VisitsService', () => {
       );
 
       expect(gatewayMock.emitVisitStatusUpdated).toHaveBeenCalledWith(
-        'doctor-uuid',
+        { assignedDoctorId: 'doctor-uuid', branchId: 'branch-uuid' },
         expect.any(Object),
       );
     });
@@ -546,7 +548,7 @@ describe('VisitsService', () => {
       await service.bookVisit(baseDto, mockUser);
 
       expect(gatewayMock.emitVisitBooked).toHaveBeenCalledWith(
-        'doctor-uuid',
+        { assignedDoctorId: 'doctor-uuid', branchId: 'branch-uuid' },
         expect.any(Object),
       );
     });
