@@ -14,18 +14,36 @@ export class VisitsGateway {
   @SubscribeMessage('join')
   handleJoin(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { doctorId: string },
+    @MessageBody() data: { doctorId?: string; branchId?: string },
   ) {
-    void client.join(`doctor:${data.doctorId}`);
+    if (data.doctorId) void client.join(`doctor:${data.doctorId}`);
+    if (data.branchId) void client.join(`branch:${data.branchId}`);
   }
 
-  emitVisitBooked(assignedDoctorId: string, payload: unknown) {
-    this.server.to(`doctor:${assignedDoctorId}`).emit('visit.booked', payload);
-  }
-
-  emitVisitStatusUpdated(assignedDoctorId: string, payload: unknown) {
+  emitVisitBooked(
+    args: { assignedDoctorId: string; branchId: string },
+    payload: unknown,
+  ) {
     this.server
-      .to(`doctor:${assignedDoctorId}`)
+      .to([`doctor:${args.assignedDoctorId}`, `branch:${args.branchId}`])
+      .emit('visit.booked', payload);
+  }
+
+  emitVisitStatusUpdated(
+    args: { assignedDoctorId: string; branchId: string },
+    payload: unknown,
+  ) {
+    this.server
+      .to([`doctor:${args.assignedDoctorId}`, `branch:${args.branchId}`])
       .emit('visit.status_updated', payload);
+  }
+
+  emitVisitUpdated(
+    args: { assignedDoctorId?: string; branchId: string },
+    payload: unknown,
+  ) {
+    const rooms = [`branch:${args.branchId}`];
+    if (args.assignedDoctorId) rooms.push(`doctor:${args.assignedDoctorId}`);
+    this.server.to(rooms).emit('visit.updated', payload);
   }
 }
