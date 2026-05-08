@@ -440,12 +440,14 @@ export class CalendarService {
     type: CalendarEventType,
     details: Record<string, unknown> | undefined,
   ) {
-    const dtoClass = {
+    if (type === 'PERSONAL') return;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const dtoClass: new () => any = {
       SURGERY: SurgeryDetailsDto,
       MEETING: MeetingDetailsDto,
-      PERSONAL: PersonalDetailsDto,
       LEAVE: LeaveDetailsDto,
-    }[type];
+    }[type as 'SURGERY' | 'MEETING' | 'LEAVE'];
     const instance = plainToInstance(dtoClass, details ?? {});
     const errors = await validate(instance, {
       whitelist: true,
