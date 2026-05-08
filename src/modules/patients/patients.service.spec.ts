@@ -223,7 +223,11 @@ describe('PatientsService', () => {
           episode: { journey: { patient_id: 'patient-uuid' } },
         },
       ]);
-      const result = await service.findAllForBranch('branch-uuid', {}, mockUser);
+      const result = await service.findAllForBranch(
+        'branch-uuid',
+        {},
+        mockUser,
+      );
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       expect((result as any).items[0].last_visit_date).toEqual(lastDate);
     });
@@ -232,7 +236,11 @@ describe('PatientsService', () => {
       authMock.assertCanAccessBranch.mockResolvedValue(undefined);
       db.$transaction.mockResolvedValue([[patientWithJourney], 1]);
       db.visit.findMany.mockResolvedValue([]);
-      const result = await service.findAllForBranch('branch-uuid', {}, mockUser);
+      const result = await service.findAllForBranch(
+        'branch-uuid',
+        {},
+        mockUser,
+      );
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       expect((result as any).items[0].last_visit_date).toBeNull();
     });
