@@ -232,7 +232,10 @@ export class VisitsService {
       return { visit, episode: episode, journey, patient };
     });
 
-    this.visitsGateway.emitVisitBooked(dto.assigned_doctor_id, result);
+    this.visitsGateway.emitVisitBooked(
+      { assignedDoctorId: dto.assigned_doctor_id, branchId },
+      result,
+    );
     return result;
   }
 
@@ -509,7 +512,7 @@ export class VisitsService {
         `Cannot update a visit in terminal status: ${visit.status}`,
       );
     }
-    return this.prismaService.db.visit.update({
+    const updated = await this.prismaService.db.visit.update({
       where: { id },
       data: {
         ...(dto.assigned_doctor_id !== undefined && {
@@ -524,6 +527,15 @@ export class VisitsService {
         ...(dto.notes !== undefined && { notes: dto.notes }),
       },
     });
+
+    this.visitsGateway.emitVisitUpdated(
+      {
+        assignedDoctorId: updated.assigned_doctor_id,
+        branchId: updated.branch_id,
+      },
+      updated,
+    );
+    return updated;
   }
 
   async updateStatus(id: string, dto: UpdateVisitStatusDto, user: AuthContext) {
@@ -561,7 +573,10 @@ export class VisitsService {
     );
 
     this.visitsGateway.emitVisitStatusUpdated(
-      updatedVisit.assigned_doctor_id,
+      {
+        assignedDoctorId: updatedVisit.assigned_doctor_id,
+        branchId: updatedVisit.branch_id,
+      },
       updatedVisit,
     );
     return updatedVisit;
