@@ -24,7 +24,7 @@ export class CreateCalendarEventDto {
   @IsBoolean() @IsOptional() all_day?: boolean;
   @IsUUID() @IsOptional() branch_id?: string;
   @IsUUID() @IsOptional() patient_id?: string;
-  @IsObject() details!: Record<string, unknown>;
+  @IsObject() @IsOptional() details?: Record<string, unknown>;
 
   @IsArray()
   @ArrayMaxSize(50)
