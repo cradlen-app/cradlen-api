@@ -13,6 +13,7 @@ export class CalendarEventDto {
   status!: string;
   details!: Record<string, unknown>;
   participants!: Array<{ profile_id: string; role: string }>;
+  patient!: { id: string; full_name: string } | null;
   created_at!: Date;
   updated_at!: Date;
 }
