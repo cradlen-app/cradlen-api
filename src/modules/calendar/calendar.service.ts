@@ -97,7 +97,7 @@ export class CalendarService {
         starts_at: startsAt,
         ends_at: endsAt,
         all_day: dto.all_day ?? false,
-        details: dto.details as Prisma.InputJsonValue,
+        details: (dto.details ?? {}) as Prisma.InputJsonValue,
         participants: participants.length
           ? {
               create: participants.map((p) => ({
@@ -261,7 +261,7 @@ export class CalendarService {
           ...(existing.type === 'SURGERY' &&
             dto.patient_id !== undefined && { patient_id: dto.patient_id }),
           ...(dto.details && {
-            details: dto.details as Prisma.InputJsonValue,
+            details: (dto.details ?? {}) as Prisma.InputJsonValue,
           }),
           ...(participants && {
             participants: {
@@ -438,7 +438,7 @@ export class CalendarService {
 
   private async validateDetails(
     type: CalendarEventType,
-    details: Record<string, unknown>,
+    details: Record<string, unknown> | undefined,
   ) {
     const dtoClass = {
       SURGERY: SurgeryDetailsDto,
