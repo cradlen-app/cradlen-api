@@ -1,12 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  ArrayMinSize,
-  IsArray,
-  IsIn,
-  IsOptional,
-  IsString,
-  MinLength,
-} from 'class-validator';
+import { IsArray, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class CreateOrganizationDto {
   @ApiProperty()
@@ -14,7 +7,11 @@ export class CreateOrganizationDto {
   @MinLength(1)
   organization_name!: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Specialty codes (or names) — resolved against the Specialty table.',
+  })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
@@ -44,20 +41,4 @@ export class CreateOrganizationDto {
   @IsOptional()
   @IsString()
   branch_country?: string;
-
-  @ApiProperty({ type: [String], example: ['OWNER'] })
-  @IsArray()
-  @ArrayMinSize(1)
-  @IsIn(['OWNER', 'DOCTOR'], { each: true })
-  roles!: string[];
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  specialty?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  job_title?: string;
 }

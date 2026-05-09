@@ -33,9 +33,18 @@ export class OrganizationsService {
     );
     const organization = await this.prismaService.db.organization.findFirst({
       where: { id: organizationId, is_deleted: false },
+      include: { specialty_links: { include: { specialty: true } } },
     });
     if (!organization) throw new NotFoundException('Organization not found');
-    return organization;
+    const { specialty_links, ...rest } = organization;
+    return {
+      ...rest,
+      specialties: specialty_links.map((l) => ({
+        id: l.specialty.id,
+        code: l.specialty.code,
+        name: l.specialty.name,
+      })),
+    };
   }
 
   async updateOrganization(
@@ -51,9 +60,6 @@ export class OrganizationsService {
       where: { id: organizationId },
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
-        ...(dto.specialities !== undefined && {
-          specialities: dto.specialities,
-        }),
         ...(dto.status !== undefined && { status: dto.status }),
       },
     });
@@ -61,19 +67,27 @@ export class OrganizationsService {
 
   async createOrganization(userId: string, dto: CreateOrganizationDto) {
     await this.subscriptionsService.assertOrganizationLimit(userId);
-    const isDoctor = dto.roles.includes('DOCTOR');
 
-    const [roles, freePlan] = await Promise.all([
-      Promise.all(
-        dto.roles.map((name) =>
-          this.prismaService.db.role
-            .findUnique({ where: { name } })
-            .then((r) => {
-              if (!r) throw new NotFoundException(`Role '${name}' not found`);
-              return r;
-            }),
-        ),
-      ),
+    // Resolve specialties by code (silent skip on miss).
+    const specialtyRows = dto.specialties?.length
+      ? await this.prismaService.db.specialty.findMany({
+          where: {
+            OR: [
+              { code: { in: dto.specialties } },
+              { name: { in: dto.specialties, mode: 'insensitive' } },
+            ],
+            is_deleted: false,
+          },
+        })
+      : [];
+
+    const [ownerRole, freePlan] = await Promise.all([
+      this.prismaService.db.role
+        .findUnique({ where: { name: 'OWNER' } })
+        .then((r) => {
+          if (!r) throw new NotFoundException("Role 'OWNER' not found");
+          return r;
+        }),
       this.prismaService.db.subscriptionPlan.findUnique({
         where: { plan: 'free_trial' },
       }),
@@ -88,7 +102,11 @@ export class OrganizationsService {
       const organization = await tx.organization.create({
         data: {
           name: dto.organization_name,
-          specialities: dto.specialties ?? [],
+          specialty_links: specialtyRows.length
+            ? {
+                create: specialtyRows.map((s) => ({ specialty_id: s.id })),
+              }
+            : undefined,
         },
       });
       const branch = await tx.branch.create({
@@ -106,15 +124,15 @@ export class OrganizationsService {
         data: {
           user_id: userId,
           organization_id: organization.id,
-          is_clinical: isDoctor,
-          specialty: isDoctor ? (dto.specialty ?? null) : null,
-          job_title: isDoctor ? (dto.job_title ?? null) : null,
-          roles: {
-            create: roles.map((role) => ({ role_id: role.id })),
-          },
+          roles: { create: [{ role_id: ownerRole.id }] },
           branches: {
             create: { branch_id: branch.id, organization_id: organization.id },
           },
+          specialty_links: specialtyRows.length
+            ? {
+                create: specialtyRows.map((s) => ({ specialty_id: s.id })),
+              }
+            : undefined,
         },
       });
       await tx.subscription.create({
@@ -128,12 +146,16 @@ export class OrganizationsService {
         organization: {
           id: organization.id,
           name: organization.name,
-          specialities: organization.specialities,
+          specialties: specialtyRows.map((s) => ({
+            id: s.id,
+            code: s.code,
+            name: s.name,
+          })),
           status: organization.status,
         },
         profile: {
           id: profile.id,
-          roles: dto.roles,
+          roles: ['OWNER'],
           branch: {
             id: branch.id,
             name: branch.name,

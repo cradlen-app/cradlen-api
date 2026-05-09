@@ -118,6 +118,20 @@ enum CalendarParticipantRole {
   ATTENDEE
 }
 
+enum ExecutiveTitle {
+  CEO
+  COO
+  CFO
+  CMO
+}
+
+enum EngagementType {
+  FULL_TIME
+  PART_TIME
+  ON_DEMAND
+  EXTERNAL_CONSULTANT
+}
+
 model SubscriptionPlan {
   id                String         @id @default(uuid()) @db.Uuid
   plan              String         @unique
@@ -132,20 +146,20 @@ model SubscriptionPlan {
 }
 
 model Organization {
-  id               String             @id @default(uuid()) @db.Uuid
+  id               String                  @id @default(uuid()) @db.Uuid
   name             String
-  specialities     String[]           @default([])
-  status           OrganizationStatus @default(ACTIVE)
-  is_deleted       Boolean            @default(false)
+  status           OrganizationStatus      @default(ACTIVE)
+  is_deleted       Boolean                 @default(false)
   deleted_at       DateTime?
-  created_at       DateTime           @default(now())
-  updated_at       DateTime           @updatedAt
+  created_at       DateTime                @default(now())
+  updated_at       DateTime                @updatedAt
   branches         Branch[]
   profiles         Profile[]
   invitations      Invitation[]
   subscriptions    Subscription[]
   patient_journeys PatientJourney[]
   calendar_events  CalendarEvent[]
+  specialty_links  OrganizationSpecialty[]
 
   @@index([status, is_deleted])
   @@map("organizations")
@@ -213,27 +227,54 @@ model Role {
   @@map("roles")
 }
 
+model JobFunction {
+  id               String                  @id @default(uuid()) @db.Uuid
+  name             String                  @unique
+  code             String                  @unique
+  is_clinical      Boolean                 @default(false)
+  created_at       DateTime                @default(now())
+  updated_at       DateTime                @updatedAt
+  profile_links    ProfileJobFunction[]
+  invitation_links InvitationJobFunction[]
+
+  @@map("job_functions")
+}
+
+model ProfileJobFunction {
+  id              String      @id @default(uuid()) @db.Uuid
+  profile_id      String      @db.Uuid
+  job_function_id String      @db.Uuid
+  created_at      DateTime    @default(now())
+  profile         Profile     @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+  job_function    JobFunction @relation(fields: [job_function_id], references: [id], onDelete: Cascade)
+
+  @@unique([profile_id, job_function_id])
+  @@index([job_function_id])
+  @@map("profile_job_functions")
+}
+
 model Profile {
-  id               String            @id @default(uuid()) @db.Uuid
-  user_id          String            @db.Uuid
-  organization_id  String            @db.Uuid
-  job_title        String?
-  specialty        String?
-  is_clinical      Boolean           @default(false)
-  is_active        Boolean           @default(true)
-  is_deleted       Boolean           @default(false)
-  deleted_at       DateTime?
-  created_at       DateTime          @default(now())
-  updated_at       DateTime          @updatedAt
-  user             User              @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  organization     Organization      @relation(fields: [organization_id], references: [id], onDelete: Cascade)
-  roles            ProfileRole[]
-  branches         ProfileBranch[]
-  workingSchedules WorkingSchedule[]
-  created_journeys PatientJourney[]
-  doctor_visits    Visit[]           @relation("DoctorVisits")
-  created_visits   Visit[]           @relation("CreatedVisits")
-  created_calendar_events     CalendarEvent[]            @relation("CreatedCalendarEvents")
+  id                            String                     @id @default(uuid()) @db.Uuid
+  user_id                       String                     @db.Uuid
+  organization_id               String                     @db.Uuid
+  executive_title               ExecutiveTitle?
+  engagement_type               EngagementType             @default(FULL_TIME)
+  is_active                     Boolean                    @default(true)
+  is_deleted                    Boolean                    @default(false)
+  deleted_at                    DateTime?
+  created_at                    DateTime                   @default(now())
+  updated_at                    DateTime                   @updatedAt
+  user                          User                       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  organization                  Organization               @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  roles                         ProfileRole[]
+  branches                      ProfileBranch[]
+  workingSchedules              WorkingSchedule[]
+  job_functions                 ProfileJobFunction[]
+  specialty_links               ProfileSpecialty[]
+  created_journeys              PatientJourney[]
+  doctor_visits                 Visit[]                    @relation("DoctorVisits")
+  created_visits                Visit[]                    @relation("CreatedVisits")
+  created_calendar_events       CalendarEvent[]            @relation("CreatedCalendarEvents")
   calendar_event_participations CalendarEventParticipant[]
 
   @@unique([user_id, organization_id])
@@ -327,28 +368,29 @@ model VerificationCode {
 }
 
 model Invitation {
-  id              String             @id @default(uuid()) @db.Uuid
-  organization_id String             @db.Uuid
-  invited_by_id   String             @db.Uuid
+  id              String                  @id @default(uuid()) @db.Uuid
+  organization_id String                  @db.Uuid
+  invited_by_id   String                  @db.Uuid
   email           String
   first_name      String
   last_name       String
   phone_number    String?
-  job_title       String?
-  specialty       String?
-  is_clinical     Boolean            @default(false)
+  executive_title ExecutiveTitle?
+  engagement_type EngagementType          @default(FULL_TIME)
   token_hash      String
-  status          InvitationStatus   @default(PENDING)
+  status          InvitationStatus        @default(PENDING)
   expires_at      DateTime
   accepted_at     DateTime?
-  is_deleted      Boolean            @default(false)
+  is_deleted      Boolean                 @default(false)
   deleted_at      DateTime?
-  created_at      DateTime           @default(now())
-  updated_at      DateTime           @updatedAt
-  organization    Organization       @relation(fields: [organization_id], references: [id], onDelete: Cascade)
-  invited_by      User               @relation("InvitedBy", fields: [invited_by_id], references: [id])
+  created_at      DateTime                @default(now())
+  updated_at      DateTime                @updatedAt
+  organization    Organization            @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  invited_by      User                    @relation("InvitedBy", fields: [invited_by_id], references: [id])
   roles           InvitationRole[]
   branches        InvitationBranch[]
+  job_functions   InvitationJobFunction[]
+  specialty_links InvitationSpecialty[]
 
   @@index([organization_id, status])
   @@index([email])
@@ -442,17 +484,88 @@ model WorkingShift {
 }
 
 model Specialty {
-  id          String            @id @default(uuid()) @db.Uuid
-  name        String            @unique
-  code        String            @unique
-  description String?
-  templates   JourneyTemplate[]
-  created_at  DateTime          @default(now())
-  updated_at  DateTime          @updatedAt
-  is_deleted  Boolean           @default(false)
-  deleted_at  DateTime?
+  id            String                  @id @default(uuid()) @db.Uuid
+  name          String                  @unique
+  code          String                  @unique
+  description   String?
+  templates     JourneyTemplate[]
+  procedures    Procedure[]
+  profile_links ProfileSpecialty[]
+  org_links     OrganizationSpecialty[]
+  inv_links     InvitationSpecialty[]
+  created_at    DateTime                @default(now())
+  updated_at    DateTime                @updatedAt
+  is_deleted    Boolean                 @default(false)
+  deleted_at    DateTime?
 
   @@map("specialties")
+}
+
+model Procedure {
+  id              String          @id @default(uuid()) @db.Uuid
+  specialty_id    String          @db.Uuid
+  name            String
+  code            String          @unique
+  description     String?
+  specialty       Specialty       @relation(fields: [specialty_id], references: [id], onDelete: Cascade)
+  calendar_events CalendarEvent[]
+  created_at      DateTime        @default(now())
+  updated_at      DateTime        @updatedAt
+  is_deleted      Boolean         @default(false)
+  deleted_at      DateTime?
+
+  @@index([specialty_id])
+  @@map("procedures")
+}
+
+model ProfileSpecialty {
+  id           String    @id @default(uuid()) @db.Uuid
+  profile_id   String    @db.Uuid
+  specialty_id String    @db.Uuid
+  created_at   DateTime  @default(now())
+  profile      Profile   @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+  specialty    Specialty @relation(fields: [specialty_id], references: [id], onDelete: Cascade)
+
+  @@unique([profile_id, specialty_id])
+  @@index([specialty_id])
+  @@map("profile_specialties")
+}
+
+model OrganizationSpecialty {
+  id              String       @id @default(uuid()) @db.Uuid
+  organization_id String       @db.Uuid
+  specialty_id    String       @db.Uuid
+  created_at      DateTime     @default(now())
+  organization    Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  specialty       Specialty    @relation(fields: [specialty_id], references: [id], onDelete: Cascade)
+
+  @@unique([organization_id, specialty_id])
+  @@index([specialty_id])
+  @@map("organization_specialties")
+}
+
+model InvitationSpecialty {
+  id            String     @id @default(uuid()) @db.Uuid
+  invitation_id String     @db.Uuid
+  specialty_id  String     @db.Uuid
+  created_at    DateTime   @default(now())
+  invitation    Invitation @relation(fields: [invitation_id], references: [id], onDelete: Cascade)
+  specialty     Specialty  @relation(fields: [specialty_id], references: [id], onDelete: Cascade)
+
+  @@unique([invitation_id, specialty_id])
+  @@map("invitation_specialties")
+}
+
+model InvitationJobFunction {
+  id              String      @id @default(uuid()) @db.Uuid
+  invitation_id   String      @db.Uuid
+  job_function_id String      @db.Uuid
+  created_at      DateTime    @default(now())
+  invitation      Invitation  @relation(fields: [invitation_id], references: [id], onDelete: Cascade)
+  job_function    JobFunction @relation(fields: [job_function_id], references: [id], onDelete: Cascade)
+
+  @@unique([invitation_id, job_function_id])
+  @@map("invitation_job_functions")
 }
 
 model JourneyTemplate {
@@ -490,19 +603,19 @@ model EpisodeTemplate {
 }
 
 model Patient {
-  id            String           @id @default(uuid()) @db.Uuid
-  national_id   String           @unique
-  full_name     String
-  husband_name  String?
-  date_of_birth DateTime         @db.Date
-  phone_number  String
-  address       String
-  journeys      PatientJourney[]
+  id              String           @id @default(uuid()) @db.Uuid
+  national_id     String           @unique
+  full_name       String
+  husband_name    String?
+  date_of_birth   DateTime         @db.Date
+  phone_number    String
+  address         String
+  journeys        PatientJourney[]
   calendar_events CalendarEvent[]
-  created_at    DateTime         @default(now())
-  updated_at    DateTime         @updatedAt
-  is_deleted    Boolean          @default(false)
-  deleted_at    DateTime?
+  created_at      DateTime         @default(now())
+  updated_at      DateTime         @updatedAt
+  is_deleted      Boolean          @default(false)
+  deleted_at      DateTime?
 
   @@map("patients")
 }
@@ -584,32 +697,35 @@ model Visit {
 }
 
 model CalendarEvent {
-  id              String              @id @default(uuid()) @db.Uuid
-  organization_id String              @db.Uuid
-  branch_id       String?             @db.Uuid
-  created_by_id   String              @db.Uuid
-  patient_id      String?             @db.Uuid
+  id              String                     @id @default(uuid()) @db.Uuid
+  organization_id String                     @db.Uuid
+  branch_id       String?                    @db.Uuid
+  created_by_id   String                     @db.Uuid
+  patient_id      String?                    @db.Uuid
+  procedure_id    String?                    @db.Uuid
   type            CalendarEventType
   title           String
   description     String?
   starts_at       DateTime
   ends_at         DateTime
-  all_day         Boolean             @default(false)
-  status          CalendarEventStatus @default(SCHEDULED)
-  details         Json                @default("{}")
-  created_at      DateTime            @default(now())
-  updated_at      DateTime            @updatedAt
-  is_deleted      Boolean             @default(false)
+  all_day         Boolean                    @default(false)
+  status          CalendarEventStatus        @default(SCHEDULED)
+  details         Json                       @default("{}")
+  created_at      DateTime                   @default(now())
+  updated_at      DateTime                   @updatedAt
+  is_deleted      Boolean                    @default(false)
   deleted_at      DateTime?
-  organization    Organization        @relation(fields: [organization_id], references: [id], onDelete: Cascade)
-  branch          Branch?             @relation(fields: [branch_id], references: [id], onDelete: SetNull)
-  created_by      Profile             @relation("CreatedCalendarEvents", fields: [created_by_id], references: [id], onDelete: Cascade)
-  patient         Patient?            @relation(fields: [patient_id], references: [id], onDelete: SetNull)
+  organization    Organization               @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  branch          Branch?                    @relation(fields: [branch_id], references: [id], onDelete: SetNull)
+  created_by      Profile                    @relation("CreatedCalendarEvents", fields: [created_by_id], references: [id], onDelete: Cascade)
+  patient         Patient?                   @relation(fields: [patient_id], references: [id], onDelete: SetNull)
+  procedure       Procedure?                 @relation(fields: [procedure_id], references: [id], onDelete: SetNull)
   participants    CalendarEventParticipant[]
 
   @@index([organization_id, branch_id, starts_at])
   @@index([created_by_id, starts_at])
   @@index([patient_id])
+  @@index([procedure_id])
   @@index([type])
   @@map("calendar_events")
 }
