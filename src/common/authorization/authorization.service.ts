@@ -5,6 +5,7 @@ const ORGANIZATION_MANAGER_ROLES = ['OWNER'];
 const BRANCH_MANAGER_ROLES = ['OWNER'];
 const STAFF_MANAGER_ROLES = ['OWNER'];
 const STAFF_VIEWER_ROLES = ['OWNER', 'DOCTOR', 'RECEPTIONIST'];
+const ORG_WIDE_ROLES = ['OWNER'];
 
 @Injectable()
 export class AuthorizationService {
@@ -27,7 +28,6 @@ export class AuthorizationService {
       },
       include: {
         roles: { include: { role: true } },
-        branches: { select: { branch_id: true } },
       },
     });
 
@@ -35,14 +35,37 @@ export class AuthorizationService {
       throw new ForbiddenException('Invalid profile context');
     }
 
+    const branchIds = await this.getEffectiveBranchIds(
+      profileId,
+      organizationId,
+    );
+
     return {
       userId,
       profileId,
       organizationId,
       activeBranchId,
       roles: profile.roles.map((item) => item.role.name),
-      branchIds: profile.branches.map((item) => item.branch_id),
+      branchIds,
     };
+  }
+
+  async getEffectiveBranchIds(
+    profileId: string,
+    organizationId: string,
+  ): Promise<string[]> {
+    if (await this.hasAnyRole(profileId, organizationId, ORG_WIDE_ROLES)) {
+      const branches = await this.prismaService.db.branch.findMany({
+        where: { organization_id: organizationId, is_deleted: false },
+        select: { id: true },
+      });
+      return branches.map((b) => b.id);
+    }
+    const links = await this.prismaService.db.profileBranch.findMany({
+      where: { profile_id: profileId, organization_id: organizationId },
+      select: { branch_id: true },
+    });
+    return links.map((l) => l.branch_id);
   }
 
   async canManageOrganization(
@@ -61,6 +84,17 @@ export class AuthorizationService {
     organizationId: string,
     branchId: string,
   ): Promise<boolean> {
+    if (await this.hasAnyRole(profileId, organizationId, ORG_WIDE_ROLES)) {
+      const branch = await this.prismaService.db.branch.findFirst({
+        where: {
+          id: branchId,
+          organization_id: organizationId,
+          is_deleted: false,
+        },
+        select: { id: true },
+      });
+      return !!branch;
+    }
     const [hasRole, hasBranch] = await Promise.all([
       this.hasAnyRole(profileId, organizationId, BRANCH_MANAGER_ROLES),
       this.prismaService.db.profileBranch.findFirst({
@@ -75,11 +109,28 @@ export class AuthorizationService {
     return hasRole && !!hasBranch;
   }
 
-  async canAccessBranch(profileId: string, branchId: string): Promise<boolean> {
+  async canAccessBranch(
+    profileId: string,
+    organizationId: string,
+    branchId: string,
+  ): Promise<boolean> {
+    if (await this.hasAnyRole(profileId, organizationId, ORG_WIDE_ROLES)) {
+      const branch = await this.prismaService.db.branch.findFirst({
+        where: {
+          id: branchId,
+          organization_id: organizationId,
+          is_deleted: false,
+          status: 'ACTIVE',
+        },
+        select: { id: true },
+      });
+      return !!branch;
+    }
     const match = await this.prismaService.db.profileBranch.findFirst({
       where: {
         profile_id: profileId,
         branch_id: branchId,
+        organization_id: organizationId,
         profile: {
           is_deleted: false,
           is_active: true,
@@ -94,9 +145,10 @@ export class AuthorizationService {
 
   async assertCanAccessBranch(
     profileId: string,
+    organizationId: string,
     branchId: string,
   ): Promise<void> {
-    if (!(await this.canAccessBranch(profileId, branchId))) {
+    if (!(await this.canAccessBranch(profileId, organizationId, branchId))) {
       throw new ForbiddenException('Branch access denied');
     }
   }

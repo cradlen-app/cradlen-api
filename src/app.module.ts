@@ -16,7 +16,6 @@ import { BranchesModule } from './modules/branches/branches.module.js';
 import { ProfilesModule } from './modules/profiles/profiles.module.js';
 import { InvitationsModule } from './modules/invitations/invitations.module.js';
 import { StaffModule } from './modules/staff/staff.module.js';
-import { UsersModule } from './modules/users/users.module.js';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module.js';
 import { NotificationsModule } from './modules/notifications/notifications.module.js';
 import { SpecialtiesModule } from './modules/specialties/specialties.module';
@@ -50,7 +49,6 @@ import type { AppConfig } from './config/app.config';
     HealthModule,
     AuthModule,
     RolesModule,
-    UsersModule,
     OrganizationsModule,
     ProfilesModule,
     BranchesModule,
