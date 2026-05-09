@@ -15,7 +15,11 @@ export class ProfilesService {
         organization: { is_deleted: false, status: 'ACTIVE' },
       },
       include: {
-        organization: true,
+        organization: {
+          include: {
+            specialty_links: { include: { specialty: true } },
+          },
+        },
         roles: { include: { role: true } },
         branches: {
           where: { branch: { is_deleted: false } },
@@ -30,7 +34,11 @@ export class ProfilesService {
       organization: {
         id: profile.organization.id,
         name: profile.organization.name,
-        specialities: profile.organization.specialities,
+        specialties: profile.organization.specialty_links.map((l) => ({
+          id: l.specialty.id,
+          code: l.specialty.code,
+          name: l.specialty.name,
+        })),
         status: profile.organization.status,
       },
       roles: profile.roles.map((item) => item.role.name),
@@ -59,51 +67,28 @@ export class ProfilesService {
           where: { branch: { is_deleted: false } },
           include: { branch: true },
         },
+        job_functions: { include: { job_function: true } },
+        specialty_links: { include: { specialty: true } },
       },
     });
     if (!profile) throw new NotFoundException('Profile not found');
 
-    const { first_name, last_name, phone_number, ...profileFields } = dto;
-    const userFields = { first_name, last_name, phone_number };
-    const hasUserFields = Object.values(userFields).some(
-      (v) => v !== undefined,
-    );
-    const hasProfileFields = Object.values(profileFields).some(
-      (v) => v !== undefined,
-    );
+    const { first_name, last_name, phone_number } = dto;
+    const hasUserFields =
+      first_name !== undefined ||
+      last_name !== undefined ||
+      phone_number !== undefined;
 
-    const [updatedUser, updatedProfile] =
-      await this.prismaService.db.$transaction(async (tx) => {
-        const u = hasUserFields
-          ? await tx.user.update({
-              where: { id: userId },
-              data: {
-                ...(first_name !== undefined && { first_name }),
-                ...(last_name !== undefined && { last_name }),
-                ...(phone_number !== undefined && { phone_number }),
-              },
-            })
-          : profile.user;
-
-        const p = hasProfileFields
-          ? await tx.profile.update({
-              where: { id: profileId },
-              data: {
-                ...(profileFields.job_title !== undefined && {
-                  job_title: profileFields.job_title,
-                }),
-                ...(profileFields.specialty !== undefined && {
-                  specialty: profileFields.specialty,
-                }),
-                ...(profileFields.is_clinical !== undefined && {
-                  is_clinical: profileFields.is_clinical,
-                }),
-              },
-            })
-          : profile;
-
-        return [u, p];
-      });
+    const updatedUser = hasUserFields
+      ? await this.prismaService.db.user.update({
+          where: { id: userId },
+          data: {
+            ...(first_name !== undefined && { first_name }),
+            ...(last_name !== undefined && { last_name }),
+            ...(phone_number !== undefined && { phone_number }),
+          },
+        })
+      : profile.user;
 
     return {
       id: profile.id,
@@ -111,9 +96,8 @@ export class ProfilesService {
       last_name: updatedUser.last_name,
       email: updatedUser.email,
       phone_number: updatedUser.phone_number,
-      job_title: updatedProfile.job_title,
-      specialty: updatedProfile.specialty,
-      is_clinical: updatedProfile.is_clinical,
+      executive_title: profile.executive_title,
+      engagement_type: profile.engagement_type,
       roles: profile.roles.map((item) => item.role.name),
       organization: {
         id: profile.organization.id,
@@ -125,6 +109,17 @@ export class ProfilesService {
         city: item.branch.city,
         governorate: item.branch.governorate,
         is_main: item.branch.is_main,
+      })),
+      job_functions: profile.job_functions.map((jf) => ({
+        id: jf.job_function.id,
+        code: jf.job_function.code,
+        name: jf.job_function.name,
+        is_clinical: jf.job_function.is_clinical,
+      })),
+      specialties: profile.specialty_links.map((sl) => ({
+        id: sl.specialty.id,
+        code: sl.specialty.code,
+        name: sl.specialty.name,
       })),
     };
   }

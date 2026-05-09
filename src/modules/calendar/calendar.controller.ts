@@ -16,6 +16,7 @@ import { CreateCalendarEventDto } from './dto/create-calendar-event.dto.js';
 import { UpdateCalendarEventDto } from './dto/update-calendar-event.dto.js';
 import { ListCalendarEventsQueryDto } from './dto/list-calendar-events.query.js';
 import { CheckConflictsDto } from './dto/check-conflicts.dto.js';
+import { StaffSuggestionsQueryDto } from './dto/staff-suggestions.query.js';
 import {
   CalendarEventDto,
   CalendarEventWithConflictsDto,
@@ -64,6 +65,18 @@ export class CalendarController {
     @CurrentUser() user: AuthContext,
   ) {
     return this.calendarService.checkConflicts(dto, user);
+  }
+
+  @Get('staff')
+  @ApiOperation({
+    summary:
+      'List candidate staff for a calendar slot. Filters by job_function code + branch + time window. Includes ON_DEMAND profiles. Marks each candidate with has_conflict.',
+  })
+  findAvailableStaff(
+    @Query() query: StaffSuggestionsQueryDto,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.calendarService.findAvailableStaff(query, user);
   }
 
   @Get('events/:id')
