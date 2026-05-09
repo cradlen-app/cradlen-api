@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsOptional, IsString, Length } from 'class-validator';
+import { IsOptional, IsString, Length } from 'class-validator';
 
 export class UpdateProfileDto {
   @ApiPropertyOptional()
@@ -18,19 +18,4 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsString()
   phone_number?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  job_title?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  specialty?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
-  is_clinical?: boolean;
 }

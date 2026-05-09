@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { EngagementType, ExecutiveTitle } from '@prisma/client';
 
 export class ProfileRoleDto {
   @ApiProperty()
@@ -8,6 +9,31 @@ export class ProfileRoleDto {
   name!: string;
 }
 
+export class SpecialtyRefDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  code!: string;
+
+  @ApiProperty()
+  name!: string;
+}
+
+export class JobFunctionRefDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  code!: string;
+
+  @ApiProperty()
+  name!: string;
+
+  @ApiProperty()
+  is_clinical!: boolean;
+}
+
 export class ProfileOrganizationDto {
   @ApiProperty()
   id!: string;
@@ -15,8 +41,8 @@ export class ProfileOrganizationDto {
   @ApiProperty()
   name!: string;
 
-  @ApiProperty({ type: [String] })
-  specialities!: string[];
+  @ApiProperty({ type: [SpecialtyRefDto] })
+  specialties!: SpecialtyRefDto[];
 
   @ApiProperty()
   status!: string;
@@ -46,14 +72,11 @@ export class StaffProfileDto {
   @ApiProperty()
   staff_id!: string;
 
-  @ApiPropertyOptional({ nullable: true })
-  job_title!: string | null;
+  @ApiPropertyOptional({ enum: ExecutiveTitle, nullable: true })
+  executive_title!: ExecutiveTitle | null;
 
-  @ApiPropertyOptional({ nullable: true })
-  specialty!: string | null;
-
-  @ApiProperty()
-  is_clinical!: boolean;
+  @ApiProperty({ enum: EngagementType })
+  engagement_type!: EngagementType;
 
   @ApiProperty({ type: [ProfileRoleDto] })
   roles!: ProfileRoleDto[];
@@ -63,6 +86,12 @@ export class StaffProfileDto {
 
   @ApiProperty({ type: [ProfileBranchDto] })
   branches!: ProfileBranchDto[];
+
+  @ApiProperty({ type: [JobFunctionRefDto] })
+  job_functions!: JobFunctionRefDto[];
+
+  @ApiProperty({ type: [SpecialtyRefDto] })
+  specialties!: SpecialtyRefDto[];
 }
 
 export class MeResponseDto {

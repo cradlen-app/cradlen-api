@@ -2,7 +2,6 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ArrayMinSize,
   IsArray,
-  IsBoolean,
   IsEnum,
   IsOptional,
   IsString,
@@ -72,21 +71,6 @@ export class UpdateStaffDto {
   @IsString()
   phone_number?: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  job_title?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  specialty?: string;
-
-  @ApiPropertyOptional({ default: false })
-  @IsOptional()
-  @IsBoolean()
-  is_clinical?: boolean;
-
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   @IsArray()
@@ -132,21 +116,6 @@ export class CreateStaffDto {
   @IsString()
   @MinLength(8)
   password!: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  job_title?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  specialty?: string;
-
-  @ApiPropertyOptional({ default: false })
-  @IsOptional()
-  @IsBoolean()
-  is_clinical?: boolean;
 
   @ApiProperty({ type: [String] })
   @IsArray()

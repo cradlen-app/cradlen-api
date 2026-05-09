@@ -5,12 +5,11 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuthorizationService } from '../../common/authorization/authorization.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 
-const mockDoctorProfile = {
+const mockStaffProfile = {
   id: 'prof-uuid',
   user_id: 'user-uuid',
-  job_title: 'Gynecologist',
-  specialty: 'Gynecology',
-  is_clinical: true,
+  executive_title: null,
+  engagement_type: 'FULL_TIME',
   user: {
     id: 'user-uuid',
     first_name: 'Ahmed',
@@ -18,7 +17,7 @@ const mockDoctorProfile = {
     email: 'ahmed@cradlen.com',
     phone_number: '+201234567890',
   },
-  roles: [{ role: { id: 'role-uuid', name: 'DOCTOR' } }],
+  roles: [{ role: { id: 'role-uuid', name: 'STAFF' } }],
   branches: [
     {
       branch: {
@@ -28,6 +27,19 @@ const mockDoctorProfile = {
         governorate: 'Cairo',
       },
     },
+  ],
+  job_functions: [
+    {
+      job_function: {
+        id: 'jf-uuid',
+        code: 'OBGYN',
+        name: 'OB/GYN',
+        is_clinical: true,
+      },
+    },
+  ],
+  specialty_links: [
+    { specialty: { id: 'spec-uuid', code: 'GYN', name: 'Gynecology' } },
   ],
   workingSchedules: [],
 };
@@ -59,7 +71,7 @@ describe('StaffService.listStaff', () => {
   });
 
   it('returns all staff when no role filter is given', async () => {
-    db.profile.findMany.mockResolvedValue([mockDoctorProfile]);
+    db.profile.findMany.mockResolvedValue([mockStaffProfile]);
     const result = await service.listStaff('caller-uuid', 'org-uuid');
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -71,24 +83,24 @@ describe('StaffService.listStaff', () => {
   });
 
   it('adds role filter to where clause when role is provided', async () => {
-    db.profile.findMany.mockResolvedValue([mockDoctorProfile]);
-    await service.listStaff('caller-uuid', 'org-uuid', undefined, 'DOCTOR');
+    db.profile.findMany.mockResolvedValue([mockStaffProfile]);
+    await service.listStaff('caller-uuid', 'org-uuid', undefined, 'STAFF');
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          roles: { some: { role: { name: 'DOCTOR' } } },
+          roles: { some: { role: { name: 'STAFF' } } },
         }),
       }),
     );
   });
 
   it('normalises role to uppercase', async () => {
-    db.profile.findMany.mockResolvedValue([mockDoctorProfile]);
-    await service.listStaff('caller-uuid', 'org-uuid', undefined, 'doctor');
+    db.profile.findMany.mockResolvedValue([mockStaffProfile]);
+    await service.listStaff('caller-uuid', 'org-uuid', undefined, 'staff');
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          roles: { some: { role: { name: 'DOCTOR' } } },
+          roles: { some: { role: { name: 'STAFF' } } },
         }),
       }),
     );
@@ -102,13 +114,13 @@ describe('StaffService.listStaff', () => {
   });
 
   it('applies both branchId and role filters together', async () => {
-    db.profile.findMany.mockResolvedValue([mockDoctorProfile]);
-    await service.listStaff('caller-uuid', 'org-uuid', 'branch-uuid', 'DOCTOR');
+    db.profile.findMany.mockResolvedValue([mockStaffProfile]);
+    await service.listStaff('caller-uuid', 'org-uuid', 'branch-uuid', 'STAFF');
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
           branches: { some: { branch_id: 'branch-uuid' } },
-          roles: { some: { role: { name: 'DOCTOR' } } },
+          roles: { some: { role: { name: 'STAFF' } } },
         }),
       }),
     );
@@ -120,18 +132,13 @@ describe('StaffService.listStaff', () => {
     ).rejects.toThrow(BadRequestException);
   });
 
-  it('adds RECEPTIONIST role filter to where clause', async () => {
+  it('adds EXTERNAL role filter to where clause', async () => {
     db.profile.findMany.mockResolvedValue([]);
-    await service.listStaff(
-      'caller-uuid',
-      'org-uuid',
-      undefined,
-      'RECEPTIONIST',
-    );
+    await service.listStaff('caller-uuid', 'org-uuid', undefined, 'EXTERNAL');
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          roles: { some: { role: { name: 'RECEPTIONIST' } } },
+          roles: { some: { role: { name: 'EXTERNAL' } } },
         }),
       }),
     );

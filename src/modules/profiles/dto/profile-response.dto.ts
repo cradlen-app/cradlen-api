@@ -3,7 +3,7 @@ export class ProfileResponseDto {
   organization!: {
     id: string;
     name: string;
-    specialities: string[];
+    specialties: { id: string; code: string; name: string }[];
     status: string;
   };
   roles!: string[];
