@@ -20,6 +20,7 @@ import {
 } from '../../common/swagger/index.js';
 import {
   AcceptInvitationDto,
+  BulkCreateInvitationsDto,
   CreateInvitationDto,
   DeclineInvitationDto,
   InvitationPreviewResponseDto,
@@ -42,6 +43,27 @@ export class InvitationsController {
     @Body() dto: CreateInvitationDto,
   ) {
     return this.invitationsService.createInvitation(
+      user.userId,
+      user.profileId,
+      organizationId,
+      dto,
+    );
+  }
+
+  @Post('organizations/:organizationId/invitations/bulk')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Bulk-create staff invitations',
+    description:
+      'Creates all invitations in a single transaction (rolls back on any DB error). Emails are sent after commit; per-email failures are returned in the response.',
+  })
+  @ApiStandardResponse(Object)
+  bulkCreateInvitations(
+    @CurrentUser() user: AuthContext,
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Body() dto: BulkCreateInvitationsDto,
+  ) {
+    return this.invitationsService.bulkCreateInvitations(
       user.userId,
       user.profileId,
       organizationId,

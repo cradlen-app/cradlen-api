@@ -516,13 +516,20 @@ describe('AuthService', () => {
       profiles: [
         {
           id: profileId,
-          job_title: 'Surgeon',
-          specialty: 'Orthopedics',
-          is_clinical: true,
+          executive_title: null,
+          engagement_type: 'FULL_TIME',
           organization: {
             id: '33333333-3333-4333-8333-333333333333',
             name: 'Clinic',
-            specialities: ['Orthopedics'],
+            specialty_links: [
+              {
+                specialty: {
+                  id: 'spec-1',
+                  code: 'GYN',
+                  name: 'Gynecology',
+                },
+              },
+            ],
             status: 'ACTIVE',
           },
           roles: [{ role: { id: 'role-1', name: 'OWNER' } }],
@@ -535,6 +542,25 @@ describe('AuthService', () => {
                 governorate: 'Cairo',
                 country: null,
                 is_main: true,
+              },
+            },
+          ],
+          job_functions: [
+            {
+              job_function: {
+                id: 'jf-1',
+                code: 'OBGYN',
+                name: 'OB/GYN',
+                is_clinical: true,
+              },
+            },
+          ],
+          specialty_links: [
+            {
+              specialty: {
+                id: 'spec-1',
+                code: 'GYN',
+                name: 'Gynecology',
               },
             },
           ],
@@ -552,12 +578,12 @@ describe('AuthService', () => {
       profiles: [
         {
           staff_id: profileId,
-          job_title: 'Surgeon',
-          specialty: 'Orthopedics',
-          is_clinical: true,
+          executive_title: null,
+          engagement_type: 'FULL_TIME',
           organization: {
             id: '33333333-3333-4333-8333-333333333333',
             name: 'Clinic',
+            specialties: [{ id: 'spec-1', code: 'GYN', name: 'Gynecology' }],
           },
           roles: [{ id: 'role-1', name: 'OWNER' }],
           branches: [
@@ -567,6 +593,10 @@ describe('AuthService', () => {
               is_main: true,
             },
           ],
+          job_functions: [
+            { id: 'jf-1', code: 'OBGYN', name: 'OB/GYN', is_clinical: true },
+          ],
+          specialties: [{ id: 'spec-1', code: 'GYN', name: 'Gynecology' }],
         },
       ],
     });
@@ -676,6 +706,12 @@ describe('AuthService', () => {
       subscriptionPlan: {
         findUnique: jest.fn().mockResolvedValue({ id: 'plan-id' }),
       },
+      jobFunction: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      specialty: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
     });
 
     const signupToken = jwtService.sign(
@@ -692,7 +728,6 @@ describe('AuthService', () => {
         branch_address: '1 Clinic St',
         branch_city: 'Cairo',
         branch_governorate: 'Cairo',
-        roles: ['OWNER'],
       }),
     ).rejects.toThrow(ConflictException);
 

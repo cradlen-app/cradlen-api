@@ -19,6 +19,7 @@ import { UpdateCalendarEventDto } from './dto/update-calendar-event.dto.js';
 import { ListCalendarEventsQueryDto } from './dto/list-calendar-events.query.js';
 import { CheckConflictsDto } from './dto/check-conflicts.dto.js';
 import { ParticipantDto } from './dto/participant.dto.js';
+import { StaffSuggestionsQueryDto } from './dto/staff-suggestions.query.js';
 import {
   LeaveDetailsDto,
   MeetingDetailsDto,
@@ -66,8 +67,12 @@ export class CalendarService {
       if (!dto.patient_id) {
         throw new BadRequestException('patient_id is required for SURGERY');
       }
+      if (!dto.procedure_id) {
+        throw new BadRequestException('procedure_id is required for SURGERY');
+      }
       await this.assertPatientInOrg(dto.patient_id, user.organizationId);
       await this.assertBranchInOrg(dto.branch_id, user.organizationId);
+      await this.assertProcedureExists(dto.procedure_id);
       this.assertCallerInBranch(user, dto.branch_id);
       await this.assertParticipantsInBranch(
         participants.map((p) => p.profile_id),
@@ -91,6 +96,8 @@ export class CalendarService {
         branch_id: dto.branch_id ?? null,
         created_by_id: user.profileId,
         patient_id: dto.type === 'SURGERY' ? (dto.patient_id ?? null) : null,
+        procedure_id:
+          dto.type === 'SURGERY' ? (dto.procedure_id ?? null) : null,
         type: dto.type,
         title: dto.title,
         description: dto.description ?? null,
@@ -241,6 +248,15 @@ export class CalendarService {
       await this.assertBranchInOrg(branchId, user.organizationId);
     }
 
+    if (existing.type === 'SURGERY' && dto.procedure_id !== undefined) {
+      if (!dto.procedure_id) {
+        throw new BadRequestException('procedure_id is required for SURGERY');
+      }
+      if (dto.procedure_id !== existing.procedure_id) {
+        await this.assertProcedureExists(dto.procedure_id);
+      }
+    }
+
     const event = await this.prismaService.db.$transaction(async (tx) => {
       if (participants) {
         await tx.calendarEventParticipant.deleteMany({
@@ -260,6 +276,10 @@ export class CalendarService {
           ...(dto.branch_id !== undefined && { branch_id: dto.branch_id }),
           ...(existing.type === 'SURGERY' &&
             dto.patient_id !== undefined && { patient_id: dto.patient_id }),
+          ...(existing.type === 'SURGERY' &&
+            dto.procedure_id !== undefined && {
+              procedure_id: dto.procedure_id,
+            }),
           ...(dto.details && {
             details: (dto.details ?? {}) as Prisma.InputJsonValue,
           }),
@@ -447,7 +467,7 @@ export class CalendarService {
       SURGERY: SurgeryDetailsDto,
       MEETING: MeetingDetailsDto,
       LEAVE: LeaveDetailsDto,
-    }[type as 'SURGERY' | 'MEETING' | 'LEAVE'];
+    }[type];
     const instance = plainToInstance(dtoClass, details ?? {});
     const errors = await validate(instance, {
       whitelist: true,
@@ -483,6 +503,122 @@ export class CalendarService {
       select: { id: true },
     });
     if (!patient) throw new NotFoundException(`Patient ${patientId} not found`);
+  }
+
+  async findAvailableStaff(query: StaffSuggestionsQueryDto, user: AuthContext) {
+    const startsAt = new Date(query.starts_at);
+    const endsAt = new Date(query.ends_at);
+    if (endsAt <= startsAt) {
+      throw new BadRequestException('ends_at must be after starts_at');
+    }
+    await this.assertBranchInOrg(query.branch_id, user.organizationId);
+    this.assertCallerInBranch(user, query.branch_id);
+
+    const jobFunction = await this.prismaService.db.jobFunction.findUnique({
+      where: { code: query.job_function },
+      select: { id: true, code: true, name: true },
+    });
+    if (!jobFunction) {
+      throw new NotFoundException(
+        `JobFunction ${query.job_function} not found`,
+      );
+    }
+
+    // Candidates: active profiles in this org with the requested job function,
+    // either assigned to this branch OR engagement_type=ON_DEMAND (cross-branch).
+    const candidates = await this.prismaService.db.profile.findMany({
+      where: {
+        organization_id: user.organizationId,
+        is_active: true,
+        is_deleted: false,
+        job_functions: {
+          some: { job_function_id: jobFunction.id },
+        },
+        OR: [
+          {
+            branches: {
+              some: {
+                branch_id: query.branch_id,
+                organization_id: user.organizationId,
+              },
+            },
+          },
+          { engagement_type: 'ON_DEMAND' },
+        ],
+      },
+      select: {
+        id: true,
+        engagement_type: true,
+        executive_title: true,
+        user: {
+          select: {
+            id: true,
+            first_name: true,
+            last_name: true,
+            email: true,
+          },
+        },
+        job_functions: {
+          select: {
+            job_function: { select: { id: true, code: true, name: true } },
+          },
+        },
+        branches: {
+          select: { branch_id: true },
+        },
+      },
+    });
+
+    if (!candidates.length) {
+      return { job_function: jobFunction, candidates: [] };
+    }
+
+    // Bulk conflict check across all candidates in one call. The conflicts
+    // service returns per-profile conflict descriptors which we bucket back
+    // onto each candidate.
+    const conflicts = await this.conflictsService.findConflicts({
+      organizationId: user.organizationId,
+      startsAt,
+      endsAt,
+      participantProfileIds: candidates.map((c) => c.id),
+      branchId: query.branch_id,
+    });
+
+    const conflictsByProfile = new Map<string, typeof conflicts>();
+    for (const c of conflicts) {
+      const list = conflictsByProfile.get(c.profile_id) ?? [];
+      list.push(c);
+      conflictsByProfile.set(c.profile_id, list);
+    }
+
+    return {
+      job_function: jobFunction,
+      candidates: candidates.map((c) => {
+        const profileConflicts = conflictsByProfile.get(c.id) ?? [];
+        return {
+          profile_id: c.id,
+          user: c.user,
+          engagement_type: c.engagement_type,
+          executive_title: c.executive_title,
+          assigned_to_branch: c.branches.some(
+            (b) => b.branch_id === query.branch_id,
+          ),
+          job_functions: c.job_functions.map((j) => j.job_function),
+          has_conflict: profileConflicts.length > 0,
+          conflicts: profileConflicts,
+        };
+      }),
+    };
+  }
+
+  private async assertProcedureExists(procedureId: string) {
+    const procedure = await this.prismaService.db.procedure.findFirst({
+      where: { id: procedureId, is_deleted: false },
+      select: { id: true },
+    });
+    if (!procedure) {
+      throw new NotFoundException(`Procedure ${procedureId} not found`);
+    }
   }
 
   private async assertBranchInOrg(branchId: string, organizationId: string) {

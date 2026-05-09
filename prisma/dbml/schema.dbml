@@ -16,7 +16,6 @@ Table subscription_plans {
 Table organizations {
   id String [pk]
   name String [not null]
-  specialities String[] [not null]
   status OrganizationStatus [not null, default: 'ACTIVE']
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
@@ -28,6 +27,7 @@ Table organizations {
   subscriptions subscriptions [not null]
   patient_journeys patient_journeys [not null]
   calendar_events calendar_events [not null]
+  specialty_links organization_specialties [not null]
 }
 
 Table branches {
@@ -87,13 +87,36 @@ Table roles {
   invitationRoles invitation_roles [not null]
 }
 
+Table job_functions {
+  id String [pk]
+  name String [unique, not null]
+  code String [unique, not null]
+  is_clinical Boolean [not null, default: false]
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  profile_links profile_job_functions [not null]
+  invitation_links invitation_job_functions [not null]
+}
+
+Table profile_job_functions {
+  id String [pk]
+  profile_id String [not null]
+  job_function_id String [not null]
+  created_at DateTime [default: `now()`, not null]
+  profile profiles [not null]
+  job_function job_functions [not null]
+
+  indexes {
+    (profile_id, job_function_id) [unique]
+  }
+}
+
 Table profiles {
   id String [pk]
   user_id String [not null]
   organization_id String [not null]
-  job_title String
-  specialty String
-  is_clinical Boolean [not null, default: false]
+  executive_title ExecutiveTitle
+  engagement_type EngagementType [not null, default: 'FULL_TIME']
   is_active Boolean [not null, default: true]
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
@@ -104,6 +127,8 @@ Table profiles {
   roles profile_roles [not null]
   branches profile_branches [not null]
   workingSchedules working_schedules [not null]
+  job_functions profile_job_functions [not null]
+  specialty_links profile_specialties [not null]
   created_journeys patient_journeys [not null]
   doctor_visits visits [not null]
   created_visits visits [not null]
@@ -197,9 +222,8 @@ Table invitations {
   first_name String [not null]
   last_name String [not null]
   phone_number String
-  job_title String
-  specialty String
-  is_clinical Boolean [not null, default: false]
+  executive_title ExecutiveTitle
+  engagement_type EngagementType [not null, default: 'FULL_TIME']
   token_hash String [not null]
   status InvitationStatus [not null, default: 'PENDING']
   expires_at DateTime [not null]
@@ -212,6 +236,8 @@ Table invitations {
   invited_by users [not null]
   roles invitation_roles [not null]
   branches invitation_branches [not null]
+  job_functions invitation_job_functions [not null]
+  specialty_links invitation_specialties [not null]
 }
 
 Table invitation_roles {
@@ -301,10 +327,80 @@ Table specialties {
   code String [unique, not null]
   description String
   templates journey_templates [not null]
+  procedures procedures [not null]
+  profile_links profile_specialties [not null]
+  org_links organization_specialties [not null]
+  inv_links invitation_specialties [not null]
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
+}
+
+Table procedures {
+  id String [pk]
+  specialty_id String [not null]
+  name String [not null]
+  code String [unique, not null]
+  description String
+  specialty specialties [not null]
+  calendar_events calendar_events [not null]
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+}
+
+Table profile_specialties {
+  id String [pk]
+  profile_id String [not null]
+  specialty_id String [not null]
+  created_at DateTime [default: `now()`, not null]
+  profile profiles [not null]
+  specialty specialties [not null]
+
+  indexes {
+    (profile_id, specialty_id) [unique]
+  }
+}
+
+Table organization_specialties {
+  id String [pk]
+  organization_id String [not null]
+  specialty_id String [not null]
+  created_at DateTime [default: `now()`, not null]
+  organization organizations [not null]
+  specialty specialties [not null]
+
+  indexes {
+    (organization_id, specialty_id) [unique]
+  }
+}
+
+Table invitation_specialties {
+  id String [pk]
+  invitation_id String [not null]
+  specialty_id String [not null]
+  created_at DateTime [default: `now()`, not null]
+  invitation invitations [not null]
+  specialty specialties [not null]
+
+  indexes {
+    (invitation_id, specialty_id) [unique]
+  }
+}
+
+Table invitation_job_functions {
+  id String [pk]
+  invitation_id String [not null]
+  job_function_id String [not null]
+  created_at DateTime [default: `now()`, not null]
+  invitation invitations [not null]
+  job_function job_functions [not null]
+
+  indexes {
+    (invitation_id, job_function_id) [unique]
+  }
 }
 
 Table journey_templates {
@@ -420,6 +516,7 @@ Table calendar_events {
   branch_id String
   created_by_id String [not null]
   patient_id String
+  procedure_id String
   type CalendarEventType [not null]
   title String [not null]
   description String
@@ -436,6 +533,7 @@ Table calendar_events {
   branch branches
   created_by profiles [not null]
   patient patients
+  procedure procedures
   participants calendar_event_participants [not null]
 }
 
@@ -561,7 +659,25 @@ Enum CalendarParticipantRole {
   ATTENDEE
 }
 
+Enum ExecutiveTitle {
+  CEO
+  COO
+  CFO
+  CMO
+}
+
+Enum EngagementType {
+  FULL_TIME
+  PART_TIME
+  ON_DEMAND
+  EXTERNAL_CONSULTANT
+}
+
 Ref: branches.organization_id > organizations.id [delete: Cascade]
+
+Ref: profile_job_functions.profile_id > profiles.id [delete: Cascade]
+
+Ref: profile_job_functions.job_function_id > job_functions.id [delete: Cascade]
 
 Ref: profiles.user_id > users.id [delete: Cascade]
 
@@ -605,6 +721,24 @@ Ref: working_days.schedule_id > working_schedules.id [delete: Cascade]
 
 Ref: working_shifts.day_id > working_days.id [delete: Cascade]
 
+Ref: procedures.specialty_id > specialties.id [delete: Cascade]
+
+Ref: profile_specialties.profile_id > profiles.id [delete: Cascade]
+
+Ref: profile_specialties.specialty_id > specialties.id [delete: Cascade]
+
+Ref: organization_specialties.organization_id > organizations.id [delete: Cascade]
+
+Ref: organization_specialties.specialty_id > specialties.id [delete: Cascade]
+
+Ref: invitation_specialties.invitation_id > invitations.id [delete: Cascade]
+
+Ref: invitation_specialties.specialty_id > specialties.id [delete: Cascade]
+
+Ref: invitation_job_functions.invitation_id > invitations.id [delete: Cascade]
+
+Ref: invitation_job_functions.job_function_id > job_functions.id [delete: Cascade]
+
 Ref: journey_templates.specialty_id > specialties.id [delete: Cascade]
 
 Ref: episode_templates.journey_template_id > journey_templates.id [delete: Cascade]
@@ -636,6 +770,8 @@ Ref: calendar_events.branch_id > branches.id [delete: Set Null]
 Ref: calendar_events.created_by_id > profiles.id [delete: Cascade]
 
 Ref: calendar_events.patient_id > patients.id [delete: Set Null]
+
+Ref: calendar_events.procedure_id > procedures.id [delete: Set Null]
 
 Ref: calendar_event_participants.event_id > calendar_events.id [delete: Cascade]
 
