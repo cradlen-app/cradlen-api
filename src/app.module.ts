@@ -19,6 +19,7 @@ import { StaffModule } from './modules/staff/staff.module.js';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module.js';
 import { NotificationsModule } from './modules/notifications/notifications.module.js';
 import { SpecialtiesModule } from './modules/specialties/specialties.module';
+import { JobFunctionsModule } from './modules/job-functions/job-functions.module';
 import { JourneyTemplatesModule } from './modules/journey-templates/journey-templates.module';
 import { PatientsModule } from './modules/patients/patients.module';
 import { JourneysModule } from './modules/journeys/journeys.module';
@@ -57,6 +58,7 @@ import type { AppConfig } from './config/app.config';
     SubscriptionsModule,
     NotificationsModule,
     SpecialtiesModule,
+    JobFunctionsModule,
     JourneyTemplatesModule,
     PatientsModule,
     JourneysModule,

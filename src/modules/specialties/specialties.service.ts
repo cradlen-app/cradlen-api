@@ -5,6 +5,14 @@ import { PrismaService } from '../../database/prisma.service.js';
 export class SpecialtiesService {
   constructor(private readonly prismaService: PrismaService) {}
 
+  findLookup() {
+    return this.prismaService.db.specialty.findMany({
+      where: { is_deleted: false },
+      select: { code: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
   findAll() {
     return this.prismaService.db.specialty.findMany({
       where: { is_deleted: false },
