@@ -56,13 +56,64 @@ export class OrganizationsService {
       profileId,
       organizationId,
     );
-    return this.prismaService.db.organization.update({
-      where: { id: organizationId },
-      data: {
-        ...(dto.name !== undefined && { name: dto.name }),
-        ...(dto.status !== undefined && { status: dto.status }),
+
+    const specialtyRows = dto.specialties?.length
+      ? await this.prismaService.db.specialty.findMany({
+          where: {
+            OR: [
+              { code: { in: dto.specialties } },
+              { name: { in: dto.specialties, mode: 'insensitive' } },
+            ],
+            is_deleted: false,
+          },
+        })
+      : [];
+
+    const organization = await this.prismaService.db.$transaction(
+      async (tx) => {
+        if (dto.name !== undefined || dto.status !== undefined) {
+          await tx.organization.update({
+            where: { id: organizationId },
+            data: {
+              ...(dto.name !== undefined && { name: dto.name }),
+              ...(dto.status !== undefined && { status: dto.status }),
+            },
+          });
+        }
+
+        if (dto.specialties !== undefined) {
+          await tx.organizationSpecialty.deleteMany({
+            where: { organization_id: organizationId },
+          });
+          if (specialtyRows.length) {
+            await tx.organizationSpecialty.createMany({
+              data: specialtyRows.map((s) => ({
+                organization_id: organizationId,
+                specialty_id: s.id,
+              })),
+              skipDuplicates: true,
+            });
+          }
+        }
+
+        const refreshed = await tx.organization.findFirst({
+          where: { id: organizationId, is_deleted: false },
+          include: { specialty_links: { include: { specialty: true } } },
+        });
+        if (!refreshed) throw new NotFoundException('Organization not found');
+        return refreshed;
       },
-    });
+    );
+
+    const { specialty_links, ...rest } = organization;
+    return {
+      ...rest,
+      specialties: specialty_links.map((l) => ({
+        id: l.specialty.id,
+        code: l.specialty.code,
+        name: l.specialty.name,
+      })),
+    };
   }
 
   async createOrganization(userId: string, dto: CreateOrganizationDto) {
