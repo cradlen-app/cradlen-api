@@ -9,6 +9,7 @@ import * as bcrypt from 'bcryptjs';
 import { AuthService } from './auth.service.js';
 import type { PrismaService } from '../../database/prisma.service.js';
 import type { MailService } from '../mail/mail.service.js';
+import type { AuthorizationService } from '../../common/authorization/authorization.service.js';
 
 function createService(prismaOverrides: Record<string, unknown> = {}) {
   const userFindFirst = jest.fn();
@@ -21,8 +22,10 @@ function createService(prismaOverrides: Record<string, unknown> = {}) {
   const verificationCount = jest.fn();
   const profileFindFirst = jest.fn();
   const profileFindMany = jest.fn();
+  const branchFindMany = jest.fn();
   const refreshTokenCreate = jest.fn();
   const sendVerificationEmail = jest.fn();
+  const getEffectiveBranchIds = jest.fn().mockResolvedValue([]);
 
   const prismaService = {
     db: {
@@ -48,6 +51,7 @@ function createService(prismaOverrides: Record<string, unknown> = {}) {
         updateMany: jest.fn(),
       },
       profile: { findMany: profileFindMany, findFirst: profileFindFirst },
+      branch: { findMany: branchFindMany },
       $transaction: jest.fn(),
       ...prismaOverrides,
     },
@@ -72,12 +76,17 @@ function createService(prismaOverrides: Record<string, unknown> = {}) {
     sendVerificationEmail,
   } as unknown as MailService;
 
+  const authorizationService = {
+    getEffectiveBranchIds,
+  } as unknown as AuthorizationService;
+
   return {
     service: new AuthService(
       prismaService,
       jwtService,
       configService as never,
       mailService,
+      authorizationService,
     ),
     prismaService,
     mailService,
@@ -91,8 +100,10 @@ function createService(prismaOverrides: Record<string, unknown> = {}) {
       verificationCount,
       profileFindFirst,
       profileFindMany,
+      branchFindMany,
       refreshTokenCreate,
       sendVerificationEmail,
+      getEffectiveBranchIds,
     },
     jwtService,
   };
@@ -406,21 +417,22 @@ describe('AuthService', () => {
     mocks.profileFindMany.mockResolvedValue([
       {
         id: '22222222-2222-4222-8222-222222222222',
+        organization_id: '33333333-3333-4333-8333-333333333333',
         organization: {
           id: '33333333-3333-4333-8333-333333333333',
           name: 'Clinic',
         },
         roles: [{ role: { name: 'OWNER' } }],
-        branches: [
-          {
-            branch_id: '44444444-4444-4444-8444-444444444444',
-            branch: {
-              id: '44444444-4444-4444-8444-444444444444',
-              name: 'Main',
-              is_main: true,
-            },
-          },
-        ],
+      },
+    ]);
+    mocks.getEffectiveBranchIds.mockResolvedValue([
+      '44444444-4444-4444-8444-444444444444',
+    ]);
+    mocks.branchFindMany.mockResolvedValue([
+      {
+        id: '44444444-4444-4444-8444-444444444444',
+        name: 'Main',
+        is_main: true,
       },
     ]);
 
@@ -460,11 +472,15 @@ describe('AuthService', () => {
       id: '22222222-2222-4222-8222-222222222222',
       organization_id: '33333333-3333-4333-8333-333333333333',
       user: { id: '11111111-1111-4111-8111-111111111111' },
-      branches: [
-        { branch_id: '44444444-4444-4444-8444-444444444444' },
-        { branch_id: '55555555-5555-4555-8555-555555555555' },
-      ],
     });
+    mocks.getEffectiveBranchIds.mockResolvedValue([
+      '44444444-4444-4444-8444-444444444444',
+      '55555555-5555-4555-8555-555555555555',
+    ]);
+    mocks.branchFindMany.mockResolvedValue([
+      { id: '44444444-4444-4444-8444-444444444444' },
+      { id: '55555555-5555-4555-8555-555555555555' },
+    ]);
 
     await expect(
       service.selectProfile({
@@ -487,8 +503,13 @@ describe('AuthService', () => {
       id: '22222222-2222-4222-8222-222222222222',
       organization_id: '33333333-3333-4333-8333-333333333333',
       user: { id: '11111111-1111-4111-8111-111111111111' },
-      branches: [{ branch_id: '44444444-4444-4444-8444-444444444444' }],
     });
+    mocks.getEffectiveBranchIds.mockResolvedValue([
+      '44444444-4444-4444-8444-444444444444',
+    ]);
+    mocks.branchFindMany.mockResolvedValue([
+      { id: '44444444-4444-4444-8444-444444444444' },
+    ]);
 
     await expect(
       service.selectProfile({
@@ -516,6 +537,7 @@ describe('AuthService', () => {
       profiles: [
         {
           id: profileId,
+          organization_id: '33333333-3333-4333-8333-333333333333',
           executive_title: null,
           engagement_type: 'FULL_TIME',
           organization: {
@@ -533,18 +555,6 @@ describe('AuthService', () => {
             status: 'ACTIVE',
           },
           roles: [{ role: { id: 'role-1', name: 'OWNER' } }],
-          branches: [
-            {
-              branch: {
-                id: 'branch-1',
-                address: '123 Main St',
-                city: 'Cairo',
-                governorate: 'Cairo',
-                country: null,
-                is_main: true,
-              },
-            },
-          ],
           job_functions: [
             {
               job_function: {
@@ -567,6 +577,18 @@ describe('AuthService', () => {
         },
       ],
     });
+
+    mocks.getEffectiveBranchIds.mockResolvedValue(['branch-1']);
+    mocks.branchFindMany.mockResolvedValue([
+      {
+        id: 'branch-1',
+        address: '123 Main St',
+        city: 'Cairo',
+        governorate: 'Cairo',
+        country: null,
+        is_main: true,
+      },
+    ]);
 
     const result = await service.getMe(userId, profileId);
 
