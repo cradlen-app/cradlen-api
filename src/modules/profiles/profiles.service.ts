@@ -3,12 +3,26 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EngagementType, ExecutiveTitle } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service.js';
 import type { UpdateProfileDto } from './dto/update-profile.dto.js';
 
 @Injectable()
 export class ProfilesService {
   constructor(private readonly prismaService: PrismaService) {}
+
+  getEnumLookups() {
+    return {
+      executive_titles: Object.values(ExecutiveTitle).map((code) => ({
+        code,
+        name: humanizeEnumValue(code),
+      })),
+      engagement_types: Object.values(EngagementType).map((code) => ({
+        code,
+        name: humanizeEnumValue(code),
+      })),
+    };
+  }
 
   async listProfiles(userId: string) {
     const profiles = await this.prismaService.db.profile.findMany({
@@ -237,4 +251,9 @@ export class ProfilesService {
     }
     return rows.map((s) => s.id);
   }
+}
+
+function humanizeEnumValue(value: string): string {
+  const lower = value.toLowerCase().replace(/_/g, ' ');
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
 }

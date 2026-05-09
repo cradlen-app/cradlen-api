@@ -12,6 +12,11 @@ export class JourneyTemplateInSpecialtyDto {
   episodes!: EpisodeTemplateDto[];
 }
 
+export class SpecialtyLookupDto {
+  code!: string;
+  name!: string;
+}
+
 export class SpecialtyDto {
   id!: string;
   name!: string;

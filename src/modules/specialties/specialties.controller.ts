@@ -1,9 +1,11 @@
 import { Controller, Get, Param } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Public } from '../../common/decorators/public.decorator.js';
 import { SpecialtiesService } from './specialties.service.js';
 import { ApiStandardResponse } from '../../common/swagger/index.js';
 import {
   SpecialtyDto,
+  SpecialtyLookupDto,
   JourneyTemplateInSpecialtyDto,
 } from './dto/specialty.dto.js';
 
@@ -11,6 +13,14 @@ import {
 @Controller('specialties')
 export class SpecialtiesController {
   constructor(private readonly specialtiesService: SpecialtiesService) {}
+
+  @Public()
+  @Get('lookup')
+  @ApiOperation({ summary: 'List specialties for dropdowns (public)' })
+  @ApiStandardResponse(SpecialtyLookupDto)
+  findLookup() {
+    return this.specialtiesService.findLookup();
+  }
 
   @Get()
   @ApiStandardResponse(SpecialtyDto)
