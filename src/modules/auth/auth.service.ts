@@ -288,7 +288,7 @@ export class AuthService {
             : undefined,
         },
       });
-      const branch = await tx.branch.create({
+      await tx.branch.create({
         data: {
           organization_id: organization.id,
           name: dto.branch_name,
@@ -306,9 +306,6 @@ export class AuthService {
           executive_title: dto.executive_title ?? null,
           engagement_type: dto.engagement_type ?? 'FULL_TIME',
           roles: { create: [{ role_id: ownerRole.id }] },
-          branches: {
-            create: { branch_id: branch.id, organization_id: organization.id },
-          },
           job_functions: jobFunctions.length
             ? {
                 create: jobFunctions.map((jf) => ({ job_function_id: jf.id })),
@@ -449,31 +446,32 @@ export class AuthService {
         is_active: true,
         organization: { status: 'ACTIVE', is_deleted: false },
       },
-      include: {
-        user: true,
-        branches: {
-          where: {
-            branch: { status: 'ACTIVE', is_deleted: false },
-          },
-          include: { branch: true },
-          orderBy: { created_at: 'asc' },
-        },
-      },
+      include: { user: true },
     });
     if (!profile) throw new ForbiddenException('Invalid profile selection');
 
+    const effectiveBranchIds =
+      await this.authorizationService.getEffectiveBranchIds(
+        profile.id,
+        profile.organization_id,
+      );
+    const branches = await this.prismaService.db.branch.findMany({
+      where: {
+        id: { in: effectiveBranchIds },
+        organization_id: profile.organization_id,
+        status: 'ACTIVE',
+        is_deleted: false,
+      },
+      orderBy: { created_at: 'asc' },
+    });
+
     const branchId = this.resolveSelectedBranchId(
-      profile.branches,
+      branches.map((b) => ({ branch_id: b.id })),
       dto.branch_id,
     );
 
-    const selectedBranch = profile.branches.find(
-      (item) => item.branch_id === branchId,
-    );
-    if (
-      !selectedBranch ||
-      selectedBranch.organization_id !== profile.organization_id
-    ) {
+    const selectedBranch = branches.find((b) => b.id === branchId);
+    if (!selectedBranch) {
       throw new ForbiddenException('Invalid branch selection');
     }
 
@@ -548,6 +546,7 @@ export class AuthService {
   ): Promise<AuthTokensDto> {
     const canAccess = await this.authorizationService.canAccessBranch(
       user.profileId,
+      user.organizationId,
       dto.branch_id,
     );
     if (!canAccess) throw new ForbiddenException('Branch access denied');
@@ -608,27 +607,38 @@ export class AuthService {
       include: {
         organization: true,
         roles: { include: { role: true } },
-        branches: {
-          where: {
-            branch: { status: 'ACTIVE', is_deleted: false },
-          },
-          include: { branch: true },
-        },
       },
       orderBy: { created_at: 'asc' },
     });
 
-    return profiles.map((profile) => ({
-      profile_id: profile.id,
-      organization_id: profile.organization.id,
-      organization_name: profile.organization.name,
-      roles: profile.roles.map((item) => item.role.name),
-      branches: profile.branches.map((item) => ({
-        branch_id: item.branch.id,
-        name: item.branch.name,
-        is_main: item.branch.is_main,
-      })),
-    }));
+    return Promise.all(
+      profiles.map(async (profile) => {
+        const branchIds = await this.authorizationService.getEffectiveBranchIds(
+          profile.id,
+          profile.organization_id,
+        );
+        const branches = await this.prismaService.db.branch.findMany({
+          where: {
+            id: { in: branchIds },
+            organization_id: profile.organization_id,
+            status: 'ACTIVE',
+            is_deleted: false,
+          },
+          orderBy: { created_at: 'asc' },
+        });
+        return {
+          profile_id: profile.id,
+          organization_id: profile.organization.id,
+          organization_name: profile.organization.name,
+          roles: profile.roles.map((item) => item.role.name),
+          branches: branches.map((b) => ({
+            branch_id: b.id,
+            name: b.name,
+            is_main: b.is_main,
+          })),
+        };
+      }),
+    );
   }
 
   private resolveSelectedBranchId(
@@ -897,10 +907,6 @@ export class AuthService {
               },
             },
             roles: { include: { role: true } },
-            branches: {
-              where: { branch: { is_deleted: false } },
-              include: { branch: true },
-            },
             job_functions: { include: { job_function: true } },
             specialty_links: { include: { specialty: true } },
           },
@@ -909,6 +915,24 @@ export class AuthService {
     });
 
     if (!user) throw new NotFoundException('User not found');
+
+    const profilesWithBranches = await Promise.all(
+      user.profiles.map(async (profile) => {
+        const branchIds = await this.authorizationService.getEffectiveBranchIds(
+          profile.id,
+          profile.organization_id,
+        );
+        const branches = await this.prismaService.db.branch.findMany({
+          where: {
+            id: { in: branchIds },
+            organization_id: profile.organization_id,
+            is_deleted: false,
+          },
+          orderBy: { created_at: 'asc' },
+        });
+        return { profile, branches };
+      }),
+    );
 
     return {
       id: user.id,
@@ -919,7 +943,7 @@ export class AuthService {
       is_active: user.is_active,
       verified_at: user.verified_at,
       created_at: user.created_at,
-      profiles: user.profiles.map((profile) => ({
+      profiles: profilesWithBranches.map(({ profile, branches }) => ({
         staff_id: profile.id,
         executive_title: profile.executive_title,
         engagement_type: profile.engagement_type,
@@ -937,13 +961,13 @@ export class AuthService {
           id: pr.role.id,
           name: pr.role.name,
         })),
-        branches: profile.branches.map((pb) => ({
-          id: pb.branch.id,
-          address: pb.branch.address,
-          city: pb.branch.city,
-          governorate: pb.branch.governorate,
-          country: pb.branch.country,
-          is_main: pb.branch.is_main,
+        branches: branches.map((b) => ({
+          id: b.id,
+          address: b.address,
+          city: b.city,
+          governorate: b.governorate,
+          country: b.country,
+          is_main: b.is_main,
         })),
         job_functions: profile.job_functions.map((jf) => ({
           id: jf.job_function.id,

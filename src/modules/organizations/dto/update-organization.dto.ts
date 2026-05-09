@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { OrganizationStatus } from '@prisma/client';
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsEnum, IsOptional, IsString } from 'class-validator';
 
 export class UpdateOrganizationDto {
   @ApiPropertyOptional()
@@ -12,4 +12,14 @@ export class UpdateOrganizationDto {
   @IsOptional()
   @IsEnum(OrganizationStatus)
   status?: OrganizationStatus;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      "Specialty codes (or names) — resolved against the Specialty table. When provided, replaces the organization's current specialty set.",
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  specialties?: string[];
 }

@@ -106,6 +106,7 @@ export class PatientsService {
   ) {
     await this.authorizationService.assertCanAccessBranch(
       user.profileId,
+      user.organizationId,
       branchId,
     );
 

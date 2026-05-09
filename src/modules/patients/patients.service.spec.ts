@@ -209,6 +209,7 @@ describe('PatientsService', () => {
       await service.findAllForBranch('branch-uuid', {}, mockUser);
       expect(authMock.assertCanAccessBranch).toHaveBeenCalledWith(
         'profile-uuid',
+        mockUser.organizationId,
         'branch-uuid',
       );
     });
