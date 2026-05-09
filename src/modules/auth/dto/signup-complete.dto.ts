@@ -1,9 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { EngagementType, ExecutiveTitle } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import {
   ArrayNotEmpty,
   IsArray,
-  IsIn,
+  IsEnum,
   IsOptional,
   IsString,
   MinLength,
@@ -76,26 +77,30 @@ export class SignupCompleteDto {
   @IsString()
   branch_country?: string;
 
-  @ApiProperty({ type: [String], example: ['OWNER', 'DOCTOR'] })
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'JobFunction codes (e.g. ["OBGYN"]). Drives staff filtering and function-aware authorization. Codes must exist in the JobFunction table.',
+  })
+  @IsOptional()
   @IsArray()
-  @ArrayNotEmpty()
   @IsString({ each: true })
-  @IsIn(['OWNER', 'DOCTOR'], { each: true })
-  roles!: string[];
+  job_function_codes?: string[];
 
-  @ApiPropertyOptional()
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @ApiPropertyOptional({
+    enum: ExecutiveTitle,
+    description:
+      'C-suite title at this organization. Display/governance only — does not grant permissions.',
+  })
   @IsOptional()
-  @IsString()
-  specialty?: string;
+  @IsEnum(ExecutiveTitle)
+  executive_title?: ExecutiveTitle;
 
-  @ApiPropertyOptional()
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @ApiPropertyOptional({
+    enum: EngagementType,
+    description: 'Engagement model. Defaults to FULL_TIME if omitted.',
+  })
   @IsOptional()
-  @IsString()
-  job_title?: string;
+  @IsEnum(EngagementType)
+  engagement_type?: EngagementType;
 }

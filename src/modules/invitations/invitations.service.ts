@@ -23,6 +23,7 @@ import type { BranchScheduleDto } from '../staff/dto/staff.dto.js';
 import { persistSchedules } from '../staff/schedule.helpers.js';
 import type {
   AcceptInvitationDto,
+  BulkCreateInvitationsDto,
   CreateInvitationDto,
   DeclineInvitationDto,
   PreviewInvitationQueryDto,
@@ -71,43 +72,19 @@ export class InvitationsService {
       throw new BadRequestException('You cannot invite yourself');
     }
 
-    const uniqueRoleIds = [...new Set(dto.role_ids)];
-    const uniqueBranchIds = [...new Set(dto.branch_ids)];
-
-    await this.assertBranchesInOrganization(organizationId, uniqueBranchIds);
-    await this.assertRolesExist(uniqueRoleIds);
-
-    const rawToken = randomUUID();
-    const tokenHash = await bcrypt.hash(rawToken, 10);
-    const expiresAt = new Date(
-      Date.now() + this.authConfig.invitationExpireHours * 60 * 60 * 1000,
-    );
+    const prepared = await this.prepareInvitationData(organizationId, dto);
 
     let invitation: Awaited<
       ReturnType<InvitationsService['findInvitationShape']>
     >;
     try {
       invitation = await this.prismaService.db.invitation.create({
-        data: {
-          organization_id: organizationId,
-          invited_by_id: currentUserId,
-          email: dto.email,
-          first_name: dto.first_name,
-          last_name: dto.last_name,
-          phone_number: dto.phone_number,
-          job_title: dto.job_title,
-          specialty: dto.specialty,
-          is_clinical: dto.is_clinical ?? false,
-          token_hash: tokenHash,
-          expires_at: expiresAt,
-          roles: { create: uniqueRoleIds.map((role_id) => ({ role_id })) },
-          branches: {
-            create: uniqueBranchIds.map((branch_id) => ({
-              branch_id,
-              organization_id: organizationId,
-            })),
-          },
-        },
+        data: this.buildInvitationCreateData(
+          organizationId,
+          currentUserId,
+          dto,
+          prepared,
+        ),
         include: this.includeInvitation(),
       });
     } catch (err: unknown) {
@@ -122,9 +99,195 @@ export class InvitationsService {
       throw err;
     }
 
-    const inviteUrl = `${this.appConfig.appUrl}/invitations/accept?invitation=${invitation.id}&token=${rawToken}`;
+    const inviteUrl = `${this.appConfig.appUrl}/invitations/accept?invitation=${invitation.id}&token=${prepared.rawToken}`;
     await this.mailService.sendStaffInvitationEmail(dto.email, inviteUrl);
     return this.toResponse(invitation);
+  }
+
+  async bulkCreateInvitations(
+    currentUserId: string,
+    profileId: string,
+    organizationId: string,
+    dto: BulkCreateInvitationsDto,
+  ) {
+    await this.authorizationService.assertCanManageStaff(
+      profileId,
+      organizationId,
+    );
+
+    const invitingUser = await this.prismaService.db.user.findUnique({
+      where: { id: currentUserId },
+      select: { email: true },
+    });
+    const inviterEmail = invitingUser?.email?.toLowerCase() ?? null;
+    for (const item of dto.invitations) {
+      if (inviterEmail && item.email.toLowerCase() === inviterEmail) {
+        throw new BadRequestException('You cannot invite yourself');
+      }
+    }
+
+    // Subscription limit gate. The accept-flow re-checks the limit per acceptance,
+    // so a batch larger than remaining capacity will create invitations that simply
+    // can't all be redeemed; that's acceptable behavior.
+    await this.subscriptionsService.assertStaffLimit(organizationId);
+
+    const prepared = await Promise.all(
+      dto.invitations.map((item) =>
+        this.prepareInvitationData(organizationId, item),
+      ),
+    );
+
+    let createdIds: string[];
+    try {
+      createdIds = await this.prismaService.db.$transaction(async (tx) =>
+        Promise.all(
+          dto.invitations.map(async (item, idx) => {
+            const created = await tx.invitation.create({
+              data: this.buildInvitationCreateData(
+                organizationId,
+                currentUserId,
+                item,
+                prepared[idx],
+              ),
+              select: { id: true },
+            });
+            return created.id;
+          }),
+        ),
+      );
+    } catch (err: unknown) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'One or more invitations already exist for the given emails',
+        );
+      }
+      throw err;
+    }
+
+    // Send emails after commit. Individual failures are logged and returned
+    // in the response so the caller can decide whether to resend.
+    const emailResults = await Promise.all(
+      dto.invitations.map(async (item, idx) => {
+        const id = createdIds[idx];
+        const inviteUrl = `${this.appConfig.appUrl}/invitations/accept?invitation=${id}&token=${prepared[idx].rawToken}`;
+        try {
+          await this.mailService.sendStaffInvitationEmail(
+            item.email,
+            inviteUrl,
+          );
+          return { id, email: item.email, email_sent: true as const };
+        } catch {
+          return { id, email: item.email, email_sent: false as const };
+        }
+      }),
+    );
+
+    return {
+      created: emailResults.length,
+      results: emailResults,
+    };
+  }
+
+  private async prepareInvitationData(
+    organizationId: string,
+    dto: CreateInvitationDto,
+  ) {
+    const uniqueRoleIds = [...new Set(dto.role_ids)];
+    const uniqueBranchIds = [...new Set(dto.branch_ids)];
+    const jobFunctionCodes = [...new Set(dto.job_function_codes ?? [])];
+    const specialtyCodes = [...new Set(dto.specialty_codes ?? [])];
+
+    await Promise.all([
+      this.assertBranchesInOrganization(organizationId, uniqueBranchIds),
+      this.assertRolesExist(uniqueRoleIds),
+    ]);
+
+    const [jobFunctions, specialties] = await Promise.all([
+      jobFunctionCodes.length
+        ? this.prismaService.db.jobFunction.findMany({
+            where: { code: { in: jobFunctionCodes } },
+          })
+        : Promise.resolve([]),
+      specialtyCodes.length
+        ? this.prismaService.db.specialty.findMany({
+            where: { code: { in: specialtyCodes }, is_deleted: false },
+          })
+        : Promise.resolve([]),
+    ]);
+    if (jobFunctions.length !== jobFunctionCodes.length) {
+      const found = new Set(jobFunctions.map((jf) => jf.code));
+      const missing = jobFunctionCodes.filter((c) => !found.has(c));
+      throw new BadRequestException(
+        `Unknown job_function_codes: ${missing.join(', ')}`,
+      );
+    }
+    if (specialties.length !== specialtyCodes.length) {
+      const found = new Set(specialties.map((s) => s.code));
+      const missing = specialtyCodes.filter((c) => !found.has(c));
+      throw new BadRequestException(
+        `Unknown specialty_codes: ${missing.join(', ')}`,
+      );
+    }
+
+    const rawToken = randomUUID();
+    const tokenHash = await bcrypt.hash(rawToken, 10);
+    const expiresAt = new Date(
+      Date.now() + this.authConfig.invitationExpireHours * 60 * 60 * 1000,
+    );
+
+    return {
+      uniqueRoleIds,
+      uniqueBranchIds,
+      jobFunctions,
+      specialties,
+      rawToken,
+      tokenHash,
+      expiresAt,
+    };
+  }
+
+  private buildInvitationCreateData(
+    organizationId: string,
+    currentUserId: string,
+    dto: CreateInvitationDto,
+    prepared: Awaited<ReturnType<InvitationsService['prepareInvitationData']>>,
+  ): Prisma.InvitationCreateInput {
+    return {
+      organization: { connect: { id: organizationId } },
+      invited_by: { connect: { id: currentUserId } },
+      email: dto.email,
+      first_name: dto.first_name,
+      last_name: dto.last_name,
+      phone_number: dto.phone_number,
+      executive_title: dto.executive_title ?? null,
+      engagement_type: dto.engagement_type ?? 'FULL_TIME',
+      token_hash: prepared.tokenHash,
+      expires_at: prepared.expiresAt,
+      roles: {
+        create: prepared.uniqueRoleIds.map((role_id) => ({ role_id })),
+      },
+      branches: {
+        create: prepared.uniqueBranchIds.map((branch_id) => ({
+          branch_id,
+          organization_id: organizationId,
+        })),
+      },
+      job_functions: prepared.jobFunctions.length
+        ? {
+            create: prepared.jobFunctions.map((jf) => ({
+              job_function_id: jf.id,
+            })),
+          }
+        : undefined,
+      specialty_links: prepared.specialties.length
+        ? {
+            create: prepared.specialties.map((s) => ({ specialty_id: s.id })),
+          }
+        : undefined,
+    };
   }
 
   async listInvitations(
@@ -275,16 +438,14 @@ export class InvitationsService {
           is_active: true,
           is_deleted: false,
           deleted_at: null,
-          job_title: invitation.job_title,
-          specialty: invitation.specialty,
-          is_clinical: invitation.is_clinical,
+          executive_title: invitation.executive_title,
+          engagement_type: invitation.engagement_type,
         },
         create: {
           user_id: user.id,
           organization_id: invitation.organization_id,
-          job_title: invitation.job_title,
-          specialty: invitation.specialty,
-          is_clinical: invitation.is_clinical,
+          executive_title: invitation.executive_title,
+          engagement_type: invitation.engagement_type,
         },
       });
 
@@ -499,6 +660,36 @@ export class InvitationsService {
           },
         }),
       ),
+      ...invitation.job_functions.map((item) =>
+        tx.profileJobFunction.upsert({
+          where: {
+            profile_id_job_function_id: {
+              profile_id: profileId,
+              job_function_id: item.job_function_id,
+            },
+          },
+          update: {},
+          create: {
+            profile_id: profileId,
+            job_function_id: item.job_function_id,
+          },
+        }),
+      ),
+      ...invitation.specialty_links.map((item) =>
+        tx.profileSpecialty.upsert({
+          where: {
+            profile_id_specialty_id: {
+              profile_id: profileId,
+              specialty_id: item.specialty_id,
+            },
+          },
+          update: {},
+          create: {
+            profile_id: profileId,
+            specialty_id: item.specialty_id,
+          },
+        }),
+      ),
     ]);
   }
 
@@ -506,6 +697,8 @@ export class InvitationsService {
     return {
       roles: { include: { role: true } },
       branches: { include: { branch: true } },
+      job_functions: { include: { job_function: true } },
+      specialty_links: { include: { specialty: true } },
       invited_by: {
         select: { id: true, first_name: true, last_name: true, email: true },
       },
@@ -516,6 +709,8 @@ export class InvitationsService {
     return {
       roles: { include: { role: true } },
       branches: { include: { branch: true } },
+      job_functions: { include: { job_function: true } },
+      specialty_links: { include: { specialty: true } },
       invited_by: {
         select: { first_name: true, last_name: true },
       },
@@ -595,9 +790,8 @@ export class InvitationsService {
       email: invitation.email,
       first_name: invitation.first_name,
       last_name: invitation.last_name,
-      is_clinical: invitation.is_clinical,
-      job_title: invitation.job_title,
-      specialty: invitation.specialty,
+      executive_title: invitation.executive_title,
+      engagement_type: invitation.engagement_type,
       organization: {
         id: invitation.organization.id,
         name: invitation.organization.name,
@@ -615,6 +809,16 @@ export class InvitationsService {
         name: b.branch.name,
         city: b.branch.city,
         governorate: b.branch.governorate,
+      })),
+      job_functions: invitation.job_functions.map((j) => ({
+        id: j.job_function.id,
+        code: j.job_function.code,
+        name: j.job_function.name,
+      })),
+      specialties: invitation.specialty_links.map((s) => ({
+        id: s.specialty.id,
+        code: s.specialty.code,
+        name: s.specialty.name,
       })),
     };
   }
@@ -640,9 +844,8 @@ export class InvitationsService {
       first_name: invitation.first_name,
       last_name: invitation.last_name,
       phone_number: invitation.phone_number,
-      job_title: invitation.job_title,
-      specialty: invitation.specialty,
-      is_clinical: invitation.is_clinical,
+      executive_title: invitation.executive_title,
+      engagement_type: invitation.engagement_type,
       status: invitation.status,
       invited_at: invitation.created_at,
       expires_at: invitation.expires_at,
@@ -662,6 +865,16 @@ export class InvitationsService {
         name: item.branch.name,
         city: item.branch.city,
         governorate: item.branch.governorate,
+      })),
+      job_functions: invitation.job_functions.map((item) => ({
+        id: item.job_function.id,
+        code: item.job_function.code,
+        name: item.job_function.name,
+      })),
+      specialties: invitation.specialty_links.map((item) => ({
+        id: item.specialty.id,
+        code: item.specialty.code,
+        name: item.specialty.name,
       })),
       ...(workingSchedule !== undefined && {
         working_schedule:
