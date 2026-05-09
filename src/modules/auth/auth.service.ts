@@ -47,9 +47,6 @@ const OTP_TTL_MINUTES = 15;
 const OTP_MAX_ATTEMPTS = 5;
 const SIGNUP_RESEND_COOLDOWN_SECONDS = 60;
 const SIGNUP_RESEND_MAX_PER_HOUR = 5;
-const SIGNUP_COMPLETE_ROLES = ['OWNER', 'DOCTOR'] as const;
-
-type SignupCompleteRole = (typeof SIGNUP_COMPLETE_ROLES)[number];
 type VerificationPurposeInput = 'SIGNUP' | 'LOGIN' | 'PASSWORD_RESET';
 
 export interface SelectableProfile {
@@ -219,16 +216,41 @@ export class AuthService {
       throw new ForbiddenException('Signup has not been verified');
     }
 
-    const requestedRoles = this.resolveSignupCompleteRoles(dto.roles);
-    const isDoctor = requestedRoles.includes('DOCTOR');
-    if (isDoctor && (!dto.specialty?.trim() || !dto.job_title?.trim())) {
+    const jobFunctionCodes = [...new Set(dto.job_function_codes ?? [])];
+    const jobFunctions = jobFunctionCodes.length
+      ? await this.prismaService.db.jobFunction.findMany({
+          where: { code: { in: jobFunctionCodes } },
+        })
+      : [];
+    if (jobFunctions.length !== jobFunctionCodes.length) {
+      const found = new Set(jobFunctions.map((jf) => jf.code));
+      const missing = jobFunctionCodes.filter((c) => !found.has(c));
       throw new BadRequestException(
-        'specialty and job_title are required when DOCTOR role is selected',
+        `Unknown job_function_codes: ${missing.join(', ')}`,
       );
     }
 
-    const [roles, freePlan] = await Promise.all([
-      Promise.all(requestedRoles.map((role) => this.findRole(role))),
+    // Resolve specialties: match by Specialty.code first, then by case-insensitive name.
+    // Unmatched entries are silently skipped — the source of truth is the M2M.
+    const specialtyRows = dto.specialties.length
+      ? await this.prismaService.db.specialty.findMany({
+          where: {
+            OR: [
+              { code: { in: dto.specialties } },
+              {
+                name: {
+                  in: dto.specialties,
+                  mode: 'insensitive',
+                },
+              },
+            ],
+            is_deleted: false,
+          },
+        })
+      : [];
+
+    const [ownerRole, freePlan] = await Promise.all([
+      this.findRole('OWNER'),
       this.prismaService.db.subscriptionPlan.findUnique({
         where: { plan: 'free_trial' },
       }),
@@ -259,7 +281,11 @@ export class AuthService {
       const organization = await tx.organization.create({
         data: {
           name: dto.organization_name,
-          specialities: dto.specialties,
+          specialty_links: specialtyRows.length
+            ? {
+                create: specialtyRows.map((s) => ({ specialty_id: s.id })),
+              }
+            : undefined,
         },
       });
       const branch = await tx.branch.create({
@@ -277,15 +303,22 @@ export class AuthService {
         data: {
           user_id: userId,
           organization_id: organization.id,
-          is_clinical: isDoctor,
-          specialty: isDoctor ? dto.specialty : null,
-          job_title: isDoctor ? dto.job_title : null,
-          roles: {
-            create: roles.map((role) => ({ role_id: role.id })),
-          },
+          executive_title: dto.executive_title ?? null,
+          engagement_type: dto.engagement_type ?? 'FULL_TIME',
+          roles: { create: [{ role_id: ownerRole.id }] },
           branches: {
             create: { branch_id: branch.id, organization_id: organization.id },
           },
+          job_functions: jobFunctions.length
+            ? {
+                create: jobFunctions.map((jf) => ({ job_function_id: jf.id })),
+              }
+            : undefined,
+          specialty_links: specialtyRows.length
+            ? {
+                create: specialtyRows.map((s) => ({ specialty_id: s.id })),
+              }
+            : undefined,
         },
       });
       await tx.subscription.create({
@@ -598,20 +631,6 @@ export class AuthService {
     }));
   }
 
-  private resolveSignupCompleteRoles(roles: string[]): SignupCompleteRole[] {
-    const uniqueRoles = [...new Set(roles)] as SignupCompleteRole[];
-    const unsupportedRole = uniqueRoles.find(
-      (role) => !SIGNUP_COMPLETE_ROLES.includes(role),
-    );
-    if (unsupportedRole) {
-      throw new BadRequestException(`Unsupported role: ${unsupportedRole}`);
-    }
-    if (!uniqueRoles.includes('OWNER')) {
-      throw new BadRequestException('OWNER role is required');
-    }
-    return uniqueRoles;
-  }
-
   private resolveSelectedBranchId(
     branches: { branch_id: string }[],
     branchId?: string,
@@ -872,12 +891,18 @@ export class AuthService {
         profiles: {
           where: { id: profileId, is_deleted: false },
           include: {
-            organization: true,
+            organization: {
+              include: {
+                specialty_links: { include: { specialty: true } },
+              },
+            },
             roles: { include: { role: true } },
             branches: {
               where: { branch: { is_deleted: false } },
               include: { branch: true },
             },
+            job_functions: { include: { job_function: true } },
+            specialty_links: { include: { specialty: true } },
           },
         },
       },
@@ -896,13 +921,16 @@ export class AuthService {
       created_at: user.created_at,
       profiles: user.profiles.map((profile) => ({
         staff_id: profile.id,
-        job_title: profile.job_title,
-        specialty: profile.specialty,
-        is_clinical: profile.is_clinical,
+        executive_title: profile.executive_title,
+        engagement_type: profile.engagement_type,
         organization: {
           id: profile.organization.id,
           name: profile.organization.name,
-          specialities: profile.organization.specialities,
+          specialties: profile.organization.specialty_links.map((l) => ({
+            id: l.specialty.id,
+            code: l.specialty.code,
+            name: l.specialty.name,
+          })),
           status: profile.organization.status,
         },
         roles: profile.roles.map((pr) => ({
@@ -916,6 +944,17 @@ export class AuthService {
           governorate: pb.branch.governorate,
           country: pb.branch.country,
           is_main: pb.branch.is_main,
+        })),
+        job_functions: profile.job_functions.map((jf) => ({
+          id: jf.job_function.id,
+          code: jf.job_function.code,
+          name: jf.job_function.name,
+          is_clinical: jf.job_function.is_clinical,
+        })),
+        specialties: profile.specialty_links.map((sl) => ({
+          id: sl.specialty.id,
+          code: sl.specialty.code,
+          name: sl.specialty.name,
         })),
       })),
     };

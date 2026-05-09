@@ -12,21 +12,35 @@ const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
-  await prisma.role.upsert({
-    where: { name: 'OWNER' },
-    update: {},
-    create: { name: 'OWNER' },
-  });
-  await prisma.role.upsert({
-    where: { name: 'DOCTOR' },
-    update: {},
-    create: { name: 'DOCTOR' },
-  });
-  await prisma.role.upsert({
-    where: { name: 'RECEPTIONIST' },
-    update: {},
-    create: { name: 'RECEPTIONIST' },
-  });
+  // Roles — authority tiers only. Job-level distinctions live on JobFunction below.
+  const roles = ['OWNER', 'STAFF', 'EXTERNAL'];
+  for (const name of roles) {
+    await prisma.role.upsert({
+      where: { name },
+      update: {},
+      create: { name },
+    });
+  }
+
+  // Job functions — what a profile actually does. Drives staff filtering and
+  // function-aware authorization checks (e.g., financial endpoints require ACCOUNTANT).
+  const jobFunctions = [
+    { code: 'OBGYN', name: 'OB/GYN', is_clinical: true },
+    { code: 'ANESTHESIOLOGIST', name: 'Anesthesiologist', is_clinical: true },
+    { code: 'PEDIATRICIAN', name: 'Pediatrician', is_clinical: true },
+    { code: 'OTHER_DOCTOR', name: 'Other Doctor', is_clinical: true },
+    { code: 'NURSE', name: 'Nurse', is_clinical: true },
+    { code: 'ASSISTANT', name: 'Assistant', is_clinical: true },
+    { code: 'RECEPTIONIST', name: 'Receptionist', is_clinical: false },
+    { code: 'ACCOUNTANT', name: 'Accountant', is_clinical: false },
+  ];
+  for (const jf of jobFunctions) {
+    await prisma.jobFunction.upsert({
+      where: { code: jf.code },
+      update: { name: jf.name, is_clinical: jf.is_clinical },
+      create: jf,
+    });
+  }
 
   await prisma.subscriptionPlan.upsert({
     where: { plan: 'free_trial' },
@@ -43,6 +57,11 @@ async function main() {
     update: { max_organizations: 5, max_branches: 5, max_staff: 25 },
     create: { plan: 'pro', max_organizations: 5, max_branches: 5, max_staff: 25 },
   });
+  await prisma.subscriptionPlan.upsert({
+    where: { plan: 'enterprise' },
+    update: { max_organizations: 10, max_branches: 10, max_staff: 100 },
+    create: { plan: 'enterprise', max_organizations: 10, max_branches: 10, max_staff: 100 },
+  });
 
   // Specialty: GYN
   const gynSpecialty = await prisma.specialty.upsert({
@@ -50,6 +69,22 @@ async function main() {
     update: {},
     create: { name: 'Gynecology', code: 'GYN', description: 'Obstetrics and Gynecology' },
   });
+
+  // Procedures — structured catalog used by CalendarEvent.procedure_id when type=SURGERY.
+  const procedures = [
+    { code: 'CESAREAN_SECTION', name: 'Cesarean Section' },
+    { code: 'NORMAL_DELIVERY', name: 'Normal Delivery' },
+    { code: 'D_AND_C', name: 'Dilation & Curettage' },
+    { code: 'HYSTERECTOMY', name: 'Hysterectomy' },
+    { code: 'LAPAROSCOPY', name: 'Laparoscopy' },
+  ];
+  for (const proc of procedures) {
+    await prisma.procedure.upsert({
+      where: { code: proc.code },
+      update: { name: proc.name, specialty_id: gynSpecialty.id },
+      create: { code: proc.code, name: proc.name, specialty_id: gynSpecialty.id },
+    });
+  }
 
   // Journey Templates
   const pregnancyTemplate = await prisma.journeyTemplate.upsert({

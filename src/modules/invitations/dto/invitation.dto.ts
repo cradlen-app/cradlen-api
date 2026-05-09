@@ -1,9 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
-  IsBoolean,
   IsEmail,
+  IsEnum,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -12,7 +13,11 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
-import { InvitationStatus } from '@prisma/client';
+import {
+  EngagementType,
+  ExecutiveTitle,
+  InvitationStatus,
+} from '@prisma/client';
 import { BranchScheduleDto } from '../../staff/dto/staff.dto.js';
 
 export class PreviewInvitationQueryDto {
@@ -45,14 +50,23 @@ export class InvitationPreviewResponseDto {
   @ApiProperty()
   last_name!: string;
 
-  @ApiProperty()
-  is_clinical!: boolean;
+  @ApiPropertyOptional({ enum: ExecutiveTitle, nullable: true })
+  executive_title!: ExecutiveTitle | null;
 
-  @ApiPropertyOptional()
-  job_title!: string | null;
+  @ApiProperty({ enum: EngagementType })
+  engagement_type!: EngagementType;
 
-  @ApiPropertyOptional()
-  specialty!: string | null;
+  @ApiProperty({
+    type: [Object],
+    description: 'JobFunction { id, code, name } pairs',
+  })
+  job_functions!: { id: string; code: string; name: string }[];
+
+  @ApiProperty({
+    type: [Object],
+    description: 'Specialty { id, code, name } pairs',
+  })
+  specialties!: { id: string; code: string; name: string }[];
 
   @ApiProperty()
   organization!: { id: string; name: string };
@@ -99,21 +113,6 @@ export class CreateInvitationDto {
   @IsString()
   phone_number?: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  job_title?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  specialty?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
-  is_clinical?: boolean;
-
   @ApiProperty({ type: [String] })
   @IsArray()
   @ArrayMinSize(1)
@@ -125,6 +124,45 @@ export class CreateInvitationDto {
   @ArrayMinSize(1)
   @IsUUID('4', { each: true })
   branch_ids!: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'JobFunction codes (e.g. ["NURSE", "OBGYN"]). Codes must exist in the JobFunction table.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  job_function_codes?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Specialty codes from the Specialty table.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  specialty_codes?: string[];
+
+  @ApiPropertyOptional({ enum: ExecutiveTitle })
+  @IsOptional()
+  @IsEnum(ExecutiveTitle)
+  executive_title?: ExecutiveTitle;
+
+  @ApiPropertyOptional({ enum: EngagementType })
+  @IsOptional()
+  @IsEnum(EngagementType)
+  engagement_type?: EngagementType;
+}
+
+export class BulkCreateInvitationsDto {
+  @ApiProperty({ type: [CreateInvitationDto] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => CreateInvitationDto)
+  invitations!: CreateInvitationDto[];
 }
 
 export class AcceptInvitationDto {

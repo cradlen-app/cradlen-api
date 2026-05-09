@@ -84,9 +84,6 @@ export class StaffService {
         data: {
           user_id: user.id,
           organization_id: organizationId,
-          job_title: dto.job_title ?? null,
-          specialty: dto.specialty ?? null,
-          is_clinical: dto.is_clinical ?? false,
         },
       });
 
@@ -129,7 +126,7 @@ export class StaffService {
       organizationId,
     );
 
-    const VALID_ROLES = ['OWNER', 'DOCTOR', 'RECEPTIONIST'];
+    const VALID_ROLES = ['OWNER', 'STAFF', 'EXTERNAL'];
     if (role !== undefined && !VALID_ROLES.includes(role.toUpperCase())) {
       throw new BadRequestException(
         `Invalid role: ${role}. Valid values: ${VALID_ROLES.join(', ')}`,
@@ -165,6 +162,8 @@ export class StaffService {
           where: { branch: { is_deleted: false } },
           include: { branch: true },
         },
+        job_functions: { include: { job_function: true } },
+        specialty_links: { include: { specialty: true } },
         workingSchedules: {
           include: {
             days: {
@@ -270,17 +269,6 @@ export class StaffService {
         });
       }
 
-      await tx.profile.update({
-        where: { id: staffProfileId },
-        data: {
-          ...(dto.job_title !== undefined && { job_title: dto.job_title }),
-          ...(dto.specialty !== undefined && { specialty: dto.specialty }),
-          ...(dto.is_clinical !== undefined && {
-            is_clinical: dto.is_clinical,
-          }),
-        },
-      });
-
       if (uniqueRoleIds) {
         await tx.profileRole.deleteMany({
           where: { profile_id: staffProfileId },
@@ -337,6 +325,8 @@ export class StaffService {
             where: { branch: { is_deleted: false } },
             include: { branch: true },
           },
+          job_functions: { include: { job_function: true } },
+          specialty_links: { include: { specialty: true } },
           workingSchedules: {
             include: { days: { include: { shifts: true } } },
           },
@@ -379,9 +369,8 @@ export class StaffService {
   private toStaffResponse(p: {
     id: string;
     user_id: string;
-    job_title: string | null;
-    specialty: string | null;
-    is_clinical: boolean;
+    executive_title: import('@prisma/client').ExecutiveTitle | null;
+    engagement_type: import('@prisma/client').EngagementType;
     user: {
       id: string;
       first_name: string;
@@ -398,6 +387,17 @@ export class StaffService {
         governorate: string;
       };
     }[];
+    job_functions: {
+      job_function: {
+        id: string;
+        code: string;
+        name: string;
+        is_clinical: boolean;
+      };
+    }[];
+    specialty_links: {
+      specialty: { id: string; code: string; name: string };
+    }[];
     workingSchedules: {
       branch_id: string;
       days: {
@@ -413,15 +413,25 @@ export class StaffService {
       last_name: p.user.last_name,
       email: p.user.email,
       phone_number: p.user.phone_number,
-      job_title: p.job_title,
-      specialty: p.specialty,
-      is_clinical: p.is_clinical,
+      executive_title: p.executive_title,
+      engagement_type: p.engagement_type,
       roles: p.roles.map((r) => ({ id: r.role.id, name: r.role.name })),
       branches: p.branches.map((b) => ({
         id: b.branch.id,
         name: b.branch.name,
         city: b.branch.city,
         governorate: b.branch.governorate,
+      })),
+      job_functions: p.job_functions.map((jf) => ({
+        id: jf.job_function.id,
+        code: jf.job_function.code,
+        name: jf.job_function.name,
+        is_clinical: jf.job_function.is_clinical,
+      })),
+      specialties: p.specialty_links.map((sl) => ({
+        id: sl.specialty.id,
+        code: sl.specialty.code,
+        name: sl.specialty.name,
       })),
       schedule: p.workingSchedules.map((ws) => ({
         branch_id: ws.branch_id,
