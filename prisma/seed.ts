@@ -13,7 +13,7 @@ const prisma = new PrismaClient({ adapter });
 
 async function main() {
   // Roles — authority tiers only. Job-level distinctions live on JobFunction below.
-  const roles = ['OWNER', 'STAFF', 'EXTERNAL'];
+  const roles = ['OWNER', 'BRANCH_MANAGER', 'STAFF', 'EXTERNAL'];
   for (const name of roles) {
     await prisma.role.upsert({
       where: { name },
