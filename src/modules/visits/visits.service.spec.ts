@@ -105,6 +105,8 @@ describe('VisitsService', () => {
       count: jest.Mock;
     };
     branch: { findFirst: jest.Mock };
+    visitEncounter: { findUnique: jest.Mock; upsert: jest.Mock };
+    visitVitals: { upsert: jest.Mock };
     $transaction: jest.Mock;
   };
   let prismaMock: { db: typeof db };
@@ -128,6 +130,8 @@ describe('VisitsService', () => {
         count: jest.fn(),
       },
       branch: { findFirst: jest.fn() },
+      visitEncounter: { findUnique: jest.fn(), upsert: jest.fn() },
+      visitVitals: { upsert: jest.fn() },
       $transaction: jest.fn(),
     };
     prismaMock = { db };
@@ -150,6 +154,9 @@ describe('VisitsService', () => {
     it('creates a visit when episode is in the user org', async () => {
       db.patientEpisode.findUnique.mockResolvedValue(mockEpisodeWithJourney);
       db.visit.create.mockResolvedValue(mockVisit);
+      db.$transaction.mockImplementation(
+        async (cb: (tx: typeof db) => Promise<unknown>) => cb(db),
+      );
       const result = await service.create(
         'ep-uuid',
         {
@@ -218,7 +225,7 @@ describe('VisitsService', () => {
         episode: { journey: { organization_id: 'org-uuid' } },
       });
       await expect(
-        service.update('visit-uuid', { notes: 'changed' }, mockUser),
+        service.update('visit-uuid', { chief_complaint: 'changed' }, mockUser),
       ).rejects.toThrow(BadRequestException);
     });
   });
@@ -306,10 +313,48 @@ describe('VisitsService', () => {
       );
     });
 
+    it('rejects COMPLETED transition when no encounter exists', async () => {
+      db.visit.findUnique.mockResolvedValue({
+        ...mockVisit,
+        status: 'IN_PROGRESS',
+      });
+      db.visitEncounter.findUnique.mockResolvedValue(null);
+      await expect(
+        service.updateStatus(
+          'visit-uuid',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          { status: 'COMPLETED' as any },
+          mockUser,
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(db.visit.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects COMPLETED transition when chief_complaint is empty', async () => {
+      db.visit.findUnique.mockResolvedValue({
+        ...mockVisit,
+        status: 'IN_PROGRESS',
+      });
+      db.visitEncounter.findUnique.mockResolvedValue({
+        chief_complaint: '   ', // whitespace only
+      });
+      await expect(
+        service.updateStatus(
+          'visit-uuid',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          { status: 'COMPLETED' as any },
+          mockUser,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('sets completed_at when transitioning to COMPLETED', async () => {
       db.visit.findUnique.mockResolvedValue({
         ...mockVisit,
         status: 'IN_PROGRESS',
+      });
+      db.visitEncounter.findUnique.mockResolvedValue({
+        chief_complaint: 'Bleeding',
       });
       db.visit.update.mockResolvedValue({
         ...mockVisit,
