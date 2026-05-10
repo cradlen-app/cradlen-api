@@ -47,13 +47,26 @@ const mockStaffProfile = {
 describe('StaffService.listStaff', () => {
   let service: StaffService;
   let db: {
-    profile: { findMany: jest.Mock };
+    profile: { findMany: jest.Mock; count: jest.Mock };
   };
-  let authMock: { assertCanViewStaff: jest.Mock };
+  let authMock: {
+    assertCanViewStaff: jest.Mock;
+    isOwner: jest.Mock;
+    getEffectiveBranchIds: jest.Mock;
+  };
 
   beforeEach(async () => {
-    db = { profile: { findMany: jest.fn() } };
-    authMock = { assertCanViewStaff: jest.fn().mockResolvedValue(undefined) };
+    db = {
+      profile: {
+        findMany: jest.fn().mockResolvedValue([mockStaffProfile]),
+        count: jest.fn().mockResolvedValue(1),
+      },
+    };
+    authMock = {
+      assertCanViewStaff: jest.fn().mockResolvedValue(undefined),
+      isOwner: jest.fn().mockResolvedValue(true),
+      getEffectiveBranchIds: jest.fn().mockResolvedValue([]),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -70,20 +83,23 @@ describe('StaffService.listStaff', () => {
     service = module.get<StaffService>(StaffService);
   });
 
-  it('returns all staff when no role filter is given', async () => {
-    db.profile.findMany.mockResolvedValue([mockStaffProfile]);
+  it('returns paginated staff when no role filter is given', async () => {
     const result = await service.listStaff('caller-uuid', 'org-uuid');
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.not.objectContaining({ roles: expect.anything() }),
       }),
     );
-    expect(result).toHaveLength(1);
-    expect(db.profile.findMany).toHaveBeenCalledTimes(1);
+    expect(result.items).toHaveLength(1);
+    expect(result.meta).toEqual({
+      page: 1,
+      limit: 20,
+      total: 1,
+      totalPages: 1,
+    });
   });
 
   it('adds role filter to where clause when role is provided', async () => {
-    db.profile.findMany.mockResolvedValue([mockStaffProfile]);
     await service.listStaff('caller-uuid', 'org-uuid', undefined, 'STAFF');
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -95,7 +111,6 @@ describe('StaffService.listStaff', () => {
   });
 
   it('normalises role to uppercase', async () => {
-    db.profile.findMany.mockResolvedValue([mockStaffProfile]);
     await service.listStaff('caller-uuid', 'org-uuid', undefined, 'staff');
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -114,7 +129,6 @@ describe('StaffService.listStaff', () => {
   });
 
   it('applies both branchId and role filters together', async () => {
-    db.profile.findMany.mockResolvedValue([mockStaffProfile]);
     await service.listStaff('caller-uuid', 'org-uuid', 'branch-uuid', 'STAFF');
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -133,7 +147,6 @@ describe('StaffService.listStaff', () => {
   });
 
   it('adds EXTERNAL role filter to where clause', async () => {
-    db.profile.findMany.mockResolvedValue([]);
     await service.listStaff('caller-uuid', 'org-uuid', undefined, 'EXTERNAL');
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -142,5 +155,26 @@ describe('StaffService.listStaff', () => {
         }),
       }),
     );
+  });
+
+  it('applies pagination skip/take and returns meta', async () => {
+    db.profile.count.mockResolvedValue(45);
+    const result = await service.listStaff(
+      'caller-uuid',
+      'org-uuid',
+      undefined,
+      undefined,
+      3,
+      10,
+    );
+    expect(db.profile.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ skip: 20, take: 10 }),
+    );
+    expect(result.meta).toEqual({
+      page: 3,
+      limit: 10,
+      total: 45,
+      totalPages: 5,
+    });
   });
 });

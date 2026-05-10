@@ -57,9 +57,18 @@ export class InvitationsService {
     organizationId: string,
     dto: CreateInvitationDto,
   ) {
-    await this.authorizationService.assertCanManageStaff(
+    const uniqueBranchIds = [...new Set(dto.branch_ids)];
+    const uniqueRoleIds = [...new Set(dto.role_ids)];
+
+    await this.authorizationService.assertCanManageStaffOnBranches(
       profileId,
       organizationId,
+      uniqueBranchIds,
+    );
+    await this.authorizationService.assertNoPrivilegedRoleAssignment(
+      profileId,
+      organizationId,
+      uniqueRoleIds,
     );
     await this.subscriptionsService.assertStaffLimit(organizationId);
 
@@ -110,10 +119,23 @@ export class InvitationsService {
     organizationId: string,
     dto: BulkCreateInvitationsDto,
   ) {
-    await this.authorizationService.assertCanManageStaff(
-      profileId,
-      organizationId,
-    );
+    // Per-row branch/role checks: every invitation in the batch must be
+    // within the caller's scope. Done up-front so the whole batch fails
+    // fast rather than partially before the transaction opens.
+    for (const item of dto.invitations) {
+      const branchIds = [...new Set(item.branch_ids)];
+      const roleIds = [...new Set(item.role_ids)];
+      await this.authorizationService.assertCanManageStaffOnBranches(
+        profileId,
+        organizationId,
+        branchIds,
+      );
+      await this.authorizationService.assertNoPrivilegedRoleAssignment(
+        profileId,
+        organizationId,
+        roleIds,
+      );
+    }
 
     const invitingUser = await this.prismaService.db.user.findUnique({
       where: { id: currentUserId },
@@ -295,7 +317,7 @@ export class InvitationsService {
     organizationId: string,
     branchId?: string,
   ) {
-    await this.authorizationService.assertCanManageStaff(
+    await this.authorizationService.assertCanViewStaff(
       profileId,
       organizationId,
     );
@@ -303,7 +325,25 @@ export class InvitationsService {
       organization_id: organizationId,
       is_deleted: false,
     };
-    if (branchId) {
+
+    const isOwner = await this.authorizationService.isOwner(
+      profileId,
+      organizationId,
+    );
+    if (!isOwner) {
+      const callerBranches =
+        await this.authorizationService.getEffectiveBranchIds(
+          profileId,
+          organizationId,
+        );
+      if (!callerBranches.length) return [];
+      if (branchId && !callerBranches.includes(branchId)) {
+        throw new ForbiddenException('Branch outside your management scope');
+      }
+      where.branches = {
+        some: { branch_id: { in: branchId ? [branchId] : callerBranches } },
+      };
+    } else if (branchId) {
       where.branches = { some: { branch_id: branchId } };
     }
     const invitations = await this.prismaService.db.invitation.findMany({
@@ -479,7 +519,7 @@ export class InvitationsService {
     organizationId: string,
     invitationId: string,
   ) {
-    await this.authorizationService.assertCanManageStaff(
+    await this.authorizationService.assertCanViewStaff(
       profileId,
       organizationId,
     );
@@ -492,6 +532,8 @@ export class InvitationsService {
       include: this.includeInvitation(),
     });
     if (!invitation) throw new NotFoundException('Invitation not found');
+
+    await this.assertInvitationInScope(profileId, organizationId, invitation);
 
     let workingSchedule = null;
     if (invitation.status === InvitationStatus.ACCEPTED) {
@@ -532,8 +574,10 @@ export class InvitationsService {
         organization_id: organizationId,
         is_deleted: false,
       },
+      include: { branches: { select: { branch_id: true } } },
     });
     if (!invitation) throw new NotFoundException('Invitation not found');
+    await this.assertInvitationInScope(profileId, organizationId, invitation);
     if (invitation.status !== InvitationStatus.PENDING)
       throw new BadRequestException('Only pending invitations can be resent');
 
@@ -573,6 +617,7 @@ export class InvitationsService {
       include: this.includeInvitation(),
     });
     if (!invitation) throw new NotFoundException('Invitation not found');
+    await this.assertInvitationInScope(profileId, organizationId, invitation);
     const updated = await this.prismaService.db.invitation.update({
       where: { id: invitationId },
       data: {
@@ -585,6 +630,22 @@ export class InvitationsService {
       include: this.includeInvitation(),
     });
     return this.toResponse(updated);
+  }
+
+  private async assertInvitationInScope(
+    profileId: string,
+    organizationId: string,
+    invitation: { branches: { branch_id: string }[] },
+  ): Promise<void> {
+    if (await this.authorizationService.isOwner(profileId, organizationId)) {
+      return;
+    }
+    const branchIds = invitation.branches.map((b) => b.branch_id);
+    await this.authorizationService.assertCanManageStaffOnBranches(
+      profileId,
+      organizationId,
+      branchIds,
+    );
   }
 
   private assertShiftTimes(schedule: BranchScheduleDto[]) {

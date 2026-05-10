@@ -10,19 +10,21 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiQuery,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import type { AuthContext } from '../../common/interfaces/auth-context.interface.js';
 import {
+  ApiPaginatedResponse,
   ApiStandardResponse,
   ApiVoidResponse,
 } from '../../common/swagger/index.js';
-import { CreateStaffDto, UpdateStaffDto } from './dto/staff.dto.js';
+import {
+  CreateStaffDto,
+  CreateStaffResponseDto,
+  ListStaffQueryDto,
+  StaffResponseDto,
+  UpdateStaffDto,
+} from './dto/staff.dto.js';
 import { StaffService } from './staff.service.js';
 
 @ApiTags('Staff')
@@ -37,7 +39,7 @@ export class StaffController {
     description:
       'Creates a user + profile immediately. A system email is auto-generated (e.g. sara-ahmed4821@cradlen.com). Staff log in with the password set here.',
   })
-  @ApiStandardResponse(Object)
+  @ApiStandardResponse(CreateStaffResponseDto)
   createStaff(
     @CurrentUser() user: AuthContext,
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -47,31 +49,27 @@ export class StaffController {
   }
 
   @Get('organizations/:organizationId/staff')
-  @ApiOperation({ summary: 'List all active staff in an organization' })
-  @ApiQuery({
-    name: 'role',
-    required: false,
-    enum: ['OWNER', 'DOCTOR', 'RECEPTIONIST'],
-    description: 'Filter staff by role name',
-  })
-  @ApiStandardResponse(Object)
+  @ApiOperation({ summary: 'List active staff in an organization' })
+  @ApiPaginatedResponse(StaffResponseDto)
   listStaff(
     @CurrentUser() user: AuthContext,
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
-    @Query('branch_id') branchId?: string,
-    @Query('role') role?: string,
+    @Query() query: ListStaffQueryDto,
   ) {
     return this.staffService.listStaff(
       user.profileId,
       organizationId,
-      branchId,
-      role,
+      query.branch_id,
+      query.role,
+      query.page,
+      query.limit,
+      query.scope,
     );
   }
 
   @Patch('organizations/:organizationId/staff/:staffProfileId')
   @ApiOperation({ summary: 'Update a staff member' })
-  @ApiStandardResponse(Object)
+  @ApiStandardResponse(StaffResponseDto)
   updateStaff(
     @CurrentUser() user: AuthContext,
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -88,7 +86,11 @@ export class StaffController {
 
   @Delete('organizations/:organizationId/staff/:staffProfileId')
   @HttpCode(204)
-  @ApiOperation({ summary: 'Soft-delete a staff member' })
+  @ApiOperation({
+    summary: 'Soft-delete a staff member (OWNER only)',
+    description:
+      'Removes the staff member from the organization entirely. BRANCH_MANAGER cannot perform this — use the per-branch unassign endpoint instead.',
+  })
   @ApiVoidResponse()
   deleteStaff(
     @CurrentUser() user: AuthContext,
@@ -99,6 +101,30 @@ export class StaffController {
       user.profileId,
       organizationId,
       staffProfileId,
+    );
+  }
+
+  @Delete(
+    'organizations/:organizationId/staff/:staffProfileId/branches/:branchId',
+  )
+  @HttpCode(204)
+  @ApiOperation({
+    summary: 'Unassign a staff member from a single branch',
+    description:
+      'Removes the staff/branch link only. The profile and other branch assignments remain intact. Available to OWNER and to BRANCH_MANAGER on their own branches.',
+  })
+  @ApiVoidResponse()
+  unassignStaffFromBranch(
+    @CurrentUser() user: AuthContext,
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('staffProfileId', ParseUUIDPipe) staffProfileId: string,
+    @Param('branchId', ParseUUIDPipe) branchId: string,
+  ) {
+    return this.staffService.unassignStaffFromBranch(
+      user.profileId,
+      organizationId,
+      staffProfileId,
+      branchId,
     );
   }
 }
