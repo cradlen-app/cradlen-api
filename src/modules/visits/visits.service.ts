@@ -12,6 +12,8 @@ import { CreateVisitDto } from './dto/create-visit.dto';
 import { UpdateVisitDto } from './dto/update-visit.dto';
 import { UpdateVisitStatusDto } from './dto/update-visit-status.dto';
 import { BookVisitDto } from './dto/book-visit.dto';
+import { SetFollowUpDto } from './dto/set-follow-up.dto';
+import { VisitIntakeFieldsDto } from './dto/visit-intake.dto';
 import { VisitsGateway } from './visits.gateway';
 import { paginated } from '../../common/utils/pagination.utils';
 
@@ -64,6 +66,73 @@ export class VisitsService {
     return (last?.queue_number ?? 0) + 1;
   }
 
+  private hasComplaintIntake(intake: VisitIntakeFieldsDto): boolean {
+    return (
+      intake.chief_complaint !== undefined ||
+      intake.chief_complaint_meta !== undefined
+    );
+  }
+
+  private hasVitalsIntake(intake: VisitIntakeFieldsDto): boolean {
+    if (!intake.vitals) return false;
+    return Object.values(intake.vitals).some((v) => v !== undefined);
+  }
+
+  private computeBmi(
+    weight_kg: number | undefined,
+    height_cm: number | undefined,
+  ): number | null {
+    if (!weight_kg || !height_cm || height_cm <= 0) return null;
+    const heightM = height_cm / 100;
+    return Math.round((weight_kg / (heightM * heightM)) * 10) / 10;
+  }
+
+  private async applyIntake(
+    tx: Prisma.TransactionClient,
+    visitId: string,
+    intake: VisitIntakeFieldsDto,
+    profileId: string,
+  ) {
+    if (this.hasComplaintIntake(intake)) {
+      const data: Prisma.VisitEncounterUncheckedUpdateInput = {
+        ...(intake.chief_complaint !== undefined && {
+          chief_complaint: intake.chief_complaint,
+        }),
+        ...(intake.chief_complaint_meta !== undefined && {
+          chief_complaint_meta:
+            intake.chief_complaint_meta as Prisma.InputJsonValue,
+        }),
+      };
+      await tx.visitEncounter.upsert({
+        where: { visit_id: visitId },
+        create: {
+          visit_id: visitId,
+          ...data,
+        } as Prisma.VisitEncounterUncheckedCreateInput,
+        update: data,
+      });
+    }
+    if (this.hasVitalsIntake(intake)) {
+      const v = intake.vitals!;
+      const data = {
+        systolic_bp: v.systolic_bp ?? null,
+        diastolic_bp: v.diastolic_bp ?? null,
+        pulse: v.pulse ?? null,
+        temperature_c: v.temperature_c ?? null,
+        respiratory_rate: v.respiratory_rate ?? null,
+        spo2: v.spo2 ?? null,
+        weight_kg: v.weight_kg ?? null,
+        height_cm: v.height_cm ?? null,
+        bmi: this.computeBmi(v.weight_kg, v.height_cm),
+      };
+      await tx.visitVitals.upsert({
+        where: { visit_id: visitId },
+        create: { visit_id: visitId, recorded_by_id: profileId, ...data },
+        update: { recorded_by_id: profileId, recorded_at: new Date(), ...data },
+      });
+    }
+  }
+
   private async assertEpisodeInOrg(episodeId: string, organizationId: string) {
     const episode = await this.prismaService.db.patientEpisode.findUnique({
       where: { id: episodeId, is_deleted: false },
@@ -83,17 +152,20 @@ export class VisitsService {
     await this.assertEpisodeInOrg(episodeId, user.organizationId);
     const branchId = dto.branch_id ?? user.activeBranchId;
     if (!branchId) throw new BadRequestException('branch_id is required');
-    return this.prismaService.db.visit.create({
-      data: {
-        episode_id: episodeId,
-        assigned_doctor_id: dto.assigned_doctor_id,
-        branch_id: branchId,
-        visit_type: dto.visit_type,
-        priority: dto.priority,
-        scheduled_at: new Date(dto.scheduled_at),
-        notes: dto.notes ?? null,
-        created_by_id: user.profileId,
-      },
+    return this.prismaService.db.$transaction(async (tx) => {
+      const visit = await tx.visit.create({
+        data: {
+          episode_id: episodeId,
+          assigned_doctor_id: dto.assigned_doctor_id,
+          branch_id: branchId,
+          visit_type: dto.visit_type,
+          priority: dto.priority,
+          scheduled_at: new Date(dto.scheduled_at),
+          created_by_id: user.profileId,
+        },
+      });
+      await this.applyIntake(tx, visit.id, dto, user.profileId);
+      return visit;
     });
   }
 
@@ -224,10 +296,10 @@ export class VisitsService {
           visit_type: dto.visit_type,
           priority: dto.priority,
           scheduled_at: new Date(dto.scheduled_at),
-          notes: dto.notes ?? null,
           created_by_id: user.profileId,
         },
       });
+      await this.applyIntake(tx, visit.id, dto, user.profileId);
 
       return { visit, episode: episode, journey, patient };
     });
@@ -516,20 +588,23 @@ export class VisitsService {
         `Cannot update a visit in terminal status: ${visit.status}`,
       );
     }
-    const updated = await this.prismaService.db.visit.update({
-      where: { id },
-      data: {
-        ...(dto.assigned_doctor_id !== undefined && {
-          assigned_doctor_id: dto.assigned_doctor_id,
-        }),
-        ...(dto.branch_id !== undefined && { branch_id: dto.branch_id }),
-        ...(dto.visit_type !== undefined && { visit_type: dto.visit_type }),
-        ...(dto.priority !== undefined && { priority: dto.priority }),
-        ...(dto.scheduled_at !== undefined && {
-          scheduled_at: new Date(dto.scheduled_at),
-        }),
-        ...(dto.notes !== undefined && { notes: dto.notes }),
-      },
+    const updated = await this.prismaService.db.$transaction(async (tx) => {
+      const next = await tx.visit.update({
+        where: { id },
+        data: {
+          ...(dto.assigned_doctor_id !== undefined && {
+            assigned_doctor_id: dto.assigned_doctor_id,
+          }),
+          ...(dto.branch_id !== undefined && { branch_id: dto.branch_id }),
+          ...(dto.visit_type !== undefined && { visit_type: dto.visit_type }),
+          ...(dto.priority !== undefined && { priority: dto.priority }),
+          ...(dto.scheduled_at !== undefined && {
+            scheduled_at: new Date(dto.scheduled_at),
+          }),
+        },
+      });
+      await this.applyIntake(tx, id, dto, user.profileId);
+      return next;
     });
 
     this.visitsGateway.emitVisitUpdated(
@@ -549,6 +624,17 @@ export class VisitsService {
       throw new BadRequestException(
         `Cannot transition from ${visit.status} to ${dto.status}`,
       );
+    }
+    if (dto.status === 'COMPLETED') {
+      const encounter = await this.prismaService.db.visitEncounter.findUnique({
+        where: { visit_id: id },
+        select: { chief_complaint: true },
+      });
+      if (!encounter || !encounter.chief_complaint?.trim()) {
+        throw new BadRequestException(
+          'Cannot complete visit without an encounter and a chief complaint',
+        );
+      }
     }
     const timestampField = STATUS_TIMESTAMPS[dto.status];
     const now = new Date();
@@ -584,5 +670,32 @@ export class VisitsService {
       updatedVisit,
     );
     return updatedVisit;
+  }
+
+  async setFollowUp(id: string, dto: SetFollowUpDto, user: AuthContext) {
+    const visit = await this.findOne(id, user);
+    if (visit.assigned_doctor_id !== user.profileId) {
+      throw new ForbiddenException(
+        'Only the assigned doctor can set follow-up',
+      );
+    }
+    if (TERMINAL_STATES.includes(visit.status)) {
+      throw new BadRequestException(
+        `Cannot set follow-up while visit is ${visit.status}`,
+      );
+    }
+    return this.prismaService.db.visit.update({
+      where: { id },
+      data: {
+        ...(dto.follow_up_date !== undefined && {
+          follow_up_date: dto.follow_up_date
+            ? new Date(dto.follow_up_date)
+            : null,
+        }),
+        ...(dto.follow_up_notes !== undefined && {
+          follow_up_notes: dto.follow_up_notes,
+        }),
+      },
+    });
   }
 }
