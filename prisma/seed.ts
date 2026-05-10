@@ -193,6 +193,66 @@ async function main() {
     }
   }
 
+  // Medications — global catalog (organization_id = null). OB/GYN-relevant set.
+  const medications = [
+    { code: 'FOLIC_ACID_5MG', name: 'Folic Acid 5mg', generic_name: 'folic acid', form: 'tablet', strength: '5mg' },
+    { code: 'PARACETAMOL_500', name: 'Paracetamol 500mg', generic_name: 'paracetamol', form: 'tablet', strength: '500mg' },
+    { code: 'METHYLDOPA_250', name: 'Methyldopa 250mg', generic_name: 'methyldopa', form: 'tablet', strength: '250mg' },
+    { code: 'LABETALOL_100', name: 'Labetalol 100mg', generic_name: 'labetalol', form: 'tablet', strength: '100mg' },
+    { code: 'NIFEDIPINE_20', name: 'Nifedipine 20mg', generic_name: 'nifedipine', form: 'tablet', strength: '20mg' },
+    { code: 'IRON_SULFATE_325', name: 'Ferrous Sulfate 325mg', generic_name: 'ferrous sulfate', form: 'tablet', strength: '325mg' },
+    { code: 'CALCIUM_CARBONATE_500', name: 'Calcium Carbonate 500mg', generic_name: 'calcium carbonate', form: 'tablet', strength: '500mg' },
+    { code: 'VITAMIN_D3_1000IU', name: 'Vitamin D3 1000 IU', generic_name: 'cholecalciferol', form: 'tablet', strength: '1000IU' },
+    { code: 'MAGNESIUM_SULFATE', name: 'Magnesium Sulfate 4g/20ml', generic_name: 'magnesium sulfate', form: 'injection', strength: '4g/20ml' },
+    { code: 'PROGESTERONE_200', name: 'Progesterone 200mg', generic_name: 'progesterone', form: 'capsule', strength: '200mg' },
+    { code: 'OXYTOCIN_10IU', name: 'Oxytocin 10 IU/ml', generic_name: 'oxytocin', form: 'injection', strength: '10IU/ml' },
+    { code: 'DEXAMETHASONE_6', name: 'Dexamethasone 6mg', generic_name: 'dexamethasone', form: 'injection', strength: '6mg' },
+    { code: 'CLOTRIMAZOLE_PESSARY', name: 'Clotrimazole Pessary 500mg', generic_name: 'clotrimazole', form: 'pessary', strength: '500mg' },
+    { code: 'METRONIDAZOLE_500', name: 'Metronidazole 500mg', generic_name: 'metronidazole', form: 'tablet', strength: '500mg' },
+    { code: 'ONDANSETRON_8', name: 'Ondansetron 8mg', generic_name: 'ondansetron', form: 'tablet', strength: '8mg' },
+  ];
+  for (const med of medications) {
+    const existing = await prisma.medication.findFirst({
+      where: { organization_id: null, code: med.code },
+    });
+    if (!existing) {
+      await prisma.medication.create({ data: { ...med } });
+    } else {
+      await prisma.medication.update({ where: { id: existing.id }, data: { ...med } });
+    }
+  }
+
+  // Lab tests — global catalog. Categorized as LAB | IMAGING | OTHER.
+  const labTests = [
+    { code: 'CBC', name: 'Complete Blood Count', category: 'LAB' as const },
+    { code: 'URINALYSIS', name: 'Urinalysis', category: 'LAB' as const },
+    { code: 'BLOOD_GROUP_RH', name: 'Blood Group & Rh Factor', category: 'LAB' as const },
+    { code: 'HBA1C', name: 'HbA1c', category: 'LAB' as const },
+    { code: 'OGTT', name: 'Oral Glucose Tolerance Test', category: 'LAB' as const },
+    { code: 'TSH', name: 'TSH', category: 'LAB' as const },
+    { code: 'BETA_HCG_QUANT', name: 'Beta hCG Quantitative', category: 'LAB' as const },
+    { code: 'GBS_SWAB', name: 'Group B Streptococcus Swab', category: 'LAB' as const },
+    { code: 'OB_ULTRASOUND', name: 'Obstetric Ultrasound', category: 'IMAGING' as const },
+    { code: 'ANOMALY_SCAN', name: 'Anomaly Scan', category: 'IMAGING' as const },
+    { code: 'DOPPLER_STUDY', name: 'Doppler Study', category: 'IMAGING' as const },
+    { code: 'NST', name: 'Non-Stress Test', category: 'OTHER' as const },
+  ];
+  for (const test of labTests) {
+    const existing = await prisma.labTest.findFirst({
+      where: { organization_id: null, code: test.code },
+    });
+    if (!existing) {
+      await prisma.labTest.create({
+        data: { ...test, specialty_id: gynSpecialty.id },
+      });
+    } else {
+      await prisma.labTest.update({
+        where: { id: existing.id },
+        data: { ...test, specialty_id: gynSpecialty.id },
+      });
+    }
+  }
+
   console.log('Seed complete.');
 }
 

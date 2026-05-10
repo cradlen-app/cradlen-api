@@ -28,6 +28,9 @@ Table organizations {
   patient_journeys patient_journeys [not null]
   calendar_events calendar_events [not null]
   specialty_links organization_specialties [not null]
+  medications medications [not null]
+  lab_tests lab_tests [not null]
+  patient_history_notes patient_history_notes [not null]
 }
 
 Table branches {
@@ -134,6 +137,19 @@ Table profiles {
   created_visits visits [not null]
   created_calendar_events calendar_events [not null]
   calendar_event_participations calendar_event_participants [not null]
+  medications_added medications [not null]
+  lab_tests_added lab_tests [not null]
+  vitals_recorded visit_vitals [not null]
+  investigations_ordered visit_investigations [not null]
+  investigations_resulted visit_investigations [not null]
+  investigations_reviewed visit_investigations [not null]
+  prescriptions_authored prescriptions [not null]
+  history_notes_authored patient_history_notes [not null]
+  history_allergies_added patient_allergies [not null]
+  history_pregnancies_added patient_pregnancy_history [not null]
+  history_contraceptives_added patient_contraceptive_history [not null]
+  history_surgeries_added patient_non_gyn_surgeries [not null]
+  history_medications_added patient_medications [not null]
 
   indexes {
     (user_id, organization_id) [unique]
@@ -331,6 +347,7 @@ Table specialties {
   profile_links profile_specialties [not null]
   org_links organization_specialties [not null]
   inv_links invitation_specialties [not null]
+  lab_tests lab_tests [not null]
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   is_deleted Boolean [not null, default: false]
@@ -439,8 +456,22 @@ Table patients {
   date_of_birth DateTime [not null]
   phone_number String [not null]
   address String [not null]
+  gynecological_baseline Json
+  gynecologic_procedures Json
+  screening_history Json
+  obstetric_summary Json
+  medical_chronic_illnesses Json
+  family_history Json
+  fertility_history Json
+  social_history Json
   journeys patient_journeys [not null]
   calendar_events calendar_events [not null]
+  allergies patient_allergies [not null]
+  pregnancies patient_pregnancy_history [not null]
+  contraceptives patient_contraceptive_history [not null]
+  non_gyn_surgeries patient_non_gyn_surgeries [not null]
+  current_medications patient_medications [not null]
+  history_notes patient_history_notes [not null]
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   is_deleted Boolean [not null, default: false]
@@ -504,6 +535,12 @@ Table visits {
   completed_at DateTime
   notes String
   queue_number Int
+  follow_up_date DateTime
+  follow_up_notes String
+  vitals visit_vitals
+  encounter visit_encounters
+  investigations visit_investigations [not null]
+  prescription prescriptions
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   is_deleted Boolean [not null, default: false]
@@ -549,6 +586,265 @@ Table calendar_event_participants {
   indexes {
     (event_id, profile_id) [unique]
   }
+}
+
+Table medications {
+  id String [pk]
+  organization_id String
+  organization organizations
+  code String [not null]
+  name String [not null]
+  generic_name String
+  form String
+  strength String
+  added_by_id String
+  added_by profiles
+  items prescription_items [not null]
+  patient_medications patient_medications [not null]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+
+  indexes {
+    (organization_id, code) [unique]
+  }
+}
+
+Table lab_tests {
+  id String [pk]
+  organization_id String
+  organization organizations
+  code String [not null]
+  name String [not null]
+  category LabTestCategory [not null]
+  specialty_id String
+  specialty specialties
+  added_by_id String
+  added_by profiles
+  investigations visit_investigations [not null]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+
+  indexes {
+    (organization_id, code) [unique]
+  }
+}
+
+Table visit_vitals {
+  id String [pk]
+  visit_id String [unique, not null]
+  visit visits [not null]
+  systolic_bp Int
+  diastolic_bp Int
+  pulse Int
+  temperature_c Decimal
+  respiratory_rate Int
+  spo2 Int
+  weight_kg Decimal
+  height_cm Decimal
+  bmi Decimal
+  recorded_by_id String [not null]
+  recorded_by profiles [not null]
+  recorded_at DateTime [default: `now()`, not null]
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
+Table visit_encounters {
+  id String [pk]
+  visit_id String [unique, not null]
+  visit visits [not null]
+  chief_complaint String
+  chief_complaint_meta Json
+  history_present_illness String
+  general_findings Json
+  cardiovascular_findings Json
+  respiratory_findings Json
+  menstrual_findings Json
+  abdominal_findings Json
+  pelvic_findings Json
+  breast_findings Json
+  extremities_findings Json
+  neurological_findings Json
+  skin_findings Json
+  provisional_diagnosis String
+  diagnosis_code String
+  diagnosis_certainty String
+  clinical_reasoning String
+  case_path String
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
+Table visit_investigations {
+  id String [pk]
+  visit_id String [not null]
+  visit visits [not null]
+  lab_test_id String
+  lab_test lab_tests
+  custom_test_name String
+  notes String
+  lab_facility String
+  status InvestigationStatus [not null, default: 'ORDERED']
+  result_text String
+  result_attachment_url String
+  result_source InvestigationResultSource [not null, default: 'CLINIC']
+  resulted_at DateTime
+  resulted_by_id String
+  resulted_by profiles
+  reviewed_at DateTime
+  reviewed_by_id String
+  reviewed_by profiles
+  external_ref String
+  external_provider String
+  ordered_by_id String [not null]
+  ordered_by profiles [not null]
+  ordered_at DateTime [default: `now()`, not null]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
+Table prescriptions {
+  id String [pk]
+  visit_id String [unique, not null]
+  visit visits [not null]
+  prescribed_by_id String [not null]
+  prescribed_by profiles [not null]
+  prescribed_at DateTime [default: `now()`, not null]
+  notes String
+  items prescription_items [not null]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
+Table prescription_items {
+  id String [pk]
+  prescription_id String [not null]
+  prescription prescriptions [not null]
+  medication_id String
+  medication medications
+  custom_drug_name String
+  dose String [not null]
+  route String
+  frequency String [not null]
+  duration_days Int
+  instructions String
+  order Int [not null]
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
+Table patient_allergies {
+  id String [pk]
+  patient_id String [not null]
+  patient patients [not null]
+  allergy_to String [not null]
+  associated_symptoms String
+  severity String
+  notes String
+  created_by_id String
+  created_by profiles
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
+Table patient_pregnancy_history {
+  id String [pk]
+  patient_id String [not null]
+  patient patients [not null]
+  birth_date DateTime
+  outcome String
+  mode_of_delivery String
+  gestational_age_weeks Int
+  neonatal_outcome String
+  complications String
+  notes String
+  created_by_id String
+  created_by profiles
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
+Table patient_contraceptive_history {
+  id String [pk]
+  patient_id String [not null]
+  patient patients [not null]
+  method String [not null]
+  duration String
+  complications String
+  notes String
+  created_by_id String
+  created_by profiles
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
+Table patient_non_gyn_surgeries {
+  id String [pk]
+  patient_id String [not null]
+  patient patients [not null]
+  surgery_name String [not null]
+  surgery_date DateTime
+  facility String
+  notes String
+  created_by_id String
+  created_by profiles
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
+Table patient_medications {
+  id String [pk]
+  patient_id String [not null]
+  patient patients [not null]
+  medication_id String
+  medication medications
+  drug_name String [not null]
+  indication String
+  dose String
+  frequency String
+  from_date DateTime
+  to_date DateTime
+  is_ongoing Boolean [not null, default: true]
+  notes String
+  created_by_id String
+  created_by profiles
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
+Table patient_history_notes {
+  id String [pk]
+  patient_id String [not null]
+  patient patients [not null]
+  organization_id String [not null]
+  organization organizations [not null]
+  author_id String [not null]
+  author profiles [not null]
+  section PatientHistorySection [not null]
+  content String [not null]
+  visibility NoteVisibility [not null, default: 'PRIVATE_TO_ORG']
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
 }
 
 Enum RegistrationStatus {
@@ -673,6 +969,41 @@ Enum EngagementType {
   EXTERNAL_CONSULTANT
 }
 
+Enum LabTestCategory {
+  LAB
+  IMAGING
+  OTHER
+}
+
+Enum InvestigationStatus {
+  ORDERED
+  RESULTED
+  REVIEWED
+  CANCELLED
+}
+
+Enum InvestigationResultSource {
+  CLINIC
+  PATIENT
+  EXTERNAL_LAB
+}
+
+Enum PatientHistorySection {
+  MENSTRUAL
+  GYNECOLOGIC_PROCEDURES
+  CONTRACEPTIVE
+  SCREENING
+  OBSTETRIC
+  MEDICAL
+  FAMILY
+  FERTILITY
+}
+
+Enum NoteVisibility {
+  PRIVATE_TO_ORG
+  SHARED_GLOBAL
+}
+
 Ref: branches.organization_id > organizations.id [delete: Cascade]
 
 Ref: profile_job_functions.profile_id > profiles.id [delete: Cascade]
@@ -776,3 +1107,65 @@ Ref: calendar_events.procedure_id > procedures.id [delete: Set Null]
 Ref: calendar_event_participants.event_id > calendar_events.id [delete: Cascade]
 
 Ref: calendar_event_participants.profile_id > profiles.id [delete: Cascade]
+
+Ref: medications.organization_id > organizations.id [delete: Cascade]
+
+Ref: medications.added_by_id > profiles.id [delete: Set Null]
+
+Ref: lab_tests.organization_id > organizations.id [delete: Cascade]
+
+Ref: lab_tests.specialty_id > specialties.id [delete: Set Null]
+
+Ref: lab_tests.added_by_id > profiles.id [delete: Set Null]
+
+Ref: visit_vitals.visit_id - visits.id [delete: Cascade]
+
+Ref: visit_vitals.recorded_by_id > profiles.id [delete: Cascade]
+
+Ref: visit_encounters.visit_id - visits.id [delete: Cascade]
+
+Ref: visit_investigations.visit_id > visits.id [delete: Cascade]
+
+Ref: visit_investigations.lab_test_id > lab_tests.id [delete: Set Null]
+
+Ref: visit_investigations.resulted_by_id > profiles.id [delete: Set Null]
+
+Ref: visit_investigations.reviewed_by_id > profiles.id [delete: Set Null]
+
+Ref: visit_investigations.ordered_by_id > profiles.id [delete: Set Null]
+
+Ref: prescriptions.visit_id - visits.id [delete: Cascade]
+
+Ref: prescriptions.prescribed_by_id > profiles.id [delete: Cascade]
+
+Ref: prescription_items.prescription_id > prescriptions.id [delete: Cascade]
+
+Ref: prescription_items.medication_id > medications.id [delete: Set Null]
+
+Ref: patient_allergies.patient_id > patients.id [delete: Cascade]
+
+Ref: patient_allergies.created_by_id > profiles.id [delete: Set Null]
+
+Ref: patient_pregnancy_history.patient_id > patients.id [delete: Cascade]
+
+Ref: patient_pregnancy_history.created_by_id > profiles.id [delete: Set Null]
+
+Ref: patient_contraceptive_history.patient_id > patients.id [delete: Cascade]
+
+Ref: patient_contraceptive_history.created_by_id > profiles.id [delete: Set Null]
+
+Ref: patient_non_gyn_surgeries.patient_id > patients.id [delete: Cascade]
+
+Ref: patient_non_gyn_surgeries.created_by_id > profiles.id [delete: Set Null]
+
+Ref: patient_medications.patient_id > patients.id [delete: Cascade]
+
+Ref: patient_medications.medication_id > medications.id [delete: Set Null]
+
+Ref: patient_medications.created_by_id > profiles.id [delete: Set Null]
+
+Ref: patient_history_notes.patient_id > patients.id [delete: Cascade]
+
+Ref: patient_history_notes.organization_id > organizations.id [delete: Cascade]
+
+Ref: patient_history_notes.author_id > profiles.id [delete: Cascade]

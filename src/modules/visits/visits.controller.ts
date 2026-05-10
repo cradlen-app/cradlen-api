@@ -6,6 +6,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import {
@@ -30,6 +31,7 @@ import { BookVisitDto } from './dto/book-visit.dto';
 import { CreateVisitDto } from './dto/create-visit.dto';
 import { UpdateVisitDto } from './dto/update-visit.dto';
 import { UpdateVisitStatusDto } from './dto/update-visit-status.dto';
+import { SetFollowUpDto } from './dto/set-follow-up.dto';
 import { VisitDto } from './dto/visit.dto';
 import {
   ApiStandardResponse,
@@ -133,6 +135,16 @@ export class VisitsController {
     @CurrentUser() user: AuthContext,
   ) {
     return this.visitsService.updateStatus(id, dto, user);
+  }
+
+  @Put('visits/:id/follow-up')
+  @ApiStandardResponse(VisitDto)
+  setFollowUp(
+    @Param('id') id: string,
+    @Body() dto: SetFollowUpDto,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.visitsService.setFollowUp(id, dto, user);
   }
 
   @Get('branches/:branchId/visits/waiting-list')
