@@ -23,9 +23,13 @@ import { StaffSuggestionsQueryDto } from './dto/staff-suggestions.query.js';
 import {
   LeaveDetailsDto,
   MeetingDetailsDto,
-  PersonalDetailsDto,
   SurgeryDetailsDto,
 } from './dto/details.dto.js';
+
+type StructuredDetailsCtor = new () =>
+  | SurgeryDetailsDto
+  | MeetingDetailsDto
+  | LeaveDetailsDto;
 
 const CREATE_ROLES = ['OWNER', 'DOCTOR'];
 
@@ -462,13 +466,16 @@ export class CalendarService {
   ) {
     if (type === 'PERSONAL') return;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const dtoClass: new () => any = {
+    const dtoMap: Record<
+      'SURGERY' | 'MEETING' | 'LEAVE',
+      StructuredDetailsCtor
+    > = {
       SURGERY: SurgeryDetailsDto,
       MEETING: MeetingDetailsDto,
       LEAVE: LeaveDetailsDto,
-    }[type];
-    const instance = plainToInstance(dtoClass, details ?? {});
+    };
+    const ctor = dtoMap[type];
+    const instance = plainToInstance(ctor, details ?? {});
     const errors = await validate(instance, {
       whitelist: true,
       forbidNonWhitelisted: true,
