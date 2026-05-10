@@ -132,6 +132,41 @@ enum EngagementType {
   EXTERNAL_CONSULTANT
 }
 
+enum LabTestCategory {
+  LAB
+  IMAGING
+  OTHER
+}
+
+enum InvestigationStatus {
+  ORDERED
+  RESULTED
+  REVIEWED
+  CANCELLED
+}
+
+enum InvestigationResultSource {
+  CLINIC
+  PATIENT
+  EXTERNAL_LAB
+}
+
+enum PatientHistorySection {
+  MENSTRUAL
+  GYNECOLOGIC_PROCEDURES
+  CONTRACEPTIVE
+  SCREENING
+  OBSTETRIC
+  MEDICAL
+  FAMILY
+  FERTILITY
+}
+
+enum NoteVisibility {
+  PRIVATE_TO_ORG
+  SHARED_GLOBAL
+}
+
 model SubscriptionPlan {
   id                String         @id @default(uuid()) @db.Uuid
   plan              String         @unique
@@ -146,20 +181,23 @@ model SubscriptionPlan {
 }
 
 model Organization {
-  id               String                  @id @default(uuid()) @db.Uuid
-  name             String
-  status           OrganizationStatus      @default(ACTIVE)
-  is_deleted       Boolean                 @default(false)
-  deleted_at       DateTime?
-  created_at       DateTime                @default(now())
-  updated_at       DateTime                @updatedAt
-  branches         Branch[]
-  profiles         Profile[]
-  invitations      Invitation[]
-  subscriptions    Subscription[]
-  patient_journeys PatientJourney[]
-  calendar_events  CalendarEvent[]
-  specialty_links  OrganizationSpecialty[]
+  id                    String                  @id @default(uuid()) @db.Uuid
+  name                  String
+  status                OrganizationStatus      @default(ACTIVE)
+  is_deleted            Boolean                 @default(false)
+  deleted_at            DateTime?
+  created_at            DateTime                @default(now())
+  updated_at            DateTime                @updatedAt
+  branches              Branch[]
+  profiles              Profile[]
+  invitations           Invitation[]
+  subscriptions         Subscription[]
+  patient_journeys      PatientJourney[]
+  calendar_events       CalendarEvent[]
+  specialty_links       OrganizationSpecialty[]
+  medications           Medication[]
+  lab_tests             LabTest[]
+  patient_history_notes PatientHistoryNote[]
 
   @@index([status, is_deleted])
   @@map("organizations")
@@ -254,28 +292,41 @@ model ProfileJobFunction {
 }
 
 model Profile {
-  id                            String                     @id @default(uuid()) @db.Uuid
-  user_id                       String                     @db.Uuid
-  organization_id               String                     @db.Uuid
+  id                            String                        @id @default(uuid()) @db.Uuid
+  user_id                       String                        @db.Uuid
+  organization_id               String                        @db.Uuid
   executive_title               ExecutiveTitle?
-  engagement_type               EngagementType             @default(FULL_TIME)
-  is_active                     Boolean                    @default(true)
-  is_deleted                    Boolean                    @default(false)
+  engagement_type               EngagementType                @default(FULL_TIME)
+  is_active                     Boolean                       @default(true)
+  is_deleted                    Boolean                       @default(false)
   deleted_at                    DateTime?
-  created_at                    DateTime                   @default(now())
-  updated_at                    DateTime                   @updatedAt
-  user                          User                       @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  organization                  Organization               @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  created_at                    DateTime                      @default(now())
+  updated_at                    DateTime                      @updatedAt
+  user                          User                          @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  organization                  Organization                  @relation(fields: [organization_id], references: [id], onDelete: Cascade)
   roles                         ProfileRole[]
   branches                      ProfileBranch[]
   workingSchedules              WorkingSchedule[]
   job_functions                 ProfileJobFunction[]
   specialty_links               ProfileSpecialty[]
   created_journeys              PatientJourney[]
-  doctor_visits                 Visit[]                    @relation("DoctorVisits")
-  created_visits                Visit[]                    @relation("CreatedVisits")
-  created_calendar_events       CalendarEvent[]            @relation("CreatedCalendarEvents")
+  doctor_visits                 Visit[]                       @relation("DoctorVisits")
+  created_visits                Visit[]                       @relation("CreatedVisits")
+  created_calendar_events       CalendarEvent[]               @relation("CreatedCalendarEvents")
   calendar_event_participations CalendarEventParticipant[]
+  medications_added             Medication[]                  @relation("MedicationAddedBy")
+  lab_tests_added               LabTest[]                     @relation("LabTestAddedBy")
+  vitals_recorded               VisitVitals[]                 @relation("VitalsRecordedBy")
+  investigations_ordered        VisitInvestigation[]          @relation("InvestigationOrderedBy")
+  investigations_resulted       VisitInvestigation[]          @relation("InvestigationResultedBy")
+  investigations_reviewed       VisitInvestigation[]          @relation("InvestigationReviewedBy")
+  prescriptions_authored        Prescription[]                @relation("PrescriptionPrescribedBy")
+  history_notes_authored        PatientHistoryNote[]          @relation("HistoryNoteAuthor")
+  history_allergies_added       PatientAllergy[]              @relation("AllergyCreatedBy")
+  history_pregnancies_added     PatientPregnancyHistory[]     @relation("PregnancyCreatedBy")
+  history_contraceptives_added  PatientContraceptiveHistory[] @relation("ContraceptiveCreatedBy")
+  history_surgeries_added       PatientNonGynSurgery[]        @relation("NonGynSurgeryCreatedBy")
+  history_medications_added     PatientMedication[]           @relation("PatientMedicationCreatedBy")
 
   @@unique([user_id, organization_id])
   @@index([organization_id, is_deleted])
@@ -493,6 +544,7 @@ model Specialty {
   profile_links ProfileSpecialty[]
   org_links     OrganizationSpecialty[]
   inv_links     InvitationSpecialty[]
+  lab_tests     LabTest[]
   created_at    DateTime                @default(now())
   updated_at    DateTime                @updatedAt
   is_deleted    Boolean                 @default(false)
@@ -603,19 +655,46 @@ model EpisodeTemplate {
 }
 
 model Patient {
-  id              String           @id @default(uuid()) @db.Uuid
-  national_id     String           @unique
-  full_name       String
-  husband_name    String?
-  date_of_birth   DateTime         @db.Date
-  phone_number    String
-  address         String
-  journeys        PatientJourney[]
-  calendar_events CalendarEvent[]
-  created_at      DateTime         @default(now())
-  updated_at      DateTime         @updatedAt
-  is_deleted      Boolean          @default(false)
-  deleted_at      DateTime?
+  id            String   @id @default(uuid()) @db.Uuid
+  national_id   String   @unique
+  full_name     String
+  husband_name  String?
+  date_of_birth DateTime @db.Date
+  phone_number  String
+  address       String
+
+  // History tab snapshot fields (always patient-owned / global).
+  // gynecological_baseline:    { age_at_menarche, cycle_regularity, duration, flow, dysmenorrhea }
+  // gynecologic_procedures:    { items: string[], notes? }   (None/Cystectomy/Hysteroscopy/D&C/Laparoscopy/Other)
+  // screening_history:         { pap_smear, pap_smear_date, mammography, mammography_date, vaccines: string[] }
+  // obstetric_summary:         { gravida, para, abortion }   ← server-recomputed from PatientPregnancyHistory rows
+  // medical_chronic_illnesses: { items: string[] }           (HTN/DM/Thyroid/Asthma/Other)
+  // family_history:            { gynecologic_cancers: string[], chronic_illnesses: string[], genetic_disorders }
+  // fertility_history:         { duration_of_infertility, partner_fertility_status, treatments: string[],
+  //                              menstrual_ovulation_patterns, past_pregnancies_outcomes }
+  // social_history:            { smoking?, alcohol?, occupation? }
+  gynecological_baseline    Json?
+  gynecologic_procedures    Json?
+  screening_history         Json?
+  obstetric_summary         Json?
+  medical_chronic_illnesses Json?
+  family_history            Json?
+  fertility_history         Json?
+  social_history            Json?
+
+  journeys            PatientJourney[]
+  calendar_events     CalendarEvent[]
+  allergies           PatientAllergy[]
+  pregnancies         PatientPregnancyHistory[]
+  contraceptives      PatientContraceptiveHistory[]
+  non_gyn_surgeries   PatientNonGynSurgery[]
+  current_medications PatientMedication[]
+  history_notes       PatientHistoryNote[]
+
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  is_deleted Boolean   @default(false)
+  deleted_at DateTime?
 
   @@map("patients")
 }
@@ -666,27 +745,33 @@ model PatientEpisode {
 }
 
 model Visit {
-  id                 String         @id @default(uuid()) @db.Uuid
-  episode_id         String         @db.Uuid
-  episode            PatientEpisode @relation(fields: [episode_id], references: [id], onDelete: Cascade)
-  assigned_doctor_id String         @db.Uuid
-  assigned_doctor    Profile        @relation("DoctorVisits", fields: [assigned_doctor_id], references: [id], onDelete: Cascade)
-  branch_id          String         @db.Uuid
-  branch             Branch         @relation(fields: [branch_id], references: [id], onDelete: Cascade)
-  created_by_id      String         @db.Uuid
-  created_by         Profile        @relation("CreatedVisits", fields: [created_by_id], references: [id], onDelete: Cascade)
+  id                 String               @id @default(uuid()) @db.Uuid
+  episode_id         String               @db.Uuid
+  episode            PatientEpisode       @relation(fields: [episode_id], references: [id], onDelete: Cascade)
+  assigned_doctor_id String               @db.Uuid
+  assigned_doctor    Profile              @relation("DoctorVisits", fields: [assigned_doctor_id], references: [id], onDelete: Cascade)
+  branch_id          String               @db.Uuid
+  branch             Branch               @relation(fields: [branch_id], references: [id], onDelete: Cascade)
+  created_by_id      String               @db.Uuid
+  created_by         Profile              @relation("CreatedVisits", fields: [created_by_id], references: [id], onDelete: Cascade)
   visit_type         VisitType
   priority           VisitPriority
-  status             VisitStatus    @default(SCHEDULED)
+  status             VisitStatus          @default(SCHEDULED)
   scheduled_at       DateTime
   checked_in_at      DateTime?
   started_at         DateTime?
   completed_at       DateTime?
   notes              String?
   queue_number       Int?
-  created_at         DateTime       @default(now())
-  updated_at         DateTime       @updatedAt
-  is_deleted         Boolean        @default(false)
+  follow_up_date     DateTime?
+  follow_up_notes    String?
+  vitals             VisitVitals?
+  encounter          VisitEncounter?
+  investigations     VisitInvestigation[]
+  prescription       Prescription?
+  created_at         DateTime             @default(now())
+  updated_at         DateTime             @updatedAt
+  is_deleted         Boolean              @default(false)
   deleted_at         DateTime?
 
   @@index([episode_id, is_deleted])
@@ -742,4 +827,324 @@ model CalendarEventParticipant {
   @@unique([event_id, profile_id])
   @@index([profile_id])
   @@map("calendar_event_participants")
+}
+
+model Medication {
+  id                  String              @id @default(uuid()) @db.Uuid
+  organization_id     String?             @db.Uuid
+  organization        Organization?       @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  code                String
+  name                String
+  generic_name        String?
+  form                String?
+  strength            String?
+  added_by_id         String?             @db.Uuid
+  added_by            Profile?            @relation("MedicationAddedBy", fields: [added_by_id], references: [id], onDelete: SetNull)
+  items               PrescriptionItem[]
+  patient_medications PatientMedication[] @relation("PatientMedicationLink")
+  is_deleted          Boolean             @default(false)
+  deleted_at          DateTime?
+  created_at          DateTime            @default(now())
+  updated_at          DateTime            @updatedAt
+
+  @@unique([organization_id, code])
+  @@index([organization_id, is_deleted])
+  @@map("medications")
+}
+
+model LabTest {
+  id              String               @id @default(uuid()) @db.Uuid
+  organization_id String?              @db.Uuid
+  organization    Organization?        @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  code            String
+  name            String
+  category        LabTestCategory
+  specialty_id    String?              @db.Uuid
+  specialty       Specialty?           @relation(fields: [specialty_id], references: [id], onDelete: SetNull)
+  added_by_id     String?              @db.Uuid
+  added_by        Profile?             @relation("LabTestAddedBy", fields: [added_by_id], references: [id], onDelete: SetNull)
+  investigations  VisitInvestigation[]
+  is_deleted      Boolean              @default(false)
+  deleted_at      DateTime?
+  created_at      DateTime             @default(now())
+  updated_at      DateTime             @updatedAt
+
+  @@unique([organization_id, code])
+  @@index([organization_id, is_deleted])
+  @@index([specialty_id])
+  @@map("lab_tests")
+}
+
+model VisitVitals {
+  id               String   @id @default(uuid()) @db.Uuid
+  visit_id         String   @unique @db.Uuid
+  visit            Visit    @relation(fields: [visit_id], references: [id], onDelete: Cascade)
+  systolic_bp      Int?
+  diastolic_bp     Int?
+  pulse            Int?
+  temperature_c    Decimal? @db.Decimal(4, 1)
+  respiratory_rate Int?
+  spo2             Int?
+  weight_kg        Decimal? @db.Decimal(5, 2)
+  height_cm        Decimal? @db.Decimal(5, 2)
+  bmi              Decimal? @db.Decimal(4, 1)
+  recorded_by_id   String   @db.Uuid
+  recorded_by      Profile  @relation("VitalsRecordedBy", fields: [recorded_by_id], references: [id], onDelete: Cascade)
+  recorded_at      DateTime @default(now())
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  @@index([recorded_by_id])
+  @@map("visit_vitals")
+}
+
+model VisitEncounter {
+  id       String @id @default(uuid()) @db.Uuid
+  visit_id String @unique @db.Uuid
+  visit    Visit  @relation(fields: [visit_id], references: [id], onDelete: Cascade)
+
+  // Main complaint (form: "Main Complaint" section)
+  // chief_complaint:      headline text (drives the COMPLETED guard)
+  // chief_complaint_meta: { categories?: string[], onset?, duration?, severity? }
+  chief_complaint         String?
+  chief_complaint_meta    Json?
+  history_present_illness String?
+
+  // Per-system exam findings — JSONB columns validated by typed DTOs at the API edge.
+  // menstrual_findings: { lmp?, cycle_since_last_visit?, pelvic_pain?, type?,
+  //                       vaginal_discharge?, color?, odor?, amount?,
+  //                       intermenstrual_bleeding?, post_coital_bleeding?, notes? }
+  // abdominal_findings: { inspection?, guarding?, tenderness?, tenderness_site?,
+  //                       mass?, mass_site?, mass_size?, mass_tenderness?, notes? }
+  // pelvic_findings:    { speculum: { cervix?, vagina?, os?, notes? },
+  //                       bimanual: { uterus_size?, uterus_position?, uterus_mobility?,
+  //                                   uterus_tenderness?, uterus_surface?,
+  //                                   adnexa_right?, adnexa_left?,
+  //                                   cervical_motion_tenderness?, notes? } }
+  // breast_findings:    { skin?, nipple?, color?, site?, palpation_right?, palpation_left?, notes? }
+  general_findings        Json?
+  cardiovascular_findings Json?
+  respiratory_findings    Json?
+  menstrual_findings      Json?
+  abdominal_findings      Json?
+  pelvic_findings         Json?
+  breast_findings         Json?
+  extremities_findings    Json?
+  neurological_findings   Json?
+  skin_findings           Json?
+
+  // Assessment
+  provisional_diagnosis String?
+  diagnosis_code        String?
+  diagnosis_certainty   String?
+  clinical_reasoning    String?
+  case_path             String?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@map("visit_encounters")
+}
+
+model VisitInvestigation {
+  id                    String                    @id @default(uuid()) @db.Uuid
+  visit_id              String                    @db.Uuid
+  visit                 Visit                     @relation(fields: [visit_id], references: [id], onDelete: Cascade)
+  lab_test_id           String?                   @db.Uuid
+  lab_test              LabTest?                  @relation(fields: [lab_test_id], references: [id], onDelete: SetNull)
+  custom_test_name      String?
+  notes                 String?
+  lab_facility          String?
+  status                InvestigationStatus       @default(ORDERED)
+  result_text           String?
+  result_attachment_url String?
+  result_source         InvestigationResultSource @default(CLINIC)
+  resulted_at           DateTime?
+  resulted_by_id        String?                   @db.Uuid
+  resulted_by           Profile?                  @relation("InvestigationResultedBy", fields: [resulted_by_id], references: [id], onDelete: SetNull)
+  reviewed_at           DateTime?
+  reviewed_by_id        String?                   @db.Uuid
+  reviewed_by           Profile?                  @relation("InvestigationReviewedBy", fields: [reviewed_by_id], references: [id], onDelete: SetNull)
+  external_ref          String?
+  external_provider     String?
+  ordered_by_id         String                    @db.Uuid
+  ordered_by            Profile                   @relation("InvestigationOrderedBy", fields: [ordered_by_id], references: [id], onDelete: Cascade)
+  ordered_at            DateTime                  @default(now())
+  is_deleted            Boolean                   @default(false)
+  deleted_at            DateTime?
+  created_at            DateTime                  @default(now())
+  updated_at            DateTime                  @updatedAt
+
+  @@index([visit_id, is_deleted])
+  @@index([lab_test_id])
+  @@index([status, is_deleted])
+  @@index([ordered_by_id])
+  @@map("visit_investigations")
+}
+
+model Prescription {
+  id               String             @id @default(uuid()) @db.Uuid
+  visit_id         String             @unique @db.Uuid
+  visit            Visit              @relation(fields: [visit_id], references: [id], onDelete: Cascade)
+  prescribed_by_id String             @db.Uuid
+  prescribed_by    Profile            @relation("PrescriptionPrescribedBy", fields: [prescribed_by_id], references: [id], onDelete: Cascade)
+  prescribed_at    DateTime           @default(now())
+  notes            String?
+  items            PrescriptionItem[]
+  is_deleted       Boolean            @default(false)
+  deleted_at       DateTime?
+  created_at       DateTime           @default(now())
+  updated_at       DateTime           @updatedAt
+
+  @@index([prescribed_by_id])
+  @@map("prescriptions")
+}
+
+model PrescriptionItem {
+  id               String       @id @default(uuid()) @db.Uuid
+  prescription_id  String       @db.Uuid
+  prescription     Prescription @relation(fields: [prescription_id], references: [id], onDelete: Cascade)
+  medication_id    String?      @db.Uuid
+  medication       Medication?  @relation(fields: [medication_id], references: [id], onDelete: SetNull)
+  custom_drug_name String?
+  dose             String
+  route            String?
+  frequency        String
+  duration_days    Int?
+  instructions     String?
+  order            Int
+  created_at       DateTime     @default(now())
+  updated_at       DateTime     @updatedAt
+
+  @@index([prescription_id])
+  @@index([medication_id])
+  @@map("prescription_items")
+}
+
+model PatientAllergy {
+  id                  String    @id @default(uuid()) @db.Uuid
+  patient_id          String    @db.Uuid
+  patient             Patient   @relation(fields: [patient_id], references: [id], onDelete: Cascade)
+  allergy_to          String
+  associated_symptoms String?
+  severity            String?
+  notes               String?
+  created_by_id       String?   @db.Uuid
+  created_by          Profile?  @relation("AllergyCreatedBy", fields: [created_by_id], references: [id], onDelete: SetNull)
+  is_deleted          Boolean   @default(false)
+  deleted_at          DateTime?
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
+
+  @@index([patient_id, is_deleted])
+  @@map("patient_allergies")
+}
+
+model PatientPregnancyHistory {
+  id                    String    @id @default(uuid()) @db.Uuid
+  patient_id            String    @db.Uuid
+  patient               Patient   @relation(fields: [patient_id], references: [id], onDelete: Cascade)
+  birth_date            DateTime? @db.Date
+  outcome               String? // LIVE_BIRTH | STILLBIRTH | MISCARRIAGE | ABORTION | ECTOPIC | ONGOING
+  mode_of_delivery      String? // VAGINAL | CESAREAN | ASSISTED_VAGINAL | OTHER
+  gestational_age_weeks Int?
+  neonatal_outcome      String?
+  complications         String?
+  notes                 String?
+  created_by_id         String?   @db.Uuid
+  created_by            Profile?  @relation("PregnancyCreatedBy", fields: [created_by_id], references: [id], onDelete: SetNull)
+  is_deleted            Boolean   @default(false)
+  deleted_at            DateTime?
+  created_at            DateTime  @default(now())
+  updated_at            DateTime  @updatedAt
+
+  @@index([patient_id, is_deleted])
+  @@map("patient_pregnancy_history")
+}
+
+model PatientContraceptiveHistory {
+  id            String    @id @default(uuid()) @db.Uuid
+  patient_id    String    @db.Uuid
+  patient       Patient   @relation(fields: [patient_id], references: [id], onDelete: Cascade)
+  method        String
+  duration      String?
+  complications String?
+  notes         String?
+  created_by_id String?   @db.Uuid
+  created_by    Profile?  @relation("ContraceptiveCreatedBy", fields: [created_by_id], references: [id], onDelete: SetNull)
+  is_deleted    Boolean   @default(false)
+  deleted_at    DateTime?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  @@index([patient_id, is_deleted])
+  @@map("patient_contraceptive_history")
+}
+
+model PatientNonGynSurgery {
+  id            String    @id @default(uuid()) @db.Uuid
+  patient_id    String    @db.Uuid
+  patient       Patient   @relation(fields: [patient_id], references: [id], onDelete: Cascade)
+  surgery_name  String
+  surgery_date  DateTime? @db.Date
+  facility      String?
+  notes         String?
+  created_by_id String?   @db.Uuid
+  created_by    Profile?  @relation("NonGynSurgeryCreatedBy", fields: [created_by_id], references: [id], onDelete: SetNull)
+  is_deleted    Boolean   @default(false)
+  deleted_at    DateTime?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  @@index([patient_id, is_deleted])
+  @@map("patient_non_gyn_surgeries")
+}
+
+model PatientMedication {
+  id            String      @id @default(uuid()) @db.Uuid
+  patient_id    String      @db.Uuid
+  patient       Patient     @relation(fields: [patient_id], references: [id], onDelete: Cascade)
+  medication_id String?     @db.Uuid
+  medication    Medication? @relation("PatientMedicationLink", fields: [medication_id], references: [id], onDelete: SetNull)
+  drug_name     String
+  indication    String?
+  dose          String?
+  frequency     String?
+  from_date     DateTime?   @db.Date
+  to_date       DateTime?   @db.Date
+  is_ongoing    Boolean     @default(true)
+  notes         String?
+  created_by_id String?     @db.Uuid
+  created_by    Profile?    @relation("PatientMedicationCreatedBy", fields: [created_by_id], references: [id], onDelete: SetNull)
+  is_deleted    Boolean     @default(false)
+  deleted_at    DateTime?
+  created_at    DateTime    @default(now())
+  updated_at    DateTime    @updatedAt
+
+  @@index([patient_id, is_deleted])
+  @@index([medication_id])
+  @@map("patient_medications")
+}
+
+model PatientHistoryNote {
+  id              String                @id @default(uuid()) @db.Uuid
+  patient_id      String                @db.Uuid
+  patient         Patient               @relation(fields: [patient_id], references: [id], onDelete: Cascade)
+  organization_id String                @db.Uuid
+  organization    Organization          @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  author_id       String                @db.Uuid
+  author          Profile               @relation("HistoryNoteAuthor", fields: [author_id], references: [id], onDelete: Cascade)
+  section         PatientHistorySection
+  content         String
+  visibility      NoteVisibility        @default(PRIVATE_TO_ORG)
+  is_deleted      Boolean               @default(false)
+  deleted_at      DateTime?
+  created_at      DateTime              @default(now())
+  updated_at      DateTime              @updatedAt
+
+  @@index([patient_id, section, is_deleted])
+  @@index([patient_id, visibility, is_deleted])
+  @@index([organization_id])
+  @@index([author_id])
+  @@map("patient_history_notes")
 }
