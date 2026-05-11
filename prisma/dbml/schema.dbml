@@ -26,13 +26,10 @@ Table organizations {
   invitations invitations [not null]
   subscriptions subscriptions [not null]
   patient_journeys patient_journeys [not null]
-  calendar_events calendar_events [not null]
   specialty_links organization_specialties [not null]
   medications medications [not null]
   lab_tests lab_tests [not null]
   patient_history_notes patient_history_notes [not null]
-  form_templates form_templates [not null]
-  medical_reps medical_reps [not null]
 }
 
 Table branches {
@@ -54,7 +51,6 @@ Table branches {
   invitationBranches invitation_branches [not null]
   workingSchedules working_schedules [not null]
   visits visits [not null]
-  calendar_events calendar_events [not null]
 
   indexes {
     (id, organization_id) [unique]
@@ -137,8 +133,6 @@ Table profiles {
   created_journeys patient_journeys [not null]
   doctor_visits visits [not null]
   created_visits visits [not null]
-  created_calendar_events calendar_events [not null]
-  calendar_event_participations calendar_event_participants [not null]
   medications_added medications [not null]
   lab_tests_added lab_tests [not null]
   vitals_recorded visit_vitals [not null]
@@ -152,7 +146,6 @@ Table profiles {
   history_contraceptives_added patient_contraceptive_history [not null]
   history_surgeries_added patient_non_gyn_surgeries [not null]
   history_medications_added patient_medications [not null]
-  form_template_versions_published form_template_versions [not null]
 
   indexes {
     (user_id, organization_id) [unique]
@@ -345,12 +338,8 @@ Table specialties {
   name String [unique, not null]
   code String [unique, not null]
   description String
-  parent_specialty_id String
-  parent_specialty specialties
-  child_specialties specialties [not null]
   templates journey_templates [not null]
   procedures procedures [not null]
-  form_templates form_templates [not null]
   profile_links profile_specialties [not null]
   org_links organization_specialties [not null]
   inv_links invitation_specialties [not null]
@@ -368,7 +357,6 @@ Table procedures {
   code String [unique, not null]
   description String
   specialty specialties [not null]
-  calendar_events calendar_events [not null]
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   is_deleted Boolean [not null, default: false]
@@ -472,7 +460,6 @@ Table patients {
   fertility_history Json
   social_history Json
   journeys patient_journeys [not null]
-  calendar_events calendar_events [not null]
   allergies patient_allergies [not null]
   pregnancies patient_pregnancy_history [not null]
   contraceptives patient_contraceptive_history [not null]
@@ -525,11 +512,8 @@ Table patient_episodes {
 
 Table visits {
   id String [pk]
-  visitor_kind VisitorKind [not null, default: 'PATIENT']
-  episode_id String
-  episode patient_episodes
-  medical_rep_id String
-  medical_rep medical_reps
+  episode_id String [not null]
+  episode patient_episodes [not null]
   assigned_doctor_id String [not null]
   assigned_doctor profiles [not null]
   branch_id String [not null]
@@ -551,99 +535,10 @@ Table visits {
   encounter visit_encounters
   investigations visit_investigations [not null]
   prescription prescriptions
-  rep_encounter medical_rep_encounters
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
-}
-
-Table calendar_events {
-  id String [pk]
-  organization_id String [not null]
-  branch_id String
-  created_by_id String [not null]
-  patient_id String
-  procedure_id String
-  type CalendarEventType [not null]
-  title String [not null]
-  description String
-  starts_at DateTime [not null]
-  ends_at DateTime [not null]
-  all_day Boolean [not null, default: false]
-  status CalendarEventStatus [not null, default: 'SCHEDULED']
-  details Json [not null, default: '{}']
-  created_at DateTime [default: `now()`, not null]
-  updated_at DateTime [not null]
-  is_deleted Boolean [not null, default: false]
-  deleted_at DateTime
-  organization organizations [not null]
-  branch branches
-  created_by profiles [not null]
-  patient patients
-  procedure procedures
-  participants calendar_event_participants [not null]
-}
-
-Table calendar_event_participants {
-  id String [pk]
-  event_id String [not null]
-  profile_id String [not null]
-  role CalendarParticipantRole [not null]
-  created_at DateTime [default: `now()`, not null]
-  event calendar_events [not null]
-  profile profiles [not null]
-
-  indexes {
-    (event_id, profile_id) [unique]
-  }
-}
-
-Table medical_reps {
-  id String [pk]
-  organization_id String [not null]
-  organization organizations [not null]
-  full_name String [not null]
-  company String [not null]
-  phone String
-  email String
-  territory String
-  notes String
-  visits visits [not null]
-  is_deleted Boolean [not null, default: false]
-  deleted_at DateTime
-  created_at DateTime [default: `now()`, not null]
-  updated_at DateTime [not null]
-}
-
-Table medical_rep_encounters {
-  id String [pk]
-  visit_id String [unique, not null]
-  visit visits [not null]
-  follow_up_date DateTime
-  signature_url String
-  overall_outcome String
-  notes String
-  drugs_detailed medical_rep_encounter_drugs [not null]
-  created_at DateTime [default: `now()`, not null]
-  updated_at DateTime [not null]
-}
-
-Table medical_rep_encounter_drugs {
-  id String [pk]
-  encounter_id String [not null]
-  encounter medical_rep_encounters [not null]
-  medication_id String [not null]
-  medication medications [not null]
-  samples_count Int [not null, default: 0]
-  materials_count Int [not null, default: 0]
-  notes String
-  created_at DateTime [default: `now()`, not null]
-  updated_at DateTime [not null]
-
-  indexes {
-    (encounter_id, medication_id) [unique]
-  }
 }
 
 Table medications {
@@ -659,7 +554,6 @@ Table medications {
   added_by profiles
   items prescription_items [not null]
   patient_medications patient_medications [not null]
-  rep_detailings medical_rep_encounter_drugs [not null]
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
@@ -719,10 +613,16 @@ Table visit_encounters {
   chief_complaint String
   chief_complaint_meta Json
   history_present_illness String
-  form_template_version_id String
-  form_template_version form_template_versions
-  responses Json [not null, default: '{}']
-  ai_analysis Json
+  general_findings Json
+  cardiovascular_findings Json
+  respiratory_findings Json
+  menstrual_findings Json
+  abdominal_findings Json
+  pelvic_findings Json
+  breast_findings Json
+  extremities_findings Json
+  neurological_findings Json
+  skin_findings Json
   provisional_diagnosis String
   diagnosis_code String
   diagnosis_certainty String
@@ -730,43 +630,6 @@ Table visit_encounters {
   case_path String
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
-}
-
-Table form_templates {
-  id String [pk]
-  name String [not null]
-  code String [unique, not null]
-  description String
-  scope FormTemplateScope [not null]
-  surface FormSurface [not null, default: 'CLINICAL_ENCOUNTER']
-  specialty_id String [not null]
-  specialty specialties [not null]
-  organization_id String
-  organization organizations
-  versions form_template_versions [not null]
-  is_deleted Boolean [not null, default: false]
-  deleted_at DateTime
-  created_at DateTime [default: `now()`, not null]
-  updated_at DateTime [not null]
-}
-
-Table form_template_versions {
-  id String [pk]
-  template_id String [not null]
-  template form_templates [not null]
-  version_number Int [not null]
-  status FormTemplateVersionStatus [not null, default: 'DRAFT']
-  schema Json [not null]
-  published_at DateTime
-  published_by_id String
-  published_by profiles
-  encounters visit_encounters [not null]
-  created_at DateTime [default: `now()`, not null]
-  updated_at DateTime [not null]
-
-  indexes {
-    (template_id, version_number) [unique]
-  }
 }
 
 Table visit_investigations {
@@ -1009,10 +872,6 @@ Enum EpisodeStatus {
 Enum VisitType {
   VISIT
   FOLLOW_UP
-}
-
-Enum VisitorKind {
-  PATIENT
   MEDICAL_REP
 }
 
@@ -1028,25 +887,6 @@ Enum VisitStatus {
   COMPLETED
   CANCELLED
   NO_SHOW
-}
-
-Enum CalendarEventType {
-  SURGERY
-  MEETING
-  PERSONAL
-  LEAVE
-}
-
-Enum CalendarEventStatus {
-  SCHEDULED
-  CANCELLED
-  COMPLETED
-}
-
-Enum CalendarParticipantRole {
-  PRIMARY_DOCTOR
-  ASSISTANT
-  ATTENDEE
 }
 
 Enum ExecutiveTitle {
@@ -1080,23 +920,6 @@ Enum InvestigationResultSource {
   CLINIC
   PATIENT
   EXTERNAL_LAB
-}
-
-Enum FormTemplateScope {
-  SYSTEM
-  ORGANIZATION
-}
-
-Enum FormTemplateVersionStatus {
-  DRAFT
-  PUBLISHED
-  ARCHIVED
-}
-
-Enum FormSurface {
-  CLINICAL_ENCOUNTER
-  MEDICAL_REP_ENCOUNTER
-  BOOKING
 }
 
 Enum PatientHistorySection {
@@ -1163,8 +986,6 @@ Ref: working_days.schedule_id > working_schedules.id [delete: Cascade]
 
 Ref: working_shifts.day_id > working_days.id [delete: Cascade]
 
-Ref: specialties.parent_specialty_id - specialties.id [delete: Set Null]
-
 Ref: procedures.specialty_id > specialties.id [delete: Cascade]
 
 Ref: profile_specialties.profile_id > profiles.id [delete: Cascade]
@@ -1201,35 +1022,11 @@ Ref: patient_episodes.episode_template_id > episode_templates.id [delete: Cascad
 
 Ref: visits.episode_id > patient_episodes.id [delete: Cascade]
 
-Ref: visits.medical_rep_id > medical_reps.id [delete: Restrict]
-
 Ref: visits.assigned_doctor_id > profiles.id [delete: Cascade]
 
 Ref: visits.branch_id > branches.id [delete: Cascade]
 
 Ref: visits.created_by_id > profiles.id [delete: Cascade]
-
-Ref: calendar_events.organization_id > organizations.id [delete: Cascade]
-
-Ref: calendar_events.branch_id > branches.id [delete: Set Null]
-
-Ref: calendar_events.created_by_id > profiles.id [delete: Cascade]
-
-Ref: calendar_events.patient_id > patients.id [delete: Set Null]
-
-Ref: calendar_events.procedure_id > procedures.id [delete: Set Null]
-
-Ref: calendar_event_participants.event_id > calendar_events.id [delete: Cascade]
-
-Ref: calendar_event_participants.profile_id > profiles.id [delete: Cascade]
-
-Ref: medical_reps.organization_id > organizations.id [delete: Cascade]
-
-Ref: medical_rep_encounters.visit_id - visits.id [delete: Cascade]
-
-Ref: medical_rep_encounter_drugs.encounter_id > medical_rep_encounters.id [delete: Cascade]
-
-Ref: medical_rep_encounter_drugs.medication_id > medications.id [delete: Restrict]
 
 Ref: medications.organization_id > organizations.id [delete: Cascade]
 
@@ -1246,16 +1043,6 @@ Ref: visit_vitals.visit_id - visits.id [delete: Cascade]
 Ref: visit_vitals.recorded_by_id > profiles.id [delete: Cascade]
 
 Ref: visit_encounters.visit_id - visits.id [delete: Cascade]
-
-Ref: visit_encounters.form_template_version_id > form_template_versions.id [delete: Set Null]
-
-Ref: form_templates.specialty_id > specialties.id [delete: Restrict]
-
-Ref: form_templates.organization_id > organizations.id [delete: Cascade]
-
-Ref: form_template_versions.template_id > form_templates.id [delete: Cascade]
-
-Ref: form_template_versions.published_by_id > profiles.id [delete: Set Null]
 
 Ref: visit_investigations.visit_id > visits.id [delete: Cascade]
 

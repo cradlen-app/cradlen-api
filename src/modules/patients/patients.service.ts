@@ -215,8 +215,8 @@ export class PatientsService {
 
     const map = new Map<string, Date>();
     for (const v of visits) {
-      const pid = v.episode?.journey.patient_id;
-      if (pid && !map.has(pid)) map.set(pid, v.scheduled_at);
+      const pid = v.episode.journey.patient_id;
+      if (!map.has(pid)) map.set(pid, v.scheduled_at);
     }
     return map;
   }

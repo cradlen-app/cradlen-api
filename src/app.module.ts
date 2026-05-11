@@ -24,13 +24,10 @@ import { JourneyTemplatesModule } from './modules/journey-templates/journey-temp
 import { PatientsModule } from './modules/patients/patients.module';
 import { JourneysModule } from './modules/journeys/journeys.module';
 import { VisitsModule } from './modules/visits/visits.module';
-import { CalendarModule } from './modules/calendar/calendar.module';
 import { MedicationsModule } from './modules/medications/medications.module';
 import { LabTestsModule } from './modules/lab-tests/lab-tests.module';
 import { ClinicalModule } from './modules/clinical/clinical.module';
 import { PatientHistoryModule } from './modules/patient-history/patient-history.module';
-import { FormTemplatesModule } from './modules/form-templates/form-templates.module';
-import { MedicalRepsModule } from './modules/medical-reps/medical-reps.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import type { AppConfig } from './config/app.config';
 
@@ -69,13 +66,10 @@ import type { AppConfig } from './config/app.config';
     PatientsModule,
     JourneysModule,
     VisitsModule,
-    CalendarModule,
     MedicationsModule,
     LabTestsModule,
     ClinicalModule,
     PatientHistoryModule,
-    FormTemplatesModule,
-    MedicalRepsModule,
   ],
   controllers: [],
   providers: [

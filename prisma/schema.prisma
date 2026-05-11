@@ -82,10 +82,6 @@ enum EpisodeStatus {
 enum VisitType {
   VISIT
   FOLLOW_UP
-}
-
-enum VisitorKind {
-  PATIENT
   MEDICAL_REP
 }
 
@@ -101,25 +97,6 @@ enum VisitStatus {
   COMPLETED
   CANCELLED
   NO_SHOW
-}
-
-enum CalendarEventType {
-  SURGERY
-  MEETING
-  PERSONAL
-  LEAVE
-}
-
-enum CalendarEventStatus {
-  SCHEDULED
-  CANCELLED
-  COMPLETED
-}
-
-enum CalendarParticipantRole {
-  PRIMARY_DOCTOR
-  ASSISTANT
-  ATTENDEE
 }
 
 enum ExecutiveTitle {
@@ -153,23 +130,6 @@ enum InvestigationResultSource {
   CLINIC
   PATIENT
   EXTERNAL_LAB
-}
-
-enum FormTemplateScope {
-  SYSTEM
-  ORGANIZATION
-}
-
-enum FormTemplateVersionStatus {
-  DRAFT
-  PUBLISHED
-  ARCHIVED
-}
-
-enum FormSurface {
-  CLINICAL_ENCOUNTER
-  MEDICAL_REP_ENCOUNTER
-  BOOKING
 }
 
 enum PatientHistorySection {
@@ -214,13 +174,10 @@ model Organization {
   invitations           Invitation[]
   subscriptions         Subscription[]
   patient_journeys      PatientJourney[]
-  calendar_events       CalendarEvent[]
   specialty_links       OrganizationSpecialty[]
   medications           Medication[]
   lab_tests             LabTest[]
   patient_history_notes PatientHistoryNote[]
-  form_templates        FormTemplate[]
-  medical_reps          MedicalRep[]
 
   @@index([status, is_deleted])
   @@map("organizations")
@@ -245,7 +202,6 @@ model Branch {
   invitationBranches InvitationBranch[]
   workingSchedules   WorkingSchedule[]
   visits             Visit[]
-  calendar_events    CalendarEvent[]
 
   @@unique([id, organization_id])
   @@index([organization_id, is_deleted])
@@ -335,8 +291,6 @@ model Profile {
   created_journeys              PatientJourney[]
   doctor_visits                 Visit[]                       @relation("DoctorVisits")
   created_visits                Visit[]                       @relation("CreatedVisits")
-  created_calendar_events       CalendarEvent[]               @relation("CreatedCalendarEvents")
-  calendar_event_participations CalendarEventParticipant[]
   medications_added             Medication[]                  @relation("MedicationAddedBy")
   lab_tests_added               LabTest[]                     @relation("LabTestAddedBy")
   vitals_recorded               VisitVitals[]                 @relation("VitalsRecordedBy")
@@ -350,7 +304,6 @@ model Profile {
   history_contraceptives_added  PatientContraceptiveHistory[] @relation("ContraceptiveCreatedBy")
   history_surgeries_added       PatientNonGynSurgery[]        @relation("NonGynSurgeryCreatedBy")
   history_medications_added     PatientMedication[]           @relation("PatientMedicationCreatedBy")
-  form_template_versions_published FormTemplateVersion[]      @relation("FormTemplateVersionPublishedBy")
 
   @@unique([user_id, organization_id])
   @@index([organization_id, is_deleted])
@@ -563,12 +516,8 @@ model Specialty {
   name                String                  @unique
   code                String                  @unique
   description         String?
-  parent_specialty_id String?                 @db.Uuid
-  parent_specialty    Specialty?              @relation("SpecialtyHierarchy", fields: [parent_specialty_id], references: [id], onDelete: SetNull)
-  child_specialties   Specialty[]             @relation("SpecialtyHierarchy")
   templates           JourneyTemplate[]
   procedures          Procedure[]
-  form_templates      FormTemplate[]
   profile_links       ProfileSpecialty[]
   org_links           OrganizationSpecialty[]
   inv_links           InvitationSpecialty[]
@@ -578,7 +527,6 @@ model Specialty {
   is_deleted          Boolean                 @default(false)
   deleted_at          DateTime?
 
-  @@index([parent_specialty_id])
   @@map("specialties")
 }
 
@@ -589,7 +537,6 @@ model Procedure {
   code            String          @unique
   description     String?
   specialty       Specialty       @relation(fields: [specialty_id], references: [id], onDelete: Cascade)
-  calendar_events CalendarEvent[]
   created_at      DateTime        @default(now())
   updated_at      DateTime        @updatedAt
   is_deleted      Boolean         @default(false)
@@ -712,7 +659,6 @@ model Patient {
   social_history            Json?
 
   journeys            PatientJourney[]
-  calendar_events     CalendarEvent[]
   allergies           PatientAllergy[]
   pregnancies         PatientPregnancyHistory[]
   contraceptives      PatientContraceptiveHistory[]
@@ -774,21 +720,18 @@ model PatientEpisode {
 }
 
 model Visit {
-  id                 String                @id @default(uuid()) @db.Uuid
-  visitor_kind       VisitorKind           @default(PATIENT)
-  episode_id         String?               @db.Uuid
-  episode            PatientEpisode?       @relation(fields: [episode_id], references: [id], onDelete: Cascade)
-  medical_rep_id     String?               @db.Uuid
-  medical_rep        MedicalRep?           @relation(fields: [medical_rep_id], references: [id], onDelete: Restrict)
-  assigned_doctor_id String                @db.Uuid
-  assigned_doctor    Profile               @relation("DoctorVisits", fields: [assigned_doctor_id], references: [id], onDelete: Cascade)
-  branch_id          String                @db.Uuid
-  branch             Branch                @relation(fields: [branch_id], references: [id], onDelete: Cascade)
-  created_by_id      String                @db.Uuid
-  created_by         Profile               @relation("CreatedVisits", fields: [created_by_id], references: [id], onDelete: Cascade)
+  id                 String               @id @default(uuid()) @db.Uuid
+  episode_id         String               @db.Uuid
+  episode            PatientEpisode       @relation(fields: [episode_id], references: [id], onDelete: Cascade)
+  assigned_doctor_id String               @db.Uuid
+  assigned_doctor    Profile              @relation("DoctorVisits", fields: [assigned_doctor_id], references: [id], onDelete: Cascade)
+  branch_id          String               @db.Uuid
+  branch             Branch               @relation(fields: [branch_id], references: [id], onDelete: Cascade)
+  created_by_id      String               @db.Uuid
+  created_by         Profile              @relation("CreatedVisits", fields: [created_by_id], references: [id], onDelete: Cascade)
   visit_type         VisitType
   priority           VisitPriority
-  status             VisitStatus           @default(SCHEDULED)
+  status             VisitStatus          @default(SCHEDULED)
   scheduled_at       DateTime
   checked_in_at      DateTime?
   started_at         DateTime?
@@ -801,120 +744,16 @@ model Visit {
   encounter          VisitEncounter?
   investigations     VisitInvestigation[]
   prescription       Prescription?
-  rep_encounter      MedicalRepEncounter?
-  created_at         DateTime              @default(now())
-  updated_at         DateTime              @updatedAt
-  is_deleted         Boolean               @default(false)
+  created_at         DateTime             @default(now())
+  updated_at         DateTime             @updatedAt
+  is_deleted         Boolean              @default(false)
   deleted_at         DateTime?
 
   @@index([episode_id, is_deleted])
-  @@index([medical_rep_id, is_deleted])
   @@index([assigned_doctor_id, is_deleted])
   @@index([branch_id, status, is_deleted])
   @@index([assigned_doctor_id, branch_id, checked_in_at, is_deleted])
-  @@index([visitor_kind, branch_id, scheduled_at])
   @@map("visits")
-}
-
-model CalendarEvent {
-  id              String                     @id @default(uuid()) @db.Uuid
-  organization_id String                     @db.Uuid
-  branch_id       String?                    @db.Uuid
-  created_by_id   String                     @db.Uuid
-  patient_id      String?                    @db.Uuid
-  procedure_id    String?                    @db.Uuid
-  type            CalendarEventType
-  title           String
-  description     String?
-  starts_at       DateTime
-  ends_at         DateTime
-  all_day         Boolean                    @default(false)
-  status          CalendarEventStatus        @default(SCHEDULED)
-  details         Json                       @default("{}")
-  created_at      DateTime                   @default(now())
-  updated_at      DateTime                   @updatedAt
-  is_deleted      Boolean                    @default(false)
-  deleted_at      DateTime?
-  organization    Organization               @relation(fields: [organization_id], references: [id], onDelete: Cascade)
-  branch          Branch?                    @relation(fields: [branch_id], references: [id], onDelete: SetNull)
-  created_by      Profile                    @relation("CreatedCalendarEvents", fields: [created_by_id], references: [id], onDelete: Cascade)
-  patient         Patient?                   @relation(fields: [patient_id], references: [id], onDelete: SetNull)
-  procedure       Procedure?                 @relation(fields: [procedure_id], references: [id], onDelete: SetNull)
-  participants    CalendarEventParticipant[]
-
-  @@index([organization_id, branch_id, starts_at])
-  @@index([created_by_id, starts_at])
-  @@index([patient_id])
-  @@index([procedure_id])
-  @@index([type])
-  @@map("calendar_events")
-}
-
-model CalendarEventParticipant {
-  id         String                  @id @default(uuid()) @db.Uuid
-  event_id   String                  @db.Uuid
-  profile_id String                  @db.Uuid
-  role       CalendarParticipantRole
-  created_at DateTime                @default(now())
-  event      CalendarEvent           @relation(fields: [event_id], references: [id], onDelete: Cascade)
-  profile    Profile                 @relation(fields: [profile_id], references: [id], onDelete: Cascade)
-
-  @@unique([event_id, profile_id])
-  @@index([profile_id])
-  @@map("calendar_event_participants")
-}
-
-model MedicalRep {
-  id              String       @id @default(uuid()) @db.Uuid
-  organization_id String       @db.Uuid
-  organization    Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
-  full_name       String
-  company         String
-  phone           String?
-  email           String?
-  territory       String?
-  notes           String?
-  visits          Visit[]
-  is_deleted      Boolean      @default(false)
-  deleted_at      DateTime?
-  created_at      DateTime     @default(now())
-  updated_at      DateTime     @updatedAt
-
-  @@index([organization_id, is_deleted])
-  @@index([organization_id, company, full_name])
-  @@map("medical_reps")
-}
-
-model MedicalRepEncounter {
-  id               String                    @id @default(uuid()) @db.Uuid
-  visit_id         String                    @unique @db.Uuid
-  visit            Visit                     @relation(fields: [visit_id], references: [id], onDelete: Cascade)
-  follow_up_date   DateTime?                 @db.Date
-  signature_url    String?
-  overall_outcome  String?
-  notes            String?
-  drugs_detailed   MedicalRepEncounterDrug[]
-  created_at       DateTime                  @default(now())
-  updated_at       DateTime                  @updatedAt
-
-  @@map("medical_rep_encounters")
-}
-
-model MedicalRepEncounterDrug {
-  id               String              @id @default(uuid()) @db.Uuid
-  encounter_id     String              @db.Uuid
-  encounter        MedicalRepEncounter @relation(fields: [encounter_id], references: [id], onDelete: Cascade)
-  medication_id    String              @db.Uuid
-  medication       Medication          @relation("MedicationRepDetailings", fields: [medication_id], references: [id], onDelete: Restrict)
-  samples_count    Int                 @default(0)
-  materials_count  Int                 @default(0)
-  notes            String?
-  created_at       DateTime            @default(now())
-  updated_at       DateTime            @updatedAt
-
-  @@unique([encounter_id, medication_id])
-  @@index([medication_id])
-  @@map("medical_rep_encounter_drugs")
 }
 
 model Medication {
@@ -930,7 +769,6 @@ model Medication {
   added_by            Profile?            @relation("MedicationAddedBy", fields: [added_by_id], references: [id], onDelete: SetNull)
   items               PrescriptionItem[]
   patient_medications PatientMedication[] @relation("PatientMedicationLink")
-  rep_detailings      MedicalRepEncounterDrug[] @relation("MedicationRepDetailings")
   is_deleted          Boolean             @default(false)
   deleted_at          DateTime?
   created_at          DateTime            @default(now())
@@ -998,14 +836,17 @@ model VisitEncounter {
   chief_complaint_meta    Json?
   history_present_illness String?
 
-  // Specialty-divergent fields live in `responses`, keyed by field codes from the
-  // bound FormTemplateVersion's schema. Validated server-side at upsert.
-  form_template_version_id String?               @db.Uuid
-  form_template_version    FormTemplateVersion?  @relation(fields: [form_template_version_id], references: [id], onDelete: SetNull)
-  responses                Json                  @default("{}")
-
-  // Reserved for future AI-generated analysis (summaries, flags, suggested dx).
-  ai_analysis Json?
+  // Examination Findings
+  general_findings        Json?
+  cardiovascular_findings Json?
+  respiratory_findings    Json?
+  menstrual_findings      Json?
+  abdominal_findings      Json?
+  pelvic_findings         Json?
+  breast_findings         Json?
+  extremities_findings    Json?
+  neurological_findings   Json?
+  skin_findings           Json?
 
   // Assessment
   provisional_diagnosis String?
@@ -1017,49 +858,7 @@ model VisitEncounter {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  @@index([form_template_version_id])
   @@map("visit_encounters")
-}
-
-model FormTemplate {
-  id              String              @id @default(uuid()) @db.Uuid
-  name            String
-  code            String              @unique
-  description     String?
-  scope           FormTemplateScope
-  surface         FormSurface         @default(CLINICAL_ENCOUNTER)
-  specialty_id    String              @db.Uuid
-  specialty       Specialty           @relation(fields: [specialty_id], references: [id], onDelete: Restrict)
-  organization_id String?             @db.Uuid
-  organization    Organization?       @relation(fields: [organization_id], references: [id], onDelete: Cascade)
-  versions        FormTemplateVersion[]
-  is_deleted      Boolean             @default(false)
-  deleted_at      DateTime?
-  created_at      DateTime            @default(now())
-  updated_at      DateTime            @updatedAt
-
-  @@index([organization_id, specialty_id, surface])
-  @@index([scope, specialty_id, surface])
-  @@map("form_templates")
-}
-
-model FormTemplateVersion {
-  id              String                    @id @default(uuid()) @db.Uuid
-  template_id     String                    @db.Uuid
-  template        FormTemplate              @relation(fields: [template_id], references: [id], onDelete: Cascade)
-  version_number  Int
-  status          FormTemplateVersionStatus @default(DRAFT)
-  schema          Json
-  published_at    DateTime?
-  published_by_id String?                   @db.Uuid
-  published_by    Profile?                  @relation("FormTemplateVersionPublishedBy", fields: [published_by_id], references: [id], onDelete: SetNull)
-  encounters      VisitEncounter[]
-  created_at      DateTime                  @default(now())
-  updated_at      DateTime                  @updatedAt
-
-  @@unique([template_id, version_number])
-  @@index([template_id, status])
-  @@map("form_template_versions")
 }
 
 model VisitInvestigation {
