@@ -41,7 +41,9 @@ const mockVisit = {
   notes: null,
   created_by_id: 'profile-uuid',
   is_deleted: false,
+  visitor_kind: 'PATIENT',
   episode: { journey: { organization_id: 'org-uuid' } },
+  medical_rep: null,
 };
 
 const mockTemplate = {
