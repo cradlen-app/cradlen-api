@@ -253,6 +253,372 @@ async function main() {
     }
   }
 
+  // Form Templates — system clinical encounter template per specialty.
+  // Frontend renders strictly from the template's published version schema.
+  const gynEncounterSchema = {
+    sections: [
+      {
+        code: 'exam_findings',
+        label: { en: 'Examination Findings' },
+        fields: [
+          { code: 'general_findings', type: 'LONG_TEXT' },
+          { code: 'cardiovascular_findings', type: 'LONG_TEXT' },
+          { code: 'respiratory_findings', type: 'LONG_TEXT' },
+          { code: 'menstrual_findings', type: 'LONG_TEXT' },
+          { code: 'abdominal_findings', type: 'LONG_TEXT' },
+          { code: 'pelvic_findings', type: 'LONG_TEXT' },
+          { code: 'breast_findings', type: 'LONG_TEXT' },
+          { code: 'extremities_findings', type: 'LONG_TEXT' },
+          { code: 'neurological_findings', type: 'LONG_TEXT' },
+          { code: 'skin_findings', type: 'LONG_TEXT' },
+        ],
+      },
+    ],
+  };
+
+  const gynEncounterTemplate = await prisma.formTemplate.upsert({
+    where: { code: 'SYSTEM_GYN_CLINICAL_ENCOUNTER_V1' },
+    update: {},
+    create: {
+      name: 'GYN Clinical Encounter (System)',
+      code: 'SYSTEM_GYN_CLINICAL_ENCOUNTER_V1',
+      description: 'Default clinical encounter template for OB/GYN, shipped by Cradlen.',
+      scope: 'SYSTEM',
+      surface: 'CLINICAL_ENCOUNTER',
+      specialty_id: gynSpecialty.id,
+    },
+  });
+
+  const existingV1 = await prisma.formTemplateVersion.findUnique({
+    where: {
+      template_id_version_number: {
+        template_id: gynEncounterTemplate.id,
+        version_number: 1,
+      },
+    },
+  });
+  if (!existingV1) {
+    await prisma.formTemplateVersion.create({
+      data: {
+        template_id: gynEncounterTemplate.id,
+        version_number: 1,
+        status: 'PUBLISHED',
+        schema: gynEncounterSchema,
+        published_at: new Date(),
+      },
+    });
+  }
+
+  // OB/GYN — General GYN booking (BOOKING surface). Frontend renders this to drive
+  // the booking screen. Submission still posts to /visits/book or /visits/book-rep
+  // based on visitor_kind; this template is rendering-only.
+  const gynBookingSchema = {
+    sections: [
+      {
+        code: 'visitor_classification',
+        label: { en: 'Visitor', ar: 'الزائر' },
+        fields: [
+          {
+            code: 'visitor_kind',
+            type: 'SINGLE_SELECT',
+            required: true,
+            label: { en: 'Visitor type', ar: 'نوع الزائر' },
+            options: [
+              { code: 'PATIENT', label: { en: 'Patient', ar: 'مريضة' } },
+              {
+                code: 'MEDICAL_REP',
+                label: { en: 'Medical Representative', ar: 'مندوب طبي' },
+              },
+            ],
+          },
+        ],
+      },
+      {
+        code: 'visit_metadata',
+        label: { en: 'Visit details', ar: 'تفاصيل الزيارة' },
+        fields: [
+          {
+            code: 'branch_id',
+            type: 'SINGLE_SELECT',
+            required: true,
+            label: { en: 'Branch', ar: 'الفرع' },
+          },
+          {
+            code: 'assigned_doctor_id',
+            type: 'SINGLE_SELECT',
+            required: true,
+            label: { en: 'Doctor', ar: 'الطبيب' },
+          },
+          {
+            code: 'scheduled_at',
+            type: 'DATETIME',
+            required: true,
+            label: { en: 'Scheduled at', ar: 'موعد الزيارة' },
+          },
+          {
+            code: 'priority',
+            type: 'SINGLE_SELECT',
+            required: true,
+            label: { en: 'Priority', ar: 'الأولوية' },
+            options: [
+              { code: 'NORMAL', label: { en: 'Normal', ar: 'عادية' } },
+              {
+                code: 'EMERGENCY',
+                label: { en: 'Emergency', ar: 'طارئة' },
+              },
+            ],
+          },
+          {
+            code: 'visit_type',
+            type: 'SINGLE_SELECT',
+            label: { en: 'Visit type', ar: 'نوع الزيارة' },
+            options: [
+              { code: 'VISIT', label: { en: 'New visit', ar: 'زيارة جديدة' } },
+              {
+                code: 'FOLLOW_UP',
+                label: { en: 'Follow-up', ar: 'متابعة' },
+              },
+            ],
+            show_if: { field: 'visitor_kind', equals: 'PATIENT' },
+          },
+        ],
+      },
+      {
+        code: 'patient_lookup',
+        label: { en: 'Patient', ar: 'المريضة' },
+        show_if: { field: 'visitor_kind', equals: 'PATIENT' },
+        fields: [
+          {
+            code: 'is_new_patient',
+            type: 'BOOLEAN',
+            required: true,
+            label: { en: 'New patient?', ar: 'مريضة جديدة؟' },
+          },
+          {
+            code: 'patient_id',
+            type: 'TEXT',
+            label: { en: 'Existing patient', ar: 'مريضة موجودة' },
+            show_if: { field: 'is_new_patient', equals: false },
+          },
+        ],
+      },
+      {
+        code: 'patient_new',
+        label: { en: 'New patient details', ar: 'بيانات مريضة جديدة' },
+        show_if: { field: 'is_new_patient', equals: true },
+        fields: [
+          {
+            code: 'national_id',
+            type: 'TEXT',
+            required: true,
+            regex: '^\\d{14}$',
+            label: { en: 'National ID', ar: 'الرقم القومي' },
+          },
+          {
+            code: 'full_name',
+            type: 'TEXT',
+            required: true,
+            min_length: 3,
+            max_length: 200,
+            label: { en: 'Full name', ar: 'الاسم الكامل' },
+          },
+          {
+            code: 'date_of_birth',
+            type: 'DATE',
+            required: true,
+            label: { en: 'Date of birth', ar: 'تاريخ الميلاد' },
+          },
+          {
+            code: 'phone_number',
+            type: 'TEXT',
+            required: true,
+            regex: '^\\+?\\d{10,15}$',
+            label: { en: 'Phone number', ar: 'رقم الهاتف' },
+          },
+          {
+            code: 'address',
+            type: 'LONG_TEXT',
+            required: true,
+            max_length: 500,
+            label: { en: 'Address', ar: 'العنوان' },
+          },
+          {
+            code: 'is_married',
+            type: 'BOOLEAN',
+            label: { en: 'Married?', ar: 'متزوجة؟' },
+          },
+          {
+            code: 'husband_name',
+            type: 'TEXT',
+            max_length: 200,
+            label: { en: 'Husband name', ar: 'اسم الزوج' },
+            show_if: { field: 'is_married', equals: true },
+          },
+        ],
+      },
+      {
+        code: 'intake_optional',
+        label: { en: 'Initial intake (optional)', ar: 'الاستقبال المبدئي (اختياري)' },
+        show_if: { field: 'visitor_kind', equals: 'PATIENT' },
+        fields: [
+          {
+            code: 'chief_complaint',
+            type: 'LONG_TEXT',
+            max_length: 5000,
+            label: { en: 'Chief complaint', ar: 'الشكوى الرئيسية' },
+          },
+          {
+            code: 'vitals_systolic_bp',
+            type: 'INTEGER',
+            min: 60,
+            max: 260,
+            label: { en: 'Systolic BP', ar: 'الضغط الانقباضي' },
+          },
+          {
+            code: 'vitals_diastolic_bp',
+            type: 'INTEGER',
+            min: 30,
+            max: 180,
+            label: { en: 'Diastolic BP', ar: 'الضغط الانبساطي' },
+          },
+          {
+            code: 'vitals_pulse',
+            type: 'INTEGER',
+            min: 30,
+            max: 250,
+            label: { en: 'Pulse', ar: 'النبض' },
+          },
+          {
+            code: 'vitals_temperature_c',
+            type: 'NUMBER',
+            min: 30,
+            max: 45,
+            label: { en: 'Temperature (°C)', ar: 'درجة الحرارة (°م)' },
+          },
+          {
+            code: 'vitals_weight_kg',
+            type: 'NUMBER',
+            min: 1,
+            max: 400,
+            label: { en: 'Weight (kg)', ar: 'الوزن (كجم)' },
+          },
+          {
+            code: 'vitals_height_cm',
+            type: 'NUMBER',
+            min: 30,
+            max: 250,
+            label: { en: 'Height (cm)', ar: 'الطول (سم)' },
+          },
+        ],
+      },
+      {
+        code: 'rep_lookup',
+        label: { en: 'Medical representative', ar: 'المندوب الطبي' },
+        show_if: { field: 'visitor_kind', equals: 'MEDICAL_REP' },
+        fields: [
+          {
+            code: 'is_new_rep',
+            type: 'BOOLEAN',
+            required: true,
+            label: { en: 'New rep?', ar: 'مندوب جديد؟' },
+          },
+          {
+            code: 'medical_rep_id',
+            type: 'TEXT',
+            label: { en: 'Existing rep', ar: 'مندوب موجود' },
+            show_if: { field: 'is_new_rep', equals: false },
+          },
+        ],
+      },
+      {
+        code: 'rep_new',
+        label: { en: 'New rep details', ar: 'بيانات مندوب جديد' },
+        show_if: { field: 'is_new_rep', equals: true },
+        fields: [
+          {
+            code: 'rep_full_name',
+            type: 'TEXT',
+            required: true,
+            min_length: 3,
+            max_length: 200,
+            label: { en: 'Full name', ar: 'الاسم الكامل' },
+          },
+          {
+            code: 'rep_company',
+            type: 'TEXT',
+            required: true,
+            max_length: 200,
+            label: { en: 'Company', ar: 'الشركة' },
+          },
+          {
+            code: 'rep_phone',
+            type: 'TEXT',
+            max_length: 50,
+            label: { en: 'Phone', ar: 'الهاتف' },
+          },
+          {
+            code: 'rep_email',
+            type: 'TEXT',
+            regex: '^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$',
+            label: { en: 'Email', ar: 'البريد الإلكتروني' },
+          },
+          {
+            code: 'rep_territory',
+            type: 'TEXT',
+            max_length: 100,
+            label: { en: 'Territory', ar: 'المنطقة' },
+          },
+        ],
+      },
+      {
+        code: 'notes_section',
+        label: { en: 'Notes', ar: 'ملاحظات' },
+        fields: [
+          {
+            code: 'notes',
+            type: 'LONG_TEXT',
+            max_length: 2000,
+            label: { en: 'Notes', ar: 'ملاحظات' },
+          },
+        ],
+      },
+    ],
+  };
+
+  const gynBookingTemplate = await prisma.formTemplate.upsert({
+    where: { code: 'SYSTEM_OBGYN_BOOKING_GENERAL_V1' },
+    update: {},
+    create: {
+      name: 'OB/GYN — General GYN Booking (System)',
+      code: 'SYSTEM_OBGYN_BOOKING_GENERAL_V1',
+      description:
+        'Default booking form for OB/GYN General GYN journey. Branches on visitor_kind for patient vs medical-rep flows.',
+      scope: 'SYSTEM',
+      surface: 'BOOKING',
+      specialty_id: gynSpecialty.id,
+    },
+  });
+
+  const existingBookingV1 = await prisma.formTemplateVersion.findUnique({
+    where: {
+      template_id_version_number: {
+        template_id: gynBookingTemplate.id,
+        version_number: 1,
+      },
+    },
+  });
+  if (!existingBookingV1) {
+    await prisma.formTemplateVersion.create({
+      data: {
+        template_id: gynBookingTemplate.id,
+        version_number: 1,
+        status: 'PUBLISHED',
+        schema: gynBookingSchema,
+        published_at: new Date(),
+      },
+    });
+  }
+
   console.log('Seed complete.');
 }
 

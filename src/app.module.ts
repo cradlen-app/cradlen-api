@@ -29,6 +29,8 @@ import { MedicationsModule } from './modules/medications/medications.module';
 import { LabTestsModule } from './modules/lab-tests/lab-tests.module';
 import { ClinicalModule } from './modules/clinical/clinical.module';
 import { PatientHistoryModule } from './modules/patient-history/patient-history.module';
+import { FormTemplatesModule } from './modules/form-templates/form-templates.module';
+import { MedicalRepsModule } from './modules/medical-reps/medical-reps.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import type { AppConfig } from './config/app.config';
 
@@ -72,6 +74,8 @@ import type { AppConfig } from './config/app.config';
     LabTestsModule,
     ClinicalModule,
     PatientHistoryModule,
+    FormTemplatesModule,
+    MedicalRepsModule,
   ],
   controllers: [],
   providers: [
