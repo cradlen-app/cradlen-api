@@ -4,8 +4,6 @@ CREATE TYPE "ExecutiveTitle" AS ENUM ('CEO', 'COO', 'CFO', 'CMO');
 -- CreateEnum
 CREATE TYPE "EngagementType" AS ENUM ('FULL_TIME', 'PART_TIME', 'ON_DEMAND', 'EXTERNAL_CONSULTANT');
 
--- AlterTable
-ALTER TABLE "calendar_events" ADD COLUMN     "procedure_id" UUID;
 
 -- AlterTable
 ALTER TABLE "invitations" ADD COLUMN     "engagement_type" "EngagementType" NOT NULL DEFAULT 'FULL_TIME',
@@ -128,9 +126,6 @@ CREATE UNIQUE INDEX "invitation_specialties_invitation_id_specialty_id_key" ON "
 -- CreateIndex
 CREATE UNIQUE INDEX "invitation_job_functions_invitation_id_job_function_id_key" ON "invitation_job_functions"("invitation_id", "job_function_id");
 
--- CreateIndex
-CREATE INDEX "calendar_events_procedure_id_idx" ON "calendar_events"("procedure_id");
-
 -- AddForeignKey
 ALTER TABLE "profile_job_functions" ADD CONSTRAINT "profile_job_functions_profile_id_fkey" FOREIGN KEY ("profile_id") REFERENCES "profiles"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
@@ -164,5 +159,3 @@ ALTER TABLE "invitation_job_functions" ADD CONSTRAINT "invitation_job_functions_
 -- AddForeignKey
 ALTER TABLE "invitation_job_functions" ADD CONSTRAINT "invitation_job_functions_job_function_id_fkey" FOREIGN KEY ("job_function_id") REFERENCES "job_functions"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- AddForeignKey
-ALTER TABLE "calendar_events" ADD CONSTRAINT "calendar_events_procedure_id_fkey" FOREIGN KEY ("procedure_id") REFERENCES "procedures"("id") ON DELETE SET NULL ON UPDATE CASCADE;

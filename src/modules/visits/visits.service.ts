@@ -12,8 +12,6 @@ import { CreateVisitDto } from './dto/create-visit.dto';
 import { UpdateVisitDto } from './dto/update-visit.dto';
 import { UpdateVisitStatusDto } from './dto/update-visit-status.dto';
 import { BookVisitDto } from './dto/book-visit.dto';
-import { BookRepVisitDto } from './dto/book-rep-visit.dto';
-import { UpdateRepEncounterDto } from './dto/update-rep-encounter.dto';
 import { SetFollowUpDto } from './dto/set-follow-up.dto';
 import { VisitIntakeFieldsDto } from './dto/visit-intake.dto';
 import { VisitsGateway } from './visits.gateway';
@@ -571,15 +569,13 @@ export class VisitsService {
         episode: {
           include: { journey: { select: { organization_id: true } } },
         },
-        medical_rep: { select: { organization_id: true } },
       },
     });
-    if (!visit) throw new NotFoundException(`Visit ${id} not found`);
-    const orgId =
-      visit.visitor_kind === 'PATIENT'
-        ? visit.episode?.journey?.organization_id
-        : visit.medical_rep?.organization_id;
-    if (orgId !== user.organizationId) {
+    if (
+      !visit ||
+      !visit.episode?.journey ||
+      visit.episode.journey.organization_id !== user.organizationId
+    ) {
       throw new NotFoundException(`Visit ${id} not found`);
     }
     return visit;
@@ -629,7 +625,7 @@ export class VisitsService {
         `Cannot transition from ${visit.status} to ${dto.status}`,
       );
     }
-    if (dto.status === 'COMPLETED' && visit.visitor_kind === 'PATIENT') {
+    if (dto.status === 'COMPLETED') {
       const encounter = await this.prismaService.db.visitEncounter.findUnique({
         where: { visit_id: id },
         select: { chief_complaint: true },
@@ -674,164 +670,6 @@ export class VisitsService {
       updatedVisit,
     );
     return updatedVisit;
-  }
-
-  async bookRepVisit(dto: BookRepVisitDto, user: AuthContext) {
-    if (!dto.medical_rep_id && !dto.new_medical_rep) {
-      throw new BadRequestException(
-        'Either medical_rep_id or new_medical_rep must be provided',
-      );
-    }
-    if (dto.medical_rep_id && dto.new_medical_rep) {
-      throw new BadRequestException(
-        'Provide either medical_rep_id or new_medical_rep, not both',
-      );
-    }
-    const branchId = dto.branch_id ?? user.activeBranchId;
-    if (!branchId) throw new BadRequestException('branch_id is required');
-
-    const result = await this.prismaService.db.$transaction(async (tx) => {
-      let medicalRepId: string;
-      if (dto.medical_rep_id) {
-        const rep = await tx.medicalRep.findFirst({
-          where: {
-            id: dto.medical_rep_id,
-            organization_id: user.organizationId,
-            is_deleted: false,
-          },
-          select: { id: true },
-        });
-        if (!rep) {
-          throw new NotFoundException(
-            `Medical rep ${dto.medical_rep_id} not found`,
-          );
-        }
-        medicalRepId = rep.id;
-      } else {
-        const created = await tx.medicalRep.create({
-          data: {
-            organization_id: user.organizationId,
-            full_name: dto.new_medical_rep!.full_name,
-            company: dto.new_medical_rep!.company,
-            phone: dto.new_medical_rep!.phone ?? null,
-            email: dto.new_medical_rep!.email ?? null,
-            territory: dto.new_medical_rep!.territory ?? null,
-            notes: dto.new_medical_rep!.notes ?? null,
-          },
-        });
-        medicalRepId = created.id;
-      }
-
-      const visit = await tx.visit.create({
-        data: {
-          visitor_kind: 'MEDICAL_REP',
-          medical_rep_id: medicalRepId,
-          assigned_doctor_id: dto.assigned_doctor_id,
-          branch_id: branchId,
-          visit_type: 'VISIT',
-          priority: dto.priority,
-          scheduled_at: new Date(dto.scheduled_at),
-          created_by_id: user.profileId,
-          notes: dto.notes ?? null,
-        },
-      });
-      await tx.medicalRepEncounter.create({
-        data: { visit_id: visit.id },
-      });
-      return visit;
-    });
-
-    this.visitsGateway.emitVisitBooked(
-      { assignedDoctorId: dto.assigned_doctor_id, branchId },
-      { visit: result },
-    );
-    return result;
-  }
-
-  async upsertRepEncounter(
-    visitId: string,
-    dto: UpdateRepEncounterDto,
-    user: AuthContext,
-  ) {
-    const visit = await this.findOne(visitId, user);
-    if (visit.visitor_kind !== 'MEDICAL_REP') {
-      throw new BadRequestException(
-        'Rep encounter can only be set on a MEDICAL_REP visit',
-      );
-    }
-    if (TERMINAL_STATES.includes(visit.status)) {
-      throw new BadRequestException(
-        `Cannot edit rep encounter while visit is ${visit.status}`,
-      );
-    }
-    if (visit.assigned_doctor_id !== user.profileId) {
-      throw new ForbiddenException(
-        'Only the assigned doctor can edit the rep encounter',
-      );
-    }
-
-    return this.prismaService.db.$transaction(async (tx) => {
-      const encounterData = {
-        ...(dto.follow_up_date !== undefined && {
-          follow_up_date: dto.follow_up_date
-            ? new Date(dto.follow_up_date)
-            : null,
-        }),
-        ...(dto.signature_url !== undefined && {
-          signature_url: dto.signature_url,
-        }),
-        ...(dto.overall_outcome !== undefined && {
-          overall_outcome: dto.overall_outcome,
-        }),
-        ...(dto.notes !== undefined && { notes: dto.notes }),
-      };
-      const encounter = await tx.medicalRepEncounter.upsert({
-        where: { visit_id: visitId },
-        create: { visit_id: visitId, ...encounterData },
-        update: encounterData,
-      });
-
-      if (dto.drugs_detailed !== undefined) {
-        const ids = dto.drugs_detailed.map((d) => d.medication_id);
-        if (ids.length) {
-          const found = await tx.medication.findMany({
-            where: {
-              id: { in: ids },
-              is_deleted: false,
-              OR: [
-                { organization_id: user.organizationId },
-                { organization_id: null },
-              ],
-            },
-            select: { id: true },
-          });
-          if (found.length !== new Set(ids).size) {
-            throw new BadRequestException(
-              'One or more medication_id values are invalid',
-            );
-          }
-        }
-        await tx.medicalRepEncounterDrug.deleteMany({
-          where: { encounter_id: encounter.id },
-        });
-        if (dto.drugs_detailed.length) {
-          await tx.medicalRepEncounterDrug.createMany({
-            data: dto.drugs_detailed.map((d) => ({
-              encounter_id: encounter.id,
-              medication_id: d.medication_id,
-              samples_count: d.samples_count ?? 0,
-              materials_count: d.materials_count ?? 0,
-              notes: d.notes ?? null,
-            })),
-          });
-        }
-      }
-
-      return tx.medicalRepEncounter.findUnique({
-        where: { id: encounter.id },
-        include: { drugs_detailed: true },
-      });
-    });
   }
 
   async setFollowUp(id: string, dto: SetFollowUpDto, user: AuthContext) {
