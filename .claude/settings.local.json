@@ -38,7 +38,13 @@
       "Bash(node -e \"const fs=require\\('fs'\\);const crypto=require\\('crypto'\\);const data=fs.readFileSync\\('prisma/migrations/20260504000000_rename_account_to_organization/migration.sql'\\);console.log\\(crypto.createHash\\('sha256'\\).update\\(data\\).digest\\('hex'\\)\\);\")",
       "Bash(node -e \"const fs=require\\('fs'\\);const crypto=require\\('crypto'\\);const data=fs.readFileSync\\('prisma/migrations/20260508100000_add_visit_queue_number/migration.sql'\\);console.log\\(crypto.createHash\\('sha256'\\).update\\(data\\).digest\\('hex'\\)\\);\")",
       "Bash(Select-String -Pattern \"\\(model Profile|model WorkingSchedule|model ProfileBranch|model ProfileJobFunction|model ProfileRole\\)\" -Context 0,30)",
-      "PowerShell(npx tsc --noEmit 2>&1)"
+      "PowerShell(npx tsc --noEmit 2>&1)",
+      "Bash([ ! -f \"$d/migration.sql\" ])",
+      "Bash(cat > *)",
+      "Bash(echo \"EXIT $?\")"
+    ],
+    "additionalDirectories": [
+      "\\tmp"
     ]
   }
 }
