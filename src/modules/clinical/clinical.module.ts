@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { AuthorizationModule } from '../../common/authorization/authorization.module';
 import { LabTestsModule } from '../lab-tests/lab-tests.module';
 import { MedicationsModule } from '../medications/medications.module';
-import { FormTemplatesModule } from '../form-templates/form-templates.module';
 import { VisitAccessService } from './visit-access.service';
 import { VitalsController } from './vitals.controller';
 import { VitalsService } from './vitals.service';
@@ -14,12 +13,7 @@ import { PrescriptionsController } from './prescriptions.controller';
 import { PrescriptionsService } from './prescriptions.service';
 
 @Module({
-  imports: [
-    AuthorizationModule,
-    LabTestsModule,
-    MedicationsModule,
-    FormTemplatesModule,
-  ],
+  imports: [AuthorizationModule, LabTestsModule, MedicationsModule],
   controllers: [
     VitalsController,
     EncounterController,
