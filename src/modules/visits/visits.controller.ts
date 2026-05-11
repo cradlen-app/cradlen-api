@@ -28,6 +28,8 @@ import { Type } from 'class-transformer';
 import { VisitStatus } from '@prisma/client';
 import { VisitsService } from './visits.service';
 import { BookVisitDto } from './dto/book-visit.dto';
+import { BookRepVisitDto } from './dto/book-rep-visit.dto';
+import { UpdateRepEncounterDto } from './dto/update-rep-encounter.dto';
 import { CreateVisitDto } from './dto/create-visit.dto';
 import { UpdateVisitDto } from './dto/update-visit.dto';
 import { UpdateVisitStatusDto } from './dto/update-visit-status.dto';
@@ -84,6 +86,29 @@ export class VisitsController {
   @ApiStandardResponse(VisitDto)
   bookVisit(@Body() dto: BookVisitDto, @CurrentUser() user: AuthContext) {
     return this.visitsService.bookVisit(dto, user);
+  }
+
+  @Post('visits/book-rep')
+  @ApiOperation({
+    summary:
+      'Book a medical-rep visit. Provide medical_rep_id (existing) or new_medical_rep (creates a rep in the same transaction).',
+  })
+  @ApiStandardResponse(VisitDto)
+  bookRepVisit(@Body() dto: BookRepVisitDto, @CurrentUser() user: AuthContext) {
+    return this.visitsService.bookRepVisit(dto, user);
+  }
+
+  @Put('visits/:id/rep-encounter')
+  @ApiOperation({
+    summary:
+      'Upsert the medical-rep encounter (drugs detailed, samples, follow-up) for a MEDICAL_REP visit.',
+  })
+  upsertRepEncounter(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateRepEncounterDto,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.visitsService.upsertRepEncounter(id, dto, user);
   }
 
   @Get('visits/my-waiting-list')

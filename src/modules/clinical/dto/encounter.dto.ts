@@ -1,7 +1,9 @@
+import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsObject,
   IsOptional,
   IsString,
   MaxLength,
@@ -9,6 +11,8 @@ import {
 } from 'class-validator';
 
 const META_SHORT = 256;
+const SHORT = 256;
+const LONG = 5000;
 
 export class ChiefComplaintMetaDto {
   @IsArray()
@@ -20,21 +24,6 @@ export class ChiefComplaintMetaDto {
   @IsString() @IsOptional() @MaxLength(META_SHORT) duration?: string;
   @IsString() @IsOptional() @MaxLength(META_SHORT) severity?: string;
 }
-import {
-  AbdominalFindingsDto,
-  BreastFindingsDto,
-  CardiovascularFindingsDto,
-  ExtremitiesFindingsDto,
-  GeneralFindingsDto,
-  MenstrualFindingsDto,
-  NeurologicalFindingsDto,
-  PelvicFindingsDto,
-  RespiratoryFindingsDto,
-  SkinFindingsDto,
-} from './exam-findings.dto';
-
-const SHORT = 256;
-const LONG = 5000;
 
 export class UpsertEncounterDto {
   @IsString() @IsOptional() @MaxLength(LONG) chief_complaint?: string;
@@ -46,55 +35,11 @@ export class UpsertEncounterDto {
 
   @IsString() @IsOptional() @MaxLength(LONG) history_present_illness?: string;
 
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => GeneralFindingsDto)
-  general_findings?: GeneralFindingsDto;
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => CardiovascularFindingsDto)
-  cardiovascular_findings?: CardiovascularFindingsDto;
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => RespiratoryFindingsDto)
-  respiratory_findings?: RespiratoryFindingsDto;
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => MenstrualFindingsDto)
-  menstrual_findings?: MenstrualFindingsDto;
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => AbdominalFindingsDto)
-  abdominal_findings?: AbdominalFindingsDto;
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => PelvicFindingsDto)
-  pelvic_findings?: PelvicFindingsDto;
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => BreastFindingsDto)
-  breast_findings?: BreastFindingsDto;
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => ExtremitiesFindingsDto)
-  extremities_findings?: ExtremitiesFindingsDto;
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => NeurologicalFindingsDto)
-  neurological_findings?: NeurologicalFindingsDto;
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => SkinFindingsDto)
-  skin_findings?: SkinFindingsDto;
+  /**
+   * Specialty-specific fields, validated against the visit's bound
+   * FormTemplateVersion.schema by FormSchemaValidatorService.
+   */
+  @IsObject() @IsOptional() responses?: Record<string, unknown>;
 
   @IsString() @IsOptional() @MaxLength(SHORT) provisional_diagnosis?: string;
   @IsString() @IsOptional() @MaxLength(64) diagnosis_code?: string;
@@ -103,27 +48,28 @@ export class UpsertEncounterDto {
   @IsString() @IsOptional() @MaxLength(64) case_path?: string;
 }
 
+export class EncounterFormTemplateVersionDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() version_number!: number;
+  @ApiProperty({ type: Object }) schema!: unknown;
+}
+
 export class EncounterDto {
-  id!: string;
-  visit_id!: string;
-  chief_complaint!: string | null;
-  chief_complaint_meta!: unknown;
-  history_present_illness!: string | null;
-  general_findings!: unknown;
-  cardiovascular_findings!: unknown;
-  respiratory_findings!: unknown;
-  menstrual_findings!: unknown;
-  abdominal_findings!: unknown;
-  pelvic_findings!: unknown;
-  breast_findings!: unknown;
-  extremities_findings!: unknown;
-  neurological_findings!: unknown;
-  skin_findings!: unknown;
-  provisional_diagnosis!: string | null;
-  diagnosis_code!: string | null;
-  diagnosis_certainty!: string | null;
-  clinical_reasoning!: string | null;
-  case_path!: string | null;
-  created_at!: Date;
-  updated_at!: Date;
+  @ApiProperty() id!: string;
+  @ApiProperty() visit_id!: string;
+  @ApiProperty({ nullable: true }) chief_complaint!: string | null;
+  @ApiProperty({ type: Object, nullable: true }) chief_complaint_meta!: unknown;
+  @ApiProperty({ nullable: true }) history_present_illness!: string | null;
+  @ApiProperty({ type: Object }) responses!: unknown;
+  @ApiProperty({ type: Object, nullable: true }) ai_analysis!: unknown;
+  @ApiProperty({ nullable: true }) form_template_version_id!: string | null;
+  @ApiProperty({ nullable: true, type: () => EncounterFormTemplateVersionDto })
+  form_template_version!: EncounterFormTemplateVersionDto | null;
+  @ApiProperty({ nullable: true }) provisional_diagnosis!: string | null;
+  @ApiProperty({ nullable: true }) diagnosis_code!: string | null;
+  @ApiProperty({ nullable: true }) diagnosis_certainty!: string | null;
+  @ApiProperty({ nullable: true }) clinical_reasoning!: string | null;
+  @ApiProperty({ nullable: true }) case_path!: string | null;
+  @ApiProperty() created_at!: Date;
+  @ApiProperty() updated_at!: Date;
 }
