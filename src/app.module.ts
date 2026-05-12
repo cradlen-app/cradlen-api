@@ -28,6 +28,8 @@ import { MedicationsModule } from '@core/clinical/medications/medications.module
 import { LabTestsModule } from '@core/clinical/lab-tests/lab-tests.module';
 import { ClinicalModule } from '@core/clinical/clinical/clinical.module';
 import { PatientHistoryModule } from '@core/clinical/patient-history/patient-history.module';
+import { CarePathsModule } from '@core/clinical/care-paths/care-paths.module';
+import { ObgynModule } from '@specialties/obgyn/obgyn.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import type { AppConfig } from './config/app.config';
 
@@ -70,6 +72,8 @@ import type { AppConfig } from './config/app.config';
     LabTestsModule,
     ClinicalModule,
     PatientHistoryModule,
+    CarePathsModule,
+    ObgynModule,
   ],
   controllers: [],
   providers: [

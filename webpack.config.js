@@ -1,5 +1,5 @@
 // Extends the default Nest CLI webpack config to resolve our TS path aliases
-// (@common/*, @infrastructure/*, @builder/*, @core/*, @plugins/*, @config/*)
+// (@common/*, @infrastructure/*, @builder/*, @core/*, @plugins/*, @specialties/*, @config/*)
 // in dev (`nest start --watch`) and production (`nest build`).
 const path = require('path');
 
@@ -9,6 +9,7 @@ const layerAliases = {
   '@builder': path.resolve(__dirname, 'src/builder'),
   '@core': path.resolve(__dirname, 'src/core'),
   '@plugins': path.resolve(__dirname, 'src/plugins'),
+  '@specialties': path.resolve(__dirname, 'src/specialties'),
   '@config': path.resolve(__dirname, 'src/config'),
 };
 
