@@ -3,7 +3,7 @@ export class VisitDto {
   episode_id!: string;
   assigned_doctor_id!: string;
   branch_id!: string;
-  visit_type!: string;
+  appointment_type!: string;
   priority!: string;
   status!: string;
   scheduled_at!: Date;

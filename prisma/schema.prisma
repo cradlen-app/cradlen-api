@@ -79,10 +79,73 @@ enum EpisodeStatus {
   COMPLETED
 }
 
-enum VisitType {
+enum AppointmentType {
   VISIT
   FOLLOW_UP
+}
+
+enum MaritalStatus {
+  SINGLE
+  MARRIED
+  DIVORCED
+  WIDOWED
+  SEPARATED
+  ENGAGED
+  UNKNOWN
+}
+
+enum GuardianRelation {
+  SPOUSE
+  PARENT
+  CHILD
+  SIBLING
+  GUARDIAN_LEGAL
+  OTHER
+}
+
+enum FormScope {
+  BOOK_VISIT
+  ENCOUNTER
+  PATIENT_HISTORY
+}
+
+enum FormTemplateStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum FormFieldType {
+  TEXT
+  TEXTAREA
+  NUMBER
+  DECIMAL
+  DATE
+  DATETIME
+  BOOLEAN
+  SELECT
+  MULTISELECT
+  ENTITY_SEARCH
+  COMPUTED
+}
+
+enum BindingNamespace {
+  PATIENT
+  VISIT
+  INTAKE
+  GUARDIAN
   MEDICAL_REP
+  LOOKUP
+  SYSTEM
+  COMPUTED
+}
+
+enum MedicalRepVisitStatus {
+  SCHEDULED
+  CHECKED_IN
+  COMPLETED
+  CANCELLED
+  NO_SHOW
 }
 
 enum VisitPriority {
@@ -180,6 +243,8 @@ model Organization {
   patient_history_notes PatientHistoryNote[]
   care_paths            CarePath[]
   care_path_episodes    CarePathEpisode[]
+  medical_reps          MedicalRep[]
+  medical_rep_visits    MedicalRepVisit[]
 
   @@index([status, is_deleted])
   @@map("organizations")
@@ -204,6 +269,7 @@ model Branch {
   invitationBranches InvitationBranch[]
   workingSchedules   WorkingSchedule[]
   visits             Visit[]
+  medical_rep_visits MedicalRepVisit[]
 
   @@unique([id, organization_id])
   @@index([organization_id, is_deleted])
@@ -326,6 +392,11 @@ model Profile {
   pregnancy_journey_revisions     PregnancyJourneyRecordRevision[] @relation("PregnancyJourneyRecordRevisedBy")
   pregnancy_episode_revisions     PregnancyEpisodeRecordRevision[] @relation("PregnancyEpisodeRecordRevisedBy")
   visit_pregnancy_revisions       VisitPregnancyRecordRevision[]   @relation("VisitPregnancyRecordRevisedBy")
+  // Builder / medical-rep back-relations
+  form_templates_created          FormTemplate[]                   @relation("FormTemplateCreatedBy")
+  form_templates_updated          FormTemplate[]                   @relation("FormTemplateUpdatedBy")
+  medical_rep_visits_doctor       MedicalRepVisit[]                @relation("MedRepVisitDoctor")
+  medical_rep_visits_created      MedicalRepVisit[]                @relation("MedRepVisitCreatedBy")
 
   @@unique([user_id, organization_id])
   @@index([organization_id, is_deleted])
@@ -534,17 +605,18 @@ model WorkingShift {
 }
 
 model Specialty {
-  id            String                  @id @default(uuid()) @db.Uuid
-  name          String                  @unique
-  code          String                  @unique
-  description   String?
-  templates     JourneyTemplate[]
-  care_paths    CarePath[]
-  procedures    Procedure[]
-  profile_links ProfileSpecialty[]
-  org_links     OrganizationSpecialty[]
-  inv_links     InvitationSpecialty[]
-  lab_tests     LabTest[]
+  id             String                  @id @default(uuid()) @db.Uuid
+  name           String                  @unique
+  code           String                  @unique
+  description    String?
+  templates      JourneyTemplate[]
+  care_paths     CarePath[]
+  procedures     Procedure[]
+  profile_links  ProfileSpecialty[]
+  org_links      OrganizationSpecialty[]
+  inv_links      InvitationSpecialty[]
+  lab_tests      LabTest[]
+  form_templates FormTemplate[]
   created_at    DateTime                @default(now())
   updated_at    DateTime                @updatedAt
   is_deleted    Boolean                 @default(false)
@@ -654,13 +726,14 @@ model EpisodeTemplate {
 }
 
 model Patient {
-  id            String   @id @default(uuid()) @db.Uuid
-  national_id   String   @unique
-  full_name     String
-  husband_name  String?
-  date_of_birth DateTime @db.Date
-  phone_number  String
-  address       String
+  id             String        @id @default(uuid()) @db.Uuid
+  national_id    String        @unique
+  full_name      String
+  husband_name   String?
+  date_of_birth  DateTime      @db.Date
+  phone_number   String
+  address        String
+  marital_status MaritalStatus @default(UNKNOWN)
 
   // History tab snapshot fields (always patient-owned / global).
   // gynecological_baseline:    { age_at_menarche, cycle_regularity, duration, flow, dysmenorrhea }
@@ -763,7 +836,7 @@ model Visit {
   branch             Branch                @relation(fields: [branch_id], references: [id], onDelete: Cascade)
   created_by_id      String                @db.Uuid
   created_by         Profile               @relation("CreatedVisits", fields: [created_by_id], references: [id], onDelete: Cascade)
-  visit_type         VisitType
+  appointment_type   AppointmentType
   priority           VisitPriority
   status             VisitStatus           @default(SCHEDULED)
   scheduled_at       DateTime
@@ -803,12 +876,14 @@ model Medication {
   strength            String?
   added_by_id         String?             @db.Uuid
   added_by            Profile?            @relation("MedicationAddedBy", fields: [added_by_id], references: [id], onDelete: SetNull)
-  items               PrescriptionItem[]
-  patient_medications PatientMedication[] @relation("PatientMedicationLink")
-  is_deleted          Boolean             @default(false)
-  deleted_at          DateTime?
-  created_at          DateTime            @default(now())
-  updated_at          DateTime            @updatedAt
+  items                       PrescriptionItem[]
+  patient_medications         PatientMedication[]         @relation("PatientMedicationLink")
+  medical_rep_links           MedicalRepMedication[]
+  medical_rep_visit_links     MedicalRepVisitMedication[]
+  is_deleted                  Boolean                     @default(false)
+  deleted_at                  DateTime?
+  created_at                  DateTime                    @default(now())
+  updated_at                  DateTime                    @updatedAt
 
   @@unique([organization_id, code])
   @@index([organization_id, is_deleted])
@@ -1150,17 +1225,18 @@ model Guardian {
 }
 
 model PatientGuardian {
-  id           String    @id @default(uuid()) @db.Uuid
-  patient_id   String    @db.Uuid
-  patient      Patient   @relation(fields: [patient_id], references: [id], onDelete: Cascade)
-  guardian_id  String    @db.Uuid
-  guardian     Guardian  @relation(fields: [guardian_id], references: [id], onDelete: Cascade)
-  relationship String
-  is_primary   Boolean   @default(false)
-  is_deleted   Boolean   @default(false)
-  deleted_at   DateTime?
-  created_at   DateTime  @default(now())
-  updated_at   DateTime  @updatedAt
+  id                  String           @id @default(uuid()) @db.Uuid
+  patient_id          String           @db.Uuid
+  patient             Patient          @relation(fields: [patient_id], references: [id], onDelete: Cascade)
+  guardian_id         String           @db.Uuid
+  guardian            Guardian         @relation(fields: [guardian_id], references: [id], onDelete: Cascade)
+  relation_to_patient GuardianRelation
+  relationship_note   String?
+  is_primary          Boolean          @default(false)
+  is_deleted          Boolean          @default(false)
+  deleted_at          DateTime?
+  created_at          DateTime         @default(now())
+  updated_at          DateTime         @updatedAt
 
   @@unique([patient_id, guardian_id])
   @@index([guardian_id])
@@ -1462,4 +1538,152 @@ model VisitPregnancyRecordRevision {
 
   @@index([entity_id, version])
   @@map("visit_pregnancy_record_revisions")
+}
+
+// ============================================================================
+// Builder DSL — form templates, sections, fields
+// Authored in code via prisma/seed.ts; never admin-managed at runtime.
+// ============================================================================
+
+model FormTemplate {
+  id            String             @id @default(uuid()) @db.Uuid
+  code          String
+  name          String
+  description   String?
+  scope         FormScope
+  version       Int                @default(1)
+  status        FormTemplateStatus @default(DRAFT)
+  published_at  DateTime?
+  is_active     Boolean            @default(false)
+  activated_at  DateTime?
+  specialty_id  String?            @db.Uuid
+  specialty     Specialty?         @relation(fields: [specialty_id], references: [id], onDelete: SetNull)
+  created_by_id String?            @db.Uuid
+  created_by    Profile?           @relation("FormTemplateCreatedBy", fields: [created_by_id], references: [id], onDelete: SetNull)
+  updated_by_id String?            @db.Uuid
+  updated_by    Profile?           @relation("FormTemplateUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
+  is_deleted    Boolean            @default(false)
+  deleted_at    DateTime?
+  created_at    DateTime           @default(now())
+  updated_at    DateTime           @updatedAt
+  sections      FormSection[]
+
+  @@unique([code, version])
+  @@index([scope, status, is_deleted])
+  // Partial unique "(code) WHERE is_active=true AND is_deleted=false" is added
+  // via a raw-SQL block in the migration (Prisma does not support partial
+  // unique indexes natively). See migration.sql.
+  @@map("form_templates")
+}
+
+model FormSection {
+  id               String       @id @default(uuid()) @db.Uuid
+  form_template_id String       @db.Uuid
+  form_template   FormTemplate @relation(fields: [form_template_id], references: [id], onDelete: Cascade)
+  code             String
+  name             String
+  order            Int
+  config           Json         @default("{\"ui\":{},\"validation\":{},\"logic\":{}}")
+  is_deleted       Boolean      @default(false)
+  fields           FormField[]
+
+  @@unique([form_template_id, code])
+  @@map("form_sections")
+}
+
+model FormField {
+  id                String            @id @default(uuid()) @db.Uuid
+  section_id        String            @db.Uuid
+  section           FormSection       @relation(fields: [section_id], references: [id], onDelete: Cascade)
+  code              String
+  label             String
+  type              FormFieldType
+  order             Int
+  required          Boolean           @default(false)
+  binding_namespace BindingNamespace?
+  binding_path      String?
+  config            Json              @default("{\"ui\":{},\"validation\":{},\"logic\":{}}")
+  is_deleted        Boolean           @default(false)
+
+  @@unique([section_id, code])
+  @@map("form_fields")
+}
+
+// ============================================================================
+// Medical Rep domain — reps, the meds they represent, and rep visits
+// (parallel to Visit but without a patient/episode/journey).
+// ============================================================================
+
+model MedicalRep {
+  id              String                 @id @default(uuid()) @db.Uuid
+  organization_id String                 @db.Uuid
+  organization    Organization           @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  full_name       String
+  national_id     String?
+  phone_number    String?
+  email           String?
+  company_name    String
+  notes           String?
+  is_deleted      Boolean                @default(false)
+  deleted_at      DateTime?
+  created_at      DateTime               @default(now())
+  updated_at      DateTime               @updatedAt
+  medications     MedicalRepMedication[]
+  visits          MedicalRepVisit[]
+
+  @@unique([organization_id, national_id])
+  @@index([organization_id, company_name])
+  @@index([organization_id, is_deleted])
+  @@map("medical_reps")
+}
+
+model MedicalRepMedication {
+  id             String     @id @default(uuid()) @db.Uuid
+  medical_rep_id String     @db.Uuid
+  medical_rep    MedicalRep @relation(fields: [medical_rep_id], references: [id], onDelete: Cascade)
+  medication_id  String     @db.Uuid
+  medication     Medication @relation(fields: [medication_id], references: [id], onDelete: Cascade)
+  created_at     DateTime   @default(now())
+
+  @@unique([medical_rep_id, medication_id])
+  @@map("medical_rep_medications")
+}
+
+model MedicalRepVisit {
+  id                 String                      @id @default(uuid()) @db.Uuid
+  medical_rep_id     String                      @db.Uuid
+  medical_rep        MedicalRep                  @relation(fields: [medical_rep_id], references: [id], onDelete: Cascade)
+  organization_id    String                      @db.Uuid
+  organization       Organization                @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  branch_id          String                      @db.Uuid
+  branch             Branch                      @relation(fields: [branch_id], references: [id], onDelete: Cascade)
+  assigned_doctor_id String                      @db.Uuid
+  assigned_doctor    Profile                     @relation("MedRepVisitDoctor", fields: [assigned_doctor_id], references: [id], onDelete: Cascade)
+  created_by_id      String                      @db.Uuid
+  created_by         Profile                     @relation("MedRepVisitCreatedBy", fields: [created_by_id], references: [id], onDelete: Cascade)
+  scheduled_at       DateTime
+  status             MedicalRepVisitStatus       @default(SCHEDULED)
+  priority           VisitPriority               @default(NORMAL)
+  notes              String?
+  is_deleted         Boolean                     @default(false)
+  deleted_at         DateTime?
+  created_at         DateTime                    @default(now())
+  updated_at         DateTime                    @updatedAt
+  medications        MedicalRepVisitMedication[]
+
+  @@index([organization_id, branch_id, scheduled_at])
+  @@index([assigned_doctor_id, status, is_deleted])
+  @@map("medical_rep_visits")
+}
+
+model MedicalRepVisitMedication {
+  id                   String          @id @default(uuid()) @db.Uuid
+  medical_rep_visit_id String          @db.Uuid
+  medical_rep_visit    MedicalRepVisit @relation(fields: [medical_rep_visit_id], references: [id], onDelete: Cascade)
+  medication_id        String          @db.Uuid
+  medication           Medication      @relation(fields: [medication_id], references: [id], onDelete: Cascade)
+  discussion_notes     String?
+
+  @@unique([medical_rep_visit_id, medication_id])
+  @@map("medical_rep_visit_medications")
 }

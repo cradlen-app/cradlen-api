@@ -6,7 +6,7 @@ import {
   IsString,
   IsUUID,
 } from 'class-validator';
-import { VisitPriority, VisitType } from '@prisma/client';
+import { AppointmentType, VisitPriority } from '@prisma/client';
 import { VisitIntakeFieldsDto } from './visit-intake.dto';
 
 export class BookVisitDto extends VisitIntakeFieldsDto {
@@ -21,7 +21,7 @@ export class BookVisitDto extends VisitIntakeFieldsDto {
   @IsString() @IsOptional() husband_name?: string;
 
   @IsUUID() assigned_doctor_id!: string;
-  @IsEnum(VisitType) visit_type!: VisitType;
+  @IsEnum(AppointmentType) appointment_type!: AppointmentType;
   @IsEnum(VisitPriority) priority!: VisitPriority;
   @IsDateString() scheduled_at!: string;
   @IsUUID() @IsOptional() branch_id?: string;
