@@ -43,7 +43,11 @@
       "Bash(cat > *)",
       "Bash(echo \"EXIT $?\")",
       "Bash(node -e \"const fs=require\\('fs'\\);const p='prisma/seed.ts';const lines=fs.readFileSync\\(p,'utf8'\\).split\\('\\\\n'\\);const out=[...lines.slice\\(0,310\\),...lines.slice\\(620\\)];fs.writeFileSync\\(p,out.join\\('\\\\n'\\)\\);console.log\\('lines now:',out.length\\);\")",
-      "Bash(node -e \"const fs=require\\('fs'\\);const p='prisma/seed.ts';const lines=fs.readFileSync\\(p,'utf8'\\).split\\('\\\\n'\\);const out=[...lines.slice\\(0,255\\),...lines.slice\\(310\\)];fs.writeFileSync\\(p,out.join\\('\\\\n'\\)\\);console.log\\('lines now:',out.length\\);\")"
+      "Bash(node -e \"const fs=require\\('fs'\\);const p='prisma/seed.ts';const lines=fs.readFileSync\\(p,'utf8'\\).split\\('\\\\n'\\);const out=[...lines.slice\\(0,255\\),...lines.slice\\(310\\)];fs.writeFileSync\\(p,out.join\\('\\\\n'\\)\\);console.log\\('lines now:',out.length\\);\")",
+      "Bash(echo \"exit=$?\")",
+      "Bash(npm uninstall *)",
+      "Bash(timeout 12 node dist/main)",
+      "PowerShell(Move-Item f:/Cradlen/cradlen-api/src/common/authorization f:/Cradlen/cradlen-api/src/core/auth/authorization)"
     ],
     "additionalDirectories": [
       "\\tmp"

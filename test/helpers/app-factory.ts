@@ -9,7 +9,7 @@ import { GlobalExceptionFilter } from '../../src/common/filters/global-exception
 import { ResponseInterceptor } from '../../src/common/interceptor/response.interceptor';
 import { LoggingInterceptor } from '../../src/common/interceptor/logging.interceptor';
 import { RequestIdMiddleware } from '../../src/common/middleware/request-id.middleware';
-import { MailService } from '../../src/modules/mail/mail.service';
+import { EmailService } from '../../src/infrastructure/email/email.service';
 
 export async function createTestApp(
   mailMock: jest.Mock,
@@ -17,7 +17,7 @@ export async function createTestApp(
   const moduleFixture = await Test.createTestingModule({
     imports: [AppModule],
   })
-    .overrideProvider(MailService)
+    .overrideProvider(EmailService)
     .useValue({
       sendVerificationEmail: mailMock,
       sendPasswordResetEmail: mailMock,
