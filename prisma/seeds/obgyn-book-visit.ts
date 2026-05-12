@@ -551,7 +551,6 @@ const SECTIONS: SectionSpec[] = [
         binding: { namespace: 'MEDICAL_REP', path: 'medication_ids' },
         config: {
           ui: { optionsSource: '/v1/medications?search=' },
-          validation: { options: [] },
         },
       },
       {

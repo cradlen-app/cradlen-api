@@ -30,22 +30,34 @@ const ALL_NS: readonly BindingNamespace[] = [
 ];
 
 function assertSelectOptions(config: ConfigShape, label: string) {
+  // A SELECT/MULTISELECT must declare its option source one of two ways:
+  //   - `validation.options`: static list resolved at render time
+  //   - `ui.optionsSource`:   URL the frontend hits for dynamic suggestions
+  //                           (e.g. medications, organization-scoped catalogs)
+  // Exactly one is required. Both being empty is a malformed field.
   const options = config.validation?.options;
-  if (!Array.isArray(options) || options.length === 0) {
+  const optionsSource = config.ui?.optionsSource;
+  const hasStaticOptions = Array.isArray(options) && options.length > 0;
+  const hasDynamicSource =
+    typeof optionsSource === 'string' && optionsSource.length > 0;
+
+  if (!hasStaticOptions && !hasDynamicSource) {
     throw new InvalidConfigError(
-      `${label}: SELECT/MULTISELECT requires config.validation.options to be a non-empty array of {code, label}`,
+      `${label}: SELECT/MULTISELECT requires either a non-empty config.validation.options array or a config.ui.optionsSource URL`,
     );
   }
-  for (const opt of options) {
-    if (
-      !opt ||
-      typeof opt !== 'object' ||
-      typeof opt.code !== 'string' ||
-      typeof opt.label !== 'string'
-    ) {
-      throw new InvalidConfigError(
-        `${label}: each option must be {code: string, label: string}`,
-      );
+  if (hasStaticOptions) {
+    for (const opt of options) {
+      if (
+        !opt ||
+        typeof opt !== 'object' ||
+        typeof opt.code !== 'string' ||
+        typeof opt.label !== 'string'
+      ) {
+        throw new InvalidConfigError(
+          `${label}: each option must be {code: string, label: string}`,
+        );
+      }
     }
   }
 }

@@ -59,8 +59,11 @@ describe('allowed-paths', () => {
       expect.arrayContaining([
         'chief_complaint',
         'vitals.systolic_bp',
-        'vitals.bmi',
+        'vitals.weight_kg',
       ]),
     );
+    // BMI is server-computed, NOT submitted on the wire — listed under COMPUTED.
+    expect(ALLOWED_PATHS.COMPUTED).toContain('vitals.bmi');
+    expect(ALLOWED_PATHS.INTAKE).not.toContain('vitals.bmi');
   });
 });
