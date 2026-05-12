@@ -5,11 +5,17 @@ import {
   Param,
   ParseUUIDPipe,
   Patch,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiHeader, ApiTags } from '@nestjs/swagger';
 import { ApiStandardResponse } from '@common/swagger';
-import { CurrentUser, IfMatchVersion } from '@common/decorators';
+import {
+  CurrentUser,
+  IfMatchVersion,
+  LocksOnClosedVisit,
+} from '@common/decorators';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
+import { EncounterMutationGuard } from '@core/clinical/visits/visits.public';
 import { PregnancyService } from './pregnancy.service';
 import {
   AmnioticPlacentaDto,
@@ -34,6 +40,7 @@ const IF_MATCH = {
 
 @ApiTags('OB/GYN — Pregnancy')
 @Controller()
+@UseGuards(EncounterMutationGuard)
 export class PregnancyController {
   constructor(private readonly service: PregnancyService) {}
 
@@ -98,6 +105,7 @@ export class PregnancyController {
   }
 
   @Patch('visits/:visitId/pregnancy-record/cervix')
+  @LocksOnClosedVisit('visitId')
   @ApiHeader(IF_MATCH)
   patchCervix(
     @Param('visitId', ParseUUIDPipe) visitId: string,
@@ -115,6 +123,7 @@ export class PregnancyController {
   }
 
   @Patch('visits/:visitId/pregnancy-record/warning-symptoms')
+  @LocksOnClosedVisit('visitId')
   @ApiHeader(IF_MATCH)
   patchWarningSymptoms(
     @Param('visitId', ParseUUIDPipe) visitId: string,
@@ -132,6 +141,7 @@ export class PregnancyController {
   }
 
   @Patch('visits/:visitId/pregnancy-record/fundal')
+  @LocksOnClosedVisit('visitId')
   @ApiHeader(IF_MATCH)
   patchFundal(
     @Param('visitId', ParseUUIDPipe) visitId: string,
@@ -149,6 +159,7 @@ export class PregnancyController {
   }
 
   @Patch('visits/:visitId/pregnancy-record/amniotic-placenta')
+  @LocksOnClosedVisit('visitId')
   @ApiHeader(IF_MATCH)
   patchAmnioticPlacenta(
     @Param('visitId', ParseUUIDPipe) visitId: string,
@@ -166,6 +177,7 @@ export class PregnancyController {
   }
 
   @Patch('visits/:visitId/pregnancy-record/fetal-lie')
+  @LocksOnClosedVisit('visitId')
   @ApiHeader(IF_MATCH)
   patchFetalLie(
     @Param('visitId', ParseUUIDPipe) visitId: string,
@@ -183,6 +195,7 @@ export class PregnancyController {
   }
 
   @Patch('visits/:visitId/pregnancy-record/biometrics')
+  @LocksOnClosedVisit('visitId')
   @ApiHeader(IF_MATCH)
   patchBiometrics(
     @Param('visitId', ParseUUIDPipe) visitId: string,

@@ -5,11 +5,17 @@ import {
   Param,
   ParseUUIDPipe,
   Patch,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiHeader, ApiTags } from '@nestjs/swagger';
 import { ApiStandardResponse } from '@common/swagger';
-import { CurrentUser, IfMatchVersion } from '@common/decorators';
+import {
+  CurrentUser,
+  IfMatchVersion,
+  LocksOnClosedVisit,
+} from '@common/decorators';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
+import { EncounterMutationGuard } from '@core/clinical/visits/visits.public';
 import { ObgynEncounterService } from './obgyn-encounter.service';
 import {
   AbdominalFindingsDto,
@@ -34,6 +40,7 @@ const IF_MATCH = {
 
 @ApiTags('OB/GYN — Visit Encounter')
 @Controller('visits/:id/obgyn-encounter')
+@UseGuards(EncounterMutationGuard)
 export class ObgynEncounterController {
   constructor(private readonly service: ObgynEncounterService) {}
 
@@ -47,6 +54,7 @@ export class ObgynEncounterController {
   }
 
   @Patch('general')
+  @LocksOnClosedVisit('id')
   @ApiHeader(IF_MATCH)
   patchGeneral(
     @Param('id', ParseUUIDPipe) id: string,
@@ -64,6 +72,7 @@ export class ObgynEncounterController {
   }
 
   @Patch('cardiovascular')
+  @LocksOnClosedVisit('id')
   @ApiHeader(IF_MATCH)
   patchCardiovascular(
     @Param('id', ParseUUIDPipe) id: string,
@@ -81,6 +90,7 @@ export class ObgynEncounterController {
   }
 
   @Patch('respiratory')
+  @LocksOnClosedVisit('id')
   @ApiHeader(IF_MATCH)
   patchRespiratory(
     @Param('id', ParseUUIDPipe) id: string,
@@ -98,6 +108,7 @@ export class ObgynEncounterController {
   }
 
   @Patch('menstrual')
+  @LocksOnClosedVisit('id')
   @ApiHeader(IF_MATCH)
   patchMenstrual(
     @Param('id', ParseUUIDPipe) id: string,
@@ -115,6 +126,7 @@ export class ObgynEncounterController {
   }
 
   @Patch('abdominal')
+  @LocksOnClosedVisit('id')
   @ApiHeader(IF_MATCH)
   patchAbdominal(
     @Param('id', ParseUUIDPipe) id: string,
@@ -132,6 +144,7 @@ export class ObgynEncounterController {
   }
 
   @Patch('pelvic')
+  @LocksOnClosedVisit('id')
   @ApiHeader(IF_MATCH)
   patchPelvic(
     @Param('id', ParseUUIDPipe) id: string,
@@ -143,6 +156,7 @@ export class ObgynEncounterController {
   }
 
   @Patch('breast')
+  @LocksOnClosedVisit('id')
   @ApiHeader(IF_MATCH)
   patchBreast(
     @Param('id', ParseUUIDPipe) id: string,
@@ -154,6 +168,7 @@ export class ObgynEncounterController {
   }
 
   @Patch('extremities')
+  @LocksOnClosedVisit('id')
   @ApiHeader(IF_MATCH)
   patchExtremities(
     @Param('id', ParseUUIDPipe) id: string,
@@ -171,6 +186,7 @@ export class ObgynEncounterController {
   }
 
   @Patch('neurological')
+  @LocksOnClosedVisit('id')
   @ApiHeader(IF_MATCH)
   patchNeurological(
     @Param('id', ParseUUIDPipe) id: string,
@@ -188,6 +204,7 @@ export class ObgynEncounterController {
   }
 
   @Patch('skin')
+  @LocksOnClosedVisit('id')
   @ApiHeader(IF_MATCH)
   patchSkin(
     @Param('id', ParseUUIDPipe) id: string,
