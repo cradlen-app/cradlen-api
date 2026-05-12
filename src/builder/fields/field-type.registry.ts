@@ -98,7 +98,11 @@ export const FIELD_TYPES: Record<FormFieldType, FieldTypeDescriptor> = {
   },
   ENTITY_SEARCH: {
     type: 'ENTITY_SEARCH',
-    allowedNamespaces: new Set<BindingNamespace>(['LOOKUP', 'VISIT', 'MEDICAL_REP']),
+    allowedNamespaces: new Set<BindingNamespace>([
+      'LOOKUP',
+      'VISIT',
+      'MEDICAL_REP',
+    ]),
     assertConfig: assertEntitySearch,
   },
   COMPUTED: {
@@ -108,6 +112,8 @@ export const FIELD_TYPES: Record<FormFieldType, FieldTypeDescriptor> = {
   },
 };
 
-export function getFieldTypeDescriptor(type: FormFieldType): FieldTypeDescriptor {
+export function getFieldTypeDescriptor(
+  type: FormFieldType,
+): FieldTypeDescriptor {
   return FIELD_TYPES[type];
 }

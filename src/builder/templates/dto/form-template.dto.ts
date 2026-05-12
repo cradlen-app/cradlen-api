@@ -1,15 +1,20 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  BindingNamespace,
-  FormFieldType,
-  FormScope,
-} from '@prisma/client';
+import { BindingNamespace, FormFieldType, FormScope } from '@prisma/client';
 
 export class TemplateBindingContractDto {
-  @ApiPropertyOptional({ enum: [
-    'PATIENT', 'VISIT', 'INTAKE', 'GUARDIAN',
-    'MEDICAL_REP', 'LOOKUP', 'SYSTEM', 'COMPUTED',
-  ] satisfies BindingNamespace[], nullable: true })
+  @ApiPropertyOptional({
+    enum: [
+      'PATIENT',
+      'VISIT',
+      'INTAKE',
+      'GUARDIAN',
+      'MEDICAL_REP',
+      'LOOKUP',
+      'SYSTEM',
+      'COMPUTED',
+    ] satisfies BindingNamespace[],
+    nullable: true,
+  })
   namespace!: BindingNamespace | null;
 
   @ApiPropertyOptional({ type: String, nullable: true })
@@ -20,10 +25,21 @@ export class FormFieldDto {
   @ApiProperty() id!: string;
   @ApiProperty() code!: string;
   @ApiProperty() label!: string;
-  @ApiProperty({ enum: [
-    'TEXT','TEXTAREA','NUMBER','DECIMAL','DATE','DATETIME',
-    'BOOLEAN','SELECT','MULTISELECT','ENTITY_SEARCH','COMPUTED',
-  ] satisfies FormFieldType[] })
+  @ApiProperty({
+    enum: [
+      'TEXT',
+      'TEXTAREA',
+      'NUMBER',
+      'DECIMAL',
+      'DATE',
+      'DATETIME',
+      'BOOLEAN',
+      'SELECT',
+      'MULTISELECT',
+      'ENTITY_SEARCH',
+      'COMPUTED',
+    ] satisfies FormFieldType[],
+  })
   type!: FormFieldType;
   @ApiProperty() order!: number;
   @ApiProperty() required!: boolean;
@@ -48,7 +64,9 @@ export class FormTemplateDto {
   @ApiProperty() code!: string;
   @ApiProperty() name!: string;
   @ApiPropertyOptional({ nullable: true }) description!: string | null;
-  @ApiProperty({ enum: ['BOOK_VISIT','ENCOUNTER','PATIENT_HISTORY'] satisfies FormScope[] })
+  @ApiProperty({
+    enum: ['BOOK_VISIT', 'ENCOUNTER', 'PATIENT_HISTORY'] satisfies FormScope[],
+  })
   scope!: FormScope;
   @ApiProperty() version!: number;
   @ApiPropertyOptional({ nullable: true }) activated_at!: Date | null;
@@ -60,7 +78,9 @@ export class FormTemplateSummaryDto {
   @ApiProperty() id!: string;
   @ApiProperty() code!: string;
   @ApiProperty() name!: string;
-  @ApiProperty({ enum: ['BOOK_VISIT','ENCOUNTER','PATIENT_HISTORY'] satisfies FormScope[] })
+  @ApiProperty({
+    enum: ['BOOK_VISIT', 'ENCOUNTER', 'PATIENT_HISTORY'] satisfies FormScope[],
+  })
   scope!: FormScope;
   @ApiProperty() version!: number;
   @ApiPropertyOptional({ nullable: true }) specialty_id!: string | null;

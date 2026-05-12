@@ -61,7 +61,10 @@ export function assertValidConfig(
       );
     }
     const value = (config as Record<string, unknown>)[key];
-    if (value !== undefined && (typeof value !== 'object' || value === null || Array.isArray(value))) {
+    if (
+      value !== undefined &&
+      (typeof value !== 'object' || value === null || Array.isArray(value))
+    ) {
       throw new InvalidConfigError(
         `${contextLabel}: config.${key} must be an object, got ${describe(value)}`,
       );

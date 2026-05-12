@@ -17,12 +17,17 @@ export class TemplatesService {
       include: { sections: { include: { fields: true } } },
     });
     if (!row) {
-      throw new NotFoundException(`No active form template found for code "${code}"`);
+      throw new NotFoundException(
+        `No active form template found for code "${code}"`,
+      );
     }
     return row;
   }
 
-  async findVersion(code: string, version: number): Promise<HydratableTemplate> {
+  async findVersion(
+    code: string,
+    version: number,
+  ): Promise<HydratableTemplate> {
     const row = await this.prismaService.db.formTemplate.findFirst({
       where: { code, version, is_deleted: false },
       include: { sections: { include: { fields: true } } },

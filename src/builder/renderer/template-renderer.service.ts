@@ -1,12 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import type {
-  BindingNamespace,
-  FormField,
-  FormSection,
-  FormTemplate,
-} from '@prisma/client';
+import type { FormField, FormSection, FormTemplate } from '@prisma/client';
 import { ConfigShape } from '../fields/field-config.schema.js';
-import { FieldDescriptor, SectionDescriptor } from '../sections/section.descriptor.js';
+import {
+  FieldDescriptor,
+  SectionDescriptor,
+} from '../sections/section.descriptor.js';
 
 /**
  * Shape returned by `GET /v1/form-templates/:code` after the renderer hydrates
@@ -71,7 +69,7 @@ export class TemplateRendererService {
       order: field.order,
       required: field.required,
       binding: {
-        namespace: field.binding_namespace as BindingNamespace | null,
+        namespace: field.binding_namespace,
         path: field.binding_path,
       },
       config: field.config as ConfigShape,

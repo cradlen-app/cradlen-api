@@ -185,11 +185,39 @@ export class VisitsService {
         );
       }
     }
-    if (dto.is_married && !dto.husband_name) {
+    // Marital status normalization: legacy `is_married` is honoured when the
+    // new `marital_status` field isn't supplied so older clients keep working.
+    const resolvedMaritalStatus =
+      dto.marital_status ?? (dto.is_married ? 'MARRIED' : undefined);
+
+    if (dto.is_married && !dto.husband_name && !dto.spouse_full_name) {
       throw new BadRequestException(
         'husband_name is required when is_married is true',
       );
     }
+
+    const hasSpouseFields = !!(
+      dto.spouse_full_name ||
+      dto.spouse_national_id ||
+      dto.spouse_phone_number
+    );
+    if (resolvedMaritalStatus === 'MARRIED' && hasSpouseFields) {
+      if (!dto.spouse_full_name || !dto.spouse_national_id) {
+        throw new BadRequestException(
+          'spouse_full_name and spouse_national_id are required together when spouse fields are supplied',
+        );
+      }
+    }
+    if (
+      resolvedMaritalStatus &&
+      resolvedMaritalStatus !== 'MARRIED' &&
+      hasSpouseFields
+    ) {
+      throw new BadRequestException(
+        'Spouse fields may only be supplied when marital_status is MARRIED',
+      );
+    }
+
     const branchId = dto.branch_id ?? user.activeBranchId;
     if (!branchId) throw new BadRequestException('branch_id is required');
 
@@ -208,6 +236,7 @@ export class VisitsService {
 
     const result = await this.prismaService.db.$transaction(async (tx) => {
       let patient;
+      let patientWasJustCreated = false;
       if (dto.patient_id) {
         patient = await tx.patient.findUnique({
           where: { id: dto.patient_id, is_deleted: false },
@@ -232,8 +261,75 @@ export class VisitsService {
             address: dto.address!,
             husband_name:
               dto.is_married && dto.husband_name ? dto.husband_name : null,
+            ...(resolvedMaritalStatus
+              ? { marital_status: resolvedMaritalStatus }
+              : {}),
           },
         });
+        patientWasJustCreated = true;
+      }
+
+      // For looked-up patients, the caller may be re-affirming or changing
+      // marital state — sync if it differs. For just-created patients, the
+      // create already set marital_status, so skip.
+      if (
+        !patientWasJustCreated &&
+        resolvedMaritalStatus &&
+        patient.marital_status !== resolvedMaritalStatus
+      ) {
+        await tx.patient.update({
+          where: { id: patient.id },
+          data: { marital_status: resolvedMaritalStatus },
+        });
+        patient.marital_status = resolvedMaritalStatus;
+      }
+
+      // SPOUSE upsert: Guardian by national_id, then PatientGuardian link.
+      if (
+        resolvedMaritalStatus === 'MARRIED' &&
+        dto.spouse_full_name &&
+        dto.spouse_national_id
+      ) {
+        const spouse = await tx.guardian.upsert({
+          where: { national_id: dto.spouse_national_id },
+          create: {
+            national_id: dto.spouse_national_id,
+            full_name: dto.spouse_full_name,
+            phone_number: dto.spouse_phone_number ?? null,
+          },
+          update: {
+            full_name: dto.spouse_full_name,
+            ...(dto.spouse_phone_number !== undefined && {
+              phone_number: dto.spouse_phone_number,
+            }),
+          },
+        });
+        const existingLink = await tx.patientGuardian.findUnique({
+          where: {
+            patient_id_guardian_id: {
+              patient_id: patient.id,
+              guardian_id: spouse.id,
+            },
+          },
+        });
+        if (!existingLink) {
+          await tx.patientGuardian.create({
+            data: {
+              patient_id: patient.id,
+              guardian_id: spouse.id,
+              relation_to_patient: 'SPOUSE',
+              is_primary: true,
+            },
+          });
+        } else if (
+          existingLink.relation_to_patient !== 'SPOUSE' ||
+          !existingLink.is_primary
+        ) {
+          await tx.patientGuardian.update({
+            where: { id: existingLink.id },
+            data: { relation_to_patient: 'SPOUSE', is_primary: true },
+          });
+        }
       }
 
       let journey = await tx.patientJourney.findFirst({

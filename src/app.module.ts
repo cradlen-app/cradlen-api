@@ -24,6 +24,7 @@ import { JourneyTemplatesModule } from '@core/clinical/journey-templates/journey
 import { PatientsModule } from '@core/patient/patients/patients.module';
 import { JourneysModule } from '@core/clinical/journeys/journeys.module';
 import { VisitsModule } from '@core/clinical/visits/visits.module';
+import { MedicalRepModule } from '@core/clinical/medical-rep/medical-rep.module';
 import { MedicationsModule } from '@core/clinical/medications/medications.module';
 import { LabTestsModule } from '@core/clinical/lab-tests/lab-tests.module';
 import { ClinicalModule } from '@core/clinical/clinical/clinical.module';
@@ -69,6 +70,7 @@ import type { AppConfig } from './config/app.config';
     PatientsModule,
     JourneysModule,
     VisitsModule,
+    MedicalRepModule,
     MedicationsModule,
     LabTestsModule,
     ClinicalModule,
