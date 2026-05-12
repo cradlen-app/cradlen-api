@@ -47,7 +47,12 @@
       "Bash(echo \"exit=$?\")",
       "Bash(npm uninstall *)",
       "Bash(timeout 12 node dist/main)",
-      "PowerShell(Move-Item f:/Cradlen/cradlen-api/src/common/authorization f:/Cradlen/cradlen-api/src/core/auth/authorization)"
+      "PowerShell(Move-Item f:/Cradlen/cradlen-api/src/common/authorization f:/Cradlen/cradlen-api/src/core/auth/authorization)",
+      "Bash(echo \"---exit:$?\")",
+      "Read(//tmp/**)",
+      "Bash(echo \"---ex:$?\")",
+      "Bash(git show *)",
+      "Bash(node -e \"const p = require\\('path'\\); console.log\\(p.resolve\\('./src/core/clinical/visits/visits.public.ts'\\)\\)\")"
     ],
     "additionalDirectories": [
       "\\tmp"

@@ -193,6 +193,102 @@ async function main() {
     }
   }
 
+  // Care paths — UMR redesign (PR1 additive). System-seeded (organization_id = null, is_system = true).
+  // Replaces the JourneyTemplateType enum with a queryable, tenant-extendable taxonomy.
+  // The legacy JourneyTemplate / EpisodeTemplate seeds above stay in place until PR2 migrates consumers.
+  const carePathCatalog = [
+    {
+      code: 'OBGYN_GENERAL',
+      name: 'General GYN',
+      description: 'General gynecology consultations and follow-ups',
+      order: 1,
+      episodes: [{ code: 'GENERAL_CONSULTATION', name: 'General Consultation', order: 1 }],
+    },
+    {
+      code: 'OBGYN_PREGNANCY',
+      name: 'Pregnancy',
+      description: 'Antenatal and postnatal pregnancy care pathway',
+      order: 2,
+      episodes: [
+        { code: 'FIRST_TRIMESTER', name: 'First Trimester', order: 1 },
+        { code: 'SECOND_TRIMESTER', name: 'Second Trimester', order: 2 },
+        { code: 'THIRD_TRIMESTER', name: 'Third Trimester', order: 3 },
+        { code: 'DELIVERY', name: 'Delivery', order: 4 },
+        { code: 'POSTPARTUM', name: 'Postpartum', order: 5 },
+      ],
+    },
+    {
+      code: 'OBGYN_SURGICAL',
+      name: 'Surgical',
+      description: 'Pre-operative, surgical, and post-operative gynecologic care',
+      order: 3,
+      episodes: [
+        { code: 'PRE_OPERATIVE', name: 'Pre-operative', order: 1 },
+        { code: 'SURGERY', name: 'Surgery', order: 2 },
+        { code: 'POST_OPERATIVE', name: 'Post-operative', order: 3 },
+      ],
+    },
+    {
+      code: 'OBGYN_INFERTILITY',
+      name: 'Infertility',
+      description: 'Infertility evaluation and treatment',
+      order: 4,
+      episodes: [
+        { code: 'EVALUATION', name: 'Evaluation', order: 1 },
+        { code: 'TREATMENT', name: 'Treatment', order: 2 },
+        { code: 'FOLLOW_UP', name: 'Follow-up', order: 3 },
+      ],
+    },
+  ];
+
+  for (const cp of carePathCatalog) {
+    // findFirst + create/update because organization_id is nullable in the composite unique index
+    // and Postgres treats NULLs as distinct, so .upsert() can't safely match system rows.
+    let carePath = await prisma.carePath.findFirst({
+      where: { specialty_id: gynSpecialty.id, organization_id: null, code: cp.code },
+    });
+    if (!carePath) {
+      carePath = await prisma.carePath.create({
+        data: {
+          specialty_id: gynSpecialty.id,
+          organization_id: null,
+          is_system: true,
+          code: cp.code,
+          name: cp.name,
+          description: cp.description,
+          order: cp.order,
+        },
+      });
+    } else {
+      carePath = await prisma.carePath.update({
+        where: { id: carePath.id },
+        data: { name: cp.name, description: cp.description, order: cp.order, is_system: true },
+      });
+    }
+    for (const ep of cp.episodes) {
+      const existing = await prisma.carePathEpisode.findFirst({
+        where: { care_path_id: carePath.id, organization_id: null, code: ep.code },
+      });
+      if (!existing) {
+        await prisma.carePathEpisode.create({
+          data: {
+            care_path_id: carePath.id,
+            organization_id: null,
+            is_system: true,
+            code: ep.code,
+            name: ep.name,
+            order: ep.order,
+          },
+        });
+      } else {
+        await prisma.carePathEpisode.update({
+          where: { id: existing.id },
+          data: { name: ep.name, order: ep.order, is_system: true },
+        });
+      }
+    }
+  }
+
   // Medications — global catalog (organization_id = null). OB/GYN-relevant set.
   const medications = [
     { code: 'FOLIC_ACID_5MG', name: 'Folic Acid 5mg', generic_name: 'folic acid', form: 'tablet', strength: '5mg' },
