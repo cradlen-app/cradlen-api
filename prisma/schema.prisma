@@ -273,53 +273,59 @@ model ProfileJobFunction {
 }
 
 model Profile {
-  id                            String                        @id @default(uuid()) @db.Uuid
-  user_id                       String                        @db.Uuid
-  organization_id               String                        @db.Uuid
-  executive_title               ExecutiveTitle?
-  engagement_type               EngagementType                @default(FULL_TIME)
-  is_active                     Boolean                       @default(true)
-  is_deleted                    Boolean                       @default(false)
-  deleted_at                    DateTime?
-  created_at                    DateTime                      @default(now())
-  updated_at                    DateTime                      @updatedAt
-  user                          User                          @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  organization                  Organization                  @relation(fields: [organization_id], references: [id], onDelete: Cascade)
-  roles                         ProfileRole[]
-  branches                      ProfileBranch[]
-  workingSchedules              WorkingSchedule[]
-  job_functions                 ProfileJobFunction[]
-  specialty_links               ProfileSpecialty[]
-  created_journeys              PatientJourney[]
-  doctor_visits                 Visit[]                       @relation("DoctorVisits")
-  created_visits                Visit[]                       @relation("CreatedVisits")
-  medications_added             Medication[]                  @relation("MedicationAddedBy")
-  lab_tests_added               LabTest[]                     @relation("LabTestAddedBy")
-  vitals_recorded               VisitVitals[]                 @relation("VitalsRecordedBy")
-  investigations_ordered        VisitInvestigation[]          @relation("InvestigationOrderedBy")
-  investigations_resulted       VisitInvestigation[]          @relation("InvestigationResultedBy")
-  investigations_reviewed       VisitInvestigation[]          @relation("InvestigationReviewedBy")
-  prescriptions_authored        Prescription[]                @relation("PrescriptionPrescribedBy")
-  history_notes_authored        PatientHistoryNote[]          @relation("HistoryNoteAuthor")
-  history_allergies_added       PatientAllergy[]              @relation("AllergyCreatedBy")
-  history_pregnancies_added     PatientPregnancyHistory[]     @relation("PregnancyCreatedBy")
-  history_contraceptives_added  PatientContraceptiveHistory[] @relation("ContraceptiveCreatedBy")
-  history_surgeries_added       PatientNonGynSurgery[]        @relation("NonGynSurgeryCreatedBy")
-  history_medications_added     PatientMedication[]           @relation("PatientMedicationCreatedBy")
+  id                              String                           @id @default(uuid()) @db.Uuid
+  user_id                         String                           @db.Uuid
+  organization_id                 String                           @db.Uuid
+  executive_title                 ExecutiveTitle?
+  engagement_type                 EngagementType                   @default(FULL_TIME)
+  is_active                       Boolean                          @default(true)
+  is_deleted                      Boolean                          @default(false)
+  deleted_at                      DateTime?
+  created_at                      DateTime                         @default(now())
+  updated_at                      DateTime                         @updatedAt
+  user                            User                             @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  organization                    Organization                     @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  roles                           ProfileRole[]
+  branches                        ProfileBranch[]
+  workingSchedules                WorkingSchedule[]
+  job_functions                   ProfileJobFunction[]
+  specialty_links                 ProfileSpecialty[]
+  created_journeys                PatientJourney[]
+  doctor_visits                   Visit[]                          @relation("DoctorVisits")
+  created_visits                  Visit[]                          @relation("CreatedVisits")
+  medications_added               Medication[]                     @relation("MedicationAddedBy")
+  lab_tests_added                 LabTest[]                        @relation("LabTestAddedBy")
+  vitals_recorded                 VisitVitals[]                    @relation("VitalsRecordedBy")
+  investigations_ordered          VisitInvestigation[]             @relation("InvestigationOrderedBy")
+  investigations_resulted         VisitInvestigation[]             @relation("InvestigationResultedBy")
+  investigations_reviewed         VisitInvestigation[]             @relation("InvestigationReviewedBy")
+  prescriptions_authored          Prescription[]                   @relation("PrescriptionPrescribedBy")
+  history_notes_authored          PatientHistoryNote[]             @relation("HistoryNoteAuthor")
+  history_allergies_added         PatientAllergy[]                 @relation("AllergyCreatedBy")
+  history_pregnancies_added       PatientPregnancyHistory[]        @relation("PregnancyCreatedBy")
+  history_contraceptives_added    PatientContraceptiveHistory[]    @relation("ContraceptiveCreatedBy")
+  history_surgeries_added         PatientNonGynSurgery[]           @relation("NonGynSurgeryCreatedBy")
+  history_medications_added       PatientMedication[]              @relation("PatientMedicationCreatedBy")
   // Updated-by back-relations (audit trail; PR4 will use these via revision shadow tables)
-  history_notes_updated         PatientHistoryNote[]          @relation("HistoryNoteUpdatedBy")
-  patient_obgyn_history_updates PatientObgynHistory[]         @relation("PatientObgynHistoryUpdatedBy")
-  visit_obgyn_encounter_updates VisitObgynEncounter[]         @relation("VisitObgynEncounterUpdatedBy")
-  pregnancy_journey_updates     PregnancyJourneyRecord[]      @relation("PregnancyJourneyRecordUpdatedBy")
-  pregnancy_episode_updates     PregnancyEpisodeRecord[]      @relation("PregnancyEpisodeRecordUpdatedBy")
-  visit_pregnancy_updates       VisitPregnancyRecord[]        @relation("VisitPregnancyRecordUpdatedBy")
-  visit_encounter_updates       VisitEncounter[]              @relation("VisitEncounterUpdatedBy")
-  prescription_updates          Prescription[]                @relation("PrescriptionUpdatedBy")
-  prescription_item_updates     PrescriptionItem[]            @relation("PrescriptionItemUpdatedBy")
-  investigation_updates         VisitInvestigation[]          @relation("VisitInvestigationUpdatedBy")
-  pregnancy_history_updates     PatientPregnancyHistory[]     @relation("PatientPregnancyHistoryUpdatedBy")
-  contraceptive_history_updates PatientContraceptiveHistory[] @relation("PatientContraceptiveHistoryUpdatedBy")
-  non_gyn_surgery_updates       PatientNonGynSurgery[]        @relation("PatientNonGynSurgeryUpdatedBy")
+  history_notes_updated           PatientHistoryNote[]             @relation("HistoryNoteUpdatedBy")
+  patient_obgyn_history_updates   PatientObgynHistory[]            @relation("PatientObgynHistoryUpdatedBy")
+  visit_obgyn_encounter_updates   VisitObgynEncounter[]            @relation("VisitObgynEncounterUpdatedBy")
+  pregnancy_journey_updates       PregnancyJourneyRecord[]         @relation("PregnancyJourneyRecordUpdatedBy")
+  pregnancy_episode_updates       PregnancyEpisodeRecord[]         @relation("PregnancyEpisodeRecordUpdatedBy")
+  visit_pregnancy_updates         VisitPregnancyRecord[]           @relation("VisitPregnancyRecordUpdatedBy")
+  visit_encounter_updates         VisitEncounter[]                 @relation("VisitEncounterUpdatedBy")
+  prescription_updates            Prescription[]                   @relation("PrescriptionUpdatedBy")
+  prescription_item_updates       PrescriptionItem[]               @relation("PrescriptionItemUpdatedBy")
+  investigation_updates           VisitInvestigation[]             @relation("VisitInvestigationUpdatedBy")
+  pregnancy_history_updates       PatientPregnancyHistory[]        @relation("PatientPregnancyHistoryUpdatedBy")
+  contraceptive_history_updates   PatientContraceptiveHistory[]    @relation("PatientContraceptiveHistoryUpdatedBy")
+  non_gyn_surgery_updates         PatientNonGynSurgery[]           @relation("PatientNonGynSurgeryUpdatedBy")
+  // PR4: revision shadow tables — author back-relations
+  patient_obgyn_history_revisions PatientObgynHistoryRevision[]    @relation("PatientObgynHistoryRevisedBy")
+  visit_obgyn_encounter_revisions VisitObgynEncounterRevision[]    @relation("VisitObgynEncounterRevisedBy")
+  pregnancy_journey_revisions     PregnancyJourneyRecordRevision[] @relation("PregnancyJourneyRecordRevisedBy")
+  pregnancy_episode_revisions     PregnancyEpisodeRecordRevision[] @relation("PregnancyEpisodeRecordRevisedBy")
+  visit_pregnancy_revisions       VisitPregnancyRecordRevision[]   @relation("VisitPregnancyRecordRevisedBy")
 
   @@unique([user_id, organization_id])
   @@index([organization_id, is_deleted])
@@ -1212,9 +1218,10 @@ model CarePathEpisode {
 // ----- OB/GYN specialty sidecars -----
 
 model PatientObgynHistory {
-  id                        String    @id @default(uuid()) @db.Uuid
-  patient_id                String    @unique @db.Uuid
-  patient                   Patient   @relation(fields: [patient_id], references: [id], onDelete: Cascade)
+  id                        String                        @id @default(uuid()) @db.Uuid
+  patient_id                String                        @unique @db.Uuid
+  patient                   Patient                       @relation(fields: [patient_id], references: [id], onDelete: Cascade)
+  revisions                 PatientObgynHistoryRevision[]
   husband_name              String?
   gynecological_baseline    Json?
   gynecologic_procedures    Json?
@@ -1224,21 +1231,22 @@ model PatientObgynHistory {
   family_history            Json?
   fertility_history         Json?
   social_history            Json?
-  version                   Int       @default(1)
-  updated_by_id             String?   @db.Uuid
-  updated_by                Profile?  @relation("PatientObgynHistoryUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
-  is_deleted                Boolean   @default(false)
+  version                   Int                           @default(1)
+  updated_by_id             String?                       @db.Uuid
+  updated_by                Profile?                      @relation("PatientObgynHistoryUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
+  is_deleted                Boolean                       @default(false)
   deleted_at                DateTime?
-  created_at                DateTime  @default(now())
-  updated_at                DateTime  @updatedAt
+  created_at                DateTime                      @default(now())
+  updated_at                DateTime                      @updatedAt
 
   @@map("patient_obgyn_histories")
 }
 
 model VisitObgynEncounter {
-  id                      String    @id @default(uuid()) @db.Uuid
-  visit_id                String    @unique @db.Uuid
-  visit                   Visit     @relation(fields: [visit_id], references: [id], onDelete: Cascade)
+  id                      String                        @id @default(uuid()) @db.Uuid
+  visit_id                String                        @unique @db.Uuid
+  visit                   Visit                         @relation(fields: [visit_id], references: [id], onDelete: Cascade)
+  revisions               VisitObgynEncounterRevision[]
   general_findings        Json?
   cardiovascular_findings Json?
   respiratory_findings    Json?
@@ -1249,65 +1257,68 @@ model VisitObgynEncounter {
   extremities_findings    Json?
   neurological_findings   Json?
   skin_findings           Json?
-  version                 Int       @default(1)
-  updated_by_id           String?   @db.Uuid
-  updated_by              Profile?  @relation("VisitObgynEncounterUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
-  is_deleted              Boolean   @default(false)
+  version                 Int                           @default(1)
+  updated_by_id           String?                       @db.Uuid
+  updated_by              Profile?                      @relation("VisitObgynEncounterUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
+  is_deleted              Boolean                       @default(false)
   deleted_at              DateTime?
-  created_at              DateTime  @default(now())
-  updated_at              DateTime  @updatedAt
+  created_at              DateTime                      @default(now())
+  updated_at              DateTime                      @updatedAt
 
   @@map("visit_obgyn_encounters")
 }
 
 model PregnancyJourneyRecord {
-  id                String         @id @default(uuid()) @db.Uuid
-  journey_id        String         @unique @db.Uuid
-  journey           PatientJourney @relation(fields: [journey_id], references: [id], onDelete: Cascade)
+  id                String                           @id @default(uuid()) @db.Uuid
+  journey_id        String                           @unique @db.Uuid
+  journey           PatientJourney                   @relation(fields: [journey_id], references: [id], onDelete: Cascade)
+  revisions         PregnancyJourneyRecordRevision[]
   status            String?
   risk_level        String?
-  lmp               DateTime?      @db.Date
+  lmp               DateTime?                        @db.Date
   blood_group_rh    String?
-  us_dating_date    DateTime?      @db.Date
+  us_dating_date    DateTime?                        @db.Date
   us_ga_weeks       Int?
   us_ga_days        Int?
   pregnancy_type    String?
   number_of_fetuses Int?
   gender            String?
   delivery_plan     Json?
-  version           Int            @default(1)
-  updated_by_id     String?        @db.Uuid
-  updated_by        Profile?       @relation("PregnancyJourneyRecordUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
-  is_deleted        Boolean        @default(false)
+  version           Int                              @default(1)
+  updated_by_id     String?                          @db.Uuid
+  updated_by        Profile?                         @relation("PregnancyJourneyRecordUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
+  is_deleted        Boolean                          @default(false)
   deleted_at        DateTime?
-  created_at        DateTime       @default(now())
-  updated_at        DateTime       @updatedAt
+  created_at        DateTime                         @default(now())
+  updated_at        DateTime                         @updatedAt
 
   @@map("pregnancy_journey_records")
 }
 
 model PregnancyEpisodeRecord {
-  id                String         @id @default(uuid()) @db.Uuid
-  episode_id        String         @unique @db.Uuid
-  episode           PatientEpisode @relation(fields: [episode_id], references: [id], onDelete: Cascade)
+  id                String                           @id @default(uuid()) @db.Uuid
+  episode_id        String                           @unique @db.Uuid
+  episode           PatientEpisode                   @relation(fields: [episode_id], references: [id], onDelete: Cascade)
+  revisions         PregnancyEpisodeRecordRevision[]
   anomaly_scan      Json?
   gtt_result        Json?
   trimester_summary Json?
-  version           Int            @default(1)
-  updated_by_id     String?        @db.Uuid
-  updated_by        Profile?       @relation("PregnancyEpisodeRecordUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
-  is_deleted        Boolean        @default(false)
+  version           Int                              @default(1)
+  updated_by_id     String?                          @db.Uuid
+  updated_by        Profile?                         @relation("PregnancyEpisodeRecordUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
+  is_deleted        Boolean                          @default(false)
   deleted_at        DateTime?
-  created_at        DateTime       @default(now())
-  updated_at        DateTime       @updatedAt
+  created_at        DateTime                         @default(now())
+  updated_at        DateTime                         @updatedAt
 
   @@map("pregnancy_episode_records")
 }
 
 model VisitPregnancyRecord {
-  id       String @id @default(uuid()) @db.Uuid
-  visit_id String @unique @db.Uuid
-  visit    Visit  @relation(fields: [visit_id], references: [id], onDelete: Cascade)
+  id        String                         @id @default(uuid()) @db.Uuid
+  visit_id  String                         @unique @db.Uuid
+  visit     Visit                          @relation(fields: [visit_id], references: [id], onDelete: Cascade)
+  revisions VisitPregnancyRecordRevision[]
 
   // Maternal — Cervix
   cervix_length_mm      Decimal? @db.Decimal(5, 2)
@@ -1355,4 +1366,100 @@ model VisitPregnancyRecord {
   updated_at          DateTime  @updatedAt
 
   @@map("visit_pregnancy_records")
+}
+
+// ============================================================================
+// UMR redesign — PR4
+// Revision shadow tables. Append-only audit trail of prior snapshots for
+// clinical mutable rows. Written inside the same transaction as the live-row
+// update, so every PATCH and amendment leaves a verifiable history.
+//
+// Shape mirrors the table being shadowed:
+//   <entity>_id  FK to the live row
+//   version      the SNAPSHOT version (i.e. the version BEFORE the change)
+//   snapshot     full prior row contents as JSON
+//   changed_fields  list of fields that differ between snapshot and new state
+//   revised_by_id   FK profile (who performed the mutation)
+//   revised_at      timestamp
+//   revision_reason optional free-text (mandatory for amendments)
+// ============================================================================
+
+model PatientObgynHistoryRevision {
+  id              String              @id @default(uuid()) @db.Uuid
+  entity_id       String              @db.Uuid
+  entity          PatientObgynHistory @relation(fields: [entity_id], references: [id], onDelete: Cascade)
+  version         Int
+  snapshot        Json
+  changed_fields  Json
+  revised_by_id   String              @db.Uuid
+  revised_by      Profile             @relation("PatientObgynHistoryRevisedBy", fields: [revised_by_id], references: [id], onDelete: Cascade)
+  revised_at      DateTime            @default(now())
+  revision_reason String?
+
+  @@index([entity_id, version])
+  @@map("patient_obgyn_history_revisions")
+}
+
+model VisitObgynEncounterRevision {
+  id              String              @id @default(uuid()) @db.Uuid
+  entity_id       String              @db.Uuid
+  entity          VisitObgynEncounter @relation(fields: [entity_id], references: [id], onDelete: Cascade)
+  version         Int
+  snapshot        Json
+  changed_fields  Json
+  revised_by_id   String              @db.Uuid
+  revised_by      Profile             @relation("VisitObgynEncounterRevisedBy", fields: [revised_by_id], references: [id], onDelete: Cascade)
+  revised_at      DateTime            @default(now())
+  revision_reason String?
+
+  @@index([entity_id, version])
+  @@map("visit_obgyn_encounter_revisions")
+}
+
+model PregnancyJourneyRecordRevision {
+  id              String                 @id @default(uuid()) @db.Uuid
+  entity_id       String                 @db.Uuid
+  entity          PregnancyJourneyRecord @relation(fields: [entity_id], references: [id], onDelete: Cascade)
+  version         Int
+  snapshot        Json
+  changed_fields  Json
+  revised_by_id   String                 @db.Uuid
+  revised_by      Profile                @relation("PregnancyJourneyRecordRevisedBy", fields: [revised_by_id], references: [id], onDelete: Cascade)
+  revised_at      DateTime               @default(now())
+  revision_reason String?
+
+  @@index([entity_id, version])
+  @@map("pregnancy_journey_record_revisions")
+}
+
+model PregnancyEpisodeRecordRevision {
+  id              String                 @id @default(uuid()) @db.Uuid
+  entity_id       String                 @db.Uuid
+  entity          PregnancyEpisodeRecord @relation(fields: [entity_id], references: [id], onDelete: Cascade)
+  version         Int
+  snapshot        Json
+  changed_fields  Json
+  revised_by_id   String                 @db.Uuid
+  revised_by      Profile                @relation("PregnancyEpisodeRecordRevisedBy", fields: [revised_by_id], references: [id], onDelete: Cascade)
+  revised_at      DateTime               @default(now())
+  revision_reason String?
+
+  @@index([entity_id, version])
+  @@map("pregnancy_episode_record_revisions")
+}
+
+model VisitPregnancyRecordRevision {
+  id              String               @id @default(uuid()) @db.Uuid
+  entity_id       String               @db.Uuid
+  entity          VisitPregnancyRecord @relation(fields: [entity_id], references: [id], onDelete: Cascade)
+  version         Int
+  snapshot        Json
+  changed_fields  Json
+  revised_by_id   String               @db.Uuid
+  revised_by      Profile              @relation("VisitPregnancyRecordRevisedBy", fields: [revised_by_id], references: [id], onDelete: Cascade)
+  revised_at      DateTime             @default(now())
+  revision_reason String?
+
+  @@index([entity_id, version])
+  @@map("visit_pregnancy_record_revisions")
 }

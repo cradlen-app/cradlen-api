@@ -4,7 +4,14 @@ import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { assertVersionMatches } from '@common/decorators/if-match.decorator';
 import { ERROR_CODES } from '@common/constant/error-codes';
+import { EventBus } from '@infrastructure/messaging/event-bus';
+import {
+  CLINICAL_EVENTS,
+  type PregnancyBookedEvent,
+  type PregnancyRiskLevelChangedEvent,
+} from '@core/clinical/events/events.public';
 import { ObgynPatientAccessService } from '../patient-access.service';
+import { buildRevision } from '../revisions.helper';
 
 const PREGNANCY_CARE_PATH_CODE = 'OBGYN_PREGNANCY';
 
@@ -27,6 +34,7 @@ export class PregnancyService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly access: ObgynPatientAccessService,
+    private readonly eventBus: EventBus,
   ) {}
 
   // ---------- Journey-level snapshot ----------
@@ -41,9 +49,26 @@ export class PregnancyService {
       });
     if (existing) return existing;
 
-    return this.prismaService.db.pregnancyJourneyRecord.create({
+    const created = await this.prismaService.db.pregnancyJourneyRecord.create({
       data: { journey_id: journeyId, updated_by_id: user.profileId },
     });
+    // First-time creation = the pregnancy is booked into the system.
+    const patient = await this.prismaService.db.patientJourney.findUnique({
+      where: { id: journeyId },
+      select: { patient_id: true },
+    });
+    if (patient) {
+      this.eventBus.publish<PregnancyBookedEvent>(
+        CLINICAL_EVENTS.pregnancy.booked,
+        {
+          journey_id: journeyId,
+          patient_id: patient.patient_id,
+          lmp: created.lmp,
+          risk_level: created.risk_level,
+        },
+      );
+    }
+    return created;
   }
 
   async patchJourneyRecord(
@@ -58,14 +83,36 @@ export class PregnancyService {
     const current = await this.getJourneyRecord(journeyId, user);
     assertVersionMatches(ifMatchVersion, current.version);
 
-    return this.prismaService.db.pregnancyJourneyRecord.update({
-      where: { id: current.id },
-      data: {
-        ...this.toJourneyData(patch),
-        version: { increment: 1 },
-        updated_by_id: user.profileId,
-      },
+    const data = this.toJourneyData(patch);
+    const changedFields = Object.keys(data);
+
+    const updated = await this.prismaService.db.$transaction(async (tx) => {
+      await tx.pregnancyJourneyRecordRevision.create({
+        data: buildRevision(current, changedFields, user.profileId),
+      });
+      return tx.pregnancyJourneyRecord.update({
+        where: { id: current.id },
+        data: {
+          ...data,
+          version: { increment: 1 },
+          updated_by_id: user.profileId,
+        },
+      });
     });
+
+    if ('risk_level' in patch && patch['risk_level'] !== current.risk_level) {
+      this.eventBus.publish<PregnancyRiskLevelChangedEvent>(
+        CLINICAL_EVENTS.pregnancy.riskLevelChanged,
+        {
+          journey_id: journeyId,
+          previous_risk_level: current.risk_level,
+          new_risk_level: updated.risk_level,
+          updated_by_id: user.profileId,
+        },
+      );
+    }
+
+    return updated;
   }
 
   private toJourneyData(
@@ -128,21 +175,32 @@ export class PregnancyService {
     const current = await this.getEpisodeRecord(episodeId, user);
     assertVersionMatches(ifMatchVersion, current.version);
 
+    const changed: string[] = [];
     const data: Prisma.PregnancyEpisodeRecordUncheckedUpdateInput = {
       version: { increment: 1 },
       updated_by_id: user.profileId,
     };
-    if (patch.anomaly_scan !== undefined)
+    if (patch.anomaly_scan !== undefined) {
       data.anomaly_scan = patch.anomaly_scan as Prisma.InputJsonValue;
-    if (patch.gtt_result !== undefined)
+      changed.push('anomaly_scan');
+    }
+    if (patch.gtt_result !== undefined) {
       data.gtt_result = patch.gtt_result as Prisma.InputJsonValue;
+      changed.push('gtt_result');
+    }
     if (patch.trimester_summary !== undefined) {
       data.trimester_summary = patch.trimester_summary as Prisma.InputJsonValue;
+      changed.push('trimester_summary');
     }
 
-    return this.prismaService.db.pregnancyEpisodeRecord.update({
-      where: { id: current.id },
-      data,
+    return this.prismaService.db.$transaction(async (tx) => {
+      await tx.pregnancyEpisodeRecordRevision.create({
+        data: buildRevision(current, changed, user.profileId),
+      });
+      return tx.pregnancyEpisodeRecord.update({
+        where: { id: current.id },
+        data,
+      });
     });
   }
 
@@ -174,14 +232,24 @@ export class PregnancyService {
     assertVersionMatches(ifMatchVersion, current.version);
 
     const data = this.toVisitData(section, patch);
-    return this.prismaService.db.visitPregnancyRecord.update({
-      where: { id: current.id },
-      data: {
-        ...data,
-        version: { increment: 1 },
-        updated_by_id: user.profileId,
-      },
+    const changedFields = Object.keys(data);
+
+    return this.prismaService.db.$transaction(async (tx) => {
+      await tx.visitPregnancyRecordRevision.create({
+        data: buildRevision(current, changedFields, user.profileId),
+      });
+      return tx.visitPregnancyRecord.update({
+        where: { id: current.id },
+        data: {
+          ...data,
+          version: { increment: 1 },
+          updated_by_id: user.profileId,
+        },
+      });
     });
+    // Note: no per-section event for visit pregnancy records — high frequency,
+    // low value to downstream consumers. The revision row is sufficient audit
+    // and subscribers can poll the latest record when they need it.
   }
 
   private async assertVisitOnPregnancyJourney(

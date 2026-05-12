@@ -10,6 +10,12 @@ import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { ERROR_CODES } from '@common/constant/error-codes';
 import { assertVersionMatches } from '@common/decorators/if-match.decorator';
+import { EventBus } from '@infrastructure/messaging/event-bus';
+import {
+  CLINICAL_EVENTS,
+  type EncounterAmendedEvent,
+} from '@core/clinical/events/events.public';
+import { buildRevision } from '../revisions.helper';
 import {
   AmendmentResultDto,
   AmendmentTarget,
@@ -97,7 +103,10 @@ const PREGNANCY_VISIT_COLUMNS: Record<
  */
 @Injectable()
 export class AmendmentsService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly eventBus: EventBus,
+  ) {}
 
   async createForVisit(
     visitId: string,
@@ -211,13 +220,29 @@ export class AmendmentsService {
     }
     assertVersionMatches(ifMatchVersion, current.version);
 
-    const updated = await this.prismaService.db.visitObgynEncounter.update({
-      where: { id: current.id },
-      data: {
-        [section]: dto.changes as Prisma.InputJsonValue,
-        version: { increment: 1 },
-        updated_by_id: user.profileId,
-      } as unknown as Prisma.VisitObgynEncounterUncheckedUpdateInput,
+    const updated = await this.prismaService.db.$transaction(async (tx) => {
+      await tx.visitObgynEncounterRevision.create({
+        data: buildRevision(current, [section], user.profileId, dto.reason),
+      });
+      return tx.visitObgynEncounter.update({
+        where: { id: current.id },
+        data: {
+          [section]: dto.changes as Prisma.InputJsonValue,
+          version: { increment: 1 },
+          updated_by_id: user.profileId,
+        } as unknown as Prisma.VisitObgynEncounterUncheckedUpdateInput,
+      });
+    });
+
+    this.publishAmended({
+      visit_id: visitId,
+      patient_id: patientId,
+      target: 'obgyn_encounter',
+      section,
+      amended_by_id: user.profileId,
+      reason: dto.reason,
+      version_from: current.version,
+      version_to: updated.version,
     });
 
     return this.toResult('obgyn_encounter', section, {
@@ -276,9 +301,29 @@ export class AmendmentsService {
       }
     }
 
-    const updated = await this.prismaService.db.visitPregnancyRecord.update({
-      where: { id: current.id },
-      data,
+    const changedFields = Object.keys(data).filter(
+      (k) => k !== 'version' && k !== 'updated_by_id',
+    );
+
+    const updated = await this.prismaService.db.$transaction(async (tx) => {
+      await tx.visitPregnancyRecordRevision.create({
+        data: buildRevision(current, changedFields, user.profileId, dto.reason),
+      });
+      return tx.visitPregnancyRecord.update({
+        where: { id: current.id },
+        data,
+      });
+    });
+
+    this.publishAmended({
+      visit_id: visitId,
+      patient_id: patientId,
+      target: 'pregnancy_record',
+      section,
+      amended_by_id: user.profileId,
+      reason: dto.reason,
+      version_from: current.version,
+      version_to: updated.version,
     });
 
     return this.toResult('pregnancy_record', section, {
@@ -289,6 +334,13 @@ export class AmendmentsService {
       reason: dto.reason,
       user,
     });
+  }
+
+  private publishAmended(payload: EncounterAmendedEvent): void {
+    this.eventBus.publish<EncounterAmendedEvent>(
+      CLINICAL_EVENTS.encounter.amended,
+      payload,
+    );
   }
 
   private toResult(
