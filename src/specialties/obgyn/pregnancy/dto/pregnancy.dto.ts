@@ -132,3 +132,58 @@ export class VisitPregnancyRecordDto {
   visit_id!: string;
   version!: number;
 }
+
+/**
+ * Bulk PATCH body for the per-ANC pregnancy visit tab. Composes all the
+ * sub-sections (cervix, warning symptoms, fundal, amniotic/placenta,
+ * fetal lie, biometrics). Each is optional.
+ */
+export class UpdateVisitPregnancyRecordDto {
+  // Cervix
+  @IsOptional() @IsNumber() cervix_length_mm?: number;
+  @IsOptional() @IsNumber() cervix_dilatation_cm?: number;
+  @IsOptional() @IsInt() @Min(0) @Max(100) cervix_effacement_pct?: number;
+  @IsOptional()
+  @IsIn(['ANTERIOR', 'MID', 'POSTERIOR'])
+  cervix_position?: string;
+  @IsOptional() @IsIn(['INTACT', 'RUPTURED', 'BULGING']) membranes?: string;
+
+  // Warning symptoms (single JSON column)
+  @IsOptional() @IsObject() warning_symptoms?: WarningSymptomsDto;
+
+  // Fundal
+  @IsOptional() @IsNumber() fundal_height_cm?: number;
+  @IsOptional()
+  @IsIn(['YES', 'NO', 'LARGER', 'SMALLER'])
+  fundal_corresponds_ga?: string;
+
+  // Amniotic & placenta
+  @IsOptional() @IsIn(['NORMAL', 'OLIGO', 'POLY']) amniotic_fluid?: string;
+  @IsOptional()
+  @IsIn(['ANTERIOR', 'POSTERIOR', 'FUNDAL', 'PREVIA'])
+  placenta_location?: string;
+  @IsOptional() @IsInt() @Min(0) @Max(3) placenta_grade?: number;
+
+  // Fetal lie
+  @IsOptional()
+  @IsIn(['LONGITUDINAL', 'TRANSVERSE', 'OBLIQUE'])
+  fetal_lie?: string;
+  @IsOptional() @IsIn(['CEPHALIC', 'BREECH', 'SHOULDER']) presentation?: string;
+  @IsOptional()
+  @IsIn(['ENGAGED', 'NOT_ENGAGED', 'PARTIAL'])
+  engagement?: string;
+
+  // Biometrics
+  @IsOptional() @IsInt() fetal_heart_rate_bpm?: number;
+  @IsOptional() @IsIn(['REGULAR', 'IRREGULAR', 'ABSENT']) fetal_rhythm?: string;
+  @IsOptional()
+  @IsIn(['PRESENT', 'REDUCED', 'ABSENT'])
+  fetal_movements?: string;
+  @IsOptional() @IsNumber() bpd_mm?: number;
+  @IsOptional() @IsNumber() hc_mm?: number;
+  @IsOptional() @IsNumber() ac_mm?: number;
+  @IsOptional() @IsNumber() fl_mm?: number;
+  @IsOptional() @IsNumber() efw_g?: number;
+  @IsOptional() @IsInt() @Min(0) @Max(100) growth_percentile?: number;
+  @IsOptional() @IsIn(['AGA', 'SGA', 'LGA', 'IUGR']) growth_impression?: string;
+}

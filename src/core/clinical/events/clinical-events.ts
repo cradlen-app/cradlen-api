@@ -53,7 +53,8 @@ export const CLINICAL_EVENTS = {
 export interface PatientHistoryUpdatedEvent {
   patient_id: string;
   specialty: string;
-  section_code: string;
+  /** Section codes that changed in this PATCH. May be one or many. */
+  section_codes: string[];
   updated_by_id: string;
   version: number;
 }

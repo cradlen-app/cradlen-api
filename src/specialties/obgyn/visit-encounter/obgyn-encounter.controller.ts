@@ -18,25 +18,9 @@ import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { EncounterMutationGuard } from '@core/clinical/visits/visits.public';
 import { ObgynEncounterService } from './obgyn-encounter.service';
 import {
-  AbdominalFindingsDto,
-  BreastFindingsDto,
-  CardiovascularFindingsDto,
-  ExtremitiesFindingsDto,
-  GeneralFindingsDto,
-  MenstrualFindingsDto,
-  NeurologicalFindingsDto,
-  PelvicFindingsDto,
-  RespiratoryFindingsDto,
-  SkinFindingsDto,
+  UpdateObgynEncounterDto,
   VisitObgynEncounterDto,
 } from './dto/obgyn-encounter.dto';
-
-const IF_MATCH = {
-  name: 'If-Match',
-  required: true,
-  description:
-    'Optimistic concurrency token. Echo the row\'s current `version` as `"version:N"`.',
-};
 
 @ApiTags('OB/GYN — Visit Encounter')
 @Controller('visits/:id/obgyn-encounter')
@@ -53,165 +37,26 @@ export class ObgynEncounterController {
     return this.service.get(id, user);
   }
 
-  @Patch('general')
+  /**
+   * Save the entire OB/GYN examination tab in one request. Locked once the
+   * parent visit is closed (`@LocksOnClosedVisit`); use the amendment flow
+   * after that.
+   */
+  @Patch()
   @LocksOnClosedVisit('id')
-  @ApiHeader(IF_MATCH)
-  patchGeneral(
+  @ApiHeader({
+    name: 'If-Match',
+    required: true,
+    description:
+      'Optimistic concurrency token. Echo the row\'s current `version` as `"version:N"`.',
+  })
+  @ApiStandardResponse(VisitObgynEncounterDto)
+  patch(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: GeneralFindingsDto,
+    @Body() dto: UpdateObgynEncounterDto,
     @IfMatchVersion() version: number,
     @CurrentUser() user: AuthContext,
   ) {
-    return this.service.patchSection(
-      id,
-      'general_findings',
-      dto,
-      version,
-      user,
-    );
-  }
-
-  @Patch('cardiovascular')
-  @LocksOnClosedVisit('id')
-  @ApiHeader(IF_MATCH)
-  patchCardiovascular(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: CardiovascularFindingsDto,
-    @IfMatchVersion() version: number,
-    @CurrentUser() user: AuthContext,
-  ) {
-    return this.service.patchSection(
-      id,
-      'cardiovascular_findings',
-      dto,
-      version,
-      user,
-    );
-  }
-
-  @Patch('respiratory')
-  @LocksOnClosedVisit('id')
-  @ApiHeader(IF_MATCH)
-  patchRespiratory(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: RespiratoryFindingsDto,
-    @IfMatchVersion() version: number,
-    @CurrentUser() user: AuthContext,
-  ) {
-    return this.service.patchSection(
-      id,
-      'respiratory_findings',
-      dto,
-      version,
-      user,
-    );
-  }
-
-  @Patch('menstrual')
-  @LocksOnClosedVisit('id')
-  @ApiHeader(IF_MATCH)
-  patchMenstrual(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: MenstrualFindingsDto,
-    @IfMatchVersion() version: number,
-    @CurrentUser() user: AuthContext,
-  ) {
-    return this.service.patchSection(
-      id,
-      'menstrual_findings',
-      dto,
-      version,
-      user,
-    );
-  }
-
-  @Patch('abdominal')
-  @LocksOnClosedVisit('id')
-  @ApiHeader(IF_MATCH)
-  patchAbdominal(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: AbdominalFindingsDto,
-    @IfMatchVersion() version: number,
-    @CurrentUser() user: AuthContext,
-  ) {
-    return this.service.patchSection(
-      id,
-      'abdominal_findings',
-      dto,
-      version,
-      user,
-    );
-  }
-
-  @Patch('pelvic')
-  @LocksOnClosedVisit('id')
-  @ApiHeader(IF_MATCH)
-  patchPelvic(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: PelvicFindingsDto,
-    @IfMatchVersion() version: number,
-    @CurrentUser() user: AuthContext,
-  ) {
-    return this.service.patchSection(id, 'pelvic_findings', dto, version, user);
-  }
-
-  @Patch('breast')
-  @LocksOnClosedVisit('id')
-  @ApiHeader(IF_MATCH)
-  patchBreast(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: BreastFindingsDto,
-    @IfMatchVersion() version: number,
-    @CurrentUser() user: AuthContext,
-  ) {
-    return this.service.patchSection(id, 'breast_findings', dto, version, user);
-  }
-
-  @Patch('extremities')
-  @LocksOnClosedVisit('id')
-  @ApiHeader(IF_MATCH)
-  patchExtremities(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: ExtremitiesFindingsDto,
-    @IfMatchVersion() version: number,
-    @CurrentUser() user: AuthContext,
-  ) {
-    return this.service.patchSection(
-      id,
-      'extremities_findings',
-      dto,
-      version,
-      user,
-    );
-  }
-
-  @Patch('neurological')
-  @LocksOnClosedVisit('id')
-  @ApiHeader(IF_MATCH)
-  patchNeurological(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: NeurologicalFindingsDto,
-    @IfMatchVersion() version: number,
-    @CurrentUser() user: AuthContext,
-  ) {
-    return this.service.patchSection(
-      id,
-      'neurological_findings',
-      dto,
-      version,
-      user,
-    );
-  }
-
-  @Patch('skin')
-  @LocksOnClosedVisit('id')
-  @ApiHeader(IF_MATCH)
-  patchSkin(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: SkinFindingsDto,
-    @IfMatchVersion() version: number,
-    @CurrentUser() user: AuthContext,
-  ) {
-    return this.service.patchSection(id, 'skin_findings', dto, version, user);
+    return this.service.patch(id, dto, version, user);
   }
 }
