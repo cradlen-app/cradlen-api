@@ -32,6 +32,8 @@ Table organizations {
   patient_history_notes patient_history_notes [not null]
   care_paths care_paths [not null]
   care_path_episodes care_path_episodes [not null]
+  medical_reps medical_reps [not null]
+  medical_rep_visits medical_rep_visits [not null]
 }
 
 Table branches {
@@ -53,6 +55,7 @@ Table branches {
   invitationBranches invitation_branches [not null]
   workingSchedules working_schedules [not null]
   visits visits [not null]
+  medical_rep_visits medical_rep_visits [not null]
 
   indexes {
     (id, organization_id) [unique]
@@ -166,6 +169,10 @@ Table profiles {
   pregnancy_journey_revisions pregnancy_journey_record_revisions [not null]
   pregnancy_episode_revisions pregnancy_episode_record_revisions [not null]
   visit_pregnancy_revisions visit_pregnancy_record_revisions [not null]
+  form_templates_created form_templates [not null]
+  form_templates_updated form_templates [not null]
+  medical_rep_visits_doctor medical_rep_visits [not null]
+  medical_rep_visits_created medical_rep_visits [not null]
 
   indexes {
     (user_id, organization_id) [unique]
@@ -365,6 +372,7 @@ Table specialties {
   org_links organization_specialties [not null]
   inv_links invitation_specialties [not null]
   lab_tests lab_tests [not null]
+  form_templates form_templates [not null]
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   is_deleted Boolean [not null, default: false]
@@ -472,6 +480,7 @@ Table patients {
   date_of_birth DateTime [not null]
   phone_number String [not null]
   address String [not null]
+  marital_status MaritalStatus [not null, default: 'UNKNOWN']
   gynecological_baseline Json
   gynecologic_procedures Json
   screening_history Json
@@ -550,7 +559,7 @@ Table visits {
   branch branches [not null]
   created_by_id String [not null]
   created_by profiles [not null]
-  visit_type VisitType [not null]
+  appointment_type AppointmentType [not null]
   priority VisitPriority [not null]
   status VisitStatus [not null, default: 'SCHEDULED']
   scheduled_at DateTime [not null]
@@ -586,6 +595,8 @@ Table medications {
   added_by profiles
   items prescription_items [not null]
   patient_medications patient_medications [not null]
+  medical_rep_links medical_rep_medications [not null]
+  medical_rep_visit_links medical_rep_visit_medications [not null]
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
@@ -878,7 +889,8 @@ Table patient_guardians {
   patient patients [not null]
   guardian_id String [not null]
   guardian guardians [not null]
-  relationship String [not null]
+  relation_to_patient GuardianRelation [not null]
+  relationship_note String
   is_primary Boolean [not null, default: false]
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
@@ -1130,6 +1142,140 @@ Table visit_pregnancy_record_revisions {
   revision_reason String
 }
 
+Table form_templates {
+  id String [pk]
+  code String [not null]
+  name String [not null]
+  description String
+  scope FormScope [not null]
+  version Int [not null, default: 1]
+  status FormTemplateStatus [not null, default: 'DRAFT']
+  published_at DateTime
+  is_active Boolean [not null, default: false]
+  activated_at DateTime
+  specialty_id String
+  specialty specialties
+  created_by_id String
+  created_by profiles
+  updated_by_id String
+  updated_by profiles
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  sections form_sections [not null]
+
+  indexes {
+    (code, version) [unique]
+  }
+}
+
+Table form_sections {
+  id String [pk]
+  form_template_id String [not null]
+  form_template form_templates [not null]
+  code String [not null]
+  name String [not null]
+  order Int [not null]
+  config Json [not null, default: '{"ui":{},"validation":{},"logic":{}}']
+  is_deleted Boolean [not null, default: false]
+  fields form_fields [not null]
+
+  indexes {
+    (form_template_id, code) [unique]
+  }
+}
+
+Table form_fields {
+  id String [pk]
+  section_id String [not null]
+  section form_sections [not null]
+  code String [not null]
+  label String [not null]
+  type FormFieldType [not null]
+  order Int [not null]
+  required Boolean [not null, default: false]
+  binding_namespace BindingNamespace
+  binding_path String
+  config Json [not null, default: '{"ui":{},"validation":{},"logic":{}}']
+  is_deleted Boolean [not null, default: false]
+
+  indexes {
+    (section_id, code) [unique]
+  }
+}
+
+Table medical_reps {
+  id String [pk]
+  organization_id String [not null]
+  organization organizations [not null]
+  full_name String [not null]
+  national_id String
+  phone_number String
+  email String
+  company_name String [not null]
+  notes String
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  medications medical_rep_medications [not null]
+  visits medical_rep_visits [not null]
+
+  indexes {
+    (organization_id, national_id) [unique]
+  }
+}
+
+Table medical_rep_medications {
+  id String [pk]
+  medical_rep_id String [not null]
+  medical_rep medical_reps [not null]
+  medication_id String [not null]
+  medication medications [not null]
+  created_at DateTime [default: `now()`, not null]
+
+  indexes {
+    (medical_rep_id, medication_id) [unique]
+  }
+}
+
+Table medical_rep_visits {
+  id String [pk]
+  medical_rep_id String [not null]
+  medical_rep medical_reps [not null]
+  organization_id String [not null]
+  organization organizations [not null]
+  branch_id String [not null]
+  branch branches [not null]
+  assigned_doctor_id String [not null]
+  assigned_doctor profiles [not null]
+  created_by_id String [not null]
+  created_by profiles [not null]
+  scheduled_at DateTime [not null]
+  status MedicalRepVisitStatus [not null, default: 'SCHEDULED']
+  priority VisitPriority [not null, default: 'NORMAL']
+  notes String
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  medications medical_rep_visit_medications [not null]
+}
+
+Table medical_rep_visit_medications {
+  id String [pk]
+  medical_rep_visit_id String [not null]
+  medical_rep_visit medical_rep_visits [not null]
+  medication_id String [not null]
+  medication medications [not null]
+  discussion_notes String
+
+  indexes {
+    (medical_rep_visit_id, medication_id) [unique]
+  }
+}
+
 Enum RegistrationStatus {
   PENDING
   ACTIVE
@@ -1199,10 +1345,73 @@ Enum EpisodeStatus {
   COMPLETED
 }
 
-Enum VisitType {
+Enum AppointmentType {
   VISIT
   FOLLOW_UP
+}
+
+Enum MaritalStatus {
+  SINGLE
+  MARRIED
+  DIVORCED
+  WIDOWED
+  SEPARATED
+  ENGAGED
+  UNKNOWN
+}
+
+Enum GuardianRelation {
+  SPOUSE
+  PARENT
+  CHILD
+  SIBLING
+  GUARDIAN_LEGAL
+  OTHER
+}
+
+Enum FormScope {
+  BOOK_VISIT
+  ENCOUNTER
+  PATIENT_HISTORY
+}
+
+Enum FormTemplateStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+Enum FormFieldType {
+  TEXT
+  TEXTAREA
+  NUMBER
+  DECIMAL
+  DATE
+  DATETIME
+  BOOLEAN
+  SELECT
+  MULTISELECT
+  ENTITY_SEARCH
+  COMPUTED
+}
+
+Enum BindingNamespace {
+  PATIENT
+  VISIT
+  INTAKE
+  GUARDIAN
   MEDICAL_REP
+  LOOKUP
+  SYSTEM
+  COMPUTED
+}
+
+Enum MedicalRepVisitStatus {
+  SCHEDULED
+  CHECKED_IN
+  COMPLETED
+  CANCELLED
+  NO_SHOW
 }
 
 Enum VisitPriority {
@@ -1495,3 +1704,33 @@ Ref: pregnancy_episode_record_revisions.revised_by_id > profiles.id [delete: Cas
 Ref: visit_pregnancy_record_revisions.entity_id > visit_pregnancy_records.id [delete: Cascade]
 
 Ref: visit_pregnancy_record_revisions.revised_by_id > profiles.id [delete: Cascade]
+
+Ref: form_templates.specialty_id > specialties.id [delete: Set Null]
+
+Ref: form_templates.created_by_id > profiles.id [delete: Set Null]
+
+Ref: form_templates.updated_by_id > profiles.id [delete: Set Null]
+
+Ref: form_sections.form_template_id > form_templates.id [delete: Cascade]
+
+Ref: form_fields.section_id > form_sections.id [delete: Cascade]
+
+Ref: medical_reps.organization_id > organizations.id [delete: Cascade]
+
+Ref: medical_rep_medications.medical_rep_id > medical_reps.id [delete: Cascade]
+
+Ref: medical_rep_medications.medication_id > medications.id [delete: Cascade]
+
+Ref: medical_rep_visits.medical_rep_id > medical_reps.id [delete: Cascade]
+
+Ref: medical_rep_visits.organization_id > organizations.id [delete: Cascade]
+
+Ref: medical_rep_visits.branch_id > branches.id [delete: Cascade]
+
+Ref: medical_rep_visits.assigned_doctor_id > profiles.id [delete: Cascade]
+
+Ref: medical_rep_visits.created_by_id > profiles.id [delete: Cascade]
+
+Ref: medical_rep_visit_medications.medical_rep_visit_id > medical_rep_visits.id [delete: Cascade]
+
+Ref: medical_rep_visit_medications.medication_id > medications.id [delete: Cascade]

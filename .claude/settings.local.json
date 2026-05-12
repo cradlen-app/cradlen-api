@@ -52,7 +52,15 @@
       "Read(//tmp/**)",
       "Bash(echo \"---ex:$?\")",
       "Bash(git show *)",
-      "Bash(node -e \"const p = require\\('path'\\); console.log\\(p.resolve\\('./src/core/clinical/visits/visits.public.ts'\\)\\)\")"
+      "Bash(node -e \"const p = require\\('path'\\); console.log\\(p.resolve\\('./src/core/clinical/visits/visits.public.ts'\\)\\)\")",
+      "Bash(git log *)",
+      "Bash(mkdir -p prisma/migrations/20260513120000_builder_marital_medical_rep_appointment_type)",
+      "Bash(tee prisma/migrations/20260513120000_builder_marital_medical_rep_appointment_type/migration.sql)",
+      "Bash(git reset *)",
+      "Bash(gh pr create --draft --base development --head feature/builder-obgyn-template --title 'feat\\(builder\\): OB/GYN book-visit template — schema + builder DSL layer \\(WIP, 2/3 commits\\)' --body ' *)",
+      "Bash(gh pr *)",
+      "Bash(npx tsx *)",
+      "Bash(DEBUG_CONTRACT=1 npx jest src/builder/fields/allowed-paths.contract.spec.ts -t sanity)"
     ],
     "additionalDirectories": [
       "\\tmp"
