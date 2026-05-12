@@ -19,6 +19,7 @@
       "@builder/*": ["src/builder/*"],
       "@core/*": ["src/core/*"],
       "@plugins/*": ["src/plugins/*"],
+      "@specialties/*": ["src/specialties/*"],
       "@config/*": ["src/config/*"]
     },
     "incremental": true,

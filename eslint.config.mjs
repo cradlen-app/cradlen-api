@@ -74,6 +74,43 @@ export default tseslint.config(
               message:
                 'plugins may only import from core via *.module.ts or *.public.ts files.',
             },
+            // Specialty modules — OB/GYN, pediatric, physio, etc. — are first-class
+            // domain code, not cross-cutting plugins. They live under src/specialties/
+            // and follow the same import-boundary rule as plugins.
+            {
+              target: './src/infrastructure',
+              from: './src/specialties',
+              message: 'infrastructure must not import from specialties.',
+            },
+            {
+              target: './src/builder',
+              from: './src/specialties',
+              message: 'builder must not import from specialties.',
+            },
+            {
+              target: './src/core',
+              from: './src/specialties',
+              message: 'core must not import from specialties.',
+            },
+            {
+              target: './src/plugins',
+              from: './src/specialties',
+              message:
+                'plugins and specialties are sibling layers and must not import from each other.',
+            },
+            {
+              target: './src/specialties',
+              from: './src/plugins',
+              message:
+                'specialties and plugins are sibling layers and must not import from each other.',
+            },
+            {
+              target: './src/specialties',
+              from: './src/core',
+              except: ['**/*.module.ts', '**/*.public.ts'],
+              message:
+                'specialties may only import from core via *.module.ts or *.public.ts files.',
+            },
           ],
         },
       ],
