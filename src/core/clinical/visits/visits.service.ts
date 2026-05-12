@@ -158,7 +158,7 @@ export class VisitsService {
           episode_id: episodeId,
           assigned_doctor_id: dto.assigned_doctor_id,
           branch_id: branchId,
-          visit_type: dto.visit_type,
+          appointment_type: dto.appointment_type,
           priority: dto.priority,
           scheduled_at: new Date(dto.scheduled_at),
           created_by_id: user.profileId,
@@ -293,7 +293,7 @@ export class VisitsService {
           episode_id: episode.id,
           assigned_doctor_id: dto.assigned_doctor_id,
           branch_id: branchId,
-          visit_type: dto.visit_type,
+          appointment_type: dto.appointment_type,
           priority: dto.priority,
           scheduled_at: new Date(dto.scheduled_at),
           created_by_id: user.profileId,
@@ -597,7 +597,9 @@ export class VisitsService {
             assigned_doctor_id: dto.assigned_doctor_id,
           }),
           ...(dto.branch_id !== undefined && { branch_id: dto.branch_id }),
-          ...(dto.visit_type !== undefined && { visit_type: dto.visit_type }),
+          ...(dto.appointment_type !== undefined && {
+            appointment_type: dto.appointment_type,
+          }),
           ...(dto.priority !== undefined && { priority: dto.priority }),
           ...(dto.scheduled_at !== undefined && {
             scheduled_at: new Date(dto.scheduled_at),
