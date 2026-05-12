@@ -2,39 +2,39 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { EventEmitterModule } from '@nestjs/event-emitter';
 import { SentryModule } from '@sentry/nestjs/setup';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
 import authConfig from './config/auth.config';
-import { DatabaseModule } from './database/database.module';
-import { HealthModule } from './modules/health/health.module';
-import { AuthModule } from './modules/auth/auth.module';
-import { RolesModule } from './modules/roles/roles.module';
-import { OrganizationsModule } from './modules/organizations/organizations.module.js';
-import { BranchesModule } from './modules/branches/branches.module.js';
-import { ProfilesModule } from './modules/profiles/profiles.module.js';
-import { InvitationsModule } from './modules/invitations/invitations.module.js';
-import { StaffModule } from './modules/staff/staff.module.js';
-import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module.js';
-import { NotificationsModule } from './modules/notifications/notifications.module.js';
-import { SpecialtiesModule } from './modules/specialties/specialties.module';
-import { JobFunctionsModule } from './modules/job-functions/job-functions.module';
-import { JourneyTemplatesModule } from './modules/journey-templates/journey-templates.module';
-import { PatientsModule } from './modules/patients/patients.module';
-import { JourneysModule } from './modules/journeys/journeys.module';
-import { VisitsModule } from './modules/visits/visits.module';
-import { MedicationsModule } from './modules/medications/medications.module';
-import { LabTestsModule } from './modules/lab-tests/lab-tests.module';
-import { ClinicalModule } from './modules/clinical/clinical.module';
-import { PatientHistoryModule } from './modules/patient-history/patient-history.module';
+import { DatabaseModule } from '@infrastructure/database/database.module';
+import { MessagingModule } from '@infrastructure/messaging/messaging.module';
+import { HealthModule } from '@core/health/health.module';
+import { AuthModule } from '@core/auth/auth.module';
+import { RolesModule } from '@core/org/roles/roles.module';
+import { OrganizationsModule } from '@core/org/organizations/organizations.module.js';
+import { BranchesModule } from '@core/org/branches/branches.module.js';
+import { ProfilesModule } from '@core/org/profiles/profiles.module.js';
+import { InvitationsModule } from '@core/org/invitations/invitations.module.js';
+import { StaffModule } from '@core/org/staff/staff.module.js';
+import { SubscriptionsModule } from '@core/org/subscriptions/subscriptions.module.js';
+import { NotificationsModule } from '@core/notifications/notifications.module.js';
+import { SpecialtiesModule } from '@core/org/specialties/specialties.module';
+import { JobFunctionsModule } from '@core/org/job-functions/job-functions.module';
+import { JourneyTemplatesModule } from '@core/clinical/journey-templates/journey-templates.module';
+import { PatientsModule } from '@core/patient/patients/patients.module';
+import { JourneysModule } from '@core/clinical/journeys/journeys.module';
+import { VisitsModule } from '@core/clinical/visits/visits.module';
+import { MedicationsModule } from '@core/clinical/medications/medications.module';
+import { LabTestsModule } from '@core/clinical/lab-tests/lab-tests.module';
+import { ClinicalModule } from '@core/clinical/clinical/clinical.module';
+import { PatientHistoryModule } from '@core/clinical/patient-history/patient-history.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import type { AppConfig } from './config/app.config';
 
 @Module({
   imports: [
     SentryModule.forRoot(),
-    EventEmitterModule.forRoot({ wildcard: false, ignoreErrors: true }),
+    MessagingModule,
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: [`.env.${process.env.NODE_ENV ?? 'development'}`, '.env'],

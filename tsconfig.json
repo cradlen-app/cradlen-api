@@ -13,6 +13,14 @@
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
+    "paths": {
+      "@common/*": ["src/common/*"],
+      "@infrastructure/*": ["src/infrastructure/*"],
+      "@builder/*": ["src/builder/*"],
+      "@core/*": ["src/core/*"],
+      "@plugins/*": ["src/plugins/*"],
+      "@config/*": ["src/config/*"]
+    },
     "incremental": true,
     "skipLibCheck": true,
     "strict": true,
