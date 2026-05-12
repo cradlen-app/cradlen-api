@@ -12,6 +12,7 @@
     "^@builder/(.*?)(\\.js)?$": "<rootDir>/src/builder/$1",
     "^@core/(.*?)(\\.js)?$": "<rootDir>/src/core/$1",
     "^@plugins/(.*?)(\\.js)?$": "<rootDir>/src/plugins/$1",
+    "^@specialties/(.*?)(\\.js)?$": "<rootDir>/src/specialties/$1",
     "^@config/(.*?)(\\.js)?$": "<rootDir>/src/config/$1"
   },
   "testEnvironment": "node",
