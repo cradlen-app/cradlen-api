@@ -178,6 +178,8 @@ model Organization {
   medications           Medication[]
   lab_tests             LabTest[]
   patient_history_notes PatientHistoryNote[]
+  care_paths            CarePath[]
+  care_path_episodes    CarePathEpisode[]
 
   @@index([status, is_deleted])
   @@map("organizations")
@@ -304,6 +306,20 @@ model Profile {
   history_contraceptives_added  PatientContraceptiveHistory[] @relation("ContraceptiveCreatedBy")
   history_surgeries_added       PatientNonGynSurgery[]        @relation("NonGynSurgeryCreatedBy")
   history_medications_added     PatientMedication[]           @relation("PatientMedicationCreatedBy")
+  // Updated-by back-relations (audit trail; PR4 will use these via revision shadow tables)
+  history_notes_updated         PatientHistoryNote[]          @relation("HistoryNoteUpdatedBy")
+  patient_obgyn_history_updates PatientObgynHistory[]         @relation("PatientObgynHistoryUpdatedBy")
+  visit_obgyn_encounter_updates VisitObgynEncounter[]         @relation("VisitObgynEncounterUpdatedBy")
+  pregnancy_journey_updates     PregnancyJourneyRecord[]      @relation("PregnancyJourneyRecordUpdatedBy")
+  pregnancy_episode_updates     PregnancyEpisodeRecord[]      @relation("PregnancyEpisodeRecordUpdatedBy")
+  visit_pregnancy_updates       VisitPregnancyRecord[]        @relation("VisitPregnancyRecordUpdatedBy")
+  visit_encounter_updates       VisitEncounter[]              @relation("VisitEncounterUpdatedBy")
+  prescription_updates          Prescription[]                @relation("PrescriptionUpdatedBy")
+  prescription_item_updates     PrescriptionItem[]            @relation("PrescriptionItemUpdatedBy")
+  investigation_updates         VisitInvestigation[]          @relation("VisitInvestigationUpdatedBy")
+  pregnancy_history_updates     PatientPregnancyHistory[]     @relation("PatientPregnancyHistoryUpdatedBy")
+  contraceptive_history_updates PatientContraceptiveHistory[] @relation("PatientContraceptiveHistoryUpdatedBy")
+  non_gyn_surgery_updates       PatientNonGynSurgery[]        @relation("PatientNonGynSurgeryUpdatedBy")
 
   @@unique([user_id, organization_id])
   @@index([organization_id, is_deleted])
@@ -512,35 +528,36 @@ model WorkingShift {
 }
 
 model Specialty {
-  id                  String                  @id @default(uuid()) @db.Uuid
-  name                String                  @unique
-  code                String                  @unique
-  description         String?
-  templates           JourneyTemplate[]
-  procedures          Procedure[]
-  profile_links       ProfileSpecialty[]
-  org_links           OrganizationSpecialty[]
-  inv_links           InvitationSpecialty[]
-  lab_tests           LabTest[]
-  created_at          DateTime                @default(now())
-  updated_at          DateTime                @updatedAt
-  is_deleted          Boolean                 @default(false)
-  deleted_at          DateTime?
+  id            String                  @id @default(uuid()) @db.Uuid
+  name          String                  @unique
+  code          String                  @unique
+  description   String?
+  templates     JourneyTemplate[]
+  care_paths    CarePath[]
+  procedures    Procedure[]
+  profile_links ProfileSpecialty[]
+  org_links     OrganizationSpecialty[]
+  inv_links     InvitationSpecialty[]
+  lab_tests     LabTest[]
+  created_at    DateTime                @default(now())
+  updated_at    DateTime                @updatedAt
+  is_deleted    Boolean                 @default(false)
+  deleted_at    DateTime?
 
   @@map("specialties")
 }
 
 model Procedure {
-  id              String          @id @default(uuid()) @db.Uuid
-  specialty_id    String          @db.Uuid
-  name            String
-  code            String          @unique
-  description     String?
-  specialty       Specialty       @relation(fields: [specialty_id], references: [id], onDelete: Cascade)
-  created_at      DateTime        @default(now())
-  updated_at      DateTime        @updatedAt
-  is_deleted      Boolean         @default(false)
-  deleted_at      DateTime?
+  id           String    @id @default(uuid()) @db.Uuid
+  specialty_id String    @db.Uuid
+  name         String
+  code         String    @unique
+  description  String?
+  specialty    Specialty @relation(fields: [specialty_id], references: [id], onDelete: Cascade)
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+  is_deleted   Boolean   @default(false)
+  deleted_at   DateTime?
 
   @@index([specialty_id])
   @@map("procedures")
@@ -665,6 +682,9 @@ model Patient {
   non_gyn_surgeries   PatientNonGynSurgery[]
   current_medications PatientMedication[]
   history_notes       PatientHistoryNote[]
+  guardian_links      PatientGuardian[]
+  guardian_record     Guardian?                     @relation("PatientGuardianRecord")
+  obgyn_history       PatientObgynHistory?
 
   created_at DateTime  @default(now())
   updated_at DateTime  @updatedAt
@@ -675,63 +695,71 @@ model Patient {
 }
 
 model PatientJourney {
-  id                  String           @id @default(uuid()) @db.Uuid
-  patient_id          String           @db.Uuid
-  patient             Patient          @relation(fields: [patient_id], references: [id], onDelete: Cascade)
-  organization_id     String           @db.Uuid
-  organization        Organization     @relation(fields: [organization_id], references: [id], onDelete: Cascade)
-  journey_template_id String           @db.Uuid
-  journey_template    JourneyTemplate  @relation(fields: [journey_template_id], references: [id], onDelete: Cascade)
-  created_by_id       String           @db.Uuid
-  created_by          Profile          @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
-  status              JourneyStatus    @default(ACTIVE)
-  started_at          DateTime         @default(now())
+  id                  String                  @id @default(uuid()) @db.Uuid
+  patient_id          String                  @db.Uuid
+  patient             Patient                 @relation(fields: [patient_id], references: [id], onDelete: Cascade)
+  organization_id     String                  @db.Uuid
+  organization        Organization            @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  journey_template_id String                  @db.Uuid
+  journey_template    JourneyTemplate         @relation(fields: [journey_template_id], references: [id], onDelete: Cascade)
+  care_path_id        String?                 @db.Uuid
+  care_path           CarePath?               @relation(fields: [care_path_id], references: [id], onDelete: SetNull)
+  created_by_id       String                  @db.Uuid
+  created_by          Profile                 @relation(fields: [created_by_id], references: [id], onDelete: Cascade)
+  status              JourneyStatus           @default(ACTIVE)
+  started_at          DateTime                @default(now())
   ended_at            DateTime?
   episodes            PatientEpisode[]
-  created_at          DateTime         @default(now())
-  updated_at          DateTime         @updatedAt
-  is_deleted          Boolean          @default(false)
+  pregnancy_record    PregnancyJourneyRecord?
+  created_at          DateTime                @default(now())
+  updated_at          DateTime                @updatedAt
+  is_deleted          Boolean                 @default(false)
   deleted_at          DateTime?
 
   @@index([patient_id, organization_id, is_deleted])
   @@index([organization_id, status, is_deleted])
+  @@index([care_path_id])
   @@map("patient_journeys")
 }
 
 model PatientEpisode {
-  id                  String          @id @default(uuid()) @db.Uuid
-  journey_id          String          @db.Uuid
-  journey             PatientJourney  @relation(fields: [journey_id], references: [id], onDelete: Cascade)
-  episode_template_id String          @db.Uuid
-  episode_template    EpisodeTemplate @relation(fields: [episode_template_id], references: [id], onDelete: Cascade)
-  name                String
-  order               Int
-  status              EpisodeStatus   @default(PENDING)
-  started_at          DateTime?
-  ended_at            DateTime?
-  visits              Visit[]
-  created_at          DateTime        @default(now())
-  updated_at          DateTime        @updatedAt
-  is_deleted          Boolean         @default(false)
-  deleted_at          DateTime?
+  id                   String                  @id @default(uuid()) @db.Uuid
+  journey_id           String                  @db.Uuid
+  journey              PatientJourney          @relation(fields: [journey_id], references: [id], onDelete: Cascade)
+  episode_template_id  String                  @db.Uuid
+  episode_template     EpisodeTemplate         @relation(fields: [episode_template_id], references: [id], onDelete: Cascade)
+  care_path_episode_id String?                 @db.Uuid
+  care_path_episode    CarePathEpisode?        @relation(fields: [care_path_episode_id], references: [id], onDelete: SetNull)
+  name                 String
+  order                Int
+  status               EpisodeStatus           @default(PENDING)
+  started_at           DateTime?
+  ended_at             DateTime?
+  visits               Visit[]
+  pregnancy_record     PregnancyEpisodeRecord?
+  created_at           DateTime                @default(now())
+  updated_at           DateTime                @updatedAt
+  is_deleted           Boolean                 @default(false)
+  deleted_at           DateTime?
 
   @@index([journey_id, is_deleted])
+  @@index([care_path_episode_id])
   @@map("patient_episodes")
 }
 
 model Visit {
-  id                 String               @id @default(uuid()) @db.Uuid
-  episode_id         String               @db.Uuid
-  episode            PatientEpisode       @relation(fields: [episode_id], references: [id], onDelete: Cascade)
-  assigned_doctor_id String               @db.Uuid
-  assigned_doctor    Profile              @relation("DoctorVisits", fields: [assigned_doctor_id], references: [id], onDelete: Cascade)
-  branch_id          String               @db.Uuid
-  branch             Branch               @relation(fields: [branch_id], references: [id], onDelete: Cascade)
-  created_by_id      String               @db.Uuid
-  created_by         Profile              @relation("CreatedVisits", fields: [created_by_id], references: [id], onDelete: Cascade)
+  id                 String                @id @default(uuid()) @db.Uuid
+  episode_id         String                @db.Uuid
+  episode            PatientEpisode        @relation(fields: [episode_id], references: [id], onDelete: Cascade)
+  assigned_doctor_id String                @db.Uuid
+  assigned_doctor    Profile               @relation("DoctorVisits", fields: [assigned_doctor_id], references: [id], onDelete: Cascade)
+  branch_id          String                @db.Uuid
+  branch             Branch                @relation(fields: [branch_id], references: [id], onDelete: Cascade)
+  created_by_id      String                @db.Uuid
+  created_by         Profile               @relation("CreatedVisits", fields: [created_by_id], references: [id], onDelete: Cascade)
   visit_type         VisitType
   priority           VisitPriority
-  status             VisitStatus          @default(SCHEDULED)
+  status             VisitStatus           @default(SCHEDULED)
   scheduled_at       DateTime
   checked_in_at      DateTime?
   started_at         DateTime?
@@ -742,11 +770,13 @@ model Visit {
   follow_up_notes    String?
   vitals             VisitVitals?
   encounter          VisitEncounter?
+  obgyn_encounter    VisitObgynEncounter?
+  pregnancy_record   VisitPregnancyRecord?
   investigations     VisitInvestigation[]
   prescription       Prescription?
-  created_at         DateTime             @default(now())
-  updated_at         DateTime             @updatedAt
-  is_deleted         Boolean              @default(false)
+  created_at         DateTime              @default(now())
+  updated_at         DateTime              @updatedAt
+  is_deleted         Boolean               @default(false)
   deleted_at         DateTime?
 
   @@index([episode_id, is_deleted])
@@ -815,6 +845,7 @@ model VisitVitals {
   weight_kg        Decimal? @db.Decimal(5, 2)
   height_cm        Decimal? @db.Decimal(5, 2)
   bmi              Decimal? @db.Decimal(4, 1)
+  rbs_mmol_l       Decimal? @db.Decimal(5, 2)
   recorded_by_id   String   @db.Uuid
   recorded_by      Profile  @relation("VitalsRecordedBy", fields: [recorded_by_id], references: [id], onDelete: Cascade)
   recorded_at      DateTime @default(now())
@@ -855,6 +886,10 @@ model VisitEncounter {
   clinical_reasoning    String?
   case_path             String?
 
+  version       Int      @default(1)
+  updated_by_id String?  @db.Uuid
+  updated_by    Profile? @relation("VisitEncounterUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
+
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
@@ -885,6 +920,9 @@ model VisitInvestigation {
   ordered_by_id         String                    @db.Uuid
   ordered_by            Profile                   @relation("InvestigationOrderedBy", fields: [ordered_by_id], references: [id], onDelete: Cascade)
   ordered_at            DateTime                  @default(now())
+  version               Int                       @default(1)
+  updated_by_id         String?                   @db.Uuid
+  updated_by            Profile?                  @relation("VisitInvestigationUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
   is_deleted            Boolean                   @default(false)
   deleted_at            DateTime?
   created_at            DateTime                  @default(now())
@@ -906,6 +944,9 @@ model Prescription {
   prescribed_at    DateTime           @default(now())
   notes            String?
   items            PrescriptionItem[]
+  version          Int                @default(1)
+  updated_by_id    String?            @db.Uuid
+  updated_by       Profile?           @relation("PrescriptionUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
   is_deleted       Boolean            @default(false)
   deleted_at       DateTime?
   created_at       DateTime           @default(now())
@@ -928,6 +969,9 @@ model PrescriptionItem {
   duration_days    Int?
   instructions     String?
   order            Int
+  version          Int          @default(1)
+  updated_by_id    String?      @db.Uuid
+  updated_by       Profile?     @relation("PrescriptionItemUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
   created_at       DateTime     @default(now())
   updated_at       DateTime     @updatedAt
 
@@ -968,6 +1012,9 @@ model PatientPregnancyHistory {
   notes                 String?
   created_by_id         String?   @db.Uuid
   created_by            Profile?  @relation("PregnancyCreatedBy", fields: [created_by_id], references: [id], onDelete: SetNull)
+  version               Int       @default(1)
+  updated_by_id         String?   @db.Uuid
+  updated_by            Profile?  @relation("PatientPregnancyHistoryUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
   is_deleted            Boolean   @default(false)
   deleted_at            DateTime?
   created_at            DateTime  @default(now())
@@ -987,6 +1034,9 @@ model PatientContraceptiveHistory {
   notes         String?
   created_by_id String?   @db.Uuid
   created_by    Profile?  @relation("ContraceptiveCreatedBy", fields: [created_by_id], references: [id], onDelete: SetNull)
+  version       Int       @default(1)
+  updated_by_id String?   @db.Uuid
+  updated_by    Profile?  @relation("PatientContraceptiveHistoryUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
   is_deleted    Boolean   @default(false)
   deleted_at    DateTime?
   created_at    DateTime  @default(now())
@@ -1006,6 +1056,9 @@ model PatientNonGynSurgery {
   notes         String?
   created_by_id String?   @db.Uuid
   created_by    Profile?  @relation("NonGynSurgeryCreatedBy", fields: [created_by_id], references: [id], onDelete: SetNull)
+  version       Int       @default(1)
+  updated_by_id String?   @db.Uuid
+  updated_by    Profile?  @relation("PatientNonGynSurgeryUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
   is_deleted    Boolean   @default(false)
   deleted_at    DateTime?
   created_at    DateTime  @default(now())
@@ -1050,16 +1103,256 @@ model PatientHistoryNote {
   author_id       String                @db.Uuid
   author          Profile               @relation("HistoryNoteAuthor", fields: [author_id], references: [id], onDelete: Cascade)
   section         PatientHistorySection
+  section_code    String?
   content         String
   visibility      NoteVisibility        @default(PRIVATE_TO_ORG)
+  version         Int                   @default(1)
+  updated_by_id   String?               @db.Uuid
+  updated_by      Profile?              @relation("HistoryNoteUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
   is_deleted      Boolean               @default(false)
   deleted_at      DateTime?
   created_at      DateTime              @default(now())
   updated_at      DateTime              @updatedAt
 
   @@index([patient_id, section, is_deleted])
+  @@index([patient_id, section_code, created_at])
   @@index([patient_id, visibility, is_deleted])
   @@index([organization_id])
   @@index([author_id])
   @@map("patient_history_notes")
+}
+
+// ============================================================================
+// UMR redesign — additive PR1
+// New tables introduced for multi-specialty Unified Medical Record support.
+// ============================================================================
+
+model Guardian {
+  id            String            @id @default(uuid()) @db.Uuid
+  national_id   String            @unique
+  full_name     String
+  phone_number  String?
+  patient_id    String?           @unique @db.Uuid
+  patient       Patient?          @relation("PatientGuardianRecord", fields: [patient_id], references: [id], onDelete: SetNull)
+  patient_links PatientGuardian[]
+  is_deleted    Boolean           @default(false)
+  deleted_at    DateTime?
+  created_at    DateTime          @default(now())
+  updated_at    DateTime          @updatedAt
+
+  @@map("guardians")
+}
+
+model PatientGuardian {
+  id           String    @id @default(uuid()) @db.Uuid
+  patient_id   String    @db.Uuid
+  patient      Patient   @relation(fields: [patient_id], references: [id], onDelete: Cascade)
+  guardian_id  String    @db.Uuid
+  guardian     Guardian  @relation(fields: [guardian_id], references: [id], onDelete: Cascade)
+  relationship String
+  is_primary   Boolean   @default(false)
+  is_deleted   Boolean   @default(false)
+  deleted_at   DateTime?
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+
+  @@unique([patient_id, guardian_id])
+  @@index([guardian_id])
+  @@index([patient_id, is_primary])
+  @@map("patient_guardians")
+}
+
+model CarePath {
+  id              String            @id @default(uuid()) @db.Uuid
+  specialty_id    String            @db.Uuid
+  specialty       Specialty         @relation(fields: [specialty_id], references: [id], onDelete: Cascade)
+  organization_id String?           @db.Uuid
+  organization    Organization?     @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  is_system       Boolean           @default(true)
+  parent_id       String?           @db.Uuid
+  parent          CarePath?         @relation("CarePathParent", fields: [parent_id], references: [id], onDelete: SetNull)
+  children        CarePath[]        @relation("CarePathParent")
+  code            String
+  name            String
+  description     String?
+  order           Int               @default(0)
+  episodes        CarePathEpisode[]
+  journeys        PatientJourney[]
+  created_at      DateTime          @default(now())
+  updated_at      DateTime          @updatedAt
+  is_deleted      Boolean           @default(false)
+  deleted_at      DateTime?
+
+  @@unique([specialty_id, organization_id, code])
+  @@index([organization_id, specialty_id])
+  @@map("care_paths")
+}
+
+model CarePathEpisode {
+  id              String           @id @default(uuid()) @db.Uuid
+  care_path_id    String           @db.Uuid
+  care_path       CarePath         @relation(fields: [care_path_id], references: [id], onDelete: Cascade)
+  organization_id String?          @db.Uuid
+  organization    Organization?    @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  is_system       Boolean          @default(true)
+  code            String
+  name            String
+  order           Int              @default(0)
+  episodes        PatientEpisode[]
+  created_at      DateTime         @default(now())
+  updated_at      DateTime         @updatedAt
+  is_deleted      Boolean          @default(false)
+  deleted_at      DateTime?
+
+  @@unique([care_path_id, organization_id, code])
+  @@index([organization_id])
+  @@map("care_path_episodes")
+}
+
+// ----- OB/GYN specialty sidecars -----
+
+model PatientObgynHistory {
+  id                        String    @id @default(uuid()) @db.Uuid
+  patient_id                String    @unique @db.Uuid
+  patient                   Patient   @relation(fields: [patient_id], references: [id], onDelete: Cascade)
+  husband_name              String?
+  gynecological_baseline    Json?
+  gynecologic_procedures    Json?
+  screening_history         Json?
+  obstetric_summary         Json?
+  medical_chronic_illnesses Json?
+  family_history            Json?
+  fertility_history         Json?
+  social_history            Json?
+  version                   Int       @default(1)
+  updated_by_id             String?   @db.Uuid
+  updated_by                Profile?  @relation("PatientObgynHistoryUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
+  is_deleted                Boolean   @default(false)
+  deleted_at                DateTime?
+  created_at                DateTime  @default(now())
+  updated_at                DateTime  @updatedAt
+
+  @@map("patient_obgyn_histories")
+}
+
+model VisitObgynEncounter {
+  id                      String    @id @default(uuid()) @db.Uuid
+  visit_id                String    @unique @db.Uuid
+  visit                   Visit     @relation(fields: [visit_id], references: [id], onDelete: Cascade)
+  general_findings        Json?
+  cardiovascular_findings Json?
+  respiratory_findings    Json?
+  menstrual_findings      Json?
+  abdominal_findings      Json?
+  pelvic_findings         Json?
+  breast_findings         Json?
+  extremities_findings    Json?
+  neurological_findings   Json?
+  skin_findings           Json?
+  version                 Int       @default(1)
+  updated_by_id           String?   @db.Uuid
+  updated_by              Profile?  @relation("VisitObgynEncounterUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
+  is_deleted              Boolean   @default(false)
+  deleted_at              DateTime?
+  created_at              DateTime  @default(now())
+  updated_at              DateTime  @updatedAt
+
+  @@map("visit_obgyn_encounters")
+}
+
+model PregnancyJourneyRecord {
+  id                String         @id @default(uuid()) @db.Uuid
+  journey_id        String         @unique @db.Uuid
+  journey           PatientJourney @relation(fields: [journey_id], references: [id], onDelete: Cascade)
+  status            String?
+  risk_level        String?
+  lmp               DateTime?      @db.Date
+  blood_group_rh    String?
+  us_dating_date    DateTime?      @db.Date
+  us_ga_weeks       Int?
+  us_ga_days        Int?
+  pregnancy_type    String?
+  number_of_fetuses Int?
+  gender            String?
+  delivery_plan     Json?
+  version           Int            @default(1)
+  updated_by_id     String?        @db.Uuid
+  updated_by        Profile?       @relation("PregnancyJourneyRecordUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
+  is_deleted        Boolean        @default(false)
+  deleted_at        DateTime?
+  created_at        DateTime       @default(now())
+  updated_at        DateTime       @updatedAt
+
+  @@map("pregnancy_journey_records")
+}
+
+model PregnancyEpisodeRecord {
+  id                String         @id @default(uuid()) @db.Uuid
+  episode_id        String         @unique @db.Uuid
+  episode           PatientEpisode @relation(fields: [episode_id], references: [id], onDelete: Cascade)
+  anomaly_scan      Json?
+  gtt_result        Json?
+  trimester_summary Json?
+  version           Int            @default(1)
+  updated_by_id     String?        @db.Uuid
+  updated_by        Profile?       @relation("PregnancyEpisodeRecordUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
+  is_deleted        Boolean        @default(false)
+  deleted_at        DateTime?
+  created_at        DateTime       @default(now())
+  updated_at        DateTime       @updatedAt
+
+  @@map("pregnancy_episode_records")
+}
+
+model VisitPregnancyRecord {
+  id       String @id @default(uuid()) @db.Uuid
+  visit_id String @unique @db.Uuid
+  visit    Visit  @relation(fields: [visit_id], references: [id], onDelete: Cascade)
+
+  // Maternal — Cervix
+  cervix_length_mm      Decimal? @db.Decimal(5, 2)
+  cervix_dilatation_cm  Decimal? @db.Decimal(4, 1)
+  cervix_effacement_pct Int?
+  cervix_position       String?
+  membranes             String?
+
+  // Pregnancy Warning Symptoms
+  warning_symptoms Json?
+
+  // Fetal — Fundal
+  fundal_height_cm      Decimal? @db.Decimal(5, 2)
+  fundal_corresponds_ga String?
+
+  // Amniotic & Placenta
+  amniotic_fluid    String?
+  placenta_location String?
+  placenta_grade    Int?
+
+  // Fetal Lie
+  fetal_lie    String?
+  presentation String?
+  engagement   String?
+
+  // Biometric Measurements
+  fetal_heart_rate_bpm Int?
+  fetal_rhythm         String?
+  fetal_movements      String?
+  bpd_mm               Decimal? @db.Decimal(5, 2)
+  hc_mm                Decimal? @db.Decimal(5, 2)
+  ac_mm                Decimal? @db.Decimal(5, 2)
+  fl_mm                Decimal? @db.Decimal(5, 2)
+  efw_g                Decimal? @db.Decimal(7, 2)
+  growth_percentile    Int?
+  growth_impression    String?
+
+  additional_findings Json?
+  version             Int       @default(1)
+  updated_by_id       String?   @db.Uuid
+  updated_by          Profile?  @relation("VisitPregnancyRecordUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
+  is_deleted          Boolean   @default(false)
+  deleted_at          DateTime?
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
+
+  @@map("visit_pregnancy_records")
 }
