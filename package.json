@@ -8,7 +8,7 @@
   "scripts": {
     "build": "prisma generate && nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-"start": "node dist/main",
+    "start": "node dist/main",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
@@ -74,6 +74,8 @@
     "@types/supertest": "^7.0.0",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
+    "eslint-import-resolver-typescript": "^4.4.4",
+    "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-prettier": "^5.2.2",
     "globals": "^17.0.0",
     "jest": "^30.0.0",
@@ -88,7 +90,9 @@
     "tsconfig-paths": "^4.2.0",
     "tsx": "^4.21.0",
     "typescript": "^5.7.3",
-    "typescript-eslint": "^8.20.0"
+    "typescript-eslint": "^8.20.0",
+    "webpack": "^5.106.2",
+    "webpack-node-externals": "^3.0.0"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -105,7 +109,13 @@
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "moduleNameMapper": {
-      "^(\\.{1,2}/.*)\\.js$": "$1"
+      "^(\\.{1,2}/.*)\\.js$": "$1",
+      "^@common/(.*?)(\\.js)?$": "<rootDir>/common/$1",
+      "^@infrastructure/(.*?)(\\.js)?$": "<rootDir>/infrastructure/$1",
+      "^@builder/(.*?)(\\.js)?$": "<rootDir>/builder/$1",
+      "^@core/(.*?)(\\.js)?$": "<rootDir>/core/$1",
+      "^@plugins/(.*?)(\\.js)?$": "<rootDir>/plugins/$1",
+      "^@config/(.*?)(\\.js)?$": "<rootDir>/config/$1"
     },
     "collectCoverageFrom": [
       "**/*.(t|j)s"
