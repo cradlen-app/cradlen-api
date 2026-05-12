@@ -20,11 +20,7 @@ export type PredicateCondition =
  * are UI affordances — a hidden field can still be rejected by the server if
  * its `required` predicate evaluates true.
  */
-export type PredicateEffect =
-  | 'visible'
-  | 'required'
-  | 'forbidden'
-  | 'enabled';
+export type PredicateEffect = 'visible' | 'required' | 'forbidden' | 'enabled';
 
 export interface Predicate {
   effect: PredicateEffect;

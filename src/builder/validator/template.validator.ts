@@ -71,7 +71,11 @@ export class TemplateValidator {
     }
 
     for (const pred of predicates) {
-      if (pred.effect === 'required' && ctx.hasEffect(field, 'required') && !isPresent) {
+      if (
+        pred.effect === 'required' &&
+        ctx.hasEffect(field, 'required') &&
+        !isPresent
+      ) {
         out.push({
           fieldCode: field.code,
           code: 'REQUIRED',
@@ -80,11 +84,17 @@ export class TemplateValidator {
         // Don't push duplicate REQUIRED errors for the same field.
         return;
       }
-      if (pred.effect === 'forbidden' && ctx.hasEffect(field, 'forbidden') && isPresent) {
+      if (
+        pred.effect === 'forbidden' &&
+        ctx.hasEffect(field, 'forbidden') &&
+        isPresent
+      ) {
         out.push({
           fieldCode: field.code,
           code: 'FORBIDDEN',
-          message: pred.message ?? `${field.code} must not be present under current selection`,
+          message:
+            pred.message ??
+            `${field.code} must not be present under current selection`,
         });
         return;
       }

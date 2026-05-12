@@ -1,4 +1,7 @@
-import { FieldDescriptor, SectionDescriptor } from '../sections/section.descriptor.js';
+import {
+  FieldDescriptor,
+  SectionDescriptor,
+} from '../sections/section.descriptor.js';
 import { Predicate, PredicateEffect } from '../rules/predicates.js';
 import { evaluate } from '../rules/predicate.evaluator.js';
 
@@ -40,9 +43,7 @@ export class TemplateExecutionContext {
     const out: Record<string, unknown> = {};
     for (const field of this.fieldsByCode.values()) {
       const path = field.binding.path;
-      out[field.code] = path
-        ? readDottedPath(this.payload, path)
-        : undefined;
+      out[field.code] = path ? readDottedPath(this.payload, path) : undefined;
     }
     return out;
   }
@@ -55,9 +56,14 @@ export class TemplateExecutionContext {
    * True iff at least one predicate of the given effect on the field/section
    * evaluates true against the current payload.
    */
-  hasEffect(carrier: { config: { logic?: { predicates?: Predicate[] } } }, effect: PredicateEffect): boolean {
+  hasEffect(
+    carrier: { config: { logic?: { predicates?: Predicate[] } } },
+    effect: PredicateEffect,
+  ): boolean {
     const preds = carrier.config?.logic?.predicates ?? [];
-    return preds.some((p) => p.effect === effect && evaluate(p.when, this.valuesByCode));
+    return preds.some(
+      (p) => p.effect === effect && evaluate(p.when, this.valuesByCode),
+    );
   }
 
   /** Values keyed by field code (read-only view). */

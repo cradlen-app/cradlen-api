@@ -1,4 +1,8 @@
-import { assertValidConfig, ConfigShape, InvalidConfigError } from '../fields/field-config.schema.js';
+import {
+  assertValidConfig,
+  ConfigShape,
+  InvalidConfigError,
+} from '../fields/field-config.schema.js';
 
 export type { ConfigShape };
 export { InvalidConfigError };
