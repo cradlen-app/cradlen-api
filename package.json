@@ -115,6 +115,7 @@
       "^@builder/(.*?)(\\.js)?$": "<rootDir>/builder/$1",
       "^@core/(.*?)(\\.js)?$": "<rootDir>/core/$1",
       "^@plugins/(.*?)(\\.js)?$": "<rootDir>/plugins/$1",
+      "^@specialties/(.*?)(\\.js)?$": "<rootDir>/specialties/$1",
       "^@config/(.*?)(\\.js)?$": "<rootDir>/config/$1"
     },
     "collectCoverageFrom": [
