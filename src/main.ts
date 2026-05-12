@@ -1,4 +1,4 @@
-import './instrument';
+import '@infrastructure/monitoring/sentry';
 import { NestFactory } from '@nestjs/core';
 import { VersioningType, ValidationPipe } from '@nestjs/common';
 import type { Request, Response, NextFunction } from 'express';
