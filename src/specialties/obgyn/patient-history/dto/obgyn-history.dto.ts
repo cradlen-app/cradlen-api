@@ -1,8 +1,17 @@
-import { IsOptional, IsString, IsNumber, IsArray } from 'class-validator';
+import {
+  IsArray,
+  IsNumber,
+  IsObject,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
-// JSON sub-shapes — kept lightweight; class-validator only enforces top-level
-// presence/typing. Free-form fields stay free-form to match early-phase UI iteration.
+// JSON sub-shapes — kept lightweight; class-validator enforces only top-level
+// presence and basic typing. Free-form fields stay free-form to match early-
+// phase UI iteration. See the JSON Promotion Rule in the design doc for when
+// any of these should graduate to relational tables.
 
 export class GynecologicalBaselineDto {
   @IsOptional() @IsNumber() age_at_menarche?: number;
@@ -56,8 +65,56 @@ export class SocialHistoryDto {
   @IsOptional() @IsString() occupation?: string;
 }
 
-export class HusbandNameDto {
+/**
+ * Bulk PATCH body for the OB/GYN history tab. Every field is optional —
+ * unsent sections are left untouched on the server. One PATCH = one
+ * row update = one revision shadow row = one `patient.history.updated`
+ * event listing the sections that actually changed.
+ */
+export class UpdateObgynHistoryDto {
   @IsOptional() @IsString() husband_name?: string | null;
+
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => GynecologicalBaselineDto)
+  gynecological_baseline?: GynecologicalBaselineDto;
+
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => GynecologicProceduresDto)
+  gynecologic_procedures?: GynecologicProceduresDto;
+
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => ScreeningHistoryDto)
+  screening_history?: ScreeningHistoryDto;
+
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => MedicalChronicIllnessesDto)
+  medical_chronic_illnesses?: MedicalChronicIllnessesDto;
+
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => FamilyHistoryDto)
+  family_history?: FamilyHistoryDto;
+
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => FertilityHistoryDto)
+  fertility_history?: FertilityHistoryDto;
+
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => SocialHistoryDto)
+  social_history?: SocialHistoryDto;
 }
 
 export class PatientObgynHistoryDto {

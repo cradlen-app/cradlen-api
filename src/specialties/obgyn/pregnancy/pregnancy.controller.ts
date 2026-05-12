@@ -18,17 +18,12 @@ import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { EncounterMutationGuard } from '@core/clinical/visits/visits.public';
 import { PregnancyService } from './pregnancy.service';
 import {
-  AmnioticPlacentaDto,
-  BiometricsDto,
-  CervixDto,
-  FetalLieDto,
-  FundalDto,
   PregnancyEpisodeRecordDto,
   PregnancyEpisodeUpdateDto,
   PregnancyJourneyRecordDto,
   PregnancySnapshotDto,
+  UpdateVisitPregnancyRecordDto,
   VisitPregnancyRecordDto,
-  WarningSymptomsDto,
 } from './dto/pregnancy.dto';
 
 const IF_MATCH = {
@@ -44,7 +39,7 @@ const IF_MATCH = {
 export class PregnancyController {
   constructor(private readonly service: PregnancyService) {}
 
-  // ---------- Journey snapshot ----------
+  // ---------- Journey-level snapshot (single row, single bulk PATCH) ----------
 
   @Get('journeys/:journeyId/pregnancy-record')
   @ApiStandardResponse(PregnancyJourneyRecordDto)
@@ -93,7 +88,7 @@ export class PregnancyController {
     return this.service.patchEpisodeRecord(episodeId, dto, version, user);
   }
 
-  // ---------- Visit-level per-ANC measurements ----------
+  // ---------- Visit-level per-ANC measurements (single bulk PATCH) ----------
 
   @Get('visits/:visitId/pregnancy-record')
   @ApiStandardResponse(VisitPregnancyRecordDto)
@@ -104,108 +99,17 @@ export class PregnancyController {
     return this.service.getVisitRecord(visitId, user);
   }
 
-  @Patch('visits/:visitId/pregnancy-record/cervix')
+  @Patch('visits/:visitId/pregnancy-record')
   @LocksOnClosedVisit('visitId')
   @ApiHeader(IF_MATCH)
-  patchCervix(
+  patchVisitRecord(
     @Param('visitId', ParseUUIDPipe) visitId: string,
-    @Body() dto: CervixDto,
+    @Body() dto: UpdateVisitPregnancyRecordDto,
     @IfMatchVersion() version: number,
     @CurrentUser() user: AuthContext,
   ) {
     return this.service.patchVisitRecord(
       visitId,
-      'cervix',
-      dto as unknown as Record<string, unknown>,
-      version,
-      user,
-    );
-  }
-
-  @Patch('visits/:visitId/pregnancy-record/warning-symptoms')
-  @LocksOnClosedVisit('visitId')
-  @ApiHeader(IF_MATCH)
-  patchWarningSymptoms(
-    @Param('visitId', ParseUUIDPipe) visitId: string,
-    @Body() dto: WarningSymptomsDto,
-    @IfMatchVersion() version: number,
-    @CurrentUser() user: AuthContext,
-  ) {
-    return this.service.patchVisitRecord(
-      visitId,
-      'warning-symptoms',
-      dto as unknown as Record<string, unknown>,
-      version,
-      user,
-    );
-  }
-
-  @Patch('visits/:visitId/pregnancy-record/fundal')
-  @LocksOnClosedVisit('visitId')
-  @ApiHeader(IF_MATCH)
-  patchFundal(
-    @Param('visitId', ParseUUIDPipe) visitId: string,
-    @Body() dto: FundalDto,
-    @IfMatchVersion() version: number,
-    @CurrentUser() user: AuthContext,
-  ) {
-    return this.service.patchVisitRecord(
-      visitId,
-      'fundal',
-      dto as unknown as Record<string, unknown>,
-      version,
-      user,
-    );
-  }
-
-  @Patch('visits/:visitId/pregnancy-record/amniotic-placenta')
-  @LocksOnClosedVisit('visitId')
-  @ApiHeader(IF_MATCH)
-  patchAmnioticPlacenta(
-    @Param('visitId', ParseUUIDPipe) visitId: string,
-    @Body() dto: AmnioticPlacentaDto,
-    @IfMatchVersion() version: number,
-    @CurrentUser() user: AuthContext,
-  ) {
-    return this.service.patchVisitRecord(
-      visitId,
-      'amniotic-placenta',
-      dto as unknown as Record<string, unknown>,
-      version,
-      user,
-    );
-  }
-
-  @Patch('visits/:visitId/pregnancy-record/fetal-lie')
-  @LocksOnClosedVisit('visitId')
-  @ApiHeader(IF_MATCH)
-  patchFetalLie(
-    @Param('visitId', ParseUUIDPipe) visitId: string,
-    @Body() dto: FetalLieDto,
-    @IfMatchVersion() version: number,
-    @CurrentUser() user: AuthContext,
-  ) {
-    return this.service.patchVisitRecord(
-      visitId,
-      'fetal-lie',
-      dto as unknown as Record<string, unknown>,
-      version,
-      user,
-    );
-  }
-
-  @Patch('visits/:visitId/pregnancy-record/biometrics')
-  @LocksOnClosedVisit('visitId')
-  @ApiHeader(IF_MATCH)
-  patchBiometrics(
-    @Param('visitId', ParseUUIDPipe) visitId: string,
-    @Body() dto: BiometricsDto,
-    @IfMatchVersion() version: number,
-    @CurrentUser() user: AuthContext,
-  ) {
-    return this.service.patchVisitRecord(
-      visitId,
-      'biometrics',
       dto as unknown as Record<string, unknown>,
       version,
       user,

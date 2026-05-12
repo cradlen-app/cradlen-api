@@ -220,9 +220,13 @@ export class PregnancyService {
     });
   }
 
+  /**
+   * Bulk PATCH — save the whole pregnancy visit tab in one request. Any
+   * subset of fields (cervix, warning symptoms, fundal, amniotic/placenta,
+   * fetal lie, biometrics) may be present.
+   */
   async patchVisitRecord(
     visitId: string,
-    section: VisitRecordSection,
     patch: Record<string, unknown>,
     ifMatchVersion: number,
     user: AuthContext,
@@ -231,8 +235,9 @@ export class PregnancyService {
     const current = await this.getVisitRecord(visitId, user);
     assertVersionMatches(ifMatchVersion, current.version);
 
-    const data = this.toVisitData(section, patch);
+    const data = this.toVisitData(patch);
     const changedFields = Object.keys(data);
+    if (changedFields.length === 0) return current;
 
     return this.prismaService.db.$transaction(async (tx) => {
       await tx.visitPregnancyRecordRevision.create({
@@ -247,9 +252,8 @@ export class PregnancyService {
         },
       });
     });
-    // Note: no per-section event for visit pregnancy records — high frequency,
-    // low value to downstream consumers. The revision row is sufficient audit
-    // and subscribers can poll the latest record when they need it.
+    // No per-section event — high frequency, low downstream value. The
+    // revision row is sufficient audit.
   }
 
   private async assertVisitOnPregnancyJourney(
@@ -271,56 +275,46 @@ export class PregnancyService {
   }
 
   private toVisitData(
-    section: VisitRecordSection,
     patch: Record<string, unknown>,
   ): Prisma.VisitPregnancyRecordUncheckedUpdateInput {
-    const allowedBySection: Record<VisitRecordSection, readonly string[]> = {
-      cervix: [
-        'cervix_length_mm',
-        'cervix_dilatation_cm',
-        'cervix_effacement_pct',
-        'cervix_position',
-        'membranes',
-      ],
-      'warning-symptoms': ['warning_symptoms'],
-      fundal: ['fundal_height_cm', 'fundal_corresponds_ga'],
-      'amniotic-placenta': [
-        'amniotic_fluid',
-        'placenta_location',
-        'placenta_grade',
-      ],
-      'fetal-lie': ['fetal_lie', 'presentation', 'engagement'],
-      biometrics: [
-        'fetal_heart_rate_bpm',
-        'fetal_rhythm',
-        'fetal_movements',
-        'bpd_mm',
-        'hc_mm',
-        'ac_mm',
-        'fl_mm',
-        'efw_g',
-        'growth_percentile',
-        'growth_impression',
-      ],
-    };
-
-    if (section === 'warning-symptoms') {
-      // The warning-symptoms block is stored as a single JSON column.
-      return { warning_symptoms: patch as Prisma.InputJsonValue };
-    }
+    // Whitelist of writable columns on VisitPregnancyRecord. Anything outside
+    // this set is ignored (defensive — the DTO already validates shape).
+    const allowed = [
+      'cervix_length_mm',
+      'cervix_dilatation_cm',
+      'cervix_effacement_pct',
+      'cervix_position',
+      'membranes',
+      'warning_symptoms',
+      'fundal_height_cm',
+      'fundal_corresponds_ga',
+      'amniotic_fluid',
+      'placenta_location',
+      'placenta_grade',
+      'fetal_lie',
+      'presentation',
+      'engagement',
+      'fetal_heart_rate_bpm',
+      'fetal_rhythm',
+      'fetal_movements',
+      'bpd_mm',
+      'hc_mm',
+      'ac_mm',
+      'fl_mm',
+      'efw_g',
+      'growth_percentile',
+      'growth_impression',
+    ] as const;
 
     const out: Record<string, unknown> = {};
-    for (const key of allowedBySection[section]) {
-      if (key in patch) out[key] = patch[key];
+    for (const key of allowed) {
+      if (key in patch) {
+        out[key] =
+          key === 'warning_symptoms'
+            ? (patch[key] as Prisma.InputJsonValue)
+            : patch[key];
+      }
     }
     return out as Prisma.VisitPregnancyRecordUncheckedUpdateInput;
   }
 }
-
-export type VisitRecordSection =
-  | 'cervix'
-  | 'warning-symptoms'
-  | 'fundal'
-  | 'amniotic-placenta'
-  | 'fetal-lie'
-  | 'biometrics';

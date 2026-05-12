@@ -5,18 +5,22 @@ import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { assertVersionMatches } from '@common/decorators/if-match.decorator';
 import { ObgynPatientAccessService } from '../patient-access.service';
 import { buildRevision } from '../revisions.helper';
+import { UpdateObgynEncounterDto } from './dto/obgyn-encounter.dto';
 
-type EncounterSection =
-  | 'general_findings'
-  | 'cardiovascular_findings'
-  | 'respiratory_findings'
-  | 'menstrual_findings'
-  | 'abdominal_findings'
-  | 'pelvic_findings'
-  | 'breast_findings'
-  | 'extremities_findings'
-  | 'neurological_findings'
-  | 'skin_findings';
+const ENCOUNTER_SECTIONS = [
+  'general_findings',
+  'cardiovascular_findings',
+  'respiratory_findings',
+  'menstrual_findings',
+  'abdominal_findings',
+  'pelvic_findings',
+  'breast_findings',
+  'extremities_findings',
+  'neurological_findings',
+  'skin_findings',
+] as const;
+
+type EncounterSection = (typeof ENCOUNTER_SECTIONS)[number];
 
 @Injectable()
 export class ObgynEncounterService {
@@ -38,10 +42,14 @@ export class ObgynEncounterService {
     });
   }
 
-  async patchSection(
+  /**
+   * Bulk PATCH — save the entire examination tab in one request. Unsent
+   * sections are left untouched. Inside a single transaction we snapshot
+   * the prior row, update the changed columns, and bump `version`.
+   */
+  async patch(
     visitId: string,
-    section: EncounterSection,
-    value: object,
+    dto: UpdateObgynEncounterDto,
     ifMatchVersion: number,
     user: AuthContext,
   ) {
@@ -49,17 +57,29 @@ export class ObgynEncounterService {
     const current = await this.get(visitId, user);
     assertVersionMatches(ifMatchVersion, current.version);
 
+    const data: Prisma.VisitObgynEncounterUncheckedUpdateInput = {
+      version: { increment: 1 },
+      updated_by_id: user.profileId,
+    };
+    const changed: EncounterSection[] = [];
+
+    for (const section of ENCOUNTER_SECTIONS) {
+      if (!(section in dto)) continue;
+      const value = (dto as Record<string, unknown>)[section];
+      (data as Record<string, unknown>)[section] =
+        value as Prisma.InputJsonValue;
+      changed.push(section);
+    }
+
+    if (changed.length === 0) return current;
+
     return this.prismaService.db.$transaction(async (tx) => {
       await tx.visitObgynEncounterRevision.create({
-        data: buildRevision(current, [section], user.profileId),
+        data: buildRevision(current, changed, user.profileId),
       });
       return tx.visitObgynEncounter.update({
         where: { id: current.id },
-        data: {
-          [section]: value as Prisma.InputJsonValue,
-          version: { increment: 1 },
-          updated_by_id: user.profileId,
-        },
+        data,
       });
     });
   }
