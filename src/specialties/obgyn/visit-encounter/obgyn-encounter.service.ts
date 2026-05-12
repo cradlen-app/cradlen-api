@@ -4,6 +4,7 @@ import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { assertVersionMatches } from '@common/decorators/if-match.decorator';
 import { ObgynPatientAccessService } from '../patient-access.service';
+import { buildRevision } from '../revisions.helper';
 
 type EncounterSection =
   | 'general_findings'
@@ -32,7 +33,6 @@ export class ObgynEncounterService {
     );
     if (existing) return existing;
 
-    // Lazy-create on first read; matches PatientObgynHistory pattern.
     return this.prismaService.db.visitObgynEncounter.create({
       data: { visit_id: visitId, updated_by_id: user.profileId },
     });
@@ -49,13 +49,18 @@ export class ObgynEncounterService {
     const current = await this.get(visitId, user);
     assertVersionMatches(ifMatchVersion, current.version);
 
-    return this.prismaService.db.visitObgynEncounter.update({
-      where: { id: current.id },
-      data: {
-        [section]: value as Prisma.InputJsonValue,
-        version: { increment: 1 },
-        updated_by_id: user.profileId,
-      },
+    return this.prismaService.db.$transaction(async (tx) => {
+      await tx.visitObgynEncounterRevision.create({
+        data: buildRevision(current, [section], user.profileId),
+      });
+      return tx.visitObgynEncounter.update({
+        where: { id: current.id },
+        data: {
+          [section]: value as Prisma.InputJsonValue,
+          version: { increment: 1 },
+          updated_by_id: user.profileId,
+        },
+      });
     });
   }
 }

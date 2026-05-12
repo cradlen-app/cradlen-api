@@ -161,6 +161,11 @@ Table profiles {
   pregnancy_history_updates patient_pregnancy_history [not null]
   contraceptive_history_updates patient_contraceptive_history [not null]
   non_gyn_surgery_updates patient_non_gyn_surgeries [not null]
+  patient_obgyn_history_revisions patient_obgyn_history_revisions [not null]
+  visit_obgyn_encounter_revisions visit_obgyn_encounter_revisions [not null]
+  pregnancy_journey_revisions pregnancy_journey_record_revisions [not null]
+  pregnancy_episode_revisions pregnancy_episode_record_revisions [not null]
+  visit_pregnancy_revisions visit_pregnancy_record_revisions [not null]
 
   indexes {
     (user_id, organization_id) [unique]
@@ -936,6 +941,7 @@ Table patient_obgyn_histories {
   id String [pk]
   patient_id String [unique, not null]
   patient patients [not null]
+  revisions patient_obgyn_history_revisions [not null]
   husband_name String
   gynecological_baseline Json
   gynecologic_procedures Json
@@ -958,6 +964,7 @@ Table visit_obgyn_encounters {
   id String [pk]
   visit_id String [unique, not null]
   visit visits [not null]
+  revisions visit_obgyn_encounter_revisions [not null]
   general_findings Json
   cardiovascular_findings Json
   respiratory_findings Json
@@ -981,6 +988,7 @@ Table pregnancy_journey_records {
   id String [pk]
   journey_id String [unique, not null]
   journey patient_journeys [not null]
+  revisions pregnancy_journey_record_revisions [not null]
   status String
   risk_level String
   lmp DateTime
@@ -1005,6 +1013,7 @@ Table pregnancy_episode_records {
   id String [pk]
   episode_id String [unique, not null]
   episode patient_episodes [not null]
+  revisions pregnancy_episode_record_revisions [not null]
   anomaly_scan Json
   gtt_result Json
   trimester_summary Json
@@ -1021,6 +1030,7 @@ Table visit_pregnancy_records {
   id String [pk]
   visit_id String [unique, not null]
   visit visits [not null]
+  revisions visit_pregnancy_record_revisions [not null]
   cervix_length_mm Decimal
   cervix_dilatation_cm Decimal
   cervix_effacement_pct Int
@@ -1053,6 +1063,71 @@ Table visit_pregnancy_records {
   deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
+}
+
+Table patient_obgyn_history_revisions {
+  id String [pk]
+  entity_id String [not null]
+  entity patient_obgyn_histories [not null]
+  version Int [not null]
+  snapshot Json [not null]
+  changed_fields Json [not null]
+  revised_by_id String [not null]
+  revised_by profiles [not null]
+  revised_at DateTime [default: `now()`, not null]
+  revision_reason String
+}
+
+Table visit_obgyn_encounter_revisions {
+  id String [pk]
+  entity_id String [not null]
+  entity visit_obgyn_encounters [not null]
+  version Int [not null]
+  snapshot Json [not null]
+  changed_fields Json [not null]
+  revised_by_id String [not null]
+  revised_by profiles [not null]
+  revised_at DateTime [default: `now()`, not null]
+  revision_reason String
+}
+
+Table pregnancy_journey_record_revisions {
+  id String [pk]
+  entity_id String [not null]
+  entity pregnancy_journey_records [not null]
+  version Int [not null]
+  snapshot Json [not null]
+  changed_fields Json [not null]
+  revised_by_id String [not null]
+  revised_by profiles [not null]
+  revised_at DateTime [default: `now()`, not null]
+  revision_reason String
+}
+
+Table pregnancy_episode_record_revisions {
+  id String [pk]
+  entity_id String [not null]
+  entity pregnancy_episode_records [not null]
+  version Int [not null]
+  snapshot Json [not null]
+  changed_fields Json [not null]
+  revised_by_id String [not null]
+  revised_by profiles [not null]
+  revised_at DateTime [default: `now()`, not null]
+  revision_reason String
+}
+
+Table visit_pregnancy_record_revisions {
+  id String [pk]
+  entity_id String [not null]
+  entity visit_pregnancy_records [not null]
+  version Int [not null]
+  snapshot Json [not null]
+  changed_fields Json [not null]
+  revised_by_id String [not null]
+  revised_by profiles [not null]
+  revised_at DateTime [default: `now()`, not null]
+  revision_reason String
 }
 
 Enum RegistrationStatus {
@@ -1400,3 +1475,23 @@ Ref: pregnancy_episode_records.updated_by_id > profiles.id [delete: Set Null]
 Ref: visit_pregnancy_records.visit_id - visits.id [delete: Cascade]
 
 Ref: visit_pregnancy_records.updated_by_id > profiles.id [delete: Set Null]
+
+Ref: patient_obgyn_history_revisions.entity_id > patient_obgyn_histories.id [delete: Cascade]
+
+Ref: patient_obgyn_history_revisions.revised_by_id > profiles.id [delete: Cascade]
+
+Ref: visit_obgyn_encounter_revisions.entity_id > visit_obgyn_encounters.id [delete: Cascade]
+
+Ref: visit_obgyn_encounter_revisions.revised_by_id > profiles.id [delete: Cascade]
+
+Ref: pregnancy_journey_record_revisions.entity_id > pregnancy_journey_records.id [delete: Cascade]
+
+Ref: pregnancy_journey_record_revisions.revised_by_id > profiles.id [delete: Cascade]
+
+Ref: pregnancy_episode_record_revisions.entity_id > pregnancy_episode_records.id [delete: Cascade]
+
+Ref: pregnancy_episode_record_revisions.revised_by_id > profiles.id [delete: Cascade]
+
+Ref: visit_pregnancy_record_revisions.entity_id > visit_pregnancy_records.id [delete: Cascade]
+
+Ref: visit_pregnancy_record_revisions.revised_by_id > profiles.id [delete: Cascade]
