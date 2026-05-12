@@ -31,7 +31,7 @@ const mockVisit = {
   episode_id: 'ep-uuid',
   assigned_doctor_id: 'doctor-uuid',
   branch_id: 'branch-uuid',
-  visit_type: 'FOLLOW_UP',
+  appointment_type: 'FOLLOW_UP',
   priority: 'NORMAL',
   status: 'SCHEDULED',
   scheduled_at: new Date(),
@@ -154,7 +154,7 @@ describe('VisitsService', () => {
         {
           assigned_doctor_id: 'doctor-uuid',
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          visit_type: 'FOLLOW_UP' as any,
+          appointment_type: 'FOLLOW_UP' as any,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           priority: 'NORMAL' as any,
           scheduled_at: new Date().toISOString(),
@@ -175,7 +175,7 @@ describe('VisitsService', () => {
           {
             assigned_doctor_id: 'doctor-uuid',
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            visit_type: 'FOLLOW_UP' as any,
+            appointment_type: 'FOLLOW_UP' as any,
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             priority: 'NORMAL' as any,
             scheduled_at: new Date().toISOString(),
@@ -410,7 +410,7 @@ describe('VisitsService', () => {
       address: '123 Main St',
       assigned_doctor_id: 'doctor-uuid',
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      visit_type: 'VISIT' as any,
+      appointment_type: 'VISIT' as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       priority: 'NORMAL' as any,
       scheduled_at: new Date().toISOString(),
@@ -428,7 +428,7 @@ describe('VisitsService', () => {
           {
             assigned_doctor_id: 'doc',
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            visit_type: 'VISIT' as any,
+            appointment_type: 'VISIT' as any,
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             priority: 'NORMAL' as any,
             scheduled_at: new Date().toISOString(),
@@ -631,7 +631,7 @@ describe('VisitsService', () => {
 
     const mockVisitRow = {
       id: 'visit-uuid',
-      visit_type: 'VISIT',
+      appointment_type: 'VISIT',
       priority: 'NORMAL',
       status: 'SCHEDULED',
       scheduled_at: new Date(),
