@@ -148,6 +148,7 @@ const SECTIONS: SectionSpec[] = [
         type: 'SELECT',
         binding: { namespace: 'VISIT', path: 'priority' },
         config: {
+          ui: { default: 'NORMAL' },
           validation: {
             options: [
               { code: 'NORMAL', label: 'Normal' },
@@ -168,6 +169,7 @@ const SECTIONS: SectionSpec[] = [
         type: 'SELECT',
         binding: { namespace: 'MEDICAL_REP', path: 'priority' },
         config: {
+          ui: { default: 'NORMAL' },
           validation: {
             options: [
               { code: 'NORMAL', label: 'Normal' },
@@ -187,11 +189,14 @@ const SECTIONS: SectionSpec[] = [
       {
         code: 'assigned_doctor_patient',
         label: 'Assigned doctor',
-        type: 'ENTITY_SEARCH',
+        type: 'SELECT',
         binding: { namespace: 'VISIT', path: 'assigned_doctor_id' },
         config: {
+          ui: {
+            optionsSource: '/v1/organizations/{org_id}/staff?clinical=true',
+            default: { kind: 'first_option' },
+          },
           logic: {
-            entity: 'doctor',
             predicates: [
               { effect: 'visible', when: { eq: { visitor_type: 'PATIENT' } } },
               { effect: 'required', when: { eq: { visitor_type: 'PATIENT' } } },
@@ -202,11 +207,14 @@ const SECTIONS: SectionSpec[] = [
       {
         code: 'assigned_doctor_rep',
         label: 'Assigned doctor',
-        type: 'ENTITY_SEARCH',
+        type: 'SELECT',
         binding: { namespace: 'MEDICAL_REP', path: 'assigned_doctor_id' },
         config: {
+          ui: {
+            optionsSource: '/v1/organizations/{org_id}/staff?clinical=true',
+            default: { kind: 'first_option' },
+          },
           logic: {
-            entity: 'doctor',
             predicates: [
               {
                 effect: 'visible',
@@ -226,6 +234,7 @@ const SECTIONS: SectionSpec[] = [
         type: 'SELECT',
         binding: { namespace: 'VISIT', path: 'appointment_type' },
         config: {
+          ui: { default: 'VISIT' },
           validation: {
             options: [
               { code: 'VISIT', label: 'Visit' },
