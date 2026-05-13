@@ -1,3 +1,4 @@
+import { FormScope, FormTemplateStatus } from '@prisma/client';
 import { TemplateCompositionService } from './template-composition.service.js';
 import type { HydratableTemplate } from '../renderer/template-renderer.service.js';
 
@@ -42,9 +43,9 @@ function mkTemplate(
     code,
     name: code,
     description: null,
-    scope: 'BOOK_VISIT' as any,
+    scope: FormScope.BOOK_VISIT,
     version: 1,
-    status: 'PUBLISHED' as any,
+    status: FormTemplateStatus.PUBLISHED,
     published_at: new Date(),
     is_active: true,
     activated_at: new Date(),
@@ -70,7 +71,10 @@ describe('TemplateCompositionService', () => {
       mkSection('visit_metadata', 1),
     ]);
     const out = svc.compose(shell, null);
-    expect(out.sections.map((s) => s.code)).toEqual(['search', 'visit_metadata']);
+    expect(out.sections.map((s) => s.code)).toEqual([
+      'search',
+      'visit_metadata',
+    ]);
     expect(out).toBe(shell);
   });
 
@@ -131,9 +135,9 @@ describe('TemplateCompositionService', () => {
   it('reports composition metadata so the renderer can echo it', () => {
     const shell = mkTemplate('s', 'book_visit', [mkSection('a', 0)]);
     const ext = mkTemplate('e', 'obgyn_ext', [mkSection('a', 0)]);
-    (ext as any).extension_key = 'OBGYN';
+    ext.extension_key = 'OBGYN';
     const out = svc.compose(shell, ext);
-    expect((out as any).composed_from).toEqual({
+    expect(out.composed_from).toEqual({
       shell_id: 's',
       extension_id: 'e',
       extension_key: 'OBGYN',
