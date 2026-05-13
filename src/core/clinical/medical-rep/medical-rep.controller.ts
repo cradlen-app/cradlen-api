@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -15,6 +16,8 @@ import { MedicalRepService } from './medical-rep.service';
 import { BookMedicalRepVisitDto } from './dto/book-medical-rep-visit.dto';
 import { ListMedicalRepsQueryDto } from './dto/list-medical-reps.query';
 import { MedicalRepDto, MedicalRepSummaryDto } from './dto/medical-rep.dto';
+import { UpdateMedicalRepVisitDto } from './dto/update-medical-rep-visit.dto';
+import { UpdateMedicalRepVisitStatusDto } from './dto/update-medical-rep-visit-status.dto';
 
 @ApiTags('medical-reps')
 @Controller({ version: '1' })
@@ -57,6 +60,41 @@ export class MedicalRepController {
     return this.service.listVisits(user, query);
   }
 
+  @Get('medical-rep-visits/my-waiting-list')
+  @ApiPaginatedResponse(MedicalRepDto)
+  async myWaitingList(
+    @Query() query: { page?: number; limit?: number },
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.service.findMyWaitingList(query, user);
+  }
+
+  @Get('medical-rep-visits/my-current')
+  @ApiStandardResponse(MedicalRepDto)
+  async myCurrent(@CurrentUser() user: AuthContext) {
+    return this.service.findMyCurrent(user);
+  }
+
+  @Get('branches/:branchId/medical-rep-visits/waiting-list')
+  @ApiPaginatedResponse(MedicalRepDto)
+  async branchWaitingList(
+    @Param('branchId', ParseUUIDPipe) branchId: string,
+    @Query() query: { page?: number; limit?: number },
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.service.findBranchWaitingList(branchId, query, user);
+  }
+
+  @Get('branches/:branchId/medical-rep-visits/in-progress')
+  @ApiPaginatedResponse(MedicalRepDto)
+  async branchInProgress(
+    @Param('branchId', ParseUUIDPipe) branchId: string,
+    @Query() query: { page?: number; limit?: number },
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.service.findBranchInProgress(branchId, query, user);
+  }
+
   @Get('medical-rep-visits/:id')
   @ApiStandardResponse(MedicalRepDto)
   async getVisit(
@@ -64,5 +102,25 @@ export class MedicalRepController {
     @CurrentUser() user: AuthContext,
   ) {
     return this.service.findVisit(id, user);
+  }
+
+  @Patch('medical-rep-visits/:id')
+  @ApiStandardResponse(MedicalRepDto)
+  async updateVisit(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateMedicalRepVisitDto,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.service.updateVisit(id, dto, user);
+  }
+
+  @Patch('medical-rep-visits/:id/status')
+  @ApiStandardResponse(MedicalRepDto)
+  async updateVisitStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateMedicalRepVisitStatusDto,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.service.updateVisitStatus(id, dto, user);
   }
 }

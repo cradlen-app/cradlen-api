@@ -143,6 +143,7 @@ enum BindingNamespace {
 enum MedicalRepVisitStatus {
   SCHEDULED
   CHECKED_IN
+  IN_PROGRESS
   COMPLETED
   CANCELLED
   NO_SHOW
@@ -1672,6 +1673,9 @@ model MedicalRepVisit {
   status             MedicalRepVisitStatus       @default(SCHEDULED)
   priority           VisitPriority               @default(NORMAL)
   notes              String?
+  checked_in_at      DateTime?
+  started_at         DateTime?
+  completed_at       DateTime?
   is_deleted         Boolean                     @default(false)
   deleted_at         DateTime?
   created_at         DateTime                    @default(now())
@@ -1680,6 +1684,7 @@ model MedicalRepVisit {
 
   @@index([organization_id, branch_id, scheduled_at])
   @@index([assigned_doctor_id, status, is_deleted])
+  @@index([branch_id, status, scheduled_at])
   @@map("medical_rep_visits")
 }
 
