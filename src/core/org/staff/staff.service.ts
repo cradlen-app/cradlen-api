@@ -26,6 +26,19 @@ import { persistSchedules } from './schedule.helpers.js';
 
 const STAFF_EMAIL_DOMAIN = 'cradlen.com';
 
+/**
+ * JobFunction codes that count as "doctors" for the `doctors_only=true`
+ * staff filter — used by the book-visit `assigned_doctor` picker. Nurses
+ * and assistants are clinical (`is_clinical=true`) but NOT doctors, so we
+ * filter by these explicit codes rather than the `is_clinical` flag.
+ */
+const DOCTOR_JOB_FUNCTION_CODES: string[] = [
+  'OBGYN',
+  'ANESTHESIOLOGIST',
+  'PEDIATRICIAN',
+  'OTHER_DOCTOR',
+];
+
 interface ResolvedAccess {
   jobFunctions: JobFunction[];
   specialties: Specialty[];
@@ -162,6 +175,7 @@ export class StaffService {
     limit = 20,
     scope?: 'org' | 'mine',
     clinical?: boolean,
+    doctorsOnly?: boolean,
   ) {
     await this.authorizationService.assertCanViewStaff(
       profileId,
@@ -209,7 +223,11 @@ export class StaffService {
     if (role) {
       where.roles = { some: { role: { name: role.toUpperCase() } } };
     }
-    if (clinical === true) {
+    if (doctorsOnly === true) {
+      where.job_functions = {
+        some: { job_function: { code: { in: DOCTOR_JOB_FUNCTION_CODES } } },
+      };
+    } else if (clinical === true) {
       where.job_functions = {
         some: { job_function: { is_clinical: true } },
       };

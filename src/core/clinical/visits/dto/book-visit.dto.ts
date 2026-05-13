@@ -27,6 +27,7 @@ export class BookVisitDto extends VisitIntakeFieldsDto {
   @IsString() @IsOptional() @MaxLength(200) spouse_full_name?: string;
   @IsString() @IsOptional() @MaxLength(50) spouse_national_id?: string;
   @IsString() @IsOptional() @MaxLength(30) spouse_phone_number?: string;
+  @IsUUID() @IsOptional() spouse_guardian_id?: string;
 
   @IsUUID() assigned_doctor_id!: string;
   @IsEnum(AppointmentType) appointment_type!: AppointmentType;

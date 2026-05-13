@@ -16,7 +16,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import type { Predicate } from '../../src/builder/rules/predicates.js';
 
 const TEMPLATE_CODE = 'book_visit';
-const TEMPLATE_VERSION = 1;
+const TEMPLATE_VERSION = 2;
 
 interface FieldSpec {
   code: string;
@@ -36,45 +36,6 @@ interface SectionSpec {
 }
 
 const SECTIONS: SectionSpec[] = [
-  {
-    code: 'search',
-    name: 'Search',
-    fields: [
-      {
-        code: 'patient_search',
-        label: 'Find patient',
-        type: 'ENTITY_SEARCH',
-        binding: { namespace: 'LOOKUP', path: 'patient_id' },
-        config: {
-          ui: { placeholder: 'Search by name or national ID' },
-          logic: {
-            entity: 'patient',
-            predicates: [
-              { effect: 'visible', when: { eq: { visitor_type: 'PATIENT' } } },
-            ] satisfies Predicate[],
-          },
-        },
-      },
-      {
-        code: 'medical_rep_search',
-        label: 'Find medical rep',
-        type: 'ENTITY_SEARCH',
-        binding: { namespace: 'LOOKUP', path: 'medical_rep_id' },
-        config: {
-          ui: { placeholder: 'Search by name or company' },
-          logic: {
-            entity: 'medical_rep',
-            predicates: [
-              {
-                effect: 'visible',
-                when: { eq: { visitor_type: 'MEDICAL_REP' } },
-              },
-            ] satisfies Predicate[],
-          },
-        },
-      },
-    ],
-  },
   {
     code: 'visit_metadata',
     name: 'Visit metadata',
@@ -201,7 +162,8 @@ const SECTIONS: SectionSpec[] = [
         binding: { namespace: 'VISIT', path: 'assigned_doctor_id' },
         config: {
           ui: {
-            optionsSource: '/v1/organizations/{org_id}/staff?clinical=true',
+            optionsSource:
+              '/v1/organizations/{org_id}/staff?doctors_only=true',
             default: { kind: 'first_option' },
           },
           logic: {
@@ -219,7 +181,8 @@ const SECTIONS: SectionSpec[] = [
         binding: { namespace: 'MEDICAL_REP', path: 'assigned_doctor_id' },
         config: {
           ui: {
-            optionsSource: '/v1/organizations/{org_id}/staff?clinical=true',
+            optionsSource:
+              '/v1/organizations/{org_id}/staff?doctors_only=true',
             default: { kind: 'first_option' },
           },
           logic: {
@@ -270,11 +233,35 @@ const SECTIONS: SectionSpec[] = [
     },
     fields: [
       {
+        code: 'patient_id',
+        label: 'Patient (resolved id)',
+        type: 'ENTITY_SEARCH',
+        binding: { namespace: 'LOOKUP', path: 'patient_id' },
+        config: {
+          ui: { hidden: true },
+          logic: { entity: 'patient' },
+        },
+      },
+      {
         code: 'full_name',
         label: 'Full name',
         type: 'TEXT',
         binding: { namespace: 'PATIENT', path: 'full_name' },
-        config: { validation: { maxLength: 200 } },
+        config: {
+          ui: {
+            placeholder: 'Search existing patient or type a new name',
+            searchEntity: {
+              kind: 'patient',
+              idTarget: 'patient_id',
+              fillFields: {
+                national_id: 'national_id',
+                phone_number: 'phone_number',
+                date_of_birth: 'date_of_birth',
+              },
+            },
+          },
+          validation: { maxLength: 200 },
+        },
       },
       {
         code: 'national_id',
@@ -316,11 +303,40 @@ const SECTIONS: SectionSpec[] = [
         },
       },
       {
+        code: 'spouse_guardian_id',
+        label: 'Spouse (resolved id)',
+        type: 'ENTITY_SEARCH',
+        binding: { namespace: 'LOOKUP', path: 'guardian_id' },
+        config: {
+          ui: { hidden: true },
+          logic: {
+            entity: 'guardian',
+            predicates: [
+              {
+                effect: 'visible',
+                when: { eq: { marital_status: 'MARRIED' } },
+              },
+            ] satisfies Predicate[],
+          },
+        },
+      },
+      {
         code: 'spouse_full_name',
         label: 'Spouse full name',
         type: 'TEXT',
         binding: { namespace: 'GUARDIAN', path: 'full_name' },
         config: {
+          ui: {
+            placeholder: 'Search existing spouse or type a new name',
+            searchEntity: {
+              kind: 'guardian',
+              idTarget: 'spouse_guardian_id',
+              fillFields: {
+                national_id: 'spouse_national_id',
+                phone_number: 'spouse_phone_number',
+              },
+            },
+          },
           validation: { maxLength: 200 },
           logic: {
             predicates: [
@@ -347,10 +363,6 @@ const SECTIONS: SectionSpec[] = [
             predicates: [
               {
                 effect: 'visible',
-                when: { eq: { marital_status: 'MARRIED' } },
-              },
-              {
-                effect: 'required',
                 when: { eq: { marital_status: 'MARRIED' } },
               },
             ] satisfies Predicate[],
@@ -449,11 +461,36 @@ const SECTIONS: SectionSpec[] = [
     },
     fields: [
       {
+        code: 'medical_rep_id',
+        label: 'Medical rep (resolved id)',
+        type: 'ENTITY_SEARCH',
+        binding: { namespace: 'LOOKUP', path: 'medical_rep_id' },
+        config: {
+          ui: { hidden: true },
+          logic: { entity: 'medical_rep' },
+        },
+      },
+      {
         code: 'rep_full_name',
         label: 'Rep full name',
         type: 'TEXT',
         binding: { namespace: 'MEDICAL_REP', path: 'full_name' },
-        config: { validation: { maxLength: 200 } },
+        config: {
+          ui: {
+            placeholder: 'Search existing rep or type a new name',
+            searchEntity: {
+              kind: 'medical_rep',
+              idTarget: 'medical_rep_id',
+              fillFields: {
+                national_id: 'rep_national_id',
+                phone_number: 'rep_phone_number',
+                email: 'rep_email',
+                company_name: 'company_name',
+              },
+            },
+          },
+          validation: { maxLength: 200 },
+        },
       },
       {
         code: 'rep_national_id',
@@ -489,7 +526,12 @@ const SECTIONS: SectionSpec[] = [
         type: 'MULTISELECT',
         binding: { namespace: 'MEDICAL_REP', path: 'medication_ids' },
         config: {
-          ui: { optionsSource: '/v1/medications?search=' },
+          ui: {
+            optionsSource:
+              '/v1/medications?medical_rep_id={medical_rep_id}&search=',
+            helpText:
+              'Pick an existing medical rep above to see the medications they promote.',
+          },
         },
       },
       {

@@ -199,12 +199,19 @@ export class VisitsService {
     const hasSpouseFields = !!(
       dto.spouse_full_name ||
       dto.spouse_national_id ||
-      dto.spouse_phone_number
+      dto.spouse_phone_number ||
+      dto.spouse_guardian_id
     );
     if (resolvedMaritalStatus === 'MARRIED' && hasSpouseFields) {
-      if (!dto.spouse_full_name || !dto.spouse_national_id) {
+      // spouse_national_id is optional, but a name (or a picked guardian id)
+      // is the minimum identity. national_id alone is not enough.
+      if (
+        !dto.spouse_full_name &&
+        !dto.spouse_guardian_id &&
+        (dto.spouse_national_id || dto.spouse_phone_number)
+      ) {
         throw new BadRequestException(
-          'spouse_full_name and spouse_national_id are required together when spouse fields are supplied',
+          'spouse_full_name is required when other spouse fields are supplied',
         );
       }
     }
@@ -260,7 +267,9 @@ export class VisitsService {
             phone_number: dto.phone_number!,
             address: dto.address!,
             husband_name:
-              dto.is_married && dto.husband_name ? dto.husband_name : null,
+              resolvedMaritalStatus === 'MARRIED'
+                ? (dto.husband_name ?? dto.spouse_full_name ?? null)
+                : null,
             ...(resolvedMaritalStatus
               ? { marital_status: resolvedMaritalStatus }
               : {}),
@@ -284,8 +293,24 @@ export class VisitsService {
         patient.marital_status = resolvedMaritalStatus;
       }
 
-      // SPOUSE upsert: Guardian by national_id, then PatientGuardian link.
-      if (
+      // SPOUSE link. Three paths:
+      //   1. `spouse_guardian_id` provided  → existing Guardian picked from
+      //      autocomplete; just ensure the PatientGuardian link exists.
+      //   2. `spouse_national_id` provided  → upsert Guardian by national_id.
+      //   3. Only `spouse_full_name`        → no Guardian row; the name lives
+      //      on Patient.husband_name (set during patient.create above).
+      let spouseGuardianId: string | null = null;
+      if (resolvedMaritalStatus === 'MARRIED' && dto.spouse_guardian_id) {
+        const picked = await tx.guardian.findFirst({
+          where: { id: dto.spouse_guardian_id, is_deleted: false },
+        });
+        if (!picked) {
+          throw new NotFoundException(
+            `Guardian ${dto.spouse_guardian_id} not found`,
+          );
+        }
+        spouseGuardianId = picked.id;
+      } else if (
         resolvedMaritalStatus === 'MARRIED' &&
         dto.spouse_full_name &&
         dto.spouse_national_id
@@ -304,11 +329,15 @@ export class VisitsService {
             }),
           },
         });
+        spouseGuardianId = spouse.id;
+      }
+
+      if (spouseGuardianId) {
         const existingLink = await tx.patientGuardian.findUnique({
           where: {
             patient_id_guardian_id: {
               patient_id: patient.id,
-              guardian_id: spouse.id,
+              guardian_id: spouseGuardianId,
             },
           },
         });
@@ -316,7 +345,7 @@ export class VisitsService {
           await tx.patientGuardian.create({
             data: {
               patient_id: patient.id,
-              guardian_id: spouse.id,
+              guardian_id: spouseGuardianId,
               relation_to_patient: 'SPOUSE',
               is_primary: true,
             },
