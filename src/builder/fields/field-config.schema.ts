@@ -18,13 +18,18 @@ export interface ConfigShape {
      * registered in `ENTITIES`. On pick, the frontend fills the form id field
      * named by `idTarget` with the selected entity's id and copies the entity
      * fields listed in `fillFields` onto the matching form-field codes.
-     * On no pick, the typed text is submitted as-is and the server takes the
-     * "new entity" branch.
+     *
+     * `allowCreate` opts the field into lookup-or-create semantics: when the
+     * user types a value and submits without picking a suggestion, the typed
+     * text is preserved at the host field's own `binding.path` so the server
+     * can take the "new entity" branch. When `allowCreate` is absent/false,
+     * the typed text is discarded on blur-without-selection (lookup-only).
      */
     searchEntity?: {
       kind: string;
       idTarget: string;
       fillFields?: Record<string, string>;
+      allowCreate?: boolean;
     };
     [k: string]: unknown;
   };

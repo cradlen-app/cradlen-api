@@ -256,6 +256,7 @@ const SECTIONS: SectionSpec[] = [
             searchEntity: {
               kind: 'patient',
               idTarget: 'patient_id',
+              allowCreate: true,
               fillFields: {
                 national_id: 'national_id',
                 phone_number: 'phone_number',
@@ -334,6 +335,7 @@ const SECTIONS: SectionSpec[] = [
             searchEntity: {
               kind: 'guardian',
               idTarget: 'spouse_guardian_id',
+              allowCreate: true,
               fillFields: {
                 national_id: 'spouse_national_id',
                 phone_number: 'spouse_phone_number',
@@ -484,6 +486,7 @@ const SECTIONS: SectionSpec[] = [
             searchEntity: {
               kind: 'medical_rep',
               idTarget: 'medical_rep_id',
+              allowCreate: true,
               fillFields: {
                 national_id: 'rep_national_id',
                 phone_number: 'rep_phone_number',
