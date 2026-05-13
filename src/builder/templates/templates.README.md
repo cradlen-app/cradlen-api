@@ -86,3 +86,42 @@ replay. Direct DB edits in production are explicitly disallowed.
 Activation is atomic — see the seed for the
 `updateMany(active=false) → update(active=true)` transaction. The partial
 unique index makes a race fail loudly rather than silently double-serve.
+
+## Composition (shell + extension)
+
+A template can declare a `parent_template_id` and `extension_key`, making it
+an **extension** of another template (the **shell**). The endpoint
+`GET /v1/form-templates/:code?extension=<KEY>` returns the shell composed
+with the active extension matching that key under that shell. Without
+`?extension=`, the raw shell is returned.
+
+**Merge rule (override + append hybrid):**
+
+- An extension section whose `code` matches a shell section REPLACES the
+  shell section at the shell's position. The shell's `order` is preserved;
+  the extension contributes content only.
+- An extension section whose `code` does not appear in the shell is APPENDED
+  in extension declaration order after all shell sections.
+- Field-level merging is not supported — section is the merge unit.
+
+**Discriminator:** the shell carries a SYSTEM-bound `specialty_code` field
+(parallel to the existing `visitor_type`). Extensions auto-emit a
+`forbidden when specialty_code != <key>` predicate on every contained field,
+so the server rejects extension fields submitted under the wrong specialty
+even if the client sends them.
+
+**Versioning (bundled activation):** the orchestrator seed for a shell and
+its known extensions performs activation in a single `$transaction` — there
+is no intermediate state where a shell is active without its extensions.
+Adding a new extension version means re-seeding the bundle (see
+`prisma/seeds/book-visit.ts`).
+
+**Listing:** `GET /v1/form-templates` returns only shells (rows with
+`parent_template_id IS NULL`). Extensions are not standalone listings.
+
+**Lookup invariants:**
+
+- Active shell: `WHERE code=? AND is_active AND NOT is_deleted AND parent_template_id IS NULL`.
+- Active extension: `WHERE parent_template_id=? AND extension_key=? AND is_active AND NOT is_deleted`.
+- DB enforces both via partial unique indexes; the symmetry CHECK guarantees
+  `(parent_template_id IS NULL) = (extension_key IS NULL)`.

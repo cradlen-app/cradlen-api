@@ -59,31 +59,36 @@ src/
 │   ├── auth/                 # auth (3-step signup, login, OTP, password reset) + authorization/ (role/branch checks)
 │   ├── org/                  # organizations, branches, profiles, staff, invitations, roles, job-functions, specialties, subscriptions
 │   ├── patient/patients/     # Patient records (cross-org via PatientJourney)
-│   ├── clinical/             # clinical (encounter/vitals/prescriptions/investigations), journeys, journey-templates, visits, patient-history, lab-tests, medications
+│   ├── clinical/             # clinical/ (encounter/vitals/prescriptions/investigations), visits/ (+ encounter-mutation guard), care-paths/, journeys/, journey-templates/, patient-history/, lab-tests/, medications/, medical-rep/, events/ (domain-events catalog)
 │   ├── notifications/        # In-app notifications + listener that maps invitation events → notifications
 │   └── health/               # DB connectivity probe
-├── builder/                  # Scaffold only (fields, sections, templates, workflows, rules, runtime, renderer, validator) — no implementation yet
+├── builder/                  # Form-builder DSL — fields, sections, rules, runtime, renderer, validator, templates (workflows/ still empty)
+├── specialties/              # Vertical specialty modules — sibling layer to plugins. Currently obgyn/ (visit-encounter, patient-history, pregnancy, amendments)
 └── plugins/                  # Scaffold only — extension layer for future verticals (telemedicine, billing, …)
 ```
 
 ### Dependency rules (enforced by ESLint `import/no-restricted-paths`)
 
 ```
-common         → nothing (foundation)
-infrastructure → common
-builder        → common, infrastructure
-core           → common, infrastructure, builder
-plugins        → common, infrastructure, builder, AND only @core/<x>/*.module.ts | *.public.ts
+common              → nothing (foundation)
+infrastructure      → common
+builder             → common, infrastructure
+core                → common, infrastructure, builder
+plugins/specialties → common, infrastructure, builder, core (convention: import core only via *.module.ts | *.public.ts)
 ```
 
+`plugins` and `specialties` are **sibling layers** and must not import from each other. Core, infrastructure, and builder must not import from either.
+
 The current exception: `common → @infrastructure/logging` is allowed because `LoggingInterceptor` (in `common/interceptor/`) needs the Pino logger. Tighten when the interceptor moves out of common. Do not introduce new exceptions casually — each one weakens the kernel boundary.
+
+**Note:** The `plugins/specialties → core only via *.module.ts | *.public.ts` rule is preserved as a convention but is **not currently ESLint-enforced** — the `except`-glob matching in `eslint-plugin-import` is unreliable on Windows backslash paths. Treat it as a code-review rule.
 
 ### TS path aliases
 
 Configured in `tsconfig.json`, `package.json` jest `moduleNameMapper`, `test/jest-{e2e,integration}.json`, and `webpack.config.js` (native `resolve.alias` + `extensionAlias { '.js': ['.ts','.js'] }`):
 
 ```
-@common/*  @config/*  @infrastructure/*  @builder/*  @core/*  @plugins/*
+@common/*  @config/*  @infrastructure/*  @builder/*  @core/*  @plugins/*  @specialties/*
 ```
 
 Source uses NodeNext-style `.js` suffixes on TS imports; webpack/jest both handle the rewrite. **Always prefer aliases for cross-layer imports.** Same-folder and same-feature imports stay relative.
@@ -184,6 +189,53 @@ JWT tokens carry `{ userId, profileId, organizationId, type }`. Refresh tokens u
 - `POST /organizations/:orgId/invitations/bulk` — array of up to 100. Single transaction for DB inserts (rolls back on any error); emails sent after commit; per-email failures returned in the response (`{ id, email, email_sent }`).
 - `POST /invitations/accept` — public endpoint. **Detects existing user by email**: if found, validates the supplied password against the existing account's password (security gate); creates a new `Profile` against the existing `User` rather than re-registering. This is what enables cross-org consultants (e.g. janah OWNER → amshag STAFF).
 
+### Clinical write-path: immutability, amendments, revisions
+
+Closed-visit clinical data is treated as a legal record. Three complementary mechanisms enforce that:
+
+**1. Encounter-mutation guard.** Section-level `PATCH` endpoints on a visit's clinical surface are blocked once `visit.status` is `COMPLETED` or `CANCELLED`.
+
+- `EncounterMutationGuard` (`@core/clinical/visits/encounter-mutation.guard.ts`) — class-level `@UseGuards`.
+- `@LocksOnClosedVisit('paramName')` decorator (`@common/decorators/locks-on-closed-visit.decorator.ts`) — opt each PATCH in. Default param is `id`; the pregnancy controller uses `visitId`. GETs pass through.
+- Blocked requests return `409 ENCOUNTER_LOCKED` with the amendment endpoint hinted in `error.details`.
+- `VisitsModule` exports the guard; specialty modules import `VisitsModule` to resolve it.
+
+**2. Amendments.** `POST /v1/visits/:visitId/amendments` is the only legal write path after close.
+
+- Authority: the visit's `assigned_doctor_id` OR an `OWNER` of the org.
+- Requires `reason` (min 8 chars) and an `If-Match` version precondition.
+- Targets: `obgyn_encounter`, `pregnancy_record` (visit-scoped). Patient-level (`patient_obgyn_history`) and journey/episode targets are validated but not yet routed.
+- Response includes `{ target, section, version_from, version_to, amended_by_id, reason, amended_at }` for audit.
+
+**3. Revisions (audit shadow tables).** Every PATCH and amendment writes the prior row to a paired `*_revisions` table inside the same Prisma transaction as the live-row update.
+
+- Tables (additive, all `…_revisions`): `patient_obgyn_history`, `visit_obgyn_encounter`, `pregnancy_journey_record`, `pregnancy_episode_record`, `visit_pregnancy_record`.
+- Shape: `(id, entity_id FK, version, snapshot Json, changed_fields Json, revised_by_id FK profile, revised_at, revision_reason?)`. `version` is the SNAPSHOT version — the live-row version BEFORE the change. Append-only.
+- Helper: `buildRevision(prior, changedFields, revisedById, reason?)` in `@specialties/obgyn/revisions.helper`. Callers own the Prisma transaction so live-row + revision are atomic. PATCH leaves `revision_reason` null; amendments pass `dto.reason`.
+
+**4. Bulk section PATCH per tab.** OB/GYN section PATCHes are collapsed into one bulk PATCH per tab (one transaction → one revision row covering all changed fields). When adding new specialty surfaces, follow that pattern rather than one-section-per-endpoint.
+
+**5. Clinical domain-events catalog.** Event names for downstream consumers (notifications, AI assistants, analytics, referrals) live in `@core/clinical/events/clinical-events.ts` and are re-exported via `events.public.ts`. Publish through `EventBus`; do not invent ad-hoc event strings.
+
+### Form-builder DSL (`src/builder/`)
+
+DB-stored form templates the frontend renders against. Authored in code (`prisma/seeds/`), never via admin endpoints — templates are code-managed (the only sanctioned write path is `prisma db seed`).
+
+**Subfolder roles:**
+
+- `fields/` — `FIELD_TYPES` registry (per-field-type config invariants), `ENTITIES` registry (the extension point for `ENTITY_SEARCH` — one entry per searchable kind, not a new `FormFieldType`), `ALLOWED_PATHS` map enforcing binding integrity at seed time (typos throw before any DB write), namespaced `ConfigShape` validator (`{ui, validation, logic}` only — no flat keys).
+- `rules/` — `Predicate { effect, when, message? }` types + pure `evaluate()` function. Operators: `eq` / `ne` / `in` / `and` / `or`. Effects: `visible` and `enabled` are UI-only; `required` and `forbidden` are server + UI. The server **never** consumes `visible` — a hidden-in-UI field can still be 400-rejected if its `required` predicate is true.
+- `runtime/` — `TemplateExecutionContext` indexes an in-flight payload by field code for predicate evaluation.
+- `renderer/` — strips internal columns (`is_deleted`, `created_by_id`, …) and attaches the typed `TemplateBindingContract` per field.
+- `validator/` — `TemplateValidator.validatePayload(code, payload)` walks fields and enforces `required` + `forbidden` predicates. **Not yet wired into the book endpoints** — services have hand-coded validation for the specific exclusivity cases. Generic template-driven enforcement is deferred until template #2 lands.
+- `templates/` — read-only API: `GET /v1/form-templates` (active rows), `GET /v1/form-templates/:code` (the active version), `GET /v1/form-templates/:code/versions/:version` (specific version, for stale-cache reads during rollback). The full binding contract + search-field two-bucket lifecycle + discriminator state-reset rule live in `src/builder/templates/templates.README.md`.
+
+**Binding namespaces** (`BindingNamespace`): `PATIENT`, `VISIT`, `INTAKE`, `GUARDIAN`, `MEDICAL_REP`, `LOOKUP` (data-bound search/picker widgets — value submitted is the resolved ID), `SYSTEM` (pure flow-control, never persisted, e.g. the `visitor_type` discriminator), `COMPUTED` (server recomputes — e.g. BMI from weight/height; client value advisory).
+
+**Active-version pointer.** `FormTemplate.is_active` + `activated_at` plus a partial unique index `(code) WHERE is_active=true AND is_deleted=false` (raw SQL in the migration — Prisma `@@unique` doesn't support `WHERE`). Read path is `WHERE is_active=true`, NEVER `max(version)`. Rollback is a pointer flip in a `$transaction([deactivate-others, activate-this])`.
+
+**Seed governance.** Templates are upserted by `(code, version)`; the activation transaction at the end of each seed function deactivates prior versions and marks the new one PUBLISHED. The `ALLOWED_PATHS` map is cross-checked against the actual DTO classes (`BookVisitDto`, `BookMedicalRepVisitDto`, `UpsertVitalsDto`, `ChiefComplaintMetaDto`) by `src/builder/fields/allowed-paths.contract.spec.ts` via class-validator metadata introspection — a DTO rename without an `ALLOWED_PATHS` update fails CI at the moment of the rename. **DTOs for template-driven flows must stay thin** (type/shape only, no `@ValidateIf`). When a new template lands, all conditional logic goes into `config.logic.predicates`, not into class-validator decorators.
+
 ### Versioning, logging, locale
 
 - **Versioning:** URI-based (`/v1/...`). Default version from `API_DEFAULT_VERSION`.
@@ -197,7 +249,9 @@ JWT tokens carry `{ userId, profileId, organizationId, type }`. Refresh tokens u
 1. Decide its layer:
    - Domain feature with its own endpoints → `src/core/<bucket>/<feature>/` (pick the right bucket: `auth | org | patient | clinical | notifications | health`).
    - Vendor SDK wrapper → `src/infrastructure/<feature>/`.
+   - Vertical specialty (OB/GYN, pediatrics, dermatology, …) → `src/specialties/<specialty>/`. Imports `core/<x>/*.module.ts` to resolve guards/services; never imports another specialty.
    - Cross-cutting extension (telemedicine, billing, lab integration) → `src/plugins/<feature>/`.
+   - DB-backed form template / dynamic validation rule → live in `src/builder/` (DSL primitives) + `prisma/seeds/` (the seed module that authors the template).
 2. Create `<feature>.module.ts`, controller, service. Inject `PrismaService` from `@infrastructure/database/...`.
 3. Register the module in `app.module.ts`.
 4. Use `@CurrentUser() user: AuthContext` and call `AuthorizationService` for role/branch checks.
@@ -219,12 +273,18 @@ Core entities:
 - **Specialty** — catalog (`code` unique). Linked to `Procedure`, `JourneyTemplate`, and to `Profile`/`Organization`/`Invitation` via M2M.
 - **Procedure** — surgery catalog (e.g. `CESAREAN_SECTION`).
 - **WorkingSchedule** → **WorkingDay** → **WorkingShift** — per (profile, branch).
-- **Patient** → many **PatientJourney** → many **PatientEpisode** → many **Visit**.
+- **Patient** → many **PatientJourney** → many **PatientEpisode** → many **Visit**. `Patient.marital_status` (enum) gates spouse capture.
+- **Guardian** + **PatientGuardian** — guardian (national_id-keyed) linked to patient with `relation_to_patient: GuardianRelation` (SPOUSE / PARENT / CHILD / …). Spouses are upserted at booking time when `marital_status=MARRIED`.
+- **Visit.appointment_type** is `VISIT | FOLLOW_UP`. `MEDICAL_REP` visits live in a separate table — see below.
+- **MedicalRep** + **MedicalRepVisit** + **MedicalRepMedication** + **MedicalRepVisitMedication** — org-scoped pharma rep visits. Booked via `POST /v1/medical-rep-visits/book`; search via `GET /v1/medical-reps?search=`. No patient/episode/journey.
+- **FormTemplate** + **FormSection** + **FormField** — DB-stored form schemas for the builder DSL. See "Form-builder DSL" above.
 - **RefreshToken** — `jti` (UUID), `token_hash` (bcrypt), `profile_id`, `organization_id`, `active_branch_id`.
 - **VerificationCode** — `code_hash` (bcrypt), `purpose` (`SIGNUP | LOGIN | PASSWORD_RESET`), `expires_at`, `consumed_at`.
 - **Notification** — in-app notifications.
 
 All models have UUID primary keys, `created_at` / `updated_at`, and soft-delete fields. Lookup tables (`Role`, `JobFunction`, `SubscriptionPlan`, `Specialty`, `Procedure`) are seed-only — `prisma/seed.ts` is the source of truth, runs via `npx prisma db seed`.
+
+`prisma/seeds/` holds self-contained per-feature seed modules called by `prisma/seed.ts`. Convention: each module is idempotent (upserts keyed on natural keys), validates its own input shape via the builder validators before any DB write, and ends with an activation transaction when relevant (e.g. flipping `FormTemplate.is_active`). See `prisma/seeds/obgyn-book-visit.ts` for the canonical example.
 
 `prisma/seed-fixtures.ts` builds three demo organizations (jasmin, janah, amshag) with cross-org doctors. Idempotent. Refuses to run when `NODE_ENV=production`.
 

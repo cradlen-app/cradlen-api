@@ -1546,33 +1546,40 @@ model VisitPregnancyRecordRevision {
 // ============================================================================
 
 model FormTemplate {
-  id            String             @id @default(uuid()) @db.Uuid
-  code          String
-  name          String
-  description   String?
-  scope         FormScope
-  version       Int                @default(1)
-  status        FormTemplateStatus @default(DRAFT)
-  published_at  DateTime?
-  is_active     Boolean            @default(false)
-  activated_at  DateTime?
-  specialty_id  String?            @db.Uuid
-  specialty     Specialty?         @relation(fields: [specialty_id], references: [id], onDelete: SetNull)
-  created_by_id String?            @db.Uuid
-  created_by    Profile?           @relation("FormTemplateCreatedBy", fields: [created_by_id], references: [id], onDelete: SetNull)
-  updated_by_id String?            @db.Uuid
-  updated_by    Profile?           @relation("FormTemplateUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
-  is_deleted    Boolean            @default(false)
-  deleted_at    DateTime?
-  created_at    DateTime           @default(now())
-  updated_at    DateTime           @updatedAt
-  sections      FormSection[]
+  id                 String             @id @default(uuid()) @db.Uuid
+  code               String
+  name               String
+  description        String?
+  scope              FormScope
+  version            Int                @default(1)
+  status             FormTemplateStatus @default(DRAFT)
+  published_at       DateTime?
+  is_active          Boolean            @default(false)
+  activated_at       DateTime?
+  specialty_id       String?            @db.Uuid
+  specialty          Specialty?         @relation(fields: [specialty_id], references: [id], onDelete: SetNull)
+  parent_template_id String?            @db.Uuid
+  parent_template    FormTemplate?      @relation("FormTemplateExtensions", fields: [parent_template_id], references: [id], onDelete: Cascade)
+  extensions         FormTemplate[]     @relation("FormTemplateExtensions")
+  extension_key      String?
+  created_by_id      String?            @db.Uuid
+  created_by         Profile?           @relation("FormTemplateCreatedBy", fields: [created_by_id], references: [id], onDelete: SetNull)
+  updated_by_id      String?            @db.Uuid
+  updated_by         Profile?           @relation("FormTemplateUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
+  is_deleted         Boolean            @default(false)
+  deleted_at         DateTime?
+  created_at         DateTime           @default(now())
+  updated_at         DateTime           @updatedAt
+  sections           FormSection[]
 
   @@unique([code, version])
   @@index([scope, status, is_deleted])
-  // Partial unique "(code) WHERE is_active=true AND is_deleted=false" is added
-  // via a raw-SQL block in the migration (Prisma does not support partial
-  // unique indexes natively). See migration.sql.
+  @@index([parent_template_id, extension_key])
+  // Partial unique indexes + symmetry CHECK added via raw-SQL block in the
+  // migration (Prisma does not support partial unique indexes / CHECK constraints natively):
+  //   form_templates_code_active_shell_unique     — one active shell per code
+  //   form_templates_parent_ext_active_unique     — one active extension per (parent, key)
+  //   form_templates_extension_symmetry_check     — (parent_template_id IS NULL) = (extension_key IS NULL)
   @@map("form_templates")
 }
 
