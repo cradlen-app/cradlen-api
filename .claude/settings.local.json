@@ -60,7 +60,13 @@
       "Bash(gh pr create --draft --base development --head feature/builder-obgyn-template --title 'feat\\(builder\\): OB/GYN book-visit template — schema + builder DSL layer \\(WIP, 2/3 commits\\)' --body ' *)",
       "Bash(gh pr *)",
       "Bash(npx tsx *)",
-      "Bash(DEBUG_CONTRACT=1 npx jest src/builder/fields/allowed-paths.contract.spec.ts -t sanity)"
+      "Bash(DEBUG_CONTRACT=1 npx jest src/builder/fields/allowed-paths.contract.spec.ts -t sanity)",
+      "Bash(git -C \"f:\\\\Cradlen\\\\cradlen-api\" log --oneline -20 -- prisma/)",
+      "Bash(git -C \"f:\\\\Cradlen\\\\cradlen-api\" log --all --oneline --grep=\"builder\\\\|FormTemplate\")",
+      "Bash(git -C \"f:\\\\Cradlen\\\\cradlen-api\" show --stat c0eb45c)",
+      "Bash(git -C \"f:\\\\Cradlen\\\\cradlen-api\" log -1 --format=\"%h %ai %s\" HEAD)",
+      "Bash(git -C \"f:\\\\Cradlen\\\\cradlen-api\" log -1 --format=\"%h %ai %s\" -- prisma/migrations/)",
+      "Bash(PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=yes npx prisma migrate reset --force)"
     ],
     "additionalDirectories": [
       "\\tmp"

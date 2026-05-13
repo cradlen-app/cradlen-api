@@ -181,7 +181,9 @@ describe('StaffService.listStaff', () => {
     await service.listStaff('caller-uuid', 'org-uuid');
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.not.objectContaining({ job_functions: expect.anything() }),
+        where: expect.not.objectContaining({
+          job_functions: expect.anything(),
+        }),
       }),
     );
   });
