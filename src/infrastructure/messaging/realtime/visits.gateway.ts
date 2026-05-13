@@ -42,6 +42,21 @@ export class VisitsGateway {
     this.broadcast('visit.updated', event, false);
   }
 
+  @OnEvent('medical_rep_visit.booked')
+  onMedRepVisitBooked(event: VisitRealtimeEvent) {
+    this.broadcast('medical_rep_visit.booked', event, true);
+  }
+
+  @OnEvent('medical_rep_visit.status_updated')
+  onMedRepVisitStatusUpdated(event: VisitRealtimeEvent) {
+    this.broadcast('medical_rep_visit.status_updated', event, true);
+  }
+
+  @OnEvent('medical_rep_visit.updated')
+  onMedRepVisitUpdated(event: VisitRealtimeEvent) {
+    this.broadcast('medical_rep_visit.updated', event, false);
+  }
+
   private broadcast(
     eventName: string,
     event: VisitRealtimeEvent,
