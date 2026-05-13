@@ -692,7 +692,11 @@ export class VisitsService {
       where: { id, is_deleted: false },
       include: {
         episode: {
-          include: { journey: { select: { organization_id: true } } },
+          include: {
+            journey: {
+              select: { organization_id: true, patient_id: true },
+            },
+          },
         },
       },
     });
@@ -713,7 +717,70 @@ export class VisitsService {
         `Cannot update a visit in terminal status: ${visit.status}`,
       );
     }
+
+    const resolvedMaritalStatus =
+      dto.marital_status ??
+      (dto.is_married === true
+        ? 'MARRIED'
+        : dto.is_married === false
+          ? undefined
+          : undefined);
+
+    const hasSpouseFields = !!(
+      dto.spouse_full_name ||
+      dto.spouse_national_id ||
+      dto.spouse_phone_number ||
+      dto.spouse_guardian_id
+    );
+    if (
+      !dto.spouse_full_name &&
+      !dto.spouse_guardian_id &&
+      (dto.spouse_national_id || dto.spouse_phone_number)
+    ) {
+      throw new BadRequestException(
+        'spouse_full_name is required when other spouse fields are supplied',
+      );
+    }
+    if (
+      resolvedMaritalStatus &&
+      resolvedMaritalStatus !== 'MARRIED' &&
+      hasSpouseFields
+    ) {
+      throw new BadRequestException(
+        'Spouse fields may only be supplied when marital_status is MARRIED',
+      );
+    }
+
     const updated = await this.prismaService.db.$transaction(async (tx) => {
+      const patientUpdates: Prisma.PatientUpdateInput = {
+        ...(dto.full_name !== undefined && { full_name: dto.full_name }),
+        ...(dto.national_id !== undefined && { national_id: dto.national_id }),
+        ...(dto.date_of_birth !== undefined && {
+          date_of_birth: new Date(dto.date_of_birth),
+        }),
+        ...(dto.phone_number !== undefined && {
+          phone_number: dto.phone_number,
+        }),
+        ...(dto.address !== undefined && { address: dto.address }),
+        ...(resolvedMaritalStatus !== undefined && {
+          marital_status: resolvedMaritalStatus,
+        }),
+        ...(dto.husband_name !== undefined && {
+          husband_name: dto.husband_name,
+        }),
+      };
+      const patientId = visit.episode.journey.patient_id;
+      if (Object.keys(patientUpdates).length > 0) {
+        await tx.patient.update({
+          where: { id: patientId },
+          data: patientUpdates,
+        });
+      }
+
+      if (resolvedMaritalStatus === 'MARRIED' && hasSpouseFields) {
+        await this.applySpouseLink(tx, patientId, dto);
+      }
+
       const next = await tx.visit.update({
         where: { id },
         data: {
@@ -793,6 +860,76 @@ export class VisitsService {
       payload: updatedVisit,
     });
     return updatedVisit;
+  }
+
+  private async applySpouseLink(
+    tx: Prisma.TransactionClient,
+    patientId: string,
+    dto: UpdateVisitDto,
+  ) {
+    let spouseGuardianId: string | null = null;
+    if (dto.spouse_guardian_id) {
+      const picked = await tx.guardian.findFirst({
+        where: { id: dto.spouse_guardian_id, is_deleted: false },
+      });
+      if (!picked) {
+        throw new NotFoundException(
+          `Guardian ${dto.spouse_guardian_id} not found`,
+        );
+      }
+      spouseGuardianId = picked.id;
+    } else if (dto.spouse_full_name && dto.spouse_national_id) {
+      const spouse = await tx.guardian.upsert({
+        where: { national_id: dto.spouse_national_id },
+        create: {
+          national_id: dto.spouse_national_id,
+          full_name: dto.spouse_full_name,
+          phone_number: dto.spouse_phone_number ?? null,
+        },
+        update: {
+          full_name: dto.spouse_full_name,
+          ...(dto.spouse_phone_number !== undefined && {
+            phone_number: dto.spouse_phone_number,
+          }),
+        },
+      });
+      spouseGuardianId = spouse.id;
+    } else if (dto.spouse_full_name) {
+      // Name-only update — store on Patient.husband_name; no Guardian row.
+      await tx.patient.update({
+        where: { id: patientId },
+        data: { husband_name: dto.spouse_full_name },
+      });
+    }
+
+    if (spouseGuardianId) {
+      const existingLink = await tx.patientGuardian.findUnique({
+        where: {
+          patient_id_guardian_id: {
+            patient_id: patientId,
+            guardian_id: spouseGuardianId,
+          },
+        },
+      });
+      if (!existingLink) {
+        await tx.patientGuardian.create({
+          data: {
+            patient_id: patientId,
+            guardian_id: spouseGuardianId,
+            relation_to_patient: 'SPOUSE',
+            is_primary: true,
+          },
+        });
+      } else if (
+        existingLink.relation_to_patient !== 'SPOUSE' ||
+        !existingLink.is_primary
+      ) {
+        await tx.patientGuardian.update({
+          where: { id: existingLink.id },
+          data: { relation_to_patient: 'SPOUSE', is_primary: true },
+        });
+      }
+    }
   }
 
   async setFollowUp(id: string, dto: SetFollowUpDto, user: AuthContext) {
