@@ -22,6 +22,7 @@ import { SpecialtiesModule } from '@core/org/specialties/specialties.module';
 import { JobFunctionsModule } from '@core/org/job-functions/job-functions.module';
 import { JourneyTemplatesModule } from '@core/clinical/journey-templates/journey-templates.module';
 import { PatientsModule } from '@core/patient/patients/patients.module';
+import { GuardiansModule } from '@core/patient/guardians/guardians.module';
 import { JourneysModule } from '@core/clinical/journeys/journeys.module';
 import { VisitsModule } from '@core/clinical/visits/visits.module';
 import { MedicalRepModule } from '@core/clinical/medical-rep/medical-rep.module';
@@ -68,6 +69,7 @@ import type { AppConfig } from './config/app.config';
     JobFunctionsModule,
     JourneyTemplatesModule,
     PatientsModule,
+    GuardiansModule,
     JourneysModule,
     VisitsModule,
     MedicalRepModule,

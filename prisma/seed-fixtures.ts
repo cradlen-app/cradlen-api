@@ -57,8 +57,8 @@ async function main() {
   console.log('Adding cross-org links (Mervat → amshag, Elsayed → jasmin/janah)…');
   await addCrossOrgLinks(refs, passwordHash, jasminContext, janahContext);
 
-  console.log('Creating sample C-section calendar event at jasmin…');
-  await createSampleCSection(refs, jasminContext);
+  // Sample C-section fixture skipped — the CalendarEvent model was removed
+  // from the schema. Re-enable once a successor model lands.
 
   console.log('Done.');
   console.log(
@@ -160,9 +160,7 @@ async function ensureOrganization(name: string) {
     where: { name, is_deleted: false },
   });
   if (existing) return existing;
-  return prisma.organization.create({
-    data: { name, specialities: ['Gynecology'] },
-  });
+  return prisma.organization.create({ data: { name } });
 }
 
 async function ensureOrganizationSpecialty(

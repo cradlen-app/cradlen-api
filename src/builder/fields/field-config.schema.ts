@@ -12,6 +12,20 @@ export interface ConfigShape {
     helpText?: string;
     optionsSource?: string;
     derivedFrom?: string[];
+    hidden?: boolean;
+    /**
+     * Turns a plain TEXT field into an autocomplete that searches an entity
+     * registered in `ENTITIES`. On pick, the frontend fills the form id field
+     * named by `idTarget` with the selected entity's id and copies the entity
+     * fields listed in `fillFields` onto the matching form-field codes.
+     * On no pick, the typed text is submitted as-is and the server takes the
+     * "new entity" branch.
+     */
+    searchEntity?: {
+      kind: string;
+      idTarget: string;
+      fillFields?: Record<string, string>;
+    };
     [k: string]: unknown;
   };
   validation?: {
