@@ -1260,6 +1260,9 @@ Table medical_rep_visits {
   status MedicalRepVisitStatus [not null, default: 'SCHEDULED']
   priority VisitPriority [not null, default: 'NORMAL']
   notes String
+  checked_in_at DateTime
+  started_at DateTime
+  completed_at DateTime
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
@@ -1413,6 +1416,7 @@ Enum BindingNamespace {
 Enum MedicalRepVisitStatus {
   SCHEDULED
   CHECKED_IN
+  IN_PROGRESS
   COMPLETED
   CANCELLED
   NO_SHOW

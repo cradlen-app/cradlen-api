@@ -62,6 +62,7 @@ const SECTIONS: SectionSpec[] = [
         type: 'SELECT',
         binding: { namespace: 'SYSTEM', path: 'specialty_code' },
         config: {
+          ui: { default: { kind: 'first_option' } },
           validation: {
             options: [
               { code: 'OBGYN', label: 'OB/GYN' },
@@ -83,6 +84,7 @@ const SECTIONS: SectionSpec[] = [
         type: 'DATETIME',
         binding: { namespace: 'VISIT', path: 'scheduled_at' },
         config: {
+          ui: { default: { kind: 'now' } },
           logic: {
             predicates: [
               { effect: 'visible', when: { eq: { visitor_type: 'PATIENT' } } },
@@ -97,6 +99,7 @@ const SECTIONS: SectionSpec[] = [
         type: 'DATETIME',
         binding: { namespace: 'MEDICAL_REP', path: 'scheduled_at' },
         config: {
+          ui: { default: { kind: 'now' } },
           logic: {
             predicates: [
               {
