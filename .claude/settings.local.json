@@ -74,10 +74,12 @@
       "Bash(echo \"vit=$?\")",
       "Bash(echo \"api-tsc=$?\")",
       "Bash(pushd f:/Cradlen/cradlen-web)",
-      "Bash(popd)"
+      "Bash(popd)",
+      "Bash(rm f:/Cradlen/cradlen-web/src/features/visits/components/EditVisitDrawer.tsx && echo \"deleted\")"
     ],
     "additionalDirectories": [
-      "\\tmp"
+      "\\tmp",
+      "f:\\Cradlen\\cradlen-web\\src\\features\\visits\\components"
     ]
   }
 }
