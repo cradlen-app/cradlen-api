@@ -1,5 +1,5 @@
-import { Controller, Get, Param, ParseIntPipe } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
+import { ApiQuery, ApiTags } from '@nestjs/swagger';
 import { ApiStandardResponse } from '@common/swagger';
 import { TemplatesService } from './templates.service.js';
 import { TemplateRendererService } from '../renderer/template-renderer.service.js';
@@ -24,8 +24,20 @@ export class TemplatesController {
 
   @Get(':code')
   @ApiStandardResponse(FormTemplateDto)
-  async getActive(@Param('code') code: string) {
-    const row = await this.templates.findActiveByCode(code);
+  @ApiQuery({
+    name: 'extension',
+    required: false,
+    description:
+      'Optional extension key (e.g. "OBGYN"). When provided, the response is the shell template composed with the active extension matching this key under that shell.',
+  })
+  async getActive(
+    @Param('code') code: string,
+    @Query('extension') extension?: string,
+  ) {
+    const row = await this.templates.findActiveComposed(
+      code,
+      extension ?? null,
+    );
     return this.renderer.render(row);
   }
 

@@ -1,6 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import type { HydratableTemplate } from '../renderer/template-renderer.service.js';
 
+export interface ComposedFrom {
+  shell_id: string;
+  extension_id: string;
+  extension_key: string | null;
+}
+
+export type ComposedTemplate = HydratableTemplate & {
+  composed_from?: ComposedFrom;
+};
+
 /**
  * Pure composer. Merge semantics: any extension section whose `code` matches
  * a shell section REPLACES the shell section at the shell's position (the
@@ -15,7 +25,7 @@ export class TemplateCompositionService {
   compose(
     shell: HydratableTemplate,
     extension: HydratableTemplate | null,
-  ): HydratableTemplate {
+  ): ComposedTemplate {
     if (!extension) return shell;
 
     const extBySectionCode = new Map(
@@ -34,17 +44,14 @@ export class TemplateCompositionService {
       .filter((s) => !usedExtCodes.has(s.code))
       .map((s, i) => ({ ...s, order: shell.sections.length + i }));
 
-    const composed: HydratableTemplate = {
+    return {
       ...shell,
       sections: [...mergedShellSections, ...appended],
+      composed_from: {
+        shell_id: shell.id,
+        extension_id: extension.id,
+        extension_key: extension.extension_key,
+      },
     };
-
-    (composed as any).composed_from = {
-      shell_id: shell.id,
-      extension_id: extension.id,
-      extension_key: extension.extension_key,
-    };
-
-    return composed;
   }
 }
