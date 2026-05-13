@@ -65,6 +65,7 @@ export class StaffController {
       query.limit,
       query.scope,
       query.clinical,
+      query.doctors_only,
     );
   }
 
