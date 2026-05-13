@@ -249,12 +249,21 @@ export class ListStaffQueryDto {
 
   @ApiPropertyOptional({
     description:
-      'When true, filters to staff with at least one clinical job function (job_function.is_clinical = true). Used by template-driven forms that need a doctor picker.',
+      'When true, filters to staff with at least one clinical job function (job_function.is_clinical = true). Includes nurses and assistants — for a doctor-only picker, use `doctors_only` instead.',
   })
   @IsOptional()
   @Type(() => Boolean)
   @Transform(({ value }) => value === true || value === 'true')
   clinical?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'When true, filters to staff with at least one DOCTOR job function (OBGYN, ANESTHESIOLOGIST, PEDIATRICIAN, OTHER_DOCTOR). Excludes nurses and assistants. Takes precedence over `clinical` when both are true.',
+  })
+  @IsOptional()
+  @Type(() => Boolean)
+  @Transform(({ value }) => value === true || value === 'true')
+  doctors_only?: boolean;
 }
 
 class RoleSummaryDto {
