@@ -1155,6 +1155,10 @@ Table form_templates {
   activated_at DateTime
   specialty_id String
   specialty specialties
+  parent_template_id String
+  parent_template form_templates
+  extensions form_templates [not null]
+  extension_key String
   created_by_id String
   created_by profiles
   updated_by_id String
@@ -1706,6 +1710,8 @@ Ref: visit_pregnancy_record_revisions.entity_id > visit_pregnancy_records.id [de
 Ref: visit_pregnancy_record_revisions.revised_by_id > profiles.id [delete: Cascade]
 
 Ref: form_templates.specialty_id > specialties.id [delete: Set Null]
+
+Ref: form_templates.parent_template_id - form_templates.id [delete: Cascade]
 
 Ref: form_templates.created_by_id > profiles.id [delete: Set Null]
 

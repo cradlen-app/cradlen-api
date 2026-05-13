@@ -157,6 +157,37 @@ describe('StaffService.listStaff', () => {
     );
   });
 
+  it('adds is_clinical job-function filter when clinical=true is passed', async () => {
+    await service.listStaff(
+      'caller-uuid',
+      'org-uuid',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      true,
+    );
+    expect(db.profile.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          job_functions: { some: { job_function: { is_clinical: true } } },
+        }),
+      }),
+    );
+  });
+
+  it('omits the clinical filter when clinical is undefined', async () => {
+    await service.listStaff('caller-uuid', 'org-uuid');
+    expect(db.profile.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.not.objectContaining({
+          job_functions: expect.anything(),
+        }),
+      }),
+    );
+  });
+
   it('applies pagination skip/take and returns meta', async () => {
     db.profile.count.mockResolvedValue(45);
     const result = await service.listStaff(
