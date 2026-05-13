@@ -1672,6 +1672,7 @@ model MedicalRepVisit {
   scheduled_at       DateTime
   status             MedicalRepVisitStatus       @default(SCHEDULED)
   priority           VisitPriority               @default(NORMAL)
+  queue_number       Int?
   notes              String?
   checked_in_at      DateTime?
   started_at         DateTime?
