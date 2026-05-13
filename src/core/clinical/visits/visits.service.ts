@@ -548,7 +548,6 @@ export class VisitsService {
     assigned_doctor: {
       select: {
         id: true,
-        specialty: true,
         user: { select: { id: true, first_name: true, last_name: true } },
       },
     },
