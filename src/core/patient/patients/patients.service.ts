@@ -224,6 +224,24 @@ export class PatientsService {
   async findOne(id: string) {
     const patient = await this.prismaService.db.patient.findUnique({
       where: { id, is_deleted: false },
+      include: {
+        guardian_links: {
+          where: {
+            is_deleted: false,
+            relation_to_patient: 'SPOUSE',
+          },
+          include: {
+            guardian: {
+              select: {
+                id: true,
+                full_name: true,
+                national_id: true,
+                phone_number: true,
+              },
+            },
+          },
+        },
+      },
     });
     if (!patient) throw new NotFoundException(`Patient ${id} not found`);
     return patient;

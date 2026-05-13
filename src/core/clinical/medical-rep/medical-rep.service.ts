@@ -59,6 +59,12 @@ function todayBounds(): { start: Date; end: Date } {
 const MED_REP_VISIT_INCLUDE = {
   medical_rep: true,
   medications: true,
+  assigned_doctor: {
+    select: {
+      id: true,
+      user: { select: { id: true, first_name: true, last_name: true } },
+    },
+  },
 } as const;
 
 @Injectable()
@@ -173,7 +179,7 @@ export class MedicalRepService {
               }
             : undefined,
         },
-        include: { medications: true },
+        include: MED_REP_VISIT_INCLUDE,
       });
       return { rep, visit };
     });
@@ -205,7 +211,7 @@ export class MedicalRepService {
         orderBy: { scheduled_at: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
-        include: { medical_rep: true, medications: true },
+        include: MED_REP_VISIT_INCLUDE,
       }),
       this.prismaService.db.medicalRepVisit.count({ where }),
     ]);
@@ -219,7 +225,7 @@ export class MedicalRepService {
         organization_id: user.organizationId,
         is_deleted: false,
       },
-      include: { medical_rep: true, medications: true },
+      include: MED_REP_VISIT_INCLUDE,
     });
     if (!visit)
       throw new NotFoundException(`Medical rep visit ${id} not found`);
@@ -402,6 +408,24 @@ export class MedicalRepService {
     }
 
     const updated = await this.prismaService.db.$transaction(async (tx) => {
+      const repUpdates: Prisma.MedicalRepUpdateInput = {
+        ...(dto.full_name !== undefined && { full_name: dto.full_name }),
+        ...(dto.national_id !== undefined && { national_id: dto.national_id }),
+        ...(dto.phone_number !== undefined && {
+          phone_number: dto.phone_number,
+        }),
+        ...(dto.email !== undefined && { email: dto.email }),
+        ...(dto.company_name !== undefined && {
+          company_name: dto.company_name,
+        }),
+      };
+      if (Object.keys(repUpdates).length > 0) {
+        await tx.medicalRep.update({
+          where: { id: visit.medical_rep_id },
+          data: repUpdates,
+        });
+      }
+
       if (dto.medication_ids) {
         await this.assertMedicationsExist(
           tx,
@@ -460,11 +484,21 @@ export class MedicalRepService {
     }
     const timestampField = MED_REP_STATUS_TIMESTAMPS[dto.status];
     const now = new Date();
+    const queueNumber =
+      dto.status === 'CHECKED_IN'
+        ? await this.getNextRepQueueNumber(
+            visit.assigned_doctor_id,
+            visit.branch_id,
+            now,
+          )
+        : undefined;
+
     const updated = await this.prismaService.db.medicalRepVisit.update({
       where: { id },
       data: {
         status: dto.status,
         ...(timestampField ? { [timestampField]: now } : {}),
+        ...(queueNumber !== undefined ? { queue_number: queueNumber } : {}),
       },
       include: MED_REP_VISIT_INCLUDE,
     });
@@ -475,6 +509,28 @@ export class MedicalRepService {
       payload: updated,
     });
     return updated;
+  }
+
+  private async getNextRepQueueNumber(
+    assignedDoctorId: string,
+    branchId: string,
+    date: Date,
+  ): Promise<number> {
+    const dayStart = new Date(date);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(date);
+    dayEnd.setHours(23, 59, 59, 999);
+    const last = await this.prismaService.db.medicalRepVisit.findFirst({
+      where: {
+        assigned_doctor_id: assignedDoctorId,
+        branch_id: branchId,
+        checked_in_at: { gte: dayStart, lte: dayEnd },
+        is_deleted: false,
+      },
+      orderBy: { queue_number: 'desc' },
+      select: { queue_number: true },
+    });
+    return (last?.queue_number ?? 0) + 1;
   }
 
   private async loadVisitForUser(id: string, user: AuthContext) {

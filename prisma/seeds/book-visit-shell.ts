@@ -288,6 +288,13 @@ const SECTIONS: SectionSpec[] = [
         config: { validation: { maxLength: 30 } },
       },
       {
+        code: 'address',
+        label: 'Address',
+        type: 'TEXT',
+        binding: { namespace: 'PATIENT', path: 'address' },
+        config: { validation: { maxLength: 200 } },
+      },
+      {
         code: 'marital_status',
         label: 'Marital status',
         type: 'SELECT',
