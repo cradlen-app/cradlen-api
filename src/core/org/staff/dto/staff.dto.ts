@@ -13,7 +13,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { DayOfWeek, EngagementType, ExecutiveTitle } from '@prisma/client';
 
 export const STAFF_ROLE_NAMES = [
@@ -246,6 +246,15 @@ export class ListStaffQueryDto {
   @IsOptional()
   @IsEnum(['org', 'mine'])
   scope?: 'org' | 'mine';
+
+  @ApiPropertyOptional({
+    description:
+      'When true, filters to staff with at least one clinical job function (job_function.is_clinical = true). Used by template-driven forms that need a doctor picker.',
+  })
+  @IsOptional()
+  @Type(() => Boolean)
+  @Transform(({ value }) => value === true || value === 'true')
+  clinical?: boolean;
 }
 
 class RoleSummaryDto {
