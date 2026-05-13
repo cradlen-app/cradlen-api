@@ -1259,6 +1259,7 @@ Table medical_rep_visits {
   scheduled_at DateTime [not null]
   status MedicalRepVisitStatus [not null, default: 'SCHEDULED']
   priority VisitPriority [not null, default: 'NORMAL']
+  queue_number Int
   notes String
   checked_in_at DateTime
   started_at DateTime
