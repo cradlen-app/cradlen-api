@@ -62,7 +62,7 @@ export const ALLOWED_PATHS = {
     'medication_ids',
     'notes',
   ],
-  LOOKUP: ['patient_id', 'medical_rep_id'],
+  LOOKUP: ['patient_id', 'medical_rep_id', 'guardian_id'],
   SYSTEM: ['visitor_type', 'specialty_code'],
   COMPUTED: ['vitals.bmi'],
 } as const satisfies Record<BindingNamespace, readonly string[]>;
