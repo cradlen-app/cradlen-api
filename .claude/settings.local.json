@@ -66,7 +66,13 @@
       "Bash(git -C \"f:\\\\Cradlen\\\\cradlen-api\" show --stat c0eb45c)",
       "Bash(git -C \"f:\\\\Cradlen\\\\cradlen-api\" log -1 --format=\"%h %ai %s\" HEAD)",
       "Bash(git -C \"f:\\\\Cradlen\\\\cradlen-api\" log -1 --format=\"%h %ai %s\" -- prisma/migrations/)",
-      "Bash(PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=yes npx prisma migrate reset --force)"
+      "Bash(PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=yes npx prisma migrate reset --force)",
+      "PowerShell($cd = 'f:\\\\Cradlen\\\\cradlen-web'; & cmd /c \"cd /d $cd && npx tsc --noEmit 2>&1\")",
+      "Bash(bash -c \"cd /f/Cradlen/cradlen-web && npx tsc --noEmit 2>&1 | tail -80\")",
+      "Bash(echo \"tsc=$?\")",
+      "Bash(npx vitest *)",
+      "Bash(echo \"vit=$?\")",
+      "Bash(echo \"api-tsc=$?\")"
     ],
     "additionalDirectories": [
       "\\tmp"
