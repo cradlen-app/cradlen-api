@@ -161,6 +161,7 @@ export class StaffService {
     page = 1,
     limit = 20,
     scope?: 'org' | 'mine',
+    clinical?: boolean,
   ) {
     await this.authorizationService.assertCanViewStaff(
       profileId,
@@ -207,6 +208,11 @@ export class StaffService {
     }
     if (role) {
       where.roles = { some: { role: { name: role.toUpperCase() } } };
+    }
+    if (clinical === true) {
+      where.job_functions = {
+        some: { job_function: { is_clinical: true } },
+      };
     }
 
     const [profiles, total] = await Promise.all([
