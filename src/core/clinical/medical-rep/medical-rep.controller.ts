@@ -9,6 +9,8 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiPaginatedResponse, ApiStandardResponse } from '@common/swagger';
 import { CurrentUser } from '@common/decorators/current-user.decorator';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
@@ -18,6 +20,13 @@ import { ListMedicalRepsQueryDto } from './dto/list-medical-reps.query';
 import { MedicalRepDto, MedicalRepSummaryDto } from './dto/medical-rep.dto';
 import { UpdateMedicalRepVisitDto } from './dto/update-medical-rep-visit.dto';
 import { UpdateMedicalRepVisitStatusDto } from './dto/update-medical-rep-visit-status.dto';
+
+class ListMedicalRepVisitsQueryDto {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number = 1;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit?: number =
+    20;
+  @IsOptional() @IsUUID() branch_id?: string;
+}
 
 @ApiTags('medical-reps')
 @Controller({ version: '1' })
@@ -54,7 +63,7 @@ export class MedicalRepController {
   @Get('medical-rep-visits')
   @ApiPaginatedResponse(MedicalRepDto)
   async listVisits(
-    @Query() query: { page?: number; limit?: number; branch_id?: string },
+    @Query() query: ListMedicalRepVisitsQueryDto,
     @CurrentUser() user: AuthContext,
   ) {
     return this.service.listVisits(user, query);
@@ -63,7 +72,7 @@ export class MedicalRepController {
   @Get('medical-rep-visits/my-waiting-list')
   @ApiPaginatedResponse(MedicalRepDto)
   async myWaitingList(
-    @Query() query: { page?: number; limit?: number },
+    @Query() query: ListMedicalRepVisitsQueryDto,
     @CurrentUser() user: AuthContext,
   ) {
     return this.service.findMyWaitingList(query, user);
@@ -79,7 +88,7 @@ export class MedicalRepController {
   @ApiPaginatedResponse(MedicalRepDto)
   async branchWaitingList(
     @Param('branchId', ParseUUIDPipe) branchId: string,
-    @Query() query: { page?: number; limit?: number },
+    @Query() query: ListMedicalRepVisitsQueryDto,
     @CurrentUser() user: AuthContext,
   ) {
     return this.service.findBranchWaitingList(branchId, query, user);
@@ -89,7 +98,7 @@ export class MedicalRepController {
   @ApiPaginatedResponse(MedicalRepDto)
   async branchInProgress(
     @Param('branchId', ParseUUIDPipe) branchId: string,
-    @Query() query: { page?: number; limit?: number },
+    @Query() query: ListMedicalRepVisitsQueryDto,
     @CurrentUser() user: AuthContext,
   ) {
     return this.service.findBranchInProgress(branchId, query, user);
