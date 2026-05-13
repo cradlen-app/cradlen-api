@@ -72,7 +72,9 @@
       "Bash(echo \"tsc=$?\")",
       "Bash(npx vitest *)",
       "Bash(echo \"vit=$?\")",
-      "Bash(echo \"api-tsc=$?\")"
+      "Bash(echo \"api-tsc=$?\")",
+      "Bash(pushd f:/Cradlen/cradlen-web)",
+      "Bash(popd)"
     ],
     "additionalDirectories": [
       "\\tmp"
