@@ -22,6 +22,18 @@ export class CalendarEventResponseDto {
   @ApiPropertyOptional({ nullable: true }) procedure_name?: string | null;
   @ApiPropertyOptional({ nullable: true }) patient_full_name?: string | null;
 
+  @ApiProperty({
+    type: 'array',
+    items: {
+      type: 'object',
+      properties: {
+        profile_id: { type: 'string' },
+        full_name: { type: 'string' },
+      },
+    },
+  })
+  assistants!: Array<{ profile_id: string; full_name: string }>;
+
   @ApiProperty() created_at!: Date;
   @ApiProperty() updated_at!: Date;
 }
