@@ -82,7 +82,10 @@
       "Bash(node --require ts-node/register --require tsconfig-paths/register prisma/scenarios/multi-specialty.ts)",
       "Bash(Get-ChildItem -Path \"f:\\\\Cradlen\\\\cradlen-api\\\\src\\\\core\\\\clinical\" -Recurse -Filter \"*visit*\" -File)",
       "Bash(git -C f:/Cradlen/cradlen-api log --oneline -5)",
-      "Bash(git -C f:/Cradlen/cradlen-api show --stat 2dffef8)"
+      "Bash(git -C f:/Cradlen/cradlen-api show --stat 2dffef8)",
+      "Bash(grep -E \"\\\\.\\(controller|service\\)\\\\.ts$\")",
+      "Bash(find src/app/[locale]/[orgId]/[branchId]/dashboard/visits -type f -name \"*.tsx\")",
+      "PowerShell(npx --prefix f:\\\\Cradlen\\\\cradlen-web tsc -p f:\\\\Cradlen\\\\cradlen-web\\\\tsconfig.json --noEmit 2>&1)"
     ],
     "additionalDirectories": [
       "\\tmp",
