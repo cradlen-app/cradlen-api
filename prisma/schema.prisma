@@ -246,6 +246,7 @@ model Organization {
   care_path_episodes    CarePathEpisode[]
   medical_reps          MedicalRep[]
   medical_rep_visits    MedicalRepVisit[]
+  calendar_events       CalendarEvent[]
 
   @@index([status, is_deleted])
   @@map("organizations")
@@ -271,6 +272,7 @@ model Branch {
   workingSchedules   WorkingSchedule[]
   visits             Visit[]
   medical_rep_visits MedicalRepVisit[]
+  calendar_events    CalendarEvent[]
 
   @@unique([id, organization_id])
   @@index([organization_id, is_deleted])
@@ -398,6 +400,7 @@ model Profile {
   form_templates_updated          FormTemplate[]                   @relation("FormTemplateUpdatedBy")
   medical_rep_visits_doctor       MedicalRepVisit[]                @relation("MedRepVisitDoctor")
   medical_rep_visits_created      MedicalRepVisit[]                @relation("MedRepVisitCreatedBy")
+  calendar_events                 CalendarEvent[]                  @relation("CalendarEventProfile")
 
   @@unique([user_id, organization_id])
   @@index([organization_id, is_deleted])
@@ -618,10 +621,10 @@ model Specialty {
   inv_links      InvitationSpecialty[]
   lab_tests      LabTest[]
   form_templates FormTemplate[]
-  created_at    DateTime                @default(now())
-  updated_at    DateTime                @updatedAt
-  is_deleted    Boolean                 @default(false)
-  deleted_at    DateTime?
+  created_at     DateTime                @default(now())
+  updated_at     DateTime                @updatedAt
+  is_deleted     Boolean                 @default(false)
+  deleted_at     DateTime?
 
   @@map("specialties")
 }
@@ -637,6 +640,8 @@ model Procedure {
   updated_at   DateTime  @updatedAt
   is_deleted   Boolean   @default(false)
   deleted_at   DateTime?
+
+  calendar_events CalendarEvent[]
 
   @@index([specialty_id])
   @@map("procedures")
@@ -765,6 +770,7 @@ model Patient {
   guardian_links      PatientGuardian[]
   guardian_record     Guardian?                     @relation("PatientGuardianRecord")
   obgyn_history       PatientObgynHistory?
+  calendar_events     CalendarEvent[]
 
   created_at DateTime  @default(now())
   updated_at DateTime  @updatedAt
@@ -872,24 +878,24 @@ model Visit {
 }
 
 model Medication {
-  id                  String              @id @default(uuid()) @db.Uuid
-  organization_id     String?             @db.Uuid
-  organization        Organization?       @relation(fields: [organization_id], references: [id], onDelete: Cascade)
-  code                String
-  name                String
-  generic_name        String?
-  form                String?
-  strength            String?
-  added_by_id         String?             @db.Uuid
-  added_by            Profile?            @relation("MedicationAddedBy", fields: [added_by_id], references: [id], onDelete: SetNull)
-  items                       PrescriptionItem[]
-  patient_medications         PatientMedication[]         @relation("PatientMedicationLink")
-  medical_rep_links           MedicalRepMedication[]
-  medical_rep_visit_links     MedicalRepVisitMedication[]
-  is_deleted                  Boolean                     @default(false)
-  deleted_at                  DateTime?
-  created_at                  DateTime                    @default(now())
-  updated_at                  DateTime                    @updatedAt
+  id                      String                      @id @default(uuid()) @db.Uuid
+  organization_id         String?                     @db.Uuid
+  organization            Organization?               @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  code                    String
+  name                    String
+  generic_name            String?
+  form                    String?
+  strength                String?
+  added_by_id             String?                     @db.Uuid
+  added_by                Profile?                    @relation("MedicationAddedBy", fields: [added_by_id], references: [id], onDelete: SetNull)
+  items                   PrescriptionItem[]
+  patient_medications     PatientMedication[]         @relation("PatientMedicationLink")
+  medical_rep_links       MedicalRepMedication[]
+  medical_rep_visit_links MedicalRepVisitMedication[]
+  is_deleted              Boolean                     @default(false)
+  deleted_at              DateTime?
+  created_at              DateTime                    @default(now())
+  updated_at              DateTime                    @updatedAt
 
   @@unique([organization_id, code])
   @@index([organization_id, is_deleted])
@@ -1594,7 +1600,7 @@ model FormTemplate {
 model FormSection {
   id               String       @id @default(uuid()) @db.Uuid
   form_template_id String       @db.Uuid
-  form_template   FormTemplate @relation(fields: [form_template_id], references: [id], onDelete: Cascade)
+  form_template    FormTemplate @relation(fields: [form_template_id], references: [id], onDelete: Cascade)
   code             String
   name             String
   order            Int
@@ -1709,4 +1715,52 @@ model MedicalRepVisitMedication {
 
   @@unique([medical_rep_visit_id, medication_id])
   @@map("medical_rep_visit_medications")
+}
+
+enum CalendarEventType {
+  DAY_OFF
+  PROCEDURE
+  MEETING
+  GENERIC
+}
+
+enum CalendarVisibility {
+  PRIVATE
+  ORGANIZATION
+}
+
+model CalendarEvent {
+  id              String  @id @default(uuid()) @db.Uuid
+  profile_id      String  @db.Uuid
+  organization_id String  @db.Uuid
+  branch_id       String? @db.Uuid
+
+  event_type  CalendarEventType
+  visibility  CalendarVisibility @default(PRIVATE)
+  title       String
+  description String?
+
+  start_at DateTime
+  end_at   DateTime
+  all_day  Boolean  @default(false)
+
+  procedure_id String? @db.Uuid
+  patient_id   String? @db.Uuid
+
+  is_deleted Boolean   @default(false)
+  deleted_at DateTime?
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+
+  profile      Profile      @relation("CalendarEventProfile", fields: [profile_id], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  branch       Branch?      @relation(fields: [branch_id], references: [id], onDelete: SetNull)
+  procedure    Procedure?   @relation(fields: [procedure_id], references: [id], onDelete: SetNull)
+  patient      Patient?     @relation(fields: [patient_id], references: [id], onDelete: SetNull)
+
+  @@index([profile_id, start_at, end_at])
+  @@index([organization_id, branch_id, start_at])
+  @@index([organization_id, visibility, start_at])
+  @@index([profile_id, event_type, is_deleted])
+  @@map("calendar_events")
 }
