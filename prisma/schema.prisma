@@ -401,6 +401,7 @@ model Profile {
   medical_rep_visits_doctor       MedicalRepVisit[]                @relation("MedRepVisitDoctor")
   medical_rep_visits_created      MedicalRepVisit[]                @relation("MedRepVisitCreatedBy")
   calendar_events                 CalendarEvent[]                  @relation("CalendarEventProfile")
+  calendar_event_assists          CalendarEventAssistant[]         @relation("CalendarEventAssistantProfile")
 
   @@unique([user_id, organization_id])
   @@index([organization_id, is_deleted])
@@ -1752,15 +1753,30 @@ model CalendarEvent {
   created_at DateTime  @default(now())
   updated_at DateTime  @updatedAt
 
-  profile      Profile      @relation("CalendarEventProfile", fields: [profile_id], references: [id], onDelete: Cascade)
-  organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
-  branch       Branch?      @relation(fields: [branch_id], references: [id], onDelete: SetNull)
-  procedure    Procedure?   @relation(fields: [procedure_id], references: [id], onDelete: SetNull)
-  patient      Patient?     @relation(fields: [patient_id], references: [id], onDelete: SetNull)
+  profile      Profile                  @relation("CalendarEventProfile", fields: [profile_id], references: [id], onDelete: Cascade)
+  organization Organization             @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  branch       Branch?                  @relation(fields: [branch_id], references: [id], onDelete: SetNull)
+  procedure    Procedure?               @relation(fields: [procedure_id], references: [id], onDelete: SetNull)
+  patient      Patient?                 @relation(fields: [patient_id], references: [id], onDelete: SetNull)
+  assistants   CalendarEventAssistant[]
 
   @@index([profile_id, start_at, end_at])
   @@index([organization_id, branch_id, start_at])
   @@index([organization_id, visibility, start_at])
   @@index([profile_id, event_type, is_deleted])
   @@map("calendar_events")
+}
+
+model CalendarEventAssistant {
+  id                String   @id @default(uuid()) @db.Uuid
+  calendar_event_id String   @db.Uuid
+  profile_id        String   @db.Uuid
+  created_at        DateTime @default(now())
+
+  event   CalendarEvent @relation(fields: [calendar_event_id], references: [id], onDelete: Cascade)
+  profile Profile       @relation("CalendarEventAssistantProfile", fields: [profile_id], references: [id], onDelete: Cascade)
+
+  @@unique([calendar_event_id, profile_id])
+  @@index([profile_id])
+  @@map("calendar_event_assistants")
 }
