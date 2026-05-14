@@ -687,6 +687,7 @@ export class VisitsService {
         id: true,
         journey: {
           select: {
+            organization_id: true,
             patient: { select: { id: true, full_name: true } },
           },
         },
@@ -821,15 +822,7 @@ export class VisitsService {
   async findOne(id: string, user: AuthContext) {
     const visit = await this.prismaService.db.visit.findUnique({
       where: { id, is_deleted: false },
-      include: {
-        episode: {
-          include: {
-            journey: {
-              select: { organization_id: true, patient_id: true },
-            },
-          },
-        },
-      },
+      include: this.listInclude,
     });
     if (
       !visit ||
@@ -907,7 +900,7 @@ export class VisitsService {
           husband_name: dto.husband_name,
         }),
       };
-      const patientId = visit.episode.journey.patient_id;
+      const patientId = visit.episode.journey.patient.id;
       if (Object.keys(patientUpdates).length > 0) {
         await tx.patient.update({
           where: { id: patientId },
