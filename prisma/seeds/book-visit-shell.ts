@@ -16,7 +16,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import type { Predicate } from '../../src/builder/rules/predicates.js';
 
 const TEMPLATE_CODE = 'book_visit';
-const TEMPLATE_VERSION = 2;
+const TEMPLATE_VERSION = 5;
 
 interface FieldSpec {
   code: string;
@@ -62,18 +62,33 @@ const SECTIONS: SectionSpec[] = [
         type: 'SELECT',
         binding: { namespace: 'SYSTEM', path: 'specialty_code' },
         config: {
-          ui: { default: { kind: 'first_option' } },
-          validation: {
-            options: [
-              { code: 'OBGYN', label: 'OB/GYN' },
-              // Future specialties append here as their extensions are authored.
-            ],
+          ui: {
+            optionsSource: '/v1/organizations/{org_id}/specialties',
+            default: { kind: 'first_option' },
           },
           logic: {
             is_discriminator: true,
             predicates: [
               { effect: 'visible', when: { eq: { visitor_type: 'PATIENT' } } },
               { effect: 'required', when: { eq: { visitor_type: 'PATIENT' } } },
+            ] satisfies Predicate[],
+          },
+        },
+      },
+      {
+        code: 'care_path_code',
+        label: 'Care path',
+        type: 'SELECT',
+        binding: { namespace: 'VISIT', path: 'care_path_code' },
+        config: {
+          ui: {
+            optionsSource: '/v1/care-paths?specialtyCode={specialty_code}',
+            default: { kind: 'first_option' },
+          },
+          logic: {
+            is_discriminator: true,
+            predicates: [
+              { effect: 'visible', when: { eq: { visitor_type: 'PATIENT' } } },
             ] satisfies Predicate[],
           },
         },
@@ -166,7 +181,7 @@ const SECTIONS: SectionSpec[] = [
         config: {
           ui: {
             optionsSource:
-              '/v1/organizations/{org_id}/staff?doctors_only=true',
+              '/v1/organizations/{org_id}/staff?doctors_only=true&specialty_code={specialty_code}',
             default: { kind: 'first_option' },
           },
           logic: {
@@ -261,6 +276,7 @@ const SECTIONS: SectionSpec[] = [
                 national_id: 'national_id',
                 phone_number: 'phone_number',
                 date_of_birth: 'date_of_birth',
+                care_path_code: 'active_care_path_code',
               },
             },
           },
@@ -486,7 +502,7 @@ const SECTIONS: SectionSpec[] = [
         code: 'rep_full_name',
         label: 'Rep full name',
         type: 'TEXT',
-        binding: { namespace: 'MEDICAL_REP', path: 'full_name' },
+        binding: { namespace: 'MEDICAL_REP', path: 'rep_full_name' },
         config: {
           ui: {
             placeholder: 'Search existing rep or type a new name',
@@ -509,14 +525,14 @@ const SECTIONS: SectionSpec[] = [
         code: 'rep_national_id',
         label: 'Rep national ID',
         type: 'TEXT',
-        binding: { namespace: 'MEDICAL_REP', path: 'national_id' },
+        binding: { namespace: 'MEDICAL_REP', path: 'rep_national_id' },
         config: { validation: { maxLength: 50 } },
       },
       {
         code: 'rep_phone_number',
         label: 'Rep phone number',
         type: 'TEXT',
-        binding: { namespace: 'MEDICAL_REP', path: 'phone_number' },
+        binding: { namespace: 'MEDICAL_REP', path: 'rep_phone_number' },
         config: { validation: { maxLength: 30 } },
       },
       {
