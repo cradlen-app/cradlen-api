@@ -16,7 +16,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import type { Predicate } from '../../src/builder/rules/predicates.js';
 
 const TEMPLATE_CODE = 'book_visit';
-const TEMPLATE_VERSION = 5;
+const TEMPLATE_VERSION = 6;
 
 interface FieldSpec {
   code: string;
@@ -276,7 +276,18 @@ const SECTIONS: SectionSpec[] = [
                 national_id: 'national_id',
                 phone_number: 'phone_number',
                 date_of_birth: 'date_of_birth',
+                address: 'address',
+                marital_status: 'marital_status',
                 care_path_code: 'active_care_path_code',
+                spouse_guardian_id: 'spouse_guardian_id',
+                spouse_national_id: 'spouse_national_id',
+                spouse_phone_number: 'spouse_phone_number',
+              },
+              fillEntitySearches: {
+                spouse_full_name: {
+                  idSource: 'spouse_guardian_id',
+                  labelSource: 'spouse_full_name',
+                },
               },
             },
           },
