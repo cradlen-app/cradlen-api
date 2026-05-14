@@ -65,12 +65,14 @@ export class PatientsService {
               status: 'ACTIVE',
               is_deleted: false,
             },
+            orderBy: { started_at: 'desc' },
             take: 1,
             include: {
               episodes: {
                 where: { is_deleted: false },
                 orderBy: { order: 'asc' },
               },
+              care_path: { select: { code: true } },
             },
           },
         },
@@ -81,8 +83,12 @@ export class PatientsService {
     const shaped = patients.map((patient) => {
       const { journeys, ...rest } = patient;
       const activeJourney = journeys[0] ?? null;
+      const activeCarePathCode = activeJourney?.care_path?.code;
+      const carePathField = activeCarePathCode
+        ? { active_care_path_code: activeCarePathCode }
+        : {};
       if (isClinicianRole) {
-        return { ...rest, active_journey: activeJourney };
+        return { ...rest, active_journey: activeJourney, ...carePathField };
       }
       return {
         ...rest,
@@ -93,6 +99,7 @@ export class PatientsService {
               order: e.order,
             }))
           : [],
+        ...carePathField,
       };
     });
 

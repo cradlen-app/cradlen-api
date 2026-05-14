@@ -12,11 +12,16 @@ import { paginated } from '@common/utils/pagination.utils';
 import { BookMedicalRepVisitDto } from './dto/book-medical-rep-visit.dto';
 import { UpdateMedicalRepVisitDto } from './dto/update-medical-rep-visit.dto';
 import { UpdateMedicalRepVisitStatusDto } from './dto/update-medical-rep-visit-status.dto';
+import {
+  TemplateValidator,
+  ValidationError,
+} from '@builder/validator/template.validator.js';
+import { TemplatesService } from '@builder/templates/templates.service.js';
 
 const IDENTITY_FIELDS = [
-  'full_name',
-  'national_id',
-  'phone_number',
+  'rep_full_name',
+  'rep_national_id',
+  'rep_phone_number',
   'email',
   'company_name',
 ] as const;
@@ -72,7 +77,26 @@ export class MedicalRepService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly eventBus: EventBus,
+    private readonly templateValidator: TemplateValidator,
+    private readonly templatesService: TemplatesService,
   ) {}
+
+  private async assertTemplateValid(
+    payload: Record<string, unknown>,
+    sparse: boolean,
+  ) {
+    const result = await this.templateValidator.validatePayload(
+      'book_visit',
+      payload,
+      { sparse },
+    );
+    if (!result.ok) {
+      const messages = result.errors.map(
+        (e: ValidationError) => `${e.fieldCode} ${e.message}`,
+      );
+      throw new BadRequestException({ message: messages });
+    }
+  }
 
   async searchReps(
     user: AuthContext,
@@ -122,6 +146,12 @@ export class MedicalRepService {
   }
 
   async bookVisit(dto: BookMedicalRepVisitDto, user: AuthContext) {
+    await this.assertTemplateValid(
+      dto as unknown as Record<string, unknown>,
+      false,
+    );
+    const bookVisitTemplate =
+      await this.templatesService.findActiveByCode('book_visit');
     const branchId = dto.branch_id ?? user.activeBranchId;
     if (!branchId) {
       throw new BadRequestException('branch_id is required');
@@ -133,12 +163,12 @@ export class MedicalRepService {
     );
     if (dto.medical_rep_id && hasIdentityField) {
       throw new BadRequestException(
-        'When medical_rep_id is supplied, identity fields (full_name, national_id, phone_number, email, company_name) must be omitted',
+        'When medical_rep_id is supplied, identity fields (rep_full_name, rep_national_id, rep_phone_number, email, company_name) must be omitted',
       );
     }
-    if (!dto.medical_rep_id && (!dto.full_name || !dto.company_name)) {
+    if (!dto.medical_rep_id && (!dto.rep_full_name || !dto.company_name)) {
       throw new BadRequestException(
-        'Either medical_rep_id or both full_name and company_name must be provided',
+        'Either medical_rep_id or both rep_full_name and company_name must be provided',
       );
     }
 
@@ -169,6 +199,7 @@ export class MedicalRepService {
           scheduled_at: new Date(dto.scheduled_at),
           priority: dto.priority ?? 'NORMAL',
           notes: dto.notes ?? null,
+          form_template_id: bookVisitTemplate.id,
           medications: dto.medication_ids?.length
             ? {
                 createMany: {
@@ -249,11 +280,11 @@ export class MedicalRepService {
     dto: BookMedicalRepVisitDto,
     organizationId: string,
   ) {
-    if (dto.national_id) {
+    if (dto.rep_national_id) {
       const existing = await tx.medicalRep.findFirst({
         where: {
           organization_id: organizationId,
-          national_id: dto.national_id,
+          national_id: dto.rep_national_id,
           is_deleted: false,
         },
       });
@@ -262,9 +293,9 @@ export class MedicalRepService {
     return tx.medicalRep.create({
       data: {
         organization_id: organizationId,
-        full_name: dto.full_name!,
-        national_id: dto.national_id ?? null,
-        phone_number: dto.phone_number ?? null,
+        full_name: dto.rep_full_name!,
+        national_id: dto.rep_national_id ?? null,
+        phone_number: dto.rep_phone_number ?? null,
         email: dto.email ?? null,
         company_name: dto.company_name!,
       },
@@ -403,16 +434,31 @@ export class MedicalRepService {
         `Cannot update a medical-rep visit in terminal status: ${visit.status}`,
       );
     }
+    // UpdateMedicalRepVisitDto has no visitor_type field — the discriminator
+    // is implicit in the endpoint identity. Inject it so the validator can
+    // enforce visitor_type-keyed forbidden predicates against cross-namespace
+    // leaks in the patch.
+    await this.assertTemplateValid(
+      {
+        ...(dto as unknown as Record<string, unknown>),
+        visitor_type: 'MEDICAL_REP',
+      },
+      true,
+    );
     if (dto.branch_id) {
       await this.assertBranchInOrg(dto.branch_id, user.organizationId);
     }
 
     const updated = await this.prismaService.db.$transaction(async (tx) => {
       const repUpdates: Prisma.MedicalRepUpdateInput = {
-        ...(dto.full_name !== undefined && { full_name: dto.full_name }),
-        ...(dto.national_id !== undefined && { national_id: dto.national_id }),
-        ...(dto.phone_number !== undefined && {
-          phone_number: dto.phone_number,
+        ...(dto.rep_full_name !== undefined && {
+          full_name: dto.rep_full_name,
+        }),
+        ...(dto.rep_national_id !== undefined && {
+          national_id: dto.rep_national_id,
+        }),
+        ...(dto.rep_phone_number !== undefined && {
+          phone_number: dto.rep_phone_number,
         }),
         ...(dto.email !== undefined && { email: dto.email }),
         ...(dto.company_name !== undefined && {

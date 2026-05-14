@@ -11,6 +11,14 @@ import { AppointmentType, MaritalStatus, VisitPriority } from '@prisma/client';
 import { VisitIntakeFieldsDto } from './visit-intake.dto';
 
 export class UpdateVisitDto extends VisitIntakeFieldsDto {
+  /**
+   * SYSTEM discriminator. Optional on update because a visit cannot change
+   * visitor_type after booking, but specialty may change if the assigned
+   * doctor is reassigned. When supplied the validator enforces the same
+   * predicates as on book.
+   */
+  @IsString() @IsOptional() @MaxLength(50) specialty_code?: string;
+
   @IsUUID() @IsOptional() assigned_doctor_id?: string;
   @IsUUID() @IsOptional() branch_id?: string;
   @IsEnum(AppointmentType) @IsOptional() appointment_type?: AppointmentType;

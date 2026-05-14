@@ -848,6 +848,11 @@ model Visit {
   queue_number       Int?
   follow_up_date     DateTime?
   follow_up_notes    String?
+  // Audit anchor: which form-template version this visit was booked from.
+  // Never mutated on update — the original booking's contract is the legal
+  // record. SetNull so deleting a template (rare) doesn't cascade visits.
+  form_template_id   String?               @db.Uuid
+  form_template      FormTemplate?         @relation("VisitFormTemplate", fields: [form_template_id], references: [id], onDelete: SetNull)
   vitals             VisitVitals?
   encounter          VisitEncounter?
   obgyn_encounter    VisitObgynEncounter?
@@ -1572,6 +1577,8 @@ model FormTemplate {
   created_at         DateTime           @default(now())
   updated_at         DateTime           @updatedAt
   sections           FormSection[]
+  visits             Visit[]            @relation("VisitFormTemplate")
+  medical_rep_visits MedicalRepVisit[]  @relation("MedicalRepVisitFormTemplate")
 
   @@unique([code, version])
   @@index([scope, status, is_deleted])
@@ -1674,6 +1681,9 @@ model MedicalRepVisit {
   priority           VisitPriority               @default(NORMAL)
   queue_number       Int?
   notes              String?
+  // Audit anchor (see Visit.form_template_id).
+  form_template_id   String?                     @db.Uuid
+  form_template      FormTemplate?               @relation("MedicalRepVisitFormTemplate", fields: [form_template_id], references: [id], onDelete: SetNull)
   checked_in_at      DateTime?
   started_at         DateTime?
   completed_at       DateTime?

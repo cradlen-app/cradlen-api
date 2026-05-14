@@ -182,10 +182,20 @@ describe('ALLOWED_PATHS ↔ DTO contract', () => {
       expect(bookVisitProps.has('spouse_guardian_id')).toBe(true);
     });
 
-    it('SYSTEM paths are NOT on any DTO (never persisted)', () => {
+    it('SYSTEM paths land on both wire DTOs (pinned discriminator values)', () => {
+      // SYSTEM fields are still never PERSISTED, but they ARE on the wire so
+      // the server-side TemplateValidator can evaluate visitor_type and
+      // specialty_code-keyed predicates against the submitted payload.
+      // The booking endpoints pin visitor_type to a literal value via @Equals.
       for (const path of ALLOWED_PATHS.SYSTEM) {
-        expect(bookVisitProps.has(path)).toBe(false);
-        expect(bookRepProps.has(path)).toBe(false);
+        if (path === 'visitor_type') {
+          expect(bookVisitProps.has(path)).toBe(true);
+          expect(bookRepProps.has(path)).toBe(true);
+        } else if (path === 'specialty_code') {
+          expect(bookVisitProps.has(path)).toBe(true);
+          // specialty_code is patient-side only — medical-rep bookings have
+          // no specialty context.
+        }
       }
     });
 
