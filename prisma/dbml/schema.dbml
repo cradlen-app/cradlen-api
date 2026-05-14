@@ -570,6 +570,8 @@ Table visits {
   queue_number Int
   follow_up_date DateTime
   follow_up_notes String
+  form_template_id String
+  form_template form_templates
   vitals visit_vitals
   encounter visit_encounters
   obgyn_encounter visit_obgyn_encounters
@@ -1168,6 +1170,8 @@ Table form_templates {
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   sections form_sections [not null]
+  visits visits [not null]
+  medical_rep_visits medical_rep_visits [not null]
 
   indexes {
     (code, version) [unique]
@@ -1261,6 +1265,8 @@ Table medical_rep_visits {
   priority VisitPriority [not null, default: 'NORMAL']
   queue_number Int
   notes String
+  form_template_id String
+  form_template form_templates
   checked_in_at DateTime
   started_at DateTime
   completed_at DateTime
@@ -1580,6 +1586,8 @@ Ref: visits.branch_id > branches.id [delete: Cascade]
 
 Ref: visits.created_by_id > profiles.id [delete: Cascade]
 
+Ref: visits.form_template_id > form_templates.id [delete: Set Null]
+
 Ref: medications.organization_id > organizations.id [delete: Cascade]
 
 Ref: medications.added_by_id > profiles.id [delete: Set Null]
@@ -1741,6 +1749,8 @@ Ref: medical_rep_visits.branch_id > branches.id [delete: Cascade]
 Ref: medical_rep_visits.assigned_doctor_id > profiles.id [delete: Cascade]
 
 Ref: medical_rep_visits.created_by_id > profiles.id [delete: Cascade]
+
+Ref: medical_rep_visits.form_template_id > form_templates.id [delete: Set Null]
 
 Ref: medical_rep_visit_medications.medical_rep_visit_id > medical_rep_visits.id [delete: Cascade]
 

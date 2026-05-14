@@ -9,6 +9,8 @@ import { VisitsService } from './visits.service';
 import { EventBus } from '@infrastructure/messaging/event-bus';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
+import { TemplateValidator } from '@builder/validator/template.validator';
+import { TemplatesService } from '@builder/templates/templates.service';
 
 const mockUser: AuthContext = {
   userId: 'user-uuid',
@@ -132,11 +134,19 @@ describe('VisitsService', () => {
     };
     prismaMock = { db };
     eventBusMock = { publish: jest.fn() };
+    const templateValidatorMock = {
+      validatePayload: jest.fn().mockResolvedValue({ ok: true }),
+    };
+    const templatesServiceMock = {
+      findActiveByCode: jest.fn().mockResolvedValue({ id: 'tpl-uuid' }),
+    };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         VisitsService,
         { provide: PrismaService, useValue: prismaMock },
         { provide: EventBus, useValue: eventBusMock },
+        { provide: TemplateValidator, useValue: templateValidatorMock },
+        { provide: TemplatesService, useValue: templatesServiceMock },
       ],
     }).compile();
     service = module.get<VisitsService>(VisitsService);
@@ -403,6 +413,9 @@ describe('VisitsService', () => {
 
   describe('bookVisit', () => {
     const baseDto = {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      visitor_type: 'PATIENT' as any,
+      specialty_code: 'OBGYN',
       national_id: '12345',
       full_name: 'Jane Doe',
       date_of_birth: '1990-01-01',
@@ -420,6 +433,11 @@ describe('VisitsService', () => {
       db.$transaction.mockImplementation(
         async (cb: (tx: typeof db) => Promise<unknown>) => cb(db),
       );
+      // assertDoctorSpecialty short-circuits to "ok" — tests that need to
+      // exercise its failure path override this in their own setup.
+      db.profile = {
+        findFirst: jest.fn().mockResolvedValue({ id: 'doctor-uuid' }),
+      };
     });
 
     it('throws BadRequestException when patient_id absent and required patient fields missing', async () => {

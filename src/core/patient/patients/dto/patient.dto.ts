@@ -19,6 +19,12 @@ export class EpisodeSummaryDto {
 
 export class PatientLookupDto extends PatientDto {
   active_episodes!: EpisodeSummaryDto[];
+  /**
+   * Code of the patient's most recently started ACTIVE journey's care path,
+   * or undefined when the patient has no active care path. Used by the
+   * book-visit form to preselect the care-path picker.
+   */
+  active_care_path_code?: string;
 }
 
 export class ActiveJourneyDto {
