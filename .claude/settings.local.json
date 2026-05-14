@@ -85,11 +85,13 @@
       "Bash(git -C f:/Cradlen/cradlen-api show --stat 2dffef8)",
       "Bash(grep -E \"\\\\.\\(controller|service\\)\\\\.ts$\")",
       "Bash(find src/app/[locale]/[orgId]/[branchId]/dashboard/visits -type f -name \"*.tsx\")",
-      "PowerShell(npx --prefix f:\\\\Cradlen\\\\cradlen-web tsc -p f:\\\\Cradlen\\\\cradlen-web\\\\tsconfig.json --noEmit 2>&1)"
+      "PowerShell(npx --prefix f:\\\\Cradlen\\\\cradlen-web tsc -p f:\\\\Cradlen\\\\cradlen-web\\\\tsconfig.json --noEmit 2>&1)",
+      "Bash(rm f:/Cradlen/cradlen-web/src/features/calendar/hooks/useCancelCalendarEvent.ts f:/Cradlen/cradlen-web/src/features/calendar/hooks/useCheckConflicts.ts f:/Cradlen/cradlen-web/src/features/calendar/lib/calendar.mock.ts f:/Cradlen/cradlen-web/src/features/calendar/components/ConflictDialog.tsx)"
     ],
     "additionalDirectories": [
       "\\tmp",
-      "f:\\Cradlen\\cradlen-web\\src\\features\\visits\\components"
+      "f:\\Cradlen\\cradlen-web\\src\\features\\visits\\components",
+      "f:\\Cradlen\\cradlen-web\\src\\features\\calendar\\components"
     ]
   }
 }
