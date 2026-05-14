@@ -1,5 +1,8 @@
 import { CalendarEventType, CalendarVisibility } from '@prisma/client';
 import {
+  ArrayMaxSize,
+  ArrayUnique,
+  IsArray,
   IsBoolean,
   IsEnum,
   IsISO8601,
@@ -60,4 +63,16 @@ export class CreateCalendarEventDto {
   @IsOptional()
   @IsUUID()
   patient_id?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Assistant doctor profile IDs (only valid for PROCEDURE events). Replaces the existing set on update.',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @ArrayMaxSize(20)
+  @IsUUID('4', { each: true })
+  assistant_profile_ids?: string[];
 }
