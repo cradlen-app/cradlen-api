@@ -30,6 +30,19 @@ export interface ConfigShape {
       idTarget: string;
       fillFields?: Record<string, string>;
       allowCreate?: boolean;
+      /**
+       * Resolves a sibling ENTITY_SEARCH field from the same raw payload. Keyed
+       * by the target search field's `code`. Used e.g. to pre-resolve the
+       * spouse guardian search when an existing patient is picked.
+       */
+      fillEntitySearches?: Record<
+        string,
+        {
+          idSource: string;
+          labelSource: string;
+          fillFields?: Record<string, string>;
+        }
+      >;
     };
     [k: string]: unknown;
   };
