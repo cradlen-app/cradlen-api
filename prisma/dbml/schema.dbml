@@ -176,6 +176,7 @@ Table profiles {
   medical_rep_visits_doctor medical_rep_visits [not null]
   medical_rep_visits_created medical_rep_visits [not null]
   calendar_events calendar_events [not null]
+  calendar_event_assists calendar_event_assistants [not null]
 
   indexes {
     (user_id, organization_id) [unique]
@@ -1318,6 +1319,20 @@ Table calendar_events {
   branch branches
   procedure procedures
   patient patients
+  assistants calendar_event_assistants [not null]
+}
+
+Table calendar_event_assistants {
+  id String [pk]
+  calendar_event_id String [not null]
+  profile_id String [not null]
+  created_at DateTime [default: `now()`, not null]
+  event calendar_events [not null]
+  profile profiles [not null]
+
+  indexes {
+    (calendar_event_id, profile_id) [unique]
+  }
 }
 
 Enum RegistrationStatus {
@@ -1807,3 +1822,7 @@ Ref: calendar_events.branch_id > branches.id [delete: Set Null]
 Ref: calendar_events.procedure_id > procedures.id [delete: Set Null]
 
 Ref: calendar_events.patient_id > patients.id [delete: Set Null]
+
+Ref: calendar_event_assistants.calendar_event_id > calendar_events.id [delete: Cascade]
+
+Ref: calendar_event_assistants.profile_id > profiles.id [delete: Cascade]
