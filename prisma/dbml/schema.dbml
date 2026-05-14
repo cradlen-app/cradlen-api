@@ -34,6 +34,7 @@ Table organizations {
   care_path_episodes care_path_episodes [not null]
   medical_reps medical_reps [not null]
   medical_rep_visits medical_rep_visits [not null]
+  calendar_events calendar_events [not null]
 }
 
 Table branches {
@@ -56,6 +57,7 @@ Table branches {
   workingSchedules working_schedules [not null]
   visits visits [not null]
   medical_rep_visits medical_rep_visits [not null]
+  calendar_events calendar_events [not null]
 
   indexes {
     (id, organization_id) [unique]
@@ -173,6 +175,7 @@ Table profiles {
   form_templates_updated form_templates [not null]
   medical_rep_visits_doctor medical_rep_visits [not null]
   medical_rep_visits_created medical_rep_visits [not null]
+  calendar_events calendar_events [not null]
 
   indexes {
     (user_id, organization_id) [unique]
@@ -390,6 +393,7 @@ Table procedures {
   updated_at DateTime [not null]
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
+  calendar_events calendar_events [not null]
 }
 
 Table profile_specialties {
@@ -499,6 +503,7 @@ Table patients {
   guardian_links patient_guardians [not null]
   guardian_record guardians
   obgyn_history patient_obgyn_histories
+  calendar_events calendar_events [not null]
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   is_deleted Boolean [not null, default: false]
@@ -1290,6 +1295,31 @@ Table medical_rep_visit_medications {
   }
 }
 
+Table calendar_events {
+  id String [pk]
+  profile_id String [not null]
+  organization_id String [not null]
+  branch_id String
+  event_type CalendarEventType [not null]
+  visibility CalendarVisibility [not null, default: 'PRIVATE']
+  title String [not null]
+  description String
+  start_at DateTime [not null]
+  end_at DateTime [not null]
+  all_day Boolean [not null, default: false]
+  procedure_id String
+  patient_id String
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  profile profiles [not null]
+  organization organizations [not null]
+  branch branches
+  procedure procedures
+  patient patients
+}
+
 Enum RegistrationStatus {
   PENDING
   ACTIVE
@@ -1490,6 +1520,18 @@ Enum PatientHistorySection {
 Enum NoteVisibility {
   PRIVATE_TO_ORG
   SHARED_GLOBAL
+}
+
+Enum CalendarEventType {
+  DAY_OFF
+  PROCEDURE
+  MEETING
+  GENERIC
+}
+
+Enum CalendarVisibility {
+  PRIVATE
+  ORGANIZATION
 }
 
 Ref: branches.organization_id > organizations.id [delete: Cascade]
@@ -1755,3 +1797,13 @@ Ref: medical_rep_visits.form_template_id > form_templates.id [delete: Set Null]
 Ref: medical_rep_visit_medications.medical_rep_visit_id > medical_rep_visits.id [delete: Cascade]
 
 Ref: medical_rep_visit_medications.medication_id > medications.id [delete: Cascade]
+
+Ref: calendar_events.profile_id > profiles.id [delete: Cascade]
+
+Ref: calendar_events.organization_id > organizations.id [delete: Cascade]
+
+Ref: calendar_events.branch_id > branches.id [delete: Set Null]
+
+Ref: calendar_events.procedure_id > procedures.id [delete: Set Null]
+
+Ref: calendar_events.patient_id > patients.id [delete: Set Null]

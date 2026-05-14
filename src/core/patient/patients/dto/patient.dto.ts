@@ -1,4 +1,8 @@
-import { JourneyStatus, JourneyTemplateType, MaritalStatus } from '@prisma/client';
+import {
+  JourneyStatus,
+  JourneyTemplateType,
+  MaritalStatus,
+} from '@prisma/client';
 
 export class PatientDto {
   id!: string;
