@@ -32,6 +32,17 @@ const DEFAULT_VISIBILITY: Record<CalendarEventType, CalendarVisibility> = {
 const EVENT_INCLUDE = {
   procedure: { select: { id: true, name: true } },
   patient: { select: { id: true, full_name: true } },
+  assistants: {
+    select: {
+      profile_id: true,
+      profile: {
+        select: {
+          id: true,
+          user: { select: { first_name: true, last_name: true } },
+        },
+      },
+    },
+  },
 } satisfies Prisma.CalendarEventInclude;
 
 type CalendarEventWithRelations = Prisma.CalendarEventGetPayload<{
@@ -59,6 +70,7 @@ export class CalendarService {
       procedure_id: dto.procedure_id,
       patient_id: dto.patient_id,
       branch_id: dto.branch_id,
+      assistant_profile_ids: dto.assistant_profile_ids,
     });
 
     const created = await this.prismaService.db.calendarEvent.create({
@@ -75,6 +87,16 @@ export class CalendarService {
         all_day: dto.all_day ?? false,
         procedure_id: dto.procedure_id ?? null,
         patient_id: dto.patient_id ?? null,
+        ...(dto.event_type === CalendarEventType.PROCEDURE &&
+        dto.assistant_profile_ids?.length
+          ? {
+              assistants: {
+                create: dto.assistant_profile_ids.map((pid) => ({
+                  profile_id: pid,
+                })),
+              },
+            }
+          : {}),
       },
       include: EVENT_INCLUDE,
     });
@@ -158,7 +180,8 @@ export class CalendarService {
       dto.event_type !== undefined ||
       dto.procedure_id !== undefined ||
       dto.patient_id !== undefined ||
-      dto.branch_id !== undefined;
+      dto.branch_id !== undefined ||
+      dto.assistant_profile_ids !== undefined;
     if (touchesRelations) {
       await this.assertEventConsistency(user, nextType, {
         procedure_id:
@@ -173,32 +196,65 @@ export class CalendarService {
           dto.branch_id !== undefined
             ? dto.branch_id
             : (existing.branch_id ?? undefined),
+        assistant_profile_ids: dto.assistant_profile_ids,
       });
     }
 
-    const updated = await this.prismaService.db.calendarEvent.update({
-      where: { id },
-      data: {
-        ...(dto.event_type !== undefined ? { event_type: dto.event_type } : {}),
-        ...(dto.visibility !== undefined ? { visibility: dto.visibility } : {}),
-        ...(dto.title !== undefined ? { title: dto.title } : {}),
-        ...(dto.description !== undefined
-          ? { description: dto.description }
-          : {}),
-        ...(dto.start_at !== undefined ? { start_at: nextStart } : {}),
-        ...(dto.end_at !== undefined ? { end_at: nextEnd } : {}),
-        ...(dto.all_day !== undefined ? { all_day: dto.all_day } : {}),
-        ...(dto.branch_id !== undefined
-          ? { branch_id: dto.branch_id ?? null }
-          : {}),
-        ...(dto.procedure_id !== undefined
-          ? { procedure_id: dto.procedure_id ?? null }
-          : {}),
-        ...(dto.patient_id !== undefined
-          ? { patient_id: dto.patient_id ?? null }
-          : {}),
-      },
-      include: EVENT_INCLUDE,
+    const updated = await this.prismaService.db.$transaction(async (tx) => {
+      if (dto.assistant_profile_ids !== undefined) {
+        await tx.calendarEventAssistant.deleteMany({
+          where: { calendar_event_id: id },
+        });
+        if (
+          nextType === CalendarEventType.PROCEDURE &&
+          dto.assistant_profile_ids.length > 0
+        ) {
+          await tx.calendarEventAssistant.createMany({
+            data: dto.assistant_profile_ids.map((pid) => ({
+              calendar_event_id: id,
+              profile_id: pid,
+            })),
+            skipDuplicates: true,
+          });
+        }
+      } else if (
+        nextType !== CalendarEventType.PROCEDURE &&
+        existing.event_type === CalendarEventType.PROCEDURE
+      ) {
+        // Type changed away from PROCEDURE — drop any existing assistants
+        await tx.calendarEventAssistant.deleteMany({
+          where: { calendar_event_id: id },
+        });
+      }
+
+      return tx.calendarEvent.update({
+        where: { id },
+        data: {
+          ...(dto.event_type !== undefined
+            ? { event_type: dto.event_type }
+            : {}),
+          ...(dto.visibility !== undefined
+            ? { visibility: dto.visibility }
+            : {}),
+          ...(dto.title !== undefined ? { title: dto.title } : {}),
+          ...(dto.description !== undefined
+            ? { description: dto.description }
+            : {}),
+          ...(dto.start_at !== undefined ? { start_at: nextStart } : {}),
+          ...(dto.end_at !== undefined ? { end_at: nextEnd } : {}),
+          ...(dto.all_day !== undefined ? { all_day: dto.all_day } : {}),
+          ...(dto.branch_id !== undefined
+            ? { branch_id: dto.branch_id ?? null }
+            : {}),
+          ...(dto.procedure_id !== undefined
+            ? { procedure_id: dto.procedure_id ?? null }
+            : {}),
+          ...(dto.patient_id !== undefined
+            ? { patient_id: dto.patient_id ?? null }
+            : {}),
+        },
+        include: EVENT_INCLUDE,
+      });
     });
 
     this.publish(CALENDAR_EVENTS.event.updated, updated);
@@ -236,6 +292,7 @@ export class CalendarService {
       procedure_id?: string;
       patient_id?: string;
       branch_id?: string;
+      assistant_profile_ids?: string[];
     },
   ): Promise<void> {
     if (eventType === CalendarEventType.PROCEDURE) {
@@ -289,6 +346,51 @@ export class CalendarService {
           details: {
             fields: { patient_id: ['not allowed for this event type'] },
           },
+        });
+      }
+      if (
+        fields.assistant_profile_ids &&
+        fields.assistant_profile_ids.length > 0
+      ) {
+        throw new BadRequestException({
+          message: 'assistant_profile_ids is only valid for PROCEDURE events',
+          details: {
+            fields: {
+              assistant_profile_ids: ['not allowed for this event type'],
+            },
+          },
+        });
+      }
+    }
+
+    if (
+      eventType === CalendarEventType.PROCEDURE &&
+      fields.assistant_profile_ids &&
+      fields.assistant_profile_ids.length > 0
+    ) {
+      const ids = Array.from(new Set(fields.assistant_profile_ids));
+      if (ids.includes(user.profileId)) {
+        throw new BadRequestException({
+          message: 'You cannot list yourself as an assistant',
+          details: {
+            fields: {
+              assistant_profile_ids: ['cannot include the event owner'],
+            },
+          },
+        });
+      }
+      const profiles = await this.prismaService.db.profile.findMany({
+        where: {
+          id: { in: ids },
+          organization_id: user.organizationId,
+          is_deleted: false,
+        },
+        select: { id: true },
+      });
+      if (profiles.length !== ids.length) {
+        throw new BadRequestException({
+          message: 'One or more assistant profiles are not accessible',
+          details: { fields: { assistant_profile_ids: ['not found'] } },
         });
       }
     }
@@ -370,6 +472,12 @@ export class CalendarService {
       patient_id: row.patient_id,
       procedure_name: row.procedure?.name ?? null,
       patient_full_name: row.patient?.full_name ?? null,
+      assistants: (row.assistants ?? []).map((a) => ({
+        profile_id: a.profile_id,
+        full_name:
+          `${a.profile?.user?.first_name ?? ''} ${a.profile?.user?.last_name ?? ''}`.trim() ||
+          a.profile_id,
+      })),
       created_at: row.created_at,
       updated_at: row.updated_at,
     };
