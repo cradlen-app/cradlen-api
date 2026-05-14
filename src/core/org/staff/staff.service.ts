@@ -176,6 +176,7 @@ export class StaffService {
     scope?: 'org' | 'mine',
     clinical?: boolean,
     doctorsOnly?: boolean,
+    specialtyCode?: string,
   ) {
     await this.authorizationService.assertCanViewStaff(
       profileId,
@@ -230,6 +231,11 @@ export class StaffService {
     } else if (clinical === true) {
       where.job_functions = {
         some: { job_function: { is_clinical: true } },
+      };
+    }
+    if (specialtyCode) {
+      where.specialty_links = {
+        some: { specialty: { code: specialtyCode, is_deleted: false } },
       };
     }
 

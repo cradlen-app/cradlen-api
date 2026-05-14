@@ -19,9 +19,9 @@ export class UpdateMedicalRepVisitDto {
   @IsEnum(VisitPriority) @IsOptional() priority?: VisitPriority;
   @IsString() @IsOptional() @MaxLength(2000) notes?: string;
 
-  @IsString() @IsOptional() @MaxLength(200) full_name?: string;
-  @IsString() @IsOptional() @MaxLength(50) national_id?: string;
-  @IsString() @IsOptional() @MaxLength(30) phone_number?: string;
+  @IsString() @IsOptional() @MaxLength(200) rep_full_name?: string;
+  @IsString() @IsOptional() @MaxLength(50) rep_national_id?: string;
+  @IsString() @IsOptional() @MaxLength(30) rep_phone_number?: string;
   @IsEmail() @IsOptional() @MaxLength(200) email?: string;
   @IsString() @IsOptional() @MaxLength(200) company_name?: string;
 

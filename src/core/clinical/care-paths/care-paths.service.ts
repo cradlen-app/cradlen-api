@@ -5,7 +5,11 @@ import { PrismaService } from '@infrastructure/database/prisma.service';
 export class CarePathsService {
   constructor(private readonly prismaService: PrismaService) {}
 
-  findAll(filters: { specialtyId?: string; organizationId?: string }) {
+  findAll(filters: {
+    specialtyId?: string;
+    specialtyCode?: string;
+    organizationId?: string;
+  }) {
     const orgScope = filters.organizationId
       ? [{ organization_id: filters.organizationId }, { organization_id: null }]
       : [{ organization_id: null }];
@@ -14,6 +18,9 @@ export class CarePathsService {
       where: {
         is_deleted: false,
         ...(filters.specialtyId ? { specialty_id: filters.specialtyId } : {}),
+        ...(filters.specialtyCode
+          ? { specialty: { code: filters.specialtyCode } }
+          : {}),
         OR: orgScope,
       },
       include: {

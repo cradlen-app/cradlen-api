@@ -30,6 +30,7 @@ export const ALLOWED_PATHS = {
     'assigned_doctor_id',
     'branch_id',
     'notes',
+    'care_path_code',
   ],
   INTAKE: [
     'chief_complaint',
@@ -50,9 +51,9 @@ export const ALLOWED_PATHS = {
   ],
   GUARDIAN: ['full_name', 'national_id', 'phone_number'],
   MEDICAL_REP: [
-    'full_name',
-    'national_id',
-    'phone_number',
+    'rep_full_name',
+    'rep_national_id',
+    'rep_phone_number',
     'email',
     'company_name',
     'scheduled_at',

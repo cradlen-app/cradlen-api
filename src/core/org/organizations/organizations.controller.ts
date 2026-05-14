@@ -33,6 +33,23 @@ export class OrganizationsController {
     return this.organizationsService.createOrganization(user.userId, dto);
   }
 
+  @Get(':organizationId/specialties')
+  @ApiOperation({
+    summary: "List the organization's enabled specialties",
+    description:
+      "Returns only the specialties the organization has configured (OrganizationSpecialty rows). Used by the book-visit form's specialty dropdown. Available to any active profile in the organization.",
+  })
+  @ApiStandardResponse(Object)
+  listOrganizationSpecialties(
+    @CurrentUser() user: AuthContext,
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+  ) {
+    return this.organizationsService.listOrganizationSpecialties(
+      user.profileId,
+      organizationId,
+    );
+  }
+
   @Get(':organizationId')
   @ApiOperation({ summary: 'Get organization details' })
   @ApiStandardResponse(Object)
