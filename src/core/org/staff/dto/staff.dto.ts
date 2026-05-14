@@ -264,6 +264,14 @@ export class ListStaffQueryDto {
   @Type(() => Boolean)
   @Transform(({ value }) => value === true || value === 'true')
   doctors_only?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Filters to staff whose ProfileSpecialty includes the given specialty code (e.g. "OBGYN"). Composes with `doctors_only` to narrow the book-visit doctor picker.',
+  })
+  @IsOptional()
+  @IsString()
+  specialty_code?: string;
 }
 
 class RoleSummaryDto {

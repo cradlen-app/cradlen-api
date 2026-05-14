@@ -75,7 +75,11 @@
       "Bash(echo \"api-tsc=$?\")",
       "Bash(pushd f:/Cradlen/cradlen-web)",
       "Bash(popd)",
-      "Bash(rm f:/Cradlen/cradlen-web/src/features/visits/components/EditVisitDrawer.tsx && echo \"deleted\")"
+      "Bash(rm f:/Cradlen/cradlen-web/src/features/visits/components/EditVisitDrawer.tsx && echo \"deleted\")",
+      "Bash(grep -r \"TemplateValidator\" \"f:\\\\Cradlen\\\\cradlen-api\\\\src\\\\core\\\\clinical\\\\visits\\\\\\\\\")",
+      "Bash(grep -r \"TemplateValidator\" \"f:\\\\Cradlen\\\\cradlen-api\\\\src\\\\core\\\\clinical\\\\\\\\\" --include=\"*.ts\")",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(node --require ts-node/register --require tsconfig-paths/register prisma/scenarios/multi-specialty.ts)"
     ],
     "additionalDirectories": [
       "\\tmp",

@@ -1,6 +1,6 @@
 import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { ApiQuery, ApiTags } from '@nestjs/swagger';
-import { IsOptional, IsUUID } from 'class-validator';
+import { IsOptional, IsString, IsUUID } from 'class-validator';
 import { CarePathsService } from './care-paths.service';
 import { ApiStandardResponse } from '@common/swagger';
 import { CarePathDto, CarePathEpisodeDto } from './dto/care-path.dto';
@@ -9,6 +9,7 @@ import { AuthContext } from '@common/interfaces/auth-context.interface';
 
 class ListCarePathsQueryDto {
   @IsOptional() @IsUUID() specialtyId?: string;
+  @IsOptional() @IsString() specialtyCode?: string;
 }
 
 @ApiTags('Care Paths')
@@ -18,6 +19,7 @@ export class CarePathsController {
 
   @Get()
   @ApiQuery({ name: 'specialtyId', required: false })
+  @ApiQuery({ name: 'specialtyCode', required: false })
   @ApiStandardResponse(CarePathDto)
   findAll(
     @Query() query: ListCarePathsQueryDto,
@@ -25,6 +27,7 @@ export class CarePathsController {
   ) {
     return this.service.findAll({
       specialtyId: query.specialtyId,
+      specialtyCode: query.specialtyCode,
       organizationId: user.organizationId,
     });
   }
