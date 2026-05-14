@@ -66,6 +66,7 @@ export class StaffController {
       query.scope,
       query.clinical,
       query.doctors_only,
+      query.specialty_code,
     );
   }
 

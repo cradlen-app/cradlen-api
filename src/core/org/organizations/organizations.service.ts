@@ -1,4 +1,5 @@
 import {
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -24,6 +25,36 @@ export class OrganizationsService {
     const authConfig = this.configService.get<AuthConfig>('auth');
     if (!authConfig) throw new Error('Auth configuration not loaded');
     this.freeTrialDays = authConfig.freeTrialDays;
+  }
+
+  async listOrganizationSpecialties(profileId: string, organizationId: string) {
+    const membership = await this.prismaService.db.profile.findFirst({
+      where: {
+        id: profileId,
+        organization_id: organizationId,
+        is_deleted: false,
+        is_active: true,
+      },
+      select: { id: true },
+    });
+    if (!membership) {
+      throw new ForbiddenException('Organization access denied');
+    }
+
+    const links = await this.prismaService.db.organizationSpecialty.findMany({
+      where: {
+        organization_id: organizationId,
+        specialty: { is_deleted: false },
+      },
+      include: { specialty: true },
+      orderBy: { specialty: { name: 'asc' } },
+    });
+
+    return links.map((l) => ({
+      id: l.specialty.id,
+      code: l.specialty.code,
+      name: l.specialty.name,
+    }));
   }
 
   async getOrganization(profileId: string, organizationId: string) {

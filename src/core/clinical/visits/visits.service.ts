@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, VisitStatus } from '@prisma/client';
+import { MaritalStatus, Prisma, VisitStatus } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { CreateVisitDto } from './dto/create-visit.dto';
@@ -16,6 +16,12 @@ import { SetFollowUpDto } from './dto/set-follow-up.dto';
 import { VisitIntakeFieldsDto } from './dto/visit-intake.dto';
 import { EventBus } from '@infrastructure/messaging/event-bus';
 import { paginated } from '@common/utils/pagination.utils';
+import {
+  TemplateValidator,
+  ValidatePayloadOptions,
+  ValidationError,
+} from '@builder/validator/template.validator.js';
+import { TemplatesService } from '@builder/templates/templates.service.js';
 
 const TERMINAL_STATES: VisitStatus[] = ['COMPLETED', 'CANCELLED', 'NO_SHOW'];
 
@@ -39,6 +45,8 @@ export class VisitsService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly eventBus: EventBus,
+    private readonly templateValidator: TemplateValidator,
+    private readonly templatesService: TemplatesService,
   ) {}
 
   private async getNextQueueNumber(
@@ -133,6 +141,116 @@ export class VisitsService {
     }
   }
 
+  /**
+   * Runs the server-side TemplateValidator against the submitted payload for
+   * the shared `book_visit` shell. If the specialty has a registered
+   * extension (e.g. OBGYN), it's composed in so specialty-specific predicates
+   * are enforced too. A missing extension is not fatal — the server falls
+   * back to shell-only validation rather than 404-ing on the booking.
+   */
+  private async assertTemplateValid(
+    payload: Record<string, unknown>,
+    options: ValidatePayloadOptions,
+  ) {
+    let result;
+    try {
+      result = await this.templateValidator.validatePayload(
+        'book_visit',
+        payload,
+        options,
+      );
+    } catch (err) {
+      if (err instanceof NotFoundException && options.extensionKey) {
+        result = await this.templateValidator.validatePayload(
+          'book_visit',
+          payload,
+          { ...options, extensionKey: null },
+        );
+      } else {
+        throw err;
+      }
+    }
+    if (!result.ok) throw this.buildTemplateValidationError(result.errors);
+  }
+
+  private buildTemplateValidationError(
+    errors: ValidationError[],
+  ): BadRequestException {
+    const messages = errors.map((e) => `${e.fieldCode} ${e.message}`);
+    return new BadRequestException({ message: messages });
+  }
+
+  /**
+   * Verifies that the assigned doctor has the submitted specialty among their
+   * `specialty_links`. The form-template renders the doctor picker as
+   * `?specialty_code={specialty_code}` so a compliant frontend can never pair
+   * mismatched values — but a scripted client could, and the doctor list
+   * filter alone doesn't gate the booking write. This check closes that gap.
+   */
+  private async assertDoctorSpecialty(
+    doctorId: string,
+    specialtyCode: string,
+    organizationId: string,
+  ) {
+    const profile = await this.prismaService.db.profile.findFirst({
+      where: {
+        id: doctorId,
+        organization_id: organizationId,
+        is_deleted: false,
+        specialty_links: {
+          some: { specialty: { code: specialtyCode, is_deleted: false } },
+        },
+      },
+      select: { id: true },
+    });
+    if (!profile) {
+      throw new BadRequestException({
+        message: [
+          `assigned_doctor_id does not have specialty "${specialtyCode}"`,
+        ],
+      });
+    }
+  }
+
+  /**
+   * Marital ↔ spouse consistency checks shared by bookVisit and update.
+   *
+   * The form-template's predicates can't enforce these today because the
+   * GUARDIAN namespace's binding paths (`full_name`, `national_id`,
+   * `phone_number`) collide with PATIENT's at the validator's path-only
+   * lookup — `spouse_*` is on the wire DTO but the binding stays abstract.
+   * Until the GUARDIAN namespace renames are landed, these stay hand-coded.
+   */
+  private assertSpouseConsistency(
+    dto: BookVisitDto | UpdateVisitDto,
+    resolvedMaritalStatus: MaritalStatus | undefined,
+  ) {
+    const hasSpouseFields = !!(
+      dto.spouse_full_name ||
+      dto.spouse_national_id ||
+      dto.spouse_phone_number ||
+      dto.spouse_guardian_id
+    );
+    if (
+      !dto.spouse_full_name &&
+      !dto.spouse_guardian_id &&
+      (dto.spouse_national_id || dto.spouse_phone_number)
+    ) {
+      throw new BadRequestException(
+        'spouse_full_name is required when other spouse fields are supplied',
+      );
+    }
+    if (
+      resolvedMaritalStatus &&
+      resolvedMaritalStatus !== 'MARRIED' &&
+      hasSpouseFields
+    ) {
+      throw new BadRequestException(
+        'Spouse fields may only be supplied when marital_status is MARRIED',
+      );
+    }
+  }
+
   private async assertEpisodeInOrg(episodeId: string, organizationId: string) {
     const episode = await this.prismaService.db.patientEpisode.findUnique({
       where: { id: episodeId, is_deleted: false },
@@ -170,6 +288,19 @@ export class VisitsService {
   }
 
   async bookVisit(dto: BookVisitDto, user: AuthContext) {
+    await this.assertTemplateValid(dto as unknown as Record<string, unknown>, {
+      extensionKey: dto.specialty_code,
+    });
+    await this.assertDoctorSpecialty(
+      dto.assigned_doctor_id,
+      dto.specialty_code,
+      user.organizationId,
+    );
+    // Stamp the audit anchor: which shell-template version this visit was
+    // booked from. Resolve outside the transaction so a missing template
+    // 404s before any writes.
+    const bookVisitTemplate =
+      await this.templatesService.findActiveByCode('book_visit');
     if (!dto.patient_id) {
       const required = [
         'national_id',
@@ -195,39 +326,15 @@ export class VisitsService {
         'husband_name is required when is_married is true',
       );
     }
-
-    const hasSpouseFields = !!(
-      dto.spouse_full_name ||
-      dto.spouse_national_id ||
-      dto.spouse_phone_number ||
-      dto.spouse_guardian_id
-    );
-    if (resolvedMaritalStatus === 'MARRIED' && hasSpouseFields) {
-      // spouse_national_id is optional, but a name (or a picked guardian id)
-      // is the minimum identity. national_id alone is not enough.
-      if (
-        !dto.spouse_full_name &&
-        !dto.spouse_guardian_id &&
-        (dto.spouse_national_id || dto.spouse_phone_number)
-      ) {
-        throw new BadRequestException(
-          'spouse_full_name is required when other spouse fields are supplied',
-        );
-      }
-    }
-    if (
-      resolvedMaritalStatus &&
-      resolvedMaritalStatus !== 'MARRIED' &&
-      hasSpouseFields
-    ) {
-      throw new BadRequestException(
-        'Spouse fields may only be supplied when marital_status is MARRIED',
-      );
-    }
+    this.assertSpouseConsistency(dto, resolvedMaritalStatus);
 
     const branchId = dto.branch_id ?? user.activeBranchId;
     if (!branchId) throw new BadRequestException('branch_id is required');
 
+    // TODO: drive JourneyTemplate selection from the resolved CarePath rather
+    // than hardcoding GENERAL_GYN. A pregnancy care path attached to the
+    // general-gyn template is schema-valid but the pregnancy-record flow
+    // expects a pregnancy-typed journey template.
     const template = await this.prismaService.db.journeyTemplate.findFirst({
       where: { type: 'GENERAL_GYN', is_deleted: false },
       include: {
@@ -240,6 +347,27 @@ export class VisitsService {
       );
     }
     const firstEpisodeTemplate = template.episodes[0];
+
+    let carePathId: string | null = null;
+    if (dto.care_path_code) {
+      const carePath = await this.prismaService.db.carePath.findFirst({
+        where: {
+          code: dto.care_path_code,
+          is_deleted: false,
+          OR: [
+            { organization_id: null },
+            { organization_id: user.organizationId },
+          ],
+        },
+        select: { id: true },
+      });
+      if (!carePath) {
+        throw new NotFoundException(
+          `Care path "${dto.care_path_code}" not found`,
+        );
+      }
+      carePathId = carePath.id;
+    }
 
     const result = await this.prismaService.db.$transaction(async (tx) => {
       let patient;
@@ -366,6 +494,7 @@ export class VisitsService {
           patient_id: patient.id,
           organization_id: user.organizationId,
           journey_template_id: template.id,
+          care_path_id: carePathId,
           status: 'ACTIVE',
           is_deleted: false,
         },
@@ -388,6 +517,7 @@ export class VisitsService {
             patient_id: patient.id,
             organization_id: user.organizationId,
             journey_template_id: template.id,
+            care_path_id: carePathId,
             created_by_id: user.profileId,
             status: 'ACTIVE',
           },
@@ -422,6 +552,7 @@ export class VisitsService {
           priority: dto.priority,
           scheduled_at: new Date(dto.scheduled_at),
           created_by_id: user.profileId,
+          form_template_id: bookVisitTemplate.id,
         },
       });
       await this.applyIntake(tx, visit.id, dto, user.profileId);
@@ -717,6 +848,30 @@ export class VisitsService {
         `Cannot update a visit in terminal status: ${visit.status}`,
       );
     }
+    // Update DTO has no visitor_type — it's immutable per visit. Inject it so
+    // the validator can evaluate visitor_type-keyed forbidden predicates
+    // against any cross-discriminator fields slipping into the patch.
+    await this.assertTemplateValid(
+      {
+        ...(dto as unknown as Record<string, unknown>),
+        visitor_type: 'PATIENT',
+      },
+      {
+        extensionKey: dto.specialty_code ?? null,
+        sparse: true,
+      },
+    );
+    // Doctor↔specialty consistency: only verifiable when the patch carries a
+    // specialty_code (prior specialty isn't persisted on Visit). Use the
+    // final doctor — either the patched one or the current assignment.
+    if (dto.specialty_code) {
+      const finalDoctorId = dto.assigned_doctor_id ?? visit.assigned_doctor_id;
+      await this.assertDoctorSpecialty(
+        finalDoctorId,
+        dto.specialty_code,
+        user.organizationId,
+      );
+    }
 
     const resolvedMaritalStatus =
       dto.marital_status ??
@@ -726,30 +881,13 @@ export class VisitsService {
           ? undefined
           : undefined);
 
+    this.assertSpouseConsistency(dto, resolvedMaritalStatus);
     const hasSpouseFields = !!(
       dto.spouse_full_name ||
       dto.spouse_national_id ||
       dto.spouse_phone_number ||
       dto.spouse_guardian_id
     );
-    if (
-      !dto.spouse_full_name &&
-      !dto.spouse_guardian_id &&
-      (dto.spouse_national_id || dto.spouse_phone_number)
-    ) {
-      throw new BadRequestException(
-        'spouse_full_name is required when other spouse fields are supplied',
-      );
-    }
-    if (
-      resolvedMaritalStatus &&
-      resolvedMaritalStatus !== 'MARRIED' &&
-      hasSpouseFields
-    ) {
-      throw new BadRequestException(
-        'Spouse fields may only be supplied when marital_status is MARRIED',
-      );
-    }
 
     const updated = await this.prismaService.db.$transaction(async (tx) => {
       const patientUpdates: Prisma.PatientUpdateInput = {
