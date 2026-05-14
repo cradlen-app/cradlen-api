@@ -1,4 +1,4 @@
-import { JourneyStatus, JourneyTemplateType } from '@prisma/client';
+import { JourneyStatus, JourneyTemplateType, MaritalStatus } from '@prisma/client';
 
 export class PatientDto {
   id!: string;
@@ -8,7 +8,13 @@ export class PatientDto {
   date_of_birth!: Date;
   phone_number!: string;
   address!: string;
+  marital_status!: MaritalStatus;
   created_at!: Date;
+  /** Flattened SPOUSE guardian link (when the patient has one). */
+  spouse_guardian_id?: string;
+  spouse_full_name?: string;
+  spouse_national_id?: string;
+  spouse_phone_number?: string;
 }
 
 export class EpisodeSummaryDto {
