@@ -16,7 +16,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import type { Predicate } from '../../src/builder/rules/predicates.js';
 
 const TEMPLATE_CODE = 'book_visit';
-const TEMPLATE_VERSION = 6;
+const TEMPLATE_VERSION = 7;
 
 interface FieldSpec {
   code: string;
@@ -86,7 +86,10 @@ const SECTIONS: SectionSpec[] = [
             default: { kind: 'first_option' },
           },
           logic: {
-            is_discriminator: true,
+            // Not flagged is_discriminator: the discriminator-reset hook only
+            // watches systemValues. A VISIT-bound discriminator would be wiped
+            // by its own reset and loop. When a downstream section needs to
+            // gate on care_path_code, use a regular `when` predicate.
             predicates: [
               { effect: 'visible', when: { eq: { visitor_type: 'PATIENT' } } },
             ] satisfies Predicate[],
