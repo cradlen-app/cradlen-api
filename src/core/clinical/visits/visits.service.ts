@@ -689,6 +689,7 @@ export class VisitsService {
           select: {
             organization_id: true,
             patient: { select: { id: true, full_name: true } },
+            care_path: { select: { code: true } },
           },
         },
       },
