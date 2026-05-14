@@ -75,20 +75,48 @@ export class PatientsService {
               care_path: { select: { code: true } },
             },
           },
+          guardian_links: {
+            where: { is_deleted: false, relation_to_patient: 'SPOUSE' },
+            take: 1,
+            include: {
+              guardian: {
+                select: {
+                  id: true,
+                  full_name: true,
+                  national_id: true,
+                  phone_number: true,
+                },
+              },
+            },
+          },
         },
       }),
       this.prismaService.db.patient.count({ where }),
     ]);
 
     const shaped = patients.map((patient) => {
-      const { journeys, ...rest } = patient;
+      const { journeys, guardian_links, ...rest } = patient;
       const activeJourney = journeys[0] ?? null;
       const activeCarePathCode = activeJourney?.care_path?.code;
       const carePathField = activeCarePathCode
         ? { active_care_path_code: activeCarePathCode }
         : {};
+      const spouse = guardian_links[0]?.guardian ?? null;
+      const spouseFields = spouse
+        ? {
+            spouse_guardian_id: spouse.id,
+            spouse_full_name: spouse.full_name,
+            spouse_national_id: spouse.national_id,
+            spouse_phone_number: spouse.phone_number,
+          }
+        : {};
       if (isClinicianRole) {
-        return { ...rest, active_journey: activeJourney, ...carePathField };
+        return {
+          ...rest,
+          active_journey: activeJourney,
+          ...carePathField,
+          ...spouseFields,
+        };
       }
       return {
         ...rest,
@@ -100,6 +128,7 @@ export class PatientsService {
             }))
           : [],
         ...carePathField,
+        ...spouseFields,
       };
     });
 
