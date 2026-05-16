@@ -91,7 +91,9 @@
       "Bash(xargs -I {} sh -c 'echo \"=== {} ===\" && head -100 {}')",
       "Bash(cat prisma/migrations/20260515000003_working_shift_minutes/migration.sql 2>nul | head -50)",
       "Bash(npx --prefix \"f:/Cradlen/cradlen-web\" tsc -p \"f:/Cradlen/cradlen-web/tsconfig.json\" --noEmit)",
-      "Bash(./node_modules/.bin/tsc --noEmit)"
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "PowerShell(npm --prefix F:\\\\Cradlen\\\\cradlen-web run lint 2>&1)",
+      "PowerShell(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('F:/Cradlen/cradlen-web/src/messages/en.json','utf8'\\)\\); JSON.parse\\(require\\('fs'\\).readFileSync\\('F:/Cradlen/cradlen-web/src/messages/ar.json','utf8'\\)\\); console.log\\('ok'\\)\")"
     ],
     "additionalDirectories": [
       "\\tmp",

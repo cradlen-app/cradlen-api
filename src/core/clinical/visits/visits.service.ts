@@ -699,7 +699,7 @@ export class VisitsService {
   async findAllForBranch(
     branchId: string,
     status: VisitStatus,
-    query: { page?: number; limit?: number; from?: string; to?: string },
+    query: { page?: number; limit?: number },
     user: AuthContext,
   ) {
     const branch = await this.prismaService.db.branch.findFirst({
@@ -720,17 +720,12 @@ export class VisitsService {
 
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
+    const { start, end } = this.todayBounds();
     const where = {
       branch_id: branchId,
       status,
       is_deleted: false,
-      ...(query.from &&
-        query.to && {
-          scheduled_at: {
-            gte: new Date(query.from),
-            lte: new Date(query.to),
-          },
-        }),
+      scheduled_at: { gte: start, lte: end },
     };
 
     const orderBy =
@@ -915,11 +910,13 @@ export class VisitsService {
   }
 
   async findMyCurrent(user: AuthContext) {
+    const { start, end } = this.todayBounds();
     const visit = await this.prismaService.db.visit.findFirst({
       where: {
         assigned_doctor_id: user.profileId,
         status: 'IN_PROGRESS',
         is_deleted: false,
+        started_at: { gte: start, lte: end },
       },
       orderBy: { started_at: 'desc' },
       include: this.listInclude,
