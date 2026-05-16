@@ -15,11 +15,11 @@ const prisma = new PrismaClient({ adapter });
 async function main() {
   // Roles — authority tiers only. Job-level distinctions live on JobFunction below.
   const roles = ['OWNER', 'BRANCH_MANAGER', 'STAFF', 'EXTERNAL'];
-  for (const name of roles) {
+  for (const code of roles) {
     await prisma.role.upsert({
-      where: { name },
-      update: {},
-      create: { name },
+      where: { code },
+      update: { name: code },
+      create: { code, name: code },
     });
   }
 
@@ -87,12 +87,15 @@ async function main() {
     });
   }
 
-  // Journey Templates
+  // Journey Templates — upserted by (specialty_id, code)
   const pregnancyTemplate = await prisma.journeyTemplate.upsert({
-    where: { name: 'Pregnancy Journey' },
-    update: {},
+    where: {
+      specialty_id_code: { specialty_id: gynSpecialty.id, code: 'PREGNANCY' },
+    },
+    update: { name: 'Pregnancy Journey' },
     create: {
       specialty_id: gynSpecialty.id,
+      code: 'PREGNANCY',
       name: 'Pregnancy Journey',
       type: 'PREGNANCY',
       description: 'Full antenatal and postnatal pregnancy pathway',
@@ -100,10 +103,13 @@ async function main() {
   });
 
   const generalGynTemplate = await prisma.journeyTemplate.upsert({
-    where: { name: 'General GYN Journey' },
-    update: {},
+    where: {
+      specialty_id_code: { specialty_id: gynSpecialty.id, code: 'GENERAL_GYN' },
+    },
+    update: { name: 'General GYN Journey' },
     create: {
       specialty_id: gynSpecialty.id,
+      code: 'GENERAL_GYN',
       name: 'General GYN Journey',
       type: 'GENERAL_GYN',
       description: 'General gynecology consultations and follow-ups',
@@ -111,10 +117,13 @@ async function main() {
   });
 
   const surgicalTemplate = await prisma.journeyTemplate.upsert({
-    where: { name: 'Surgical Journey' },
-    update: {},
+    where: {
+      specialty_id_code: { specialty_id: gynSpecialty.id, code: 'SURGICAL' },
+    },
+    update: { name: 'Surgical Journey' },
     create: {
       specialty_id: gynSpecialty.id,
+      code: 'SURGICAL',
       name: 'Surgical Journey',
       type: 'SURGICAL',
       description: 'Pre-operative, surgical, and post-operative care',
@@ -122,10 +131,16 @@ async function main() {
   });
 
   const chronicTemplate = await prisma.journeyTemplate.upsert({
-    where: { name: 'Chronic Condition Journey' },
-    update: {},
+    where: {
+      specialty_id_code: {
+        specialty_id: gynSpecialty.id,
+        code: 'CHRONIC_CONDITION',
+      },
+    },
+    update: { name: 'Chronic Condition Journey' },
     create: {
       specialty_id: gynSpecialty.id,
+      code: 'CHRONIC_CONDITION',
       name: 'Chronic Condition Journey',
       type: 'CHRONIC_CONDITION',
       description: 'Long-term management of chronic gynecological conditions',
@@ -197,12 +212,16 @@ async function main() {
   // Care paths — UMR redesign (PR1 additive). System-seeded (organization_id = null, is_system = true).
   // Replaces the JourneyTemplateType enum with a queryable, tenant-extendable taxonomy.
   // The legacy JourneyTemplate / EpisodeTemplate seeds above stay in place until PR2 migrates consumers.
+  // Each care path resolves to exactly one JourneyTemplate at booking time.
+  // OBGYN_INFERTILITY currently has no dedicated template — falls back to
+  // CHRONIC_CONDITION until a dedicated template is authored.
   const carePathCatalog = [
     {
       code: 'OBGYN_GENERAL',
       name: 'General GYN',
       description: 'General gynecology consultations and follow-ups',
       order: 1,
+      journey_template_id: generalGynTemplate.id,
       episodes: [{ code: 'GENERAL_CONSULTATION', name: 'General Consultation', order: 1 }],
     },
     {
@@ -210,6 +229,7 @@ async function main() {
       name: 'Pregnancy',
       description: 'Antenatal and postnatal pregnancy care pathway',
       order: 2,
+      journey_template_id: pregnancyTemplate.id,
       episodes: [
         { code: 'FIRST_TRIMESTER', name: 'First Trimester', order: 1 },
         { code: 'SECOND_TRIMESTER', name: 'Second Trimester', order: 2 },
@@ -223,6 +243,7 @@ async function main() {
       name: 'Surgical',
       description: 'Pre-operative, surgical, and post-operative gynecologic care',
       order: 3,
+      journey_template_id: surgicalTemplate.id,
       episodes: [
         { code: 'PRE_OPERATIVE', name: 'Pre-operative', order: 1 },
         { code: 'SURGERY', name: 'Surgery', order: 2 },
@@ -234,6 +255,7 @@ async function main() {
       name: 'Infertility',
       description: 'Infertility evaluation and treatment',
       order: 4,
+      journey_template_id: chronicTemplate.id,
       episodes: [
         { code: 'EVALUATION', name: 'Evaluation', order: 1 },
         { code: 'TREATMENT', name: 'Treatment', order: 2 },
@@ -258,12 +280,19 @@ async function main() {
           name: cp.name,
           description: cp.description,
           order: cp.order,
+          journey_template_id: cp.journey_template_id,
         },
       });
     } else {
       carePath = await prisma.carePath.update({
         where: { id: carePath.id },
-        data: { name: cp.name, description: cp.description, order: cp.order, is_system: true },
+        data: {
+          name: cp.name,
+          description: cp.description,
+          order: cp.order,
+          is_system: true,
+          journey_template_id: cp.journey_template_id,
+        },
       });
     }
     for (const ep of cp.episodes) {

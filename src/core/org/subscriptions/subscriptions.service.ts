@@ -55,7 +55,7 @@ export class SubscriptionsService {
 
   async assertOrganizationLimit(userId: string): Promise<void> {
     const ownerRole = await this.prismaService.db.role.findUnique({
-      where: { name: 'OWNER' },
+      where: { code: 'OWNER' },
     });
     if (!ownerRole)
       throw new InternalServerErrorException('OWNER role not seeded');

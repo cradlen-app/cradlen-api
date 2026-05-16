@@ -19,6 +19,13 @@ export const CLINICAL_EVENTS = {
   journey: {
     started: 'journey.started',
     completed: 'journey.completed',
+    /**
+     * Emitted when a cancellation/no-show leaves a journey with zero
+     * ever-checked-in visits AND zero remaining live visits — the cascade
+     * soft-deletes the journey + its episodes + visits + encounter/vitals.
+     * Consumers should clear any cached lookups of the org's patient list.
+     */
+    cancelledEmpty: 'journey.cancelled_empty',
   },
   episode: {
     opened: 'episode.opened',

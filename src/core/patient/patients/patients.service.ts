@@ -19,7 +19,6 @@ export class PatientsService {
     return this.prismaService.db.patient.create({
       data: {
         full_name: dto.full_name,
-        husband_name: dto.husband_name ?? null,
         date_of_birth: new Date(dto.date_of_birth),
         national_id: dto.national_id,
         phone_number: dto.phone_number,
@@ -30,7 +29,7 @@ export class PatientsService {
 
   async findAll(query: ListPatientsQueryDto, user: AuthContext) {
     const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 11;
     const isClinicianRole =
       user.roles.includes('DOCTOR') || user.roles.includes('OWNER');
 
@@ -147,7 +146,7 @@ export class PatientsService {
     );
 
     const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 11;
 
     const journeyWhere = {
       organization_id: user.organizationId,
@@ -158,10 +157,19 @@ export class PatientsService {
       }),
     };
 
+    // F5 — a patient counts as "in this org" only after a visit at this branch
+    // has actually been checked in. Pre-checkin bookings (and pure cancels)
+    // are not surfaced in the org's branch patient list.
     const branchVisitFilter = {
       some: {
         is_deleted: false,
-        visits: { some: { branch_id: branchId, is_deleted: false } },
+        visits: {
+          some: {
+            branch_id: branchId,
+            is_deleted: false,
+            checked_in_at: { not: null },
+          },
+        },
       },
     };
 
@@ -289,9 +297,6 @@ export class PatientsService {
       where: { id },
       data: {
         ...(dto.full_name !== undefined && { full_name: dto.full_name }),
-        ...(dto.husband_name !== undefined && {
-          husband_name: dto.husband_name,
-        }),
         ...(dto.date_of_birth !== undefined && {
           date_of_birth: new Date(dto.date_of_birth),
         }),

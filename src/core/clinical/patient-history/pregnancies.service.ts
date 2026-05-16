@@ -117,9 +117,13 @@ export class PregnanciesService {
         abortion += 1;
       }
     }
-    await tx.patient.update({
-      where: { id: patientId },
-      data: {
+    await tx.patientObgynHistory.upsert({
+      where: { patient_id: patientId },
+      create: {
+        patient_id: patientId,
+        obstetric_summary: { gravida, para, abortion },
+      },
+      update: {
         obstetric_summary: { gravida, para, abortion },
       },
     });
