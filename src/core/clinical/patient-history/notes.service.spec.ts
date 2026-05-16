@@ -59,19 +59,19 @@ describe('NotesService', () => {
           id: 'n1',
           organization_id: callerOrg,
           visibility: 'PRIVATE_TO_ORG',
-          section: 'MENSTRUAL',
+          section_code: 'MENSTRUAL',
         },
         {
           id: 'n2',
           organization_id: callerOrg,
           visibility: 'SHARED_GLOBAL',
-          section: 'MENSTRUAL',
+          section_code: 'MENSTRUAL',
         },
         {
           id: 'n3',
           organization_id: otherOrg,
           visibility: 'SHARED_GLOBAL',
-          section: 'MEDICAL',
+          section_code: 'MEDICAL',
         },
       ];
       db.patientHistoryNote.findMany.mockResolvedValue(visible);
@@ -92,10 +92,14 @@ describe('NotesService', () => {
       db.patientHistoryNote.groupBy.mockResolvedValue([
         {
           organization_id: otherOrg,
-          section: 'MENSTRUAL',
+          section_code: 'MENSTRUAL',
           _count: { _all: 3 },
         },
-        { organization_id: 'org-C', section: 'MEDICAL', _count: { _all: 1 } },
+        {
+          organization_id: 'org-C',
+          section_code: 'MEDICAL',
+          _count: { _all: 1 },
+        },
       ]);
       db.organization.findMany.mockResolvedValue([
         { id: otherOrg, name: 'Clinic B' },
@@ -107,13 +111,13 @@ describe('NotesService', () => {
         {
           organization_id: otherOrg,
           organization_name: 'Clinic B',
-          section: 'MENSTRUAL',
+          section_code: 'MENSTRUAL',
           count: 3,
         },
         {
           organization_id: 'org-C',
           organization_name: 'Clinic C',
-          section: 'MEDICAL',
+          section_code: 'MEDICAL',
           count: 1,
         },
       ]);
@@ -128,7 +132,7 @@ describe('NotesService', () => {
       db.patientHistoryNote.groupBy.mockResolvedValue([
         {
           organization_id: 'ghost-org',
-          section: 'FAMILY',
+          section_code: 'FAMILY',
           _count: { _all: 2 },
         },
       ]);
@@ -143,14 +147,13 @@ describe('NotesService', () => {
       db.patientHistoryNote.groupBy.mockResolvedValue([]);
       db.organization.findMany.mockResolvedValue([]);
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await service.list('patient-uuid', 'MEDICAL' as any, mockUser);
+      await service.list('patient-uuid', 'MEDICAL', mockUser);
       expect(
-        db.patientHistoryNote.findMany.mock.calls[0][0].where.section,
+        db.patientHistoryNote.findMany.mock.calls[0][0].where.section_code,
       ).toBe('MEDICAL');
-      expect(db.patientHistoryNote.groupBy.mock.calls[0][0].where.section).toBe(
-        'MEDICAL',
-      );
+      expect(
+        db.patientHistoryNote.groupBy.mock.calls[0][0].where.section_code,
+      ).toBe('MEDICAL');
     });
   });
 
@@ -159,8 +162,7 @@ describe('NotesService', () => {
       db.patientHistoryNote.create.mockResolvedValue({ id: 'n1' });
       await service.create(
         'patient-uuid',
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        { section: 'MEDICAL' as any, content: 'Anxious patient' },
+        { section_code: 'MEDICAL', content: 'Anxious patient' },
         mockUser,
       );
       const call = db.patientHistoryNote.create.mock.calls[0][0];
@@ -174,8 +176,7 @@ describe('NotesService', () => {
       await service.create(
         'patient-uuid',
         {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          section: 'MEDICAL' as any,
+          section_code: 'MEDICAL',
           content: 'Patient is allergic to penicillin',
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           visibility: 'SHARED_GLOBAL' as any,

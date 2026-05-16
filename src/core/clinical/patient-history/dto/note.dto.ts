@@ -1,4 +1,4 @@
-import { NoteVisibility, PatientHistorySection } from '@prisma/client';
+import { NoteVisibility } from '@prisma/client';
 import {
   IsEnum,
   IsOptional,
@@ -8,7 +8,7 @@ import {
 } from 'class-validator';
 
 export class CreateNoteDto {
-  @IsEnum(PatientHistorySection) section!: PatientHistorySection;
+  @IsString() @MinLength(1) @MaxLength(80) section_code!: string;
   @IsString() @MinLength(1) @MaxLength(5000) content!: string;
   @IsEnum(NoteVisibility) @IsOptional() visibility?: NoteVisibility;
 }
@@ -19,7 +19,7 @@ export class UpdateNoteDto {
 }
 
 export class ListNotesQueryDto {
-  @IsEnum(PatientHistorySection) @IsOptional() section?: PatientHistorySection;
+  @IsString() @IsOptional() @MaxLength(80) section_code?: string;
 }
 
 export class NoteDto {
@@ -27,7 +27,7 @@ export class NoteDto {
   patient_id!: string;
   organization_id!: string;
   author_id!: string;
-  section!: string;
+  section_code!: string;
   content!: string;
   visibility!: string;
   created_at!: Date;
@@ -41,7 +41,7 @@ export class NoteDto {
 export class RedactedNoteCountDto {
   organization_id!: string;
   organization_name!: string;
-  section!: string;
+  section_code!: string;
   count!: number;
 }
 

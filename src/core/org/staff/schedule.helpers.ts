@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import type { BranchScheduleDto } from './dto/staff.dto.js';
+import { hhmmToMinutes } from './shift-time.helpers.js';
 
 /**
  * Bulk-writes working schedules, days, and shifts for a profile inside an
@@ -69,8 +70,8 @@ export async function persistSchedules(
     const shifts = shiftsByKey.get(`${cd.schedule_id}:${cd.day_of_week}`) ?? [];
     return shifts.map((s) => ({
       day_id: cd.id,
-      start_time: s.start_time,
-      end_time: s.end_time,
+      start_minute: hhmmToMinutes(s.start_time),
+      end_minute: hhmmToMinutes(s.end_time),
     }));
   });
 

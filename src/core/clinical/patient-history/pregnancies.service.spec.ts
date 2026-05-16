@@ -22,7 +22,7 @@ describe('PregnanciesService', () => {
       findUnique: jest.Mock;
       update: jest.Mock;
     };
-    patient: { update: jest.Mock };
+    patientObgynHistory: { upsert: jest.Mock };
     $transaction: jest.Mock;
   };
 
@@ -34,7 +34,7 @@ describe('PregnanciesService', () => {
         findUnique: jest.fn(),
         update: jest.fn(),
       },
-      patient: { update: jest.fn() },
+      patientObgynHistory: { upsert: jest.fn() },
       $transaction: jest
         .fn()
         .mockImplementation(async (cb: (tx: typeof db) => Promise<unknown>) =>
@@ -67,8 +67,8 @@ describe('PregnanciesService', () => {
         { outcome: rows[rows.length - 1]?.outcome ?? undefined },
         mockUser,
       );
-      const updateCall = db.patient.update.mock.calls[0]?.[0];
-      return updateCall?.data?.obstetric_summary as {
+      const upsertCall = db.patientObgynHistory.upsert.mock.calls[0]?.[0];
+      return upsertCall?.update?.obstetric_summary as {
         gravida: number;
         para: number;
         abortion: number;

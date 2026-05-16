@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { NoteVisibility, PatientHistorySection, Prisma } from '@prisma/client';
+import { NoteVisibility, Prisma } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { PatientAccessService } from './patient-access.service';
@@ -20,15 +20,9 @@ export class NotesService {
     private readonly patientAccess: PatientAccessService,
   ) {}
 
-  /**
-   * Returns:
-   *   visible        — notes the caller may read (own org, OR shared globally)
-   *   redacted_by_org — counts of foreign-org private notes per (org, section), so
-   *                     other doctors know context exists without seeing it
-   */
   async list(
     patientId: string,
-    section: PatientHistorySection | undefined,
+    sectionCode: string | undefined,
     user: AuthContext,
   ) {
     await this.patientAccess.assertPatientInOrg(patientId, user);
@@ -36,7 +30,7 @@ export class NotesService {
     const baseWhere: Prisma.PatientHistoryNoteWhereInput = {
       patient_id: patientId,
       is_deleted: false,
-      ...(section ? { section } : {}),
+      ...(sectionCode ? { section_code: sectionCode } : {}),
     };
 
     const visible = await this.prismaService.db.patientHistoryNote.findMany({
@@ -50,10 +44,9 @@ export class NotesService {
       orderBy: { created_at: 'desc' },
     });
 
-    // Foreign-org private notes — counts only.
     const foreignPrivate =
       await this.prismaService.db.patientHistoryNote.groupBy({
-        by: ['organization_id', 'section'],
+        by: ['organization_id', 'section_code'],
         where: {
           ...baseWhere,
           NOT: { organization_id: user.organizationId },
@@ -73,7 +66,7 @@ export class NotesService {
     const redacted: RedactedNoteCountDto[] = foreignPrivate.map((g) => ({
       organization_id: g.organization_id,
       organization_name: orgNameById.get(g.organization_id) ?? 'Unknown',
-      section: g.section,
+      section_code: g.section_code ?? '',
       count: g._count._all,
     }));
 
@@ -87,7 +80,7 @@ export class NotesService {
         patient_id: patientId,
         organization_id: user.organizationId,
         author_id: user.profileId,
-        section: dto.section,
+        section_code: dto.section_code,
         content: dto.content,
         visibility: dto.visibility ?? NoteVisibility.PRIVATE_TO_ORG,
       },

@@ -5,6 +5,7 @@ import { paginated } from '@common/utils/pagination.utils.js';
 
 interface CreateNotificationInput {
   userId: string;
+  code: string;
   category: string;
   title: string;
   description: string;
@@ -20,6 +21,7 @@ export class NotificationsService {
     return this.prismaService.db.notification.create({
       data: {
         user_id: input.userId,
+        code: input.code,
         category: input.category,
         title: input.title,
         description: input.description,

@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
+import { buildRevision } from '@common/utils/revisions.helper';
 import { MedicationsService } from '../medications/medications.service';
 import { VisitAccessService } from './visit-access.service';
 import {
@@ -27,7 +28,7 @@ export class PrescriptionsService {
     return this.prismaService.db.prescription.findUnique({
       where: { visit_id: visitId },
       include: {
-        items: { orderBy: { order: 'asc' } },
+        items: { where: { is_deleted: false }, orderBy: { order: 'asc' } },
       },
     });
   }
@@ -36,18 +37,43 @@ export class PrescriptionsService {
     const visit = await this.visitAccess.loadOrThrow(visitId, user);
     this.visitAccess.assertCanEditPrescription(visit, user);
 
-    return this.prismaService.db.prescription.upsert({
+    const prior = await this.prismaService.db.prescription.findUnique({
       where: { visit_id: visitId },
-      create: {
-        visit_id: visitId,
-        prescribed_by_id: user.profileId,
-        notes: dto.notes ?? null,
-      },
-      update: {
-        prescribed_by_id: user.profileId,
-        notes: dto.notes ?? null,
-      },
-      include: { items: { orderBy: { order: 'asc' } } },
+    });
+
+    if (!prior) {
+      return this.prismaService.db.prescription.create({
+        data: {
+          visit_id: visitId,
+          prescribed_by_id: user.profileId,
+          notes: dto.notes ?? null,
+        },
+        include: {
+          items: { where: { is_deleted: false }, orderBy: { order: 'asc' } },
+        },
+      });
+    }
+
+    const nextNotes = dto.notes ?? null;
+    const noteChanged = prior.notes !== nextNotes;
+
+    return this.prismaService.db.$transaction(async (tx) => {
+      if (noteChanged) {
+        await tx.prescriptionRevision.create({
+          data: buildRevision(prior, ['notes'], user.profileId),
+        });
+      }
+      return tx.prescription.update({
+        where: { id: prior.id },
+        data: {
+          notes: nextNotes,
+          updated_by_id: user.profileId,
+          ...(noteChanged ? { version: { increment: 1 } } : {}),
+        },
+        include: {
+          items: { where: { is_deleted: false }, orderBy: { order: 'asc' } },
+        },
+      });
     });
   }
 
@@ -124,34 +150,58 @@ export class PrescriptionsService {
       );
     }
 
-    return this.prismaService.db.prescriptionItem.update({
-      where: { id: itemId },
-      data: {
-        ...(dto.medication_id !== undefined && {
-          medication_id: dto.medication_id,
-        }),
-        ...(dto.custom_drug_name !== undefined && {
-          custom_drug_name: dto.custom_drug_name,
-        }),
-        ...(dto.dose !== undefined && { dose: dto.dose }),
-        ...(dto.route !== undefined && { route: dto.route }),
-        ...(dto.frequency !== undefined && { frequency: dto.frequency }),
-        ...(dto.duration_days !== undefined && {
-          duration_days: dto.duration_days,
-        }),
-        ...(dto.instructions !== undefined && {
-          instructions: dto.instructions,
-        }),
-        ...(dto.order !== undefined && { order: dto.order }),
-      },
+    const updates: Record<string, unknown> = {
+      ...(dto.medication_id !== undefined && {
+        medication_id: dto.medication_id,
+      }),
+      ...(dto.custom_drug_name !== undefined && {
+        custom_drug_name: dto.custom_drug_name,
+      }),
+      ...(dto.dose !== undefined && { dose: dto.dose }),
+      ...(dto.route !== undefined && { route: dto.route }),
+      ...(dto.frequency !== undefined && { frequency: dto.frequency }),
+      ...(dto.duration_days !== undefined && {
+        duration_days: dto.duration_days,
+      }),
+      ...(dto.instructions !== undefined && {
+        instructions: dto.instructions,
+      }),
+      ...(dto.order !== undefined && { order: dto.order }),
+    };
+    const changed = Object.keys(updates);
+    if (changed.length === 0) return item;
+
+    return this.prismaService.db.$transaction(async (tx) => {
+      await tx.prescriptionItemRevision.create({
+        data: buildRevision(item, changed, user.profileId),
+      });
+      return tx.prescriptionItem.update({
+        where: { id: itemId },
+        data: {
+          ...updates,
+          updated_by_id: user.profileId,
+          version: { increment: 1 },
+        },
+      });
     });
   }
 
   async removeItem(itemId: string, user: AuthContext) {
     const item = await this.loadItemOrThrow(itemId, user);
     this.visitAccess.assertCanEditPrescription(item.prescription.visit, user);
-    await this.prismaService.db.prescriptionItem.delete({
-      where: { id: itemId },
+    await this.prismaService.db.$transaction(async (tx) => {
+      await tx.prescriptionItemRevision.create({
+        data: buildRevision(item, ['is_deleted'], user.profileId),
+      });
+      await tx.prescriptionItem.update({
+        where: { id: itemId },
+        data: {
+          is_deleted: true,
+          deleted_at: new Date(),
+          updated_by_id: user.profileId,
+          version: { increment: 1 },
+        },
+      });
     });
   }
 
@@ -186,7 +236,7 @@ export class PrescriptionsService {
 
   private async nextOrder(prescriptionId: string): Promise<number> {
     const last = await this.prismaService.db.prescriptionItem.findFirst({
-      where: { prescription_id: prescriptionId },
+      where: { prescription_id: prescriptionId, is_deleted: false },
       orderBy: { order: 'desc' },
       select: { order: true },
     });
