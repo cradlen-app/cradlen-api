@@ -165,7 +165,7 @@ export class OrganizationsService {
 
     const [ownerRole, freePlan] = await Promise.all([
       this.prismaService.db.role
-        .findUnique({ where: { name: 'OWNER' } })
+        .findUnique({ where: { code: 'OWNER' } })
         .then((r) => {
           if (!r) throw new NotFoundException("Role 'OWNER' not found");
           return r;

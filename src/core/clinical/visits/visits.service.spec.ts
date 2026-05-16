@@ -11,6 +11,7 @@ import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { TemplateValidator } from '@builder/validator/template.validator';
 import { TemplatesService } from '@builder/templates/templates.service';
+import { AuthorizationService } from '@core/auth/authorization/authorization.service';
 
 const mockUser: AuthContext = {
   userId: 'user-uuid',
@@ -103,6 +104,7 @@ describe('VisitsService', () => {
       count: jest.Mock;
     };
     branch: { findFirst: jest.Mock };
+    profileBranch: { findFirst: jest.Mock };
     visitEncounter: { findUnique: jest.Mock; upsert: jest.Mock };
     visitVitals: { upsert: jest.Mock };
     $transaction: jest.Mock;
@@ -128,6 +130,7 @@ describe('VisitsService', () => {
         count: jest.fn(),
       },
       branch: { findFirst: jest.fn() },
+      profileBranch: { findFirst: jest.fn().mockResolvedValue({ id: 'pb-1' }) },
       visitEncounter: { findUnique: jest.fn(), upsert: jest.fn() },
       visitVitals: { upsert: jest.fn() },
       $transaction: jest.fn(),
@@ -140,6 +143,9 @@ describe('VisitsService', () => {
     const templatesServiceMock = {
       findActiveByCode: jest.fn().mockResolvedValue({ id: 'tpl-uuid' }),
     };
+    const authorizationServiceMock = {
+      assertCanAccessBranch: jest.fn().mockResolvedValue(undefined),
+    };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         VisitsService,
@@ -147,6 +153,7 @@ describe('VisitsService', () => {
         { provide: EventBus, useValue: eventBusMock },
         { provide: TemplateValidator, useValue: templateValidatorMock },
         { provide: TemplatesService, useValue: templatesServiceMock },
+        { provide: AuthorizationService, useValue: authorizationServiceMock },
       ],
     }).compile();
     service = module.get<VisitsService>(VisitsService);
@@ -255,10 +262,11 @@ describe('VisitsService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('sets checked_in_at and queue_number when transitioning to CHECKED_IN', async () => {
+    it('sets checked_in_at when transitioning to CHECKED_IN (queue_number is assigned at booking, not checkin)', async () => {
       db.visit.findUnique.mockResolvedValue({
         ...mockVisit,
         status: 'SCHEDULED',
+        queue_number: 1,
       });
       db.visit.update.mockResolvedValue({
         ...mockVisit,
@@ -279,10 +287,14 @@ describe('VisitsService', () => {
           data: expect.objectContaining({
             status: 'CHECKED_IN',
             checked_in_at: expect.any(Date),
-            queue_number: 1,
           }),
         }),
       );
+      // queue_number is preserved from booking, not set by updateStatus.
+      const updateCall = db.visit.update.mock.calls[0][0] as {
+        data: Record<string, unknown>;
+      };
+      expect(updateCall.data.queue_number).toBeUndefined();
       expect(result.status).toBe('CHECKED_IN');
       expect(result.queue_number).toBe(1);
     });
@@ -456,13 +468,6 @@ describe('VisitsService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('throws BadRequestException when is_married=true but husband_name missing', async () => {
-      db.journeyTemplate.findFirst.mockResolvedValue(mockTemplate);
-      await expect(
-        service.bookVisit({ ...baseDto, is_married: true }, mockUser),
-      ).rejects.toThrow(BadRequestException);
-    });
-
     it('throws BadRequestException when branch_id absent and user has no activeBranchId', async () => {
       db.journeyTemplate.findFirst.mockResolvedValue(mockTemplate);
       const userNoBranch = { ...mockUser, activeBranchId: undefined };
@@ -543,50 +548,6 @@ describe('VisitsService', () => {
       expect(db.visit.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ episode_id: 'gen-ep-uuid' }),
-        }),
-      );
-    });
-
-    it('stores husband_name as null when is_married=false', async () => {
-      db.journeyTemplate.findFirst.mockResolvedValue(mockTemplate);
-      db.patient.findUnique.mockResolvedValue(null);
-      db.patient.create.mockResolvedValue(mockPatient);
-      db.patientJourney.findFirst.mockResolvedValue(null);
-      db.patientJourney.create.mockResolvedValue(mockJourney);
-      db.patientEpisode.createMany.mockResolvedValue({ count: 1 });
-      db.patientEpisode.findFirst.mockResolvedValue(mockEpisode);
-      db.visit.create.mockResolvedValue(mockVisit);
-
-      await service.bookVisit(
-        { ...baseDto, is_married: false, husband_name: 'Ahmed' },
-        mockUser,
-      );
-
-      expect(db.patient.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ husband_name: null }),
-        }),
-      );
-    });
-
-    it('stores husband_name when is_married=true and husband_name provided', async () => {
-      db.journeyTemplate.findFirst.mockResolvedValue(mockTemplate);
-      db.patient.findUnique.mockResolvedValue(null);
-      db.patient.create.mockResolvedValue(mockPatient);
-      db.patientJourney.findFirst.mockResolvedValue(null);
-      db.patientJourney.create.mockResolvedValue(mockJourney);
-      db.patientEpisode.createMany.mockResolvedValue({ count: 1 });
-      db.patientEpisode.findFirst.mockResolvedValue(mockEpisode);
-      db.visit.create.mockResolvedValue(mockVisit);
-
-      await service.bookVisit(
-        { ...baseDto, is_married: true, husband_name: 'Ahmed' },
-        mockUser,
-      );
-
-      expect(db.patient.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ husband_name: 'Ahmed' }),
         }),
       );
     });

@@ -22,6 +22,9 @@ import {
   ValidationError,
 } from '@builder/validator/template.validator.js';
 import { TemplatesService } from '@builder/templates/templates.service.js';
+import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
+import { buildRevision } from '@common/utils/revisions.helper.js';
+import { CLINICAL_EVENTS } from '@core/clinical/events/clinical-events.js';
 
 const TERMINAL_STATES: VisitStatus[] = ['COMPLETED', 'CANCELLED', 'NO_SHOW'];
 
@@ -47,31 +50,46 @@ export class VisitsService {
     private readonly eventBus: EventBus,
     private readonly templateValidator: TemplateValidator,
     private readonly templatesService: TemplatesService,
+    private readonly authorizationService: AuthorizationService,
   ) {}
 
-  private async getNextQueueNumber(
+  /**
+   * Append-only queue numbering by scheduled_at-day bucket.
+   *
+   * Note: no `is_deleted` filter — cancelled/no-show/soft-deleted visits still
+   * count as occupying their slot. Cancelling leaves a gap (intentional;
+   * stable numbers were a locked design decision).
+   */
+  private async getNextQueueNumberForSchedule(
     tx: Prisma.TransactionClient,
     assignedDoctorId: string,
     branchId: string,
-    date: Date,
+    scheduledAt: Date,
   ): Promise<number> {
-    const dayStart = new Date(date);
+    const dayStart = new Date(scheduledAt);
     dayStart.setHours(0, 0, 0, 0);
-    const dayEnd = new Date(date);
+    const dayEnd = new Date(scheduledAt);
     dayEnd.setHours(23, 59, 59, 999);
 
     const last = await tx.visit.findFirst({
       where: {
         assigned_doctor_id: assignedDoctorId,
         branch_id: branchId,
-        checked_in_at: { gte: dayStart, lte: dayEnd },
-        is_deleted: false,
+        scheduled_at: { gte: dayStart, lte: dayEnd },
       },
       orderBy: { queue_number: 'desc' },
       select: { queue_number: true },
     });
 
     return (last?.queue_number ?? 0) + 1;
+  }
+
+  private isSameDay(a: Date, b: Date): boolean {
+    return (
+      a.getFullYear() === b.getFullYear() &&
+      a.getMonth() === b.getMonth() &&
+      a.getDate() === b.getDate()
+    );
   }
 
   private hasComplaintIntake(intake: VisitIntakeFieldsDto): boolean {
@@ -102,7 +120,7 @@ export class VisitsService {
     profileId: string,
   ) {
     if (this.hasComplaintIntake(intake)) {
-      const data: Prisma.VisitEncounterUncheckedUpdateInput = {
+      const fields: Prisma.VisitEncounterUncheckedUpdateInput = {
         ...(intake.chief_complaint !== undefined && {
           chief_complaint: intake.chief_complaint,
         }),
@@ -111,16 +129,47 @@ export class VisitsService {
             intake.chief_complaint_meta as Prisma.InputJsonValue,
         }),
       };
-      await tx.visitEncounter.upsert({
+
+      // Snapshot prior encounter (if any) inside the same tx so updates that
+      // come through this path leave a revision row — M8 audit guarantee
+      // applies to every write to visit_encounters, not just the
+      // EncounterService.upsert entry point.
+      const prior = await tx.visitEncounter.findUnique({
         where: { visit_id: visitId },
-        create: {
-          visit_id: visitId,
-          ...data,
-        } as Prisma.VisitEncounterUncheckedCreateInput,
-        update: data,
       });
+
+      if (!prior) {
+        await tx.visitEncounter.create({
+          data: {
+            visit_id: visitId,
+            updated_by_id: profileId,
+            ...fields,
+          } as Prisma.VisitEncounterUncheckedCreateInput,
+        });
+      } else {
+        const changed = Object.keys(fields).filter(
+          (k) =>
+            JSON.stringify((prior as Record<string, unknown>)[k]) !==
+            JSON.stringify((fields as Record<string, unknown>)[k]),
+        );
+        if (changed.length > 0) {
+          await tx.visitEncounterRevision.create({
+            data: buildRevision(prior, changed, profileId),
+          });
+          await tx.visitEncounter.update({
+            where: { id: prior.id },
+            data: {
+              ...fields,
+              updated_by_id: profileId,
+              version: { increment: 1 },
+            },
+          });
+        }
+      }
     }
     if (this.hasVitalsIntake(intake)) {
+      // TODO (F3b): VisitVitalsRevision shadow table is backlog. Until that
+      // lands, vitals updates overwrite without an audit row.
       const v = intake.vitals!;
       const data = {
         systolic_bp: v.systolic_bp ?? null,
@@ -270,7 +319,14 @@ export class VisitsService {
     await this.assertEpisodeInOrg(episodeId, user.organizationId);
     const branchId = dto.branch_id ?? user.activeBranchId;
     if (!branchId) throw new BadRequestException('branch_id is required');
+    const scheduledAt = new Date(dto.scheduled_at);
     return this.prismaService.db.$transaction(async (tx) => {
+      const queueNumber = await this.getNextQueueNumberForSchedule(
+        tx,
+        dto.assigned_doctor_id,
+        branchId,
+        scheduledAt,
+      );
       const visit = await tx.visit.create({
         data: {
           episode_id: episodeId,
@@ -278,8 +334,9 @@ export class VisitsService {
           branch_id: branchId,
           appointment_type: dto.appointment_type,
           priority: dto.priority,
-          scheduled_at: new Date(dto.scheduled_at),
+          scheduled_at: scheduledAt,
           created_by_id: user.profileId,
+          queue_number: queueNumber,
         },
       });
       await this.applyIntake(tx, visit.id, dto, user.profileId);
@@ -316,39 +373,43 @@ export class VisitsService {
         );
       }
     }
-    // Marital status normalization: legacy `is_married` is honoured when the
-    // new `marital_status` field isn't supplied so older clients keep working.
-    const resolvedMaritalStatus =
-      dto.marital_status ?? (dto.is_married ? 'MARRIED' : undefined);
-
-    if (dto.is_married && !dto.husband_name && !dto.spouse_full_name) {
-      throw new BadRequestException(
-        'husband_name is required when is_married is true',
-      );
-    }
+    const resolvedMaritalStatus = dto.marital_status;
     this.assertSpouseConsistency(dto, resolvedMaritalStatus);
 
     const branchId = dto.branch_id ?? user.activeBranchId;
     if (!branchId) throw new BadRequestException('branch_id is required');
 
-    // TODO: drive JourneyTemplate selection from the resolved CarePath rather
-    // than hardcoding GENERAL_GYN. A pregnancy care path attached to the
-    // general-gyn template is schema-valid but the pregnancy-record flow
-    // expects a pregnancy-typed journey template.
-    const template = await this.prismaService.db.journeyTemplate.findFirst({
-      where: { type: 'GENERAL_GYN', is_deleted: false },
-      include: {
-        episodes: { where: { is_deleted: false }, orderBy: { order: 'asc' } },
-      },
-    });
-    if (!template || !template.episodes.length) {
-      throw new NotFoundException(
-        'GENERAL_GYN journey template not configured',
-      );
-    }
-    const firstEpisodeTemplate = template.episodes[0];
+    // Caller must have access to this branch.
+    await this.authorizationService.assertCanAccessBranch(
+      user.profileId,
+      user.organizationId,
+      branchId,
+    );
 
+    // Assigned doctor must be assigned to this branch — the form-template
+    // doctor picker filters by branch but a scripted client could submit
+    // a mismatched pair.
+    const doctorOnBranch = await this.prismaService.db.profileBranch.findFirst({
+      where: {
+        profile_id: dto.assigned_doctor_id,
+        branch_id: branchId,
+        organization_id: user.organizationId,
+      },
+      select: { id: true },
+    });
+    if (!doctorOnBranch) {
+      throw new BadRequestException({
+        message: [`assigned_doctor_id is not assigned to branch ${branchId}`],
+      });
+    }
+
+    // Resolve the JourneyTemplate from the supplied care path (1:1 link added
+    // in M14 — care_paths.journey_template_id). When no care_path_code is
+    // sent, fall back to the specialty's GENERAL_GYN-coded template.
     let carePathId: string | null = null;
+    let template: Prisma.JourneyTemplateGetPayload<{
+      include: { episodes: true };
+    }> | null = null;
     if (dto.care_path_code) {
       const carePath = await this.prismaService.db.carePath.findFirst({
         where: {
@@ -359,7 +420,16 @@ export class VisitsService {
             { organization_id: user.organizationId },
           ],
         },
-        select: { id: true },
+        include: {
+          journey_template: {
+            include: {
+              episodes: {
+                where: { is_deleted: false },
+                orderBy: { order: 'asc' },
+              },
+            },
+          },
+        },
       });
       if (!carePath) {
         throw new NotFoundException(
@@ -367,7 +437,25 @@ export class VisitsService {
         );
       }
       carePathId = carePath.id;
+      template = carePath.journey_template;
+    } else {
+      template = await this.prismaService.db.journeyTemplate.findFirst({
+        where: {
+          specialty: { code: dto.specialty_code, is_deleted: false },
+          code: 'GENERAL_GYN',
+          is_deleted: false,
+        },
+        include: {
+          episodes: { where: { is_deleted: false }, orderBy: { order: 'asc' } },
+        },
+      });
     }
+    if (!template || !template.episodes.length) {
+      throw new NotFoundException(
+        'No journey template resolved for this booking',
+      );
+    }
+    const firstEpisodeTemplate = template.episodes[0];
 
     const result = await this.prismaService.db.$transaction(async (tx) => {
       let patient;
@@ -394,10 +482,6 @@ export class VisitsService {
             date_of_birth: new Date(dto.date_of_birth!),
             phone_number: dto.phone_number!,
             address: dto.address!,
-            husband_name:
-              resolvedMaritalStatus === 'MARRIED'
-                ? (dto.husband_name ?? dto.spouse_full_name ?? null)
-                : null,
             ...(resolvedMaritalStatus
               ? { marital_status: resolvedMaritalStatus }
               : {}),
@@ -425,8 +509,8 @@ export class VisitsService {
       //   1. `spouse_guardian_id` provided  → existing Guardian picked from
       //      autocomplete; just ensure the PatientGuardian link exists.
       //   2. `spouse_national_id` provided  → upsert Guardian by national_id.
-      //   3. Only `spouse_full_name`        → no Guardian row; the name lives
-      //      on Patient.husband_name (set during patient.create above).
+      //   3. Only `spouse_full_name`        → upsert PatientObgynHistory
+      //      .husband_name; no Guardian row.
       let spouseGuardianId: string | null = null;
       if (resolvedMaritalStatus === 'MARRIED' && dto.spouse_guardian_id) {
         const picked = await tx.guardian.findFirst({
@@ -461,6 +545,21 @@ export class VisitsService {
       }
 
       if (spouseGuardianId) {
+        // Demote any existing primary SPOUSE link to a different guardian
+        // before promoting this one. A partial unique index enforces this at
+        // the DB level (see `patient_guardians_one_primary_per_relation_unique`
+        // in F4 migration) — this updateMany keeps the in-tx state consistent.
+        await tx.patientGuardian.updateMany({
+          where: {
+            patient_id: patient.id,
+            relation_to_patient: 'SPOUSE',
+            is_primary: true,
+            is_deleted: false,
+            NOT: { guardian_id: spouseGuardianId },
+          },
+          data: { is_primary: false },
+        });
+
         const existingLink = await tx.patientGuardian.findUnique({
           where: {
             patient_id_guardian_id: {
@@ -543,6 +642,13 @@ export class VisitsService {
           throw new NotFoundException('General Consultation episode not found');
       }
 
+      const scheduledAt = new Date(dto.scheduled_at);
+      const queueNumber = await this.getNextQueueNumberForSchedule(
+        tx,
+        dto.assigned_doctor_id,
+        branchId,
+        scheduledAt,
+      );
       const visit = await tx.visit.create({
         data: {
           episode_id: episode.id,
@@ -550,9 +656,10 @@ export class VisitsService {
           branch_id: branchId,
           appointment_type: dto.appointment_type,
           priority: dto.priority,
-          scheduled_at: new Date(dto.scheduled_at),
+          scheduled_at: scheduledAt,
           created_by_id: user.profileId,
           form_template_id: bookVisitTemplate.id,
+          queue_number: queueNumber,
         },
       });
       await this.applyIntake(tx, visit.id, dto, user.profileId);
@@ -867,14 +974,7 @@ export class VisitsService {
       );
     }
 
-    const resolvedMaritalStatus =
-      dto.marital_status ??
-      (dto.is_married === true
-        ? 'MARRIED'
-        : dto.is_married === false
-          ? undefined
-          : undefined);
-
+    const resolvedMaritalStatus = dto.marital_status;
     this.assertSpouseConsistency(dto, resolvedMaritalStatus);
     const hasSpouseFields = !!(
       dto.spouse_full_name ||
@@ -897,9 +997,6 @@ export class VisitsService {
         ...(resolvedMaritalStatus !== undefined && {
           marital_status: resolvedMaritalStatus,
         }),
-        ...(dto.husband_name !== undefined && {
-          husband_name: dto.husband_name,
-        }),
       };
       const patientId = visit.episode.journey.patient.id;
       if (Object.keys(patientUpdates).length > 0) {
@@ -912,6 +1009,27 @@ export class VisitsService {
       if (resolvedMaritalStatus === 'MARRIED' && hasSpouseFields) {
         await this.applySpouseLink(tx, patientId, dto);
       }
+
+      // If the (doctor, branch, day) bucket changes, re-issue queue_number
+      // for the destination bucket. Source-bucket gap remains (matches
+      // cancel-leaves-gap semantics).
+      const nextDoctor = dto.assigned_doctor_id ?? visit.assigned_doctor_id;
+      const nextBranch = dto.branch_id ?? visit.branch_id;
+      const nextScheduledAt = dto.scheduled_at
+        ? new Date(dto.scheduled_at)
+        : visit.scheduled_at;
+      const bucketChanged =
+        nextDoctor !== visit.assigned_doctor_id ||
+        nextBranch !== visit.branch_id ||
+        !this.isSameDay(nextScheduledAt, visit.scheduled_at);
+      const rebookedQueueNumber = bucketChanged
+        ? await this.getNextQueueNumberForSchedule(
+            tx,
+            nextDoctor,
+            nextBranch,
+            nextScheduledAt,
+          )
+        : undefined;
 
       const next = await tx.visit.update({
         where: { id },
@@ -926,6 +1044,9 @@ export class VisitsService {
           ...(dto.priority !== undefined && { priority: dto.priority }),
           ...(dto.scheduled_at !== undefined && {
             scheduled_at: new Date(dto.scheduled_at),
+          }),
+          ...(rebookedQueueNumber !== undefined && {
+            queue_number: rebookedQueueNumber,
           }),
         },
       });
@@ -962,30 +1083,99 @@ export class VisitsService {
     }
     const timestampField = STATUS_TIMESTAMPS[dto.status];
     const now = new Date();
+    const isTerminal = dto.status === 'CANCELLED' || dto.status === 'NO_SHOW';
 
-    const updatedVisit = await this.prismaService.db.$transaction(
+    const journeyId = visit.episode?.journey
+      ? (
+          await this.prismaService.db.patientEpisode.findUnique({
+            where: { id: visit.episode.id },
+            select: { journey_id: true },
+          })
+        )?.journey_id
+      : undefined;
+
+    const { updatedVisit, cascaded } = await this.prismaService.db.$transaction(
       async (tx) => {
-        const queueNumber =
-          dto.status === 'CHECKED_IN'
-            ? await this.getNextQueueNumber(
-                tx,
-                visit.assigned_doctor_id,
-                visit.branch_id,
-                now,
-              )
-            : undefined;
-
-        return tx.visit.update({
+        const next = await tx.visit.update({
           where: { id },
           data: {
             status: dto.status,
             ...(timestampField ? { [timestampField]: now } : {}),
-            ...(queueNumber !== undefined ? { queue_number: queueNumber } : {}),
           },
         });
+
+        let didCascade = false;
+        if (isTerminal && journeyId) {
+          // F5 — if this cancel/no-show leaves the journey with no real
+          // (ever-checked-in) visits and no remaining live visits, soft-delete
+          // the whole journey + episodes + visits + encounter/vitals.
+          const [realCount, liveCount] = await Promise.all([
+            tx.visit.count({
+              where: {
+                episode: { journey_id: journeyId },
+                checked_in_at: { not: null },
+                is_deleted: false,
+              },
+            }),
+            tx.visit.count({
+              where: {
+                episode: { journey_id: journeyId },
+                is_deleted: false,
+                status: { notIn: ['CANCELLED', 'NO_SHOW'] },
+              },
+            }),
+          ]);
+
+          if (realCount === 0 && liveCount === 0) {
+            await tx.visitEncounter.updateMany({
+              where: {
+                visit: { episode: { journey_id: journeyId } },
+                is_deleted: false,
+              },
+              data: { is_deleted: true, deleted_at: now },
+            });
+            await tx.visitVitals.updateMany({
+              where: {
+                visit: { episode: { journey_id: journeyId } },
+                is_deleted: false,
+              },
+              data: { is_deleted: true, deleted_at: now },
+            });
+            await tx.visit.updateMany({
+              where: {
+                episode: { journey_id: journeyId },
+                is_deleted: false,
+              },
+              data: { is_deleted: true, deleted_at: now },
+            });
+            await tx.patientEpisode.updateMany({
+              where: { journey_id: journeyId, is_deleted: false },
+              data: { is_deleted: true, deleted_at: now },
+            });
+            await tx.patientJourney.update({
+              where: { id: journeyId },
+              data: {
+                is_deleted: true,
+                deleted_at: now,
+                status: 'CANCELLED',
+                ended_at: now,
+              },
+            });
+            didCascade = true;
+          }
+        }
+
+        return { updatedVisit: next, cascaded: didCascade };
       },
     );
 
+    if (cascaded) {
+      this.eventBus.publish(CLINICAL_EVENTS.journey.cancelledEmpty, {
+        journeyId,
+        patientId: visit.episode?.journey?.patient.id,
+        organizationId: visit.episode?.journey?.organization_id,
+      });
+    }
     this.eventBus.publish('visit.status_updated', {
       assignedDoctorId: updatedVisit.assigned_doctor_id,
       branchId: updatedVisit.branch_id,
@@ -1027,10 +1217,16 @@ export class VisitsService {
       });
       spouseGuardianId = spouse.id;
     } else if (dto.spouse_full_name) {
-      // Name-only update — store on Patient.husband_name; no Guardian row.
-      await tx.patient.update({
-        where: { id: patientId },
-        data: { husband_name: dto.spouse_full_name },
+      // Name-only update — store on PatientObgynHistory.husband_name (lazy
+      // upsert; no version bump/audit since this is bookkeeping, not a
+      // clinical mutation through the obgyn-history PATCH path).
+      await tx.patientObgynHistory.upsert({
+        where: { patient_id: patientId },
+        create: {
+          patient_id: patientId,
+          husband_name: dto.spouse_full_name,
+        },
+        update: { husband_name: dto.spouse_full_name },
       });
     }
 
