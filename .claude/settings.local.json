@@ -86,12 +86,18 @@
       "Bash(grep -E \"\\\\.\\(controller|service\\)\\\\.ts$\")",
       "Bash(find src/app/[locale]/[orgId]/[branchId]/dashboard/visits -type f -name \"*.tsx\")",
       "PowerShell(npx --prefix f:\\\\Cradlen\\\\cradlen-web tsc -p f:\\\\Cradlen\\\\cradlen-web\\\\tsconfig.json --noEmit 2>&1)",
-      "Bash(rm f:/Cradlen/cradlen-web/src/features/calendar/hooks/useCancelCalendarEvent.ts f:/Cradlen/cradlen-web/src/features/calendar/hooks/useCheckConflicts.ts f:/Cradlen/cradlen-web/src/features/calendar/lib/calendar.mock.ts f:/Cradlen/cradlen-web/src/features/calendar/components/ConflictDialog.tsx)"
+      "Bash(rm f:/Cradlen/cradlen-web/src/features/calendar/hooks/useCancelCalendarEvent.ts f:/Cradlen/cradlen-web/src/features/calendar/hooks/useCheckConflicts.ts f:/Cradlen/cradlen-web/src/features/calendar/lib/calendar.mock.ts f:/Cradlen/cradlen-web/src/features/calendar/components/ConflictDialog.tsx)",
+      "Bash(xargs -I {} cat {}/migration.sql)",
+      "Bash(xargs -I {} sh -c 'echo \"=== {} ===\" && head -100 {}')",
+      "Bash(cat prisma/migrations/20260515000003_working_shift_minutes/migration.sql 2>nul | head -50)",
+      "Bash(npx --prefix \"f:/Cradlen/cradlen-web\" tsc -p \"f:/Cradlen/cradlen-web/tsconfig.json\" --noEmit)",
+      "Bash(./node_modules/.bin/tsc --noEmit)"
     ],
     "additionalDirectories": [
       "\\tmp",
       "f:\\Cradlen\\cradlen-web\\src\\features\\visits\\components",
-      "f:\\Cradlen\\cradlen-web\\src\\features\\calendar\\components"
+      "f:\\Cradlen\\cradlen-web\\src\\features\\calendar\\components",
+      "F:\\Cradlen\\cradlen-api"
     ]
   }
 }

@@ -21,6 +21,7 @@ import { EmailService } from '@infrastructure/email/email.service.js';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service.js';
 import type { BranchScheduleDto } from '../staff/dto/staff.dto.js';
 import { persistSchedules } from '../staff/schedule.helpers.js';
+import { minutesToHhmm } from '../staff/shift-time.helpers.js';
 import type {
   AcceptInvitationDto,
   BulkCreateInvitationsDto,
@@ -944,8 +945,8 @@ export class InvitationsService {
             days: ws.days.map((d) => ({
               day_of_week: d.day_of_week,
               shifts: d.shifts.map((s) => ({
-                start_time: s.start_time,
-                end_time: s.end_time,
+                start_time: minutesToHhmm(s.start_minute),
+                end_time: minutesToHhmm(s.end_minute),
               })),
             })),
           })) ?? null,

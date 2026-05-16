@@ -1,5 +1,4 @@
 import {
-  IsBoolean,
   IsDateString,
   IsEnum,
   IsOptional,
@@ -30,9 +29,6 @@ export class UpdateVisitDto extends VisitIntakeFieldsDto {
   @IsDateString() @IsOptional() date_of_birth?: string;
   @IsString() @IsOptional() @MaxLength(30) phone_number?: string;
   @IsString() @IsOptional() @MaxLength(200) address?: string;
-
-  @IsBoolean() @IsOptional() is_married?: boolean;
-  @IsString() @IsOptional() @MaxLength(200) husband_name?: string;
 
   @IsEnum(MaritalStatus) @IsOptional() marital_status?: MaritalStatus;
   @IsString() @IsOptional() @MaxLength(200) spouse_full_name?: string;

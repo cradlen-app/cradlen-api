@@ -56,18 +56,7 @@ export class StaffController {
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Query() query: ListStaffQueryDto,
   ) {
-    return this.staffService.listStaff(
-      user.profileId,
-      organizationId,
-      query.branch_id,
-      query.role,
-      query.page,
-      query.limit,
-      query.scope,
-      query.clinical,
-      query.doctors_only,
-      query.specialty_code,
-    );
+    return this.staffService.listStaff(user.profileId, organizationId, query);
   }
 
   @Patch('organizations/:organizationId/staff/:staffProfileId')

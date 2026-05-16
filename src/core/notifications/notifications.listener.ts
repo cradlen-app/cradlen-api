@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { NotificationsService } from './notifications.service.js';
+import { NOTIFICATION_CODES } from './notification-codes.js';
 import { InvitationAcceptedEvent } from './events/invitation-accepted.event.js';
 import { InvitationDeclinedEvent } from './events/invitation-declined.event.js';
 
@@ -15,8 +16,9 @@ export class NotificationsListener {
     try {
       await this.notificationsService.create({
         userId: event.inviterId,
-        category: 'staff',
-        title: 'Invitation Accepted',
+        code: NOTIFICATION_CODES.INVITATION_ACCEPTED.code,
+        category: NOTIFICATION_CODES.INVITATION_ACCEPTED.category,
+        title: NOTIFICATION_CODES.INVITATION_ACCEPTED.defaultTitle,
         description: `${event.inviteeName} accepted your invitation.`,
         navigateTo: this.buildInvitationPath(event),
         metadata: {
@@ -37,8 +39,9 @@ export class NotificationsListener {
     try {
       await this.notificationsService.create({
         userId: event.inviterId,
-        category: 'staff',
-        title: 'Invitation Declined',
+        code: NOTIFICATION_CODES.INVITATION_DECLINED.code,
+        category: NOTIFICATION_CODES.INVITATION_DECLINED.category,
+        title: NOTIFICATION_CODES.INVITATION_DECLINED.defaultTitle,
         description: `${event.inviteeName} declined your invitation.`,
         navigateTo: this.buildInvitationPath(event),
         metadata: {

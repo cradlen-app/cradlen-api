@@ -93,29 +93,29 @@ describe('StaffService.listStaff', () => {
     expect(result.items).toHaveLength(1);
     expect(result.meta).toEqual({
       page: 1,
-      limit: 20,
+      limit: 11,
       total: 1,
       totalPages: 1,
     });
   });
 
   it('adds role filter to where clause when role is provided', async () => {
-    await service.listStaff('caller-uuid', 'org-uuid', undefined, 'STAFF');
+    await service.listStaff('caller-uuid', 'org-uuid', { role: 'STAFF' });
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          roles: { some: { role: { name: 'STAFF' } } },
+          roles: { some: { role: { code: 'STAFF' } } },
         }),
       }),
     );
   });
 
   it('normalises role to uppercase', async () => {
-    await service.listStaff('caller-uuid', 'org-uuid', undefined, 'staff');
+    await service.listStaff('caller-uuid', 'org-uuid', { role: 'staff' });
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          roles: { some: { role: { name: 'STAFF' } } },
+          roles: { some: { role: { code: 'STAFF' } } },
         }),
       }),
     );
@@ -129,12 +129,15 @@ describe('StaffService.listStaff', () => {
   });
 
   it('applies both branchId and role filters together', async () => {
-    await service.listStaff('caller-uuid', 'org-uuid', 'branch-uuid', 'STAFF');
+    await service.listStaff('caller-uuid', 'org-uuid', {
+      branch_id: 'branch-uuid',
+      role: 'STAFF',
+    });
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
           branches: { some: { branch_id: 'branch-uuid' } },
-          roles: { some: { role: { name: 'STAFF' } } },
+          roles: { some: { role: { code: 'STAFF' } } },
         }),
       }),
     );
@@ -142,32 +145,23 @@ describe('StaffService.listStaff', () => {
 
   it('throws BadRequestException for an unknown role', async () => {
     await expect(
-      service.listStaff('caller-uuid', 'org-uuid', undefined, 'INVALID'),
+      service.listStaff('caller-uuid', 'org-uuid', { role: 'INVALID' }),
     ).rejects.toThrow(BadRequestException);
   });
 
   it('adds EXTERNAL role filter to where clause', async () => {
-    await service.listStaff('caller-uuid', 'org-uuid', undefined, 'EXTERNAL');
+    await service.listStaff('caller-uuid', 'org-uuid', { role: 'EXTERNAL' });
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          roles: { some: { role: { name: 'EXTERNAL' } } },
+          roles: { some: { role: { code: 'EXTERNAL' } } },
         }),
       }),
     );
   });
 
   it('adds is_clinical job-function filter when clinical=true is passed', async () => {
-    await service.listStaff(
-      'caller-uuid',
-      'org-uuid',
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      true,
-    );
+    await service.listStaff('caller-uuid', 'org-uuid', { clinical: true });
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -188,16 +182,92 @@ describe('StaffService.listStaff', () => {
     );
   });
 
+  it('adds case-insensitive OR search across user name/email/phone', async () => {
+    await service.listStaff('caller-uuid', 'org-uuid', { search: 'merfat' });
+    expect(db.profile.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          user: {
+            OR: [
+              { first_name: { contains: 'merfat', mode: 'insensitive' } },
+              { last_name: { contains: 'merfat', mode: 'insensitive' } },
+              { email: { contains: 'merfat', mode: 'insensitive' } },
+              { phone_number: { contains: 'merfat', mode: 'insensitive' } },
+            ],
+          },
+        }),
+      }),
+    );
+  });
+
+  it('filters by job_function_codes when provided', async () => {
+    await service.listStaff('caller-uuid', 'org-uuid', {
+      job_function_codes: ['NURSE', 'RECEPTIONIST'],
+    });
+    expect(db.profile.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          job_functions: {
+            some: { job_function: { code: { in: ['NURSE', 'RECEPTIONIST'] } } },
+          },
+        }),
+      }),
+    );
+  });
+
+  it('ANDs job_function_codes with clinical=true rather than overwriting', async () => {
+    await service.listStaff('caller-uuid', 'org-uuid', {
+      clinical: true,
+      job_function_codes: ['NURSE'],
+    });
+    expect(db.profile.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: [
+            {
+              job_functions: {
+                some: { job_function: { is_clinical: true } },
+              },
+            },
+            {
+              job_functions: {
+                some: { job_function: { code: { in: ['NURSE'] } } },
+              },
+            },
+          ],
+        }),
+      }),
+    );
+  });
+
+  it('applies engagement_type filter', async () => {
+    await service.listStaff('caller-uuid', 'org-uuid', {
+      engagement_type: 'ON_DEMAND' as never,
+    });
+    expect(db.profile.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ engagement_type: 'ON_DEMAND' }),
+      }),
+    );
+  });
+
+  it('applies executive_title filter', async () => {
+    await service.listStaff('caller-uuid', 'org-uuid', {
+      executive_title: 'CEO' as never,
+    });
+    expect(db.profile.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ executive_title: 'CEO' }),
+      }),
+    );
+  });
+
   it('applies pagination skip/take and returns meta', async () => {
     db.profile.count.mockResolvedValue(45);
-    const result = await service.listStaff(
-      'caller-uuid',
-      'org-uuid',
-      undefined,
-      undefined,
-      3,
-      10,
-    );
+    const result = await service.listStaff('caller-uuid', 'org-uuid', {
+      page: 3,
+      limit: 10,
+    });
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ skip: 20, take: 10 }),
     );
