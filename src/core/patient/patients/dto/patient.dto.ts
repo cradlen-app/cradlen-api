@@ -8,7 +8,6 @@ export class PatientDto {
   id!: string;
   national_id!: string;
   full_name!: string;
-  husband_name!: string | null;
   date_of_birth!: Date;
   phone_number!: string;
   address!: string;

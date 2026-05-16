@@ -36,7 +36,7 @@ export class NotesController {
     @Query() query: ListNotesQueryDto,
     @CurrentUser() user: AuthContext,
   ) {
-    return this.notesService.list(id, query.section, user);
+    return this.notesService.list(id, query.section_code, user);
   }
 
   @Post('patients/:id/history/notes')

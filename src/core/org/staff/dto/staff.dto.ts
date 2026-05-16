@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ArrayMinSize,
+  ArrayNotEmpty,
   IsArray,
   IsEnum,
   IsInt,
@@ -9,6 +10,7 @@ import {
   IsUUID,
   Matches,
   Max,
+  MaxLength,
   Min,
   MinLength,
   ValidateNested,
@@ -230,7 +232,7 @@ export class ListStaffQueryDto {
   @Min(1)
   page?: number;
 
-  @ApiPropertyOptional({ default: 20, minimum: 1, maximum: 100 })
+  @ApiPropertyOptional({ default: 11, minimum: 1, maximum: 100 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -272,6 +274,46 @@ export class ListStaffQueryDto {
   @IsOptional()
   @IsString()
   specialty_code?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Free-text search across the staff member's first_name, last_name, email, and phone_number (case-insensitive substring match).",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  search?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Filter to staff with at least one of the given JobFunction codes (e.g. ["NURSE","RECEPTIONIST"]). Accepts a comma-separated string or repeated query params. Composes (AND) with `clinical` / `doctors_only`.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (Array.isArray(value)) return value as unknown[];
+    if (typeof value === 'string') {
+      return value
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+    }
+    return value as unknown;
+  })
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  job_function_codes?: string[];
+
+  @ApiPropertyOptional({ enum: EngagementType })
+  @IsOptional()
+  @IsEnum(EngagementType)
+  engagement_type?: EngagementType;
+
+  @ApiPropertyOptional({ enum: ExecutiveTitle })
+  @IsOptional()
+  @IsEnum(ExecutiveTitle)
+  executive_title?: ExecutiveTitle;
 }
 
 class RoleSummaryDto {

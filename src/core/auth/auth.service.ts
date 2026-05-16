@@ -630,7 +630,7 @@ export class AuthService {
           profile_id: profile.id,
           organization_id: profile.organization.id,
           organization_name: profile.organization.name,
-          roles: profile.roles.map((item) => item.role.name),
+          roles: profile.roles.map((item) => item.role.code),
           branches: branches.map((b) => ({
             branch_id: b.id,
             name: b.name,
