@@ -17,7 +17,6 @@ const mockPatient = {
   id: 'patient-uuid',
   national_id: '12345678',
   full_name: 'Sara Ali',
-  husband_name: 'Ahmed Ali',
   date_of_birth: new Date('1990-01-01'),
   phone_number: '01012345678',
   address: 'Cairo',
@@ -70,7 +69,6 @@ describe('PatientsService', () => {
       db.patient.create.mockResolvedValue(mockPatient);
       const result = await service.create({
         full_name: 'Sara Ali',
-        husband_name: 'Ahmed Ali',
         date_of_birth: '1990-01-01',
         national_id: '12345678',
         phone_number: '01012345678',
@@ -80,7 +78,6 @@ describe('PatientsService', () => {
       expect(db.patient.create).toHaveBeenCalledWith({
         data: {
           full_name: 'Sara Ali',
-          husband_name: 'Ahmed Ali',
           date_of_birth: new Date('1990-01-01'),
           national_id: '12345678',
           phone_number: '01012345678',
@@ -99,8 +96,16 @@ describe('PatientsService', () => {
       status: 'ACTIVE',
       episodes: mockEpisodes,
     };
-    const patientWithJourney = { ...mockPatient, journeys: [mockJourney] };
-    const patientNoJourney = { ...mockPatient, journeys: [] };
+    const patientWithJourney = {
+      ...mockPatient,
+      journeys: [mockJourney],
+      guardian_links: [],
+    };
+    const patientNoJourney = {
+      ...mockPatient,
+      journeys: [],
+      guardian_links: [],
+    };
 
     it('returns episode summaries (id, name, order) for non-clinical roles', async () => {
       db.$transaction.mockResolvedValue([[patientWithJourney], 1]);
@@ -162,8 +167,16 @@ describe('PatientsService', () => {
       status: 'ACTIVE',
       journey_template: mockJourneyTemplate,
     };
-    const patientWithJourney = { ...mockPatient, journeys: [mockJourney] };
-    const patientNoJourney = { ...mockPatient, journeys: [] };
+    const patientWithJourney = {
+      ...mockPatient,
+      journeys: [mockJourney],
+      guardian_links: [],
+    };
+    const patientNoJourney = {
+      ...mockPatient,
+      journeys: [],
+      guardian_links: [],
+    };
 
     it('throws ForbiddenException when assertCanAccessBranch rejects', async () => {
       authMock.assertCanAccessBranch.mockRejectedValue(

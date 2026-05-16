@@ -1,6 +1,5 @@
 import {
   Equals,
-  IsBoolean,
   IsDateString,
   IsEnum,
   IsOptional,
@@ -42,10 +41,6 @@ export class BookVisitDto extends VisitIntakeFieldsDto {
   @IsDateString() @IsOptional() date_of_birth?: string;
   @IsString() @IsOptional() phone_number?: string;
   @IsString() @IsOptional() address?: string;
-
-  /** Legacy fields kept for backward compatibility; new clients should use marital_status + spouse_* instead. */
-  @IsBoolean() @IsOptional() is_married?: boolean;
-  @IsString() @IsOptional() husband_name?: string;
 
   @IsEnum(MaritalStatus) @IsOptional() marital_status?: MaritalStatus;
   @IsString() @IsOptional() @MaxLength(200) spouse_full_name?: string;
