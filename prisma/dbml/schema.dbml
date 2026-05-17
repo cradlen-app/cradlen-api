@@ -1231,6 +1231,7 @@ Table form_sections {
   code String [not null]
   name String [not null]
   order Int [not null]
+  is_repeatable Boolean [not null, default: false]
   config Json [not null, default: '{"ui":{},"validation":{},"logic":{}}']
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
@@ -1509,6 +1510,7 @@ Enum BindingNamespace {
   LOOKUP
   SYSTEM
   COMPUTED
+  PATIENT_OBGYN_HISTORY
 }
 
 Enum MedicalRepVisitStatus {

@@ -2,6 +2,7 @@ import { config } from 'dotenv';
 import { PrismaNeon } from '@prisma/adapter-neon';
 import { PrismaClient } from '@prisma/client';
 import { seedBookVisitTemplate } from './seeds/book-visit.js';
+import { seedObgynPatientHistoryTemplate } from './seeds/obgyn-patient-history.js';
 
 config({ path: '.env' });
 config({
@@ -381,6 +382,7 @@ async function main() {
 
 
   await seedBookVisitTemplate(prisma);
+  await seedObgynPatientHistoryTemplate(prisma);
 
   console.log('Seed complete.');
 }
