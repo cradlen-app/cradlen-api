@@ -564,7 +564,28 @@ const SECTIONS: SectionSpec[] = [
           path: 'medications.drug_name',
         },
         config: {
+          ui: {
+            searchEntity: {
+              kind: 'medication',
+              idTarget: 'medication_id',
+              allowCreate: true,
+            },
+          },
           logic: { entity: 'medication' },
+        },
+      },
+      {
+        // Hidden sibling — receives the resolved medication catalog id when
+        // the user picks a suggestion. The renderer hides any field that is
+        // the `idTarget` of another field's `ui.searchEntity`, so this never
+        // shows on the form; the submission builder writes it at the bound
+        // path `medications.medication_id`.
+        code: 'medication_id',
+        label: 'Medication id',
+        type: 'TEXT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'medications.medication_id',
         },
       },
       {
