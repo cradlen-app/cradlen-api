@@ -53,6 +53,7 @@ export class TemplateRendererService {
       code: section.code,
       name: section.name,
       order: section.order,
+      is_repeatable: section.is_repeatable,
       config: section.config as ConfigShape,
       fields: [...section.fields]
         .sort((a, b) => a.order - b.order)
