@@ -100,7 +100,7 @@ export class PregnancyRowDto {
 
 export class ContraceptiveRowDto {
   @IsOptional() @IsUUID() id?: string;
-  @IsString() method!: string;
+  @IsOptional() @IsString() method?: string;
   @IsOptional() @IsString() duration?: string;
   @IsOptional() @IsString() complications?: string;
   @IsOptional() @IsString() notes?: string;
@@ -108,7 +108,7 @@ export class ContraceptiveRowDto {
 
 export class NonGynSurgeryRowDto {
   @IsOptional() @IsUUID() id?: string;
-  @IsString() surgery_name!: string;
+  @IsOptional() @IsString() surgery_name?: string;
   @IsOptional() @IsDateString() surgery_date?: string;
   @IsOptional() @IsString() facility?: string;
   @IsOptional() @IsString() notes?: string;
@@ -117,7 +117,7 @@ export class NonGynSurgeryRowDto {
 export class MedicationRowDto {
   @IsOptional() @IsUUID() id?: string;
   @IsOptional() @IsUUID() medication_id?: string;
-  @IsString() drug_name!: string;
+  @IsOptional() @IsString() drug_name?: string;
   @IsOptional() @IsString() indication?: string;
   @IsOptional() @IsString() dose?: string;
   @IsOptional() @IsString() frequency?: string;
@@ -129,7 +129,7 @@ export class MedicationRowDto {
 
 export class AllergyRowDto {
   @IsOptional() @IsUUID() id?: string;
-  @IsString() allergy_to!: string;
+  @IsOptional() @IsString() allergy_to?: string;
   @IsOptional() @IsString() associated_symptoms?: string;
   @IsOptional() @IsString() severity?: string;
   @IsOptional() @IsString() notes?: string;
