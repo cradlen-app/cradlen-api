@@ -138,6 +138,7 @@ enum BindingNamespace {
   LOOKUP
   SYSTEM
   COMPUTED
+  PATIENT_OBGYN_HISTORY
 }
 
 enum MedicalRepVisitStatus {
@@ -1651,6 +1652,7 @@ model FormSection {
   code             String
   name             String
   order            Int
+  is_repeatable    Boolean      @default(false)
   config           Json         @default("{\"ui\":{},\"validation\":{},\"logic\":{}}")
   is_deleted       Boolean      @default(false)
   deleted_at       DateTime?
