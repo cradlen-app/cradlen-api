@@ -9,6 +9,7 @@ import { MedicationsService } from './medications.service';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
+import { MedicationWithStatsDto } from './dto/medication.dto';
 
 const callerOrg = 'org-A';
 
@@ -52,9 +53,9 @@ describe('MedicationsService', () => {
       prescriptionItem: { findMany: jest.fn().mockResolvedValue([]) },
       medicalRepMedication: { findMany: jest.fn().mockResolvedValue([]) },
       medicalRep: { findFirst: jest.fn().mockResolvedValue(null) },
-      $transaction: jest.fn().mockImplementation((arr: Promise<unknown>[]) =>
-        Promise.all(arr),
-      ),
+      $transaction: jest
+        .fn()
+        .mockImplementation((arr: Promise<unknown>[]) => Promise.all(arr)),
     };
     auth = {
       isOwner: jest.fn().mockResolvedValue(true),
@@ -190,7 +191,7 @@ describe('MedicationsService', () => {
       db.medicalRepMedication.findMany.mockResolvedValue([]);
 
       const result = await service.findAll({}, mockUser);
-      const item = result.data[0] as any;
+      const item = result.items[0] as MedicationWithStatsDto;
 
       expect(item.total_prescriptions).toBe(0);
       expect(item.top_prescribers).toEqual([]);
@@ -204,14 +205,18 @@ describe('MedicationsService', () => {
           medication_id: 'med-1',
           prescription: {
             prescribed_by_id: 'doc-1',
-            prescribed_by: { user: { first_name: 'Alice', last_name: 'Smith' } },
+            prescribed_by: {
+              user: { first_name: 'Alice', last_name: 'Smith' },
+            },
           },
         },
         {
           medication_id: 'med-1',
           prescription: {
             prescribed_by_id: 'doc-1',
-            prescribed_by: { user: { first_name: 'Alice', last_name: 'Smith' } },
+            prescribed_by: {
+              user: { first_name: 'Alice', last_name: 'Smith' },
+            },
           },
         },
         {
@@ -225,7 +230,7 @@ describe('MedicationsService', () => {
       db.medicalRepMedication.findMany.mockResolvedValue([]);
 
       const result = await service.findAll({}, mockUser);
-      const item = result.data[0] as any;
+      const item = result.items[0] as MedicationWithStatsDto;
 
       expect(item.total_prescriptions).toBe(3);
       expect(item.top_prescribers).toHaveLength(2);
@@ -260,7 +265,7 @@ describe('MedicationsService', () => {
       db.medicalRepMedication.findMany.mockResolvedValue([]);
 
       const result = await service.findAll({}, mockUser);
-      const item = result.data[0] as any;
+      const item = result.items[0] as MedicationWithStatsDto;
 
       expect(item.top_prescribers).toHaveLength(5);
       expect(item.top_prescribers[0].count).toBeGreaterThanOrEqual(
@@ -274,16 +279,24 @@ describe('MedicationsService', () => {
       db.medicalRepMedication.findMany.mockResolvedValue([
         {
           medication_id: 'med-1',
-          medical_rep: { id: 'rep-1', full_name: 'Rep One', company_name: 'Pharma A' },
+          medical_rep: {
+            id: 'rep-1',
+            full_name: 'Rep One',
+            company_name: 'Pharma A',
+          },
         },
         {
           medication_id: 'med-1',
-          medical_rep: { id: 'rep-2', full_name: 'Rep Two', company_name: 'Pharma B' },
+          medical_rep: {
+            id: 'rep-2',
+            full_name: 'Rep Two',
+            company_name: 'Pharma B',
+          },
         },
       ]);
 
       const result = await service.findAll({}, mockUser);
-      const item = result.data[0] as any;
+      const item = result.items[0] as MedicationWithStatsDto;
 
       expect(item.medical_reps).toHaveLength(2);
       expect(item.medical_reps[0]).toEqual({
@@ -298,7 +311,7 @@ describe('MedicationsService', () => {
 
       const result = await service.findAll({}, mockUser);
 
-      expect(result.data).toEqual([]);
+      expect(result.items).toEqual([]);
       expect(db.prescriptionItem.findMany).not.toHaveBeenCalled();
       expect(db.medicalRepMedication.findMany).not.toHaveBeenCalled();
     });
