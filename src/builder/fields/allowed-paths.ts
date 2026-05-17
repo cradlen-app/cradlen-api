@@ -73,7 +73,6 @@ export const ALLOWED_PATHS = {
   // resource slug as the prefix — the array wrapper is conveyed by
   // `FormSection.is_repeatable=true`, not by `[]` in the path.
   PATIENT_OBGYN_HISTORY: [
-    'husband_name',
     'gynecological_baseline.age_at_menarche',
     'gynecological_baseline.cycle_regularity',
     'gynecological_baseline.duration',

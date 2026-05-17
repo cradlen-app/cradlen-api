@@ -88,14 +88,10 @@ export class ObgynHistoryService {
       const priorChildren = await this.loadChildren(tx, patientId);
       const changedSections: string[] = [];
 
-      // ----- Singleton field updates (JSON + husband_name) -----
+      // ----- Singleton field updates (JSON columns) -----
       const data: Prisma.PatientObgynHistoryUncheckedUpdateInput = {
         updated_by_id: user.profileId,
       };
-      if ('husband_name' in dto) {
-        data.husband_name = dto.husband_name ?? null;
-        changedSections.push('husband_name');
-      }
       for (const field of SINGLETON_JSON_FIELDS) {
         if (!(field in dto)) continue;
         const value = (dto as Record<string, unknown>)[field];

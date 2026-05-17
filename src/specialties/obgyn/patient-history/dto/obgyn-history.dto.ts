@@ -143,8 +143,6 @@ export class AllergyRowDto {
  * the sections that actually changed.
  */
 export class UpdateObgynHistoryDto {
-  @IsOptional() @IsString() husband_name?: string | null;
-
   @IsOptional()
   @IsObject()
   @ValidateNested()
@@ -226,7 +224,6 @@ export class UpdateObgynHistoryDto {
 
 export class PatientObgynHistoryDto {
   patient_id!: string;
-  husband_name!: string | null;
   gynecological_baseline!: unknown;
   gynecologic_procedures!: unknown;
   screening_history!: unknown;
