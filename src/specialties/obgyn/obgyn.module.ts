@@ -5,6 +5,8 @@ import { ObgynHistoryController } from './patient-history/obgyn-history.controll
 import { ObgynHistoryService } from './patient-history/obgyn-history.service';
 import { ObgynEncounterController } from './visit-encounter/obgyn-encounter.controller';
 import { ObgynEncounterService } from './visit-encounter/obgyn-encounter.service';
+import { ObgynExaminationController } from './visit-examination/obgyn-examination.controller';
+import { ObgynExaminationService } from './visit-examination/obgyn-examination.service';
 import { PregnancyController } from './pregnancy/pregnancy.controller';
 import { PregnancyService } from './pregnancy/pregnancy.service';
 import { AmendmentsController } from './amendments/amendments.controller';
@@ -15,6 +17,7 @@ import { AmendmentsService } from './amendments/amendments.service';
   controllers: [
     ObgynHistoryController,
     ObgynEncounterController,
+    ObgynExaminationController,
     PregnancyController,
     AmendmentsController,
   ],
@@ -22,6 +25,7 @@ import { AmendmentsService } from './amendments/amendments.service';
     ObgynPatientAccessService,
     ObgynHistoryService,
     ObgynEncounterService,
+    ObgynExaminationService,
     PregnancyService,
     AmendmentsService,
   ],

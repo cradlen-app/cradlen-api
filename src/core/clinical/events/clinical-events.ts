@@ -39,6 +39,13 @@ export const CLINICAL_EVENTS = {
   encounter: {
     finalized: 'encounter.finalized',
     amended: 'encounter.amended',
+    /**
+     * Emitted by the unified Examination tab PATCH
+     * (PATCH /v1/visits/:id/examination). One event per save, regardless
+     * of how many underlying aggregates (encounter / vitals / obgyn-encounter
+     * / investigations / prescription) were touched.
+     */
+    examinationUpdated: 'visit.examination.updated',
   },
   investigation: {
     ordered: 'investigation.ordered',
@@ -96,4 +103,15 @@ export interface VisitPregnancyRecordUpdatedEvent {
   section: string;
   updated_by_id: string;
   version: number;
+}
+
+export interface VisitExaminationUpdatedEvent {
+  visit_id: string;
+  /** Aggregates touched in this save. Subset of:
+   * 'encounter' | 'vitals' | 'obgyn_encounter' | 'investigations' |
+   * 'prescription' | 'follow_up_date'.
+   */
+  aggregates: string[];
+  updated_by_id: string;
+  examination_version: number;
 }

@@ -31,6 +31,7 @@ export const ALLOWED_PATHS = {
     'branch_id',
     'notes',
     'care_path_code',
+    'follow_up_date',
   ],
   INTAKE: [
     'chief_complaint',
@@ -116,6 +117,110 @@ export const ALLOWED_PATHS = {
     'medications.from_date',
     'allergies.allergy_to',
     'allergies.associated_symptoms',
+  ],
+  // VISIT_ENCOUNTER targets the singleton `visit_encounters` row attached to
+  // a visit. Holds main-complaint metadata, free-text complaint, provisional
+  // diagnosis, certainty, clinical reasoning, and case path. Examination
+  // findings JSON columns live on a separate namespace
+  // (`VISIT_OBGYN_ENCOUNTER`) so OB/GYN-specific bindings can't accidentally
+  // collide with the generic encounter fields.
+  VISIT_ENCOUNTER: [
+    'chief_complaint',
+    'chief_complaint_meta.categories',
+    'chief_complaint_meta.onset',
+    'chief_complaint_meta.duration',
+    'chief_complaint_meta.severity',
+    'provisional_diagnosis',
+    'diagnosis_code',
+    'diagnosis_certainty',
+    'clinical_reasoning',
+    'case_path',
+  ],
+  // VISIT_VITALS targets the singleton `visit_vitals` row. BP is modelled as
+  // two siblings (`systolic_bp` + `diastolic_bp`) rather than a composite;
+  // BMI is COMPUTED.
+  VISIT_VITALS: [
+    'systolic_bp',
+    'diastolic_bp',
+    'pulse',
+    'temperature_c',
+    'respiratory_rate',
+    'spo2',
+    'weight_kg',
+    'height_cm',
+    'rbs_mmol_l',
+  ],
+  // VISIT_OBGYN_ENCOUNTER targets the OB/GYN exam JSON sections on the
+  // `visit_obgyn_encounters` row. Section keys (menstrual_findings,
+  // abdominal_findings, pelvic_findings, breast_findings) are the JSON
+  // column names; the dotted tail is a nested path inside that JSON.
+  VISIT_OBGYN_ENCOUNTER: [
+    // Menstrual exam
+    'menstrual_findings.lmp',
+    'menstrual_findings.cycle',
+    'menstrual_findings.pelvic_pain',
+    'menstrual_findings.pelvic_pain_type',
+    'menstrual_findings.vaginal_discharge',
+    'menstrual_findings.discharge_color',
+    'menstrual_findings.discharge_odor',
+    'menstrual_findings.discharge_amount',
+    'menstrual_findings.intermenstrual_bleeding',
+    'menstrual_findings.post_coital_bleeding',
+    'menstrual_findings.notes',
+    // Abdominal exam
+    'abdominal_findings.inspection',
+    'abdominal_findings.guarding',
+    'abdominal_findings.tenderness',
+    'abdominal_findings.tenderness_site',
+    'abdominal_findings.mass',
+    'abdominal_findings.mass_site',
+    'abdominal_findings.mass_size',
+    'abdominal_findings.mass_tenderness',
+    'abdominal_findings.notes',
+    // Pelvic — Speculum
+    'pelvic_findings.speculum.cervix',
+    'pelvic_findings.speculum.vagina',
+    'pelvic_findings.speculum.os',
+    'pelvic_findings.speculum.notes',
+    // Pelvic — Bimanual / Uterus
+    'pelvic_findings.bimanual.uterus.size',
+    'pelvic_findings.bimanual.uterus.position',
+    'pelvic_findings.bimanual.uterus.mobility',
+    'pelvic_findings.bimanual.uterus.tenderness',
+    'pelvic_findings.bimanual.uterus.surface',
+    // Pelvic — Bimanual / Adnexa
+    'pelvic_findings.bimanual.adnexa.right',
+    'pelvic_findings.bimanual.adnexa.left',
+    'pelvic_findings.bimanual.adnexa.cervical_motion_tenderness',
+    'pelvic_findings.bimanual.notes',
+    // Breast exam
+    'breast_findings.inspection.skin',
+    'breast_findings.inspection.nipple',
+    'breast_findings.inspection.color',
+    'breast_findings.inspection.site',
+    'breast_findings.palpation.right',
+    'breast_findings.palpation.left',
+    'breast_findings.notes',
+  ],
+  // VISIT_INVESTIGATION targets repeatable rows in `visit_investigations`.
+  // Row diff is id-keyed (id present → update, absent → create, missing live
+  // id → soft-delete). Conveyed by `FormSection.is_repeatable=true`.
+  VISIT_INVESTIGATION: [
+    'lab_test_id',
+    'custom_test_name',
+    'lab_facility',
+    'notes',
+  ],
+  // PRESCRIPTION_ITEM targets repeatable rows in `prescription_items` under
+  // the visit's `prescriptions` singleton. Row diff semantics identical to
+  // VISIT_INVESTIGATION.
+  PRESCRIPTION_ITEM: [
+    'medication_id',
+    'custom_drug_name',
+    'dose',
+    'frequency',
+    'duration_days',
+    'instructions',
   ],
 } as const satisfies Record<BindingNamespace, readonly string[]>;
 
