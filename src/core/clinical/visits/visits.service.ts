@@ -659,6 +659,7 @@ export class VisitsService {
           scheduled_at: scheduledAt,
           created_by_id: user.profileId,
           form_template_id: bookVisitTemplate.id,
+          specialty_code: dto.specialty_code,
           queue_number: queueNumber,
         },
       });

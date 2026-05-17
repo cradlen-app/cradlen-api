@@ -847,6 +847,10 @@ model Visit {
   queue_number       Int?
   follow_up_date     DateTime?
   follow_up_notes    String?
+  // Specialty captured at booking. Drives the patient-history template
+  // resolver on the frontend (e.g. "OBGYN" → obgyn_patient_history). Nullable
+  // for pre-existing rows; new bookings always populate it.
+  specialty_code     String?
   // Audit anchor: which form-template version this visit was booked from.
   // Never mutated on update — the original booking's contract is the legal
   // record. SetNull so deleting a template (rare) doesn't cascade visits.
