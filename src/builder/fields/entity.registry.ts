@@ -72,6 +72,17 @@ export const ENTITIES = {
     submitTargetNamespace: 'VISIT',
     submitTargetPath: 'assigned_doctor_id',
   },
+  medication: {
+    kind: 'medication',
+    searchEndpoint: '/v1/medications?search=',
+    resultShape: {
+      idKey: 'id',
+      labelKeys: ['name'],
+      subtitleKeys: ['code'],
+    },
+    submitTargetNamespace: 'PATIENT_OBGYN_HISTORY',
+    submitTargetPath: 'medications.medication_id',
+  },
 } as const satisfies Record<string, EntityDescriptor>;
 
 export type EntityKind = keyof typeof ENTITIES;

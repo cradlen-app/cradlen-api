@@ -1,9 +1,14 @@
 import {
   IsArray,
+  IsBoolean,
+  IsDateString,
+  IsInt,
   IsNumber,
   IsObject,
   IsOptional,
   IsString,
+  IsUUID,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -32,6 +37,14 @@ export class ScreeningHistoryDto {
   @IsOptional() @IsString() mammography?: string;
   @IsOptional() @IsString() mammography_date?: string;
   @IsOptional() @IsArray() @IsString({ each: true }) vaccines?: string[];
+}
+
+export class ObstetricSummaryDto {
+  @IsOptional() @IsInt() @Min(0) gravida?: number;
+  @IsOptional() @IsInt() @Min(0) para?: number;
+  @IsOptional() @IsInt() @Min(0) abortion?: number;
+  @IsOptional() @IsInt() @Min(0) ectopic?: number;
+  @IsOptional() @IsInt() @Min(0) stillbirths?: number;
 }
 
 export class MedicalChronicIllnessesDto {
@@ -65,11 +78,69 @@ export class SocialHistoryDto {
   @IsOptional() @IsString() occupation?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Repeatable child rows. Each row carries an optional `id`:
+//   - id present → update that row
+//   - id absent  → create a new row
+//   - any live row whose id is missing from the array → soft-delete
+// Sending the key as `[]` clears the collection; omitting the key leaves it
+// untouched.
+// ---------------------------------------------------------------------------
+
+export class PregnancyRowDto {
+  @IsOptional() @IsUUID() id?: string;
+  @IsOptional() @IsDateString() birth_date?: string;
+  @IsOptional() @IsString() outcome?: string;
+  @IsOptional() @IsString() mode_of_delivery?: string;
+  @IsOptional() @IsInt() gestational_age_weeks?: number;
+  @IsOptional() @IsString() neonatal_outcome?: string;
+  @IsOptional() @IsString() complications?: string;
+  @IsOptional() @IsString() notes?: string;
+}
+
+export class ContraceptiveRowDto {
+  @IsOptional() @IsUUID() id?: string;
+  @IsString() method!: string;
+  @IsOptional() @IsString() duration?: string;
+  @IsOptional() @IsString() complications?: string;
+  @IsOptional() @IsString() notes?: string;
+}
+
+export class NonGynSurgeryRowDto {
+  @IsOptional() @IsUUID() id?: string;
+  @IsString() surgery_name!: string;
+  @IsOptional() @IsDateString() surgery_date?: string;
+  @IsOptional() @IsString() facility?: string;
+  @IsOptional() @IsString() notes?: string;
+}
+
+export class MedicationRowDto {
+  @IsOptional() @IsUUID() id?: string;
+  @IsOptional() @IsUUID() medication_id?: string;
+  @IsString() drug_name!: string;
+  @IsOptional() @IsString() indication?: string;
+  @IsOptional() @IsString() dose?: string;
+  @IsOptional() @IsString() frequency?: string;
+  @IsOptional() @IsDateString() from_date?: string;
+  @IsOptional() @IsDateString() to_date?: string;
+  @IsOptional() @IsBoolean() is_ongoing?: boolean;
+  @IsOptional() @IsString() notes?: string;
+}
+
+export class AllergyRowDto {
+  @IsOptional() @IsUUID() id?: string;
+  @IsString() allergy_to!: string;
+  @IsOptional() @IsString() associated_symptoms?: string;
+  @IsOptional() @IsString() severity?: string;
+  @IsOptional() @IsString() notes?: string;
+}
+
 /**
  * Bulk PATCH body for the OB/GYN history tab. Every field is optional —
  * unsent sections are left untouched on the server. One PATCH = one
- * row update = one revision shadow row = one `patient.history.updated`
- * event listing the sections that actually changed.
+ * transactional update across the singleton row + every child collection
+ * = one revision shadow row = one `patient.history.updated` event listing
+ * the sections that actually changed.
  */
 export class UpdateObgynHistoryDto {
   @IsOptional() @IsString() husband_name?: string | null;
@@ -95,6 +166,12 @@ export class UpdateObgynHistoryDto {
   @IsOptional()
   @IsObject()
   @ValidateNested()
+  @Type(() => ObstetricSummaryDto)
+  obstetric_summary?: ObstetricSummaryDto;
+
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
   @Type(() => MedicalChronicIllnessesDto)
   medical_chronic_illnesses?: MedicalChronicIllnessesDto;
 
@@ -115,6 +192,36 @@ export class UpdateObgynHistoryDto {
   @ValidateNested()
   @Type(() => SocialHistoryDto)
   social_history?: SocialHistoryDto;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PregnancyRowDto)
+  pregnancies?: PregnancyRowDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ContraceptiveRowDto)
+  contraceptives?: ContraceptiveRowDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => NonGynSurgeryRowDto)
+  non_gyn_surgeries?: NonGynSurgeryRowDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MedicationRowDto)
+  medications?: MedicationRowDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AllergyRowDto)
+  allergies?: AllergyRowDto[];
 }
 
 export class PatientObgynHistoryDto {
@@ -128,6 +235,11 @@ export class PatientObgynHistoryDto {
   family_history!: unknown;
   fertility_history!: unknown;
   social_history!: unknown;
+  pregnancies!: unknown[];
+  contraceptives!: unknown[];
+  non_gyn_surgeries!: unknown[];
+  medications!: unknown[];
+  allergies!: unknown[];
   version!: number;
   @Type(() => Date) updated_at!: Date;
 }
