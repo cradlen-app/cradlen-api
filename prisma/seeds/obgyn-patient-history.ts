@@ -32,7 +32,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import type { Predicate } from '../../src/builder/rules/predicates.js';
 
 const TEMPLATE_CODE = 'obgyn_patient_history';
-const TEMPLATE_VERSION = 1;
+const TEMPLATE_VERSION = 2;
 
 type FieldType = keyof typeof FIELD_TYPES;
 type SectionConfig = { ui?: any; validation?: any; logic?: any };
@@ -49,6 +49,12 @@ interface FieldSpec {
 interface SectionSpec {
   code: string;
   name: string;
+  /**
+   * Top-level grouping rendered by the frontend as a single heading
+   * (e.g. "Gynecological History"). Sections sharing the same `group`
+   * collapse together under one eye-icon toggle.
+   */
+  group: string;
   is_repeatable?: boolean;
   fields: FieldSpec[];
 }
@@ -59,6 +65,7 @@ const SECTIONS: SectionSpec[] = [
   {
     code: 'menstrual_history',
     name: 'Menstrual History',
+    group: 'Gynecological History',
     fields: [
       {
         code: 'age_at_menarche',
@@ -68,7 +75,10 @@ const SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'gynecological_baseline.age_at_menarche',
         },
-        config: { validation: { min: 5, max: 25 } },
+        config: {
+          ui: { placeholder: 'Ex : 18 years', colSpan: 4 },
+          validation: { min: 5, max: 25 },
+        },
       },
       {
         code: 'cycle_regularity',
@@ -79,6 +89,7 @@ const SECTIONS: SectionSpec[] = [
           path: 'gynecological_baseline.cycle_regularity',
         },
         config: {
+          ui: { placeholder: 'Ex : Regular', colSpan: 4 },
           validation: {
             options: [opt('REGULAR', 'Regular'), opt('IRREGULAR', 'Irregular')],
           },
@@ -92,6 +103,7 @@ const SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'gynecological_baseline.duration',
         },
+        config: { ui: { placeholder: 'Ex : 5 days', colSpan: 4 } },
       },
       {
         code: 'flow',
@@ -102,6 +114,7 @@ const SECTIONS: SectionSpec[] = [
           path: 'gynecological_baseline.flow',
         },
         config: {
+          ui: { placeholder: 'Ex : Moderate', colSpan: 4 },
           validation: {
             options: [
               opt('LIGHT', 'Light'),
@@ -120,6 +133,7 @@ const SECTIONS: SectionSpec[] = [
           path: 'gynecological_baseline.dysmenorrhea',
         },
         config: {
+          ui: { placeholder: 'Ex : No', colSpan: 4 },
           validation: {
             options: [
               opt('NONE', 'None'),
@@ -135,6 +149,7 @@ const SECTIONS: SectionSpec[] = [
   {
     code: 'gynecologic_procedures',
     name: 'Past Gynecologic Procedures / Surgeries',
+    group: 'Gynecological History',
     fields: [
       {
         code: 'items',
@@ -145,6 +160,7 @@ const SECTIONS: SectionSpec[] = [
           path: 'gynecologic_procedures.items',
         },
         config: {
+          ui: { variant: 'checkboxes' },
           validation: {
             options: [
               opt('NONE', 'None'),
@@ -183,6 +199,7 @@ const SECTIONS: SectionSpec[] = [
   {
     code: 'contraceptives',
     name: 'Contraceptive History',
+    group: 'Gynecological History',
     is_repeatable: true,
     fields: [
       {
@@ -195,6 +212,7 @@ const SECTIONS: SectionSpec[] = [
           path: 'contraceptives.method',
         },
         config: {
+          ui: { placeholder: 'Ex : Regular', colSpan: 4 },
           validation: {
             options: [
               opt('COMBINED_OCP', 'Combined OCP'),
@@ -219,6 +237,7 @@ const SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'contraceptives.duration',
         },
+        config: { ui: { placeholder: 'Ex : 5 days', colSpan: 4 } },
       },
       {
         code: 'complications',
@@ -228,12 +247,14 @@ const SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'contraceptives.complications',
         },
+        config: { ui: { placeholder: 'Ex : Complications', colSpan: 4 } },
       },
     ],
   },
   {
     code: 'screening_vaccinations',
     name: 'Screening & Vaccinations',
+    group: 'Gynecological History',
     fields: [
       {
         code: 'pap_smear',
@@ -244,6 +265,7 @@ const SECTIONS: SectionSpec[] = [
           path: 'screening_history.pap_smear',
         },
         config: {
+          ui: { placeholder: 'Ex : Up-to-date', colSpan: 6 },
           validation: {
             options: [
               opt('UP_TO_DATE', 'Up-to-date'),
@@ -255,12 +277,13 @@ const SECTIONS: SectionSpec[] = [
       },
       {
         code: 'pap_smear_date',
-        label: 'Pap smear / HPV date',
+        label: 'Date',
         type: 'DATE',
         binding: {
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'screening_history.pap_smear_date',
         },
+        config: { ui: { placeholder: 'Ex : 1/1/2026', colSpan: 6 } },
       },
       {
         code: 'mammography',
@@ -271,6 +294,7 @@ const SECTIONS: SectionSpec[] = [
           path: 'screening_history.mammography',
         },
         config: {
+          ui: { placeholder: 'Ex : Yes', colSpan: 6 },
           validation: {
             options: [opt('YES', 'Yes'), opt('NO', 'No')],
           },
@@ -278,12 +302,13 @@ const SECTIONS: SectionSpec[] = [
       },
       {
         code: 'mammography_date',
-        label: 'Mammography date',
+        label: 'Date',
         type: 'DATE',
         binding: {
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'screening_history.mammography_date',
         },
+        config: { ui: { placeholder: 'Ex : 1/1/2026', colSpan: 6 } },
       },
       {
         code: 'vaccines',
@@ -294,6 +319,7 @@ const SECTIONS: SectionSpec[] = [
           path: 'screening_history.vaccines',
         },
         config: {
+          ui: { variant: 'checkboxes' },
           validation: {
             options: [
               opt('HPV', 'HPV'),
@@ -308,6 +334,7 @@ const SECTIONS: SectionSpec[] = [
   {
     code: 'obstetric_summary',
     name: 'Obstetric History',
+    group: 'Obstetric History',
     fields: [
       {
         code: 'gravida',
@@ -317,7 +344,10 @@ const SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'obstetric_summary.gravida',
         },
-        config: { validation: { min: 0 } },
+        config: {
+          ui: { placeholder: 'Ex : one', colSpan: 4 },
+          validation: { min: 0 },
+        },
       },
       {
         code: 'para',
@@ -327,7 +357,10 @@ const SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'obstetric_summary.para',
         },
-        config: { validation: { min: 0 } },
+        config: {
+          ui: { placeholder: 'Ex : one', colSpan: 4 },
+          validation: { min: 0 },
+        },
       },
       {
         code: 'abortion',
@@ -337,7 +370,10 @@ const SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'obstetric_summary.abortion',
         },
-        config: { validation: { min: 0 } },
+        config: {
+          ui: { placeholder: 'Ex : one', colSpan: 4 },
+          validation: { min: 0 },
+        },
       },
       {
         code: 'ectopic',
@@ -347,7 +383,10 @@ const SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'obstetric_summary.ectopic',
         },
-        config: { validation: { min: 0 } },
+        config: {
+          ui: { placeholder: 'Ex : one', colSpan: 4 },
+          validation: { min: 0 },
+        },
       },
       {
         code: 'stillbirths',
@@ -357,13 +396,17 @@ const SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'obstetric_summary.stillbirths',
         },
-        config: { validation: { min: 0 } },
+        config: {
+          ui: { placeholder: 'Ex : one', colSpan: 4 },
+          validation: { min: 0 },
+        },
       },
     ],
   },
   {
     code: 'pregnancies',
     name: 'Previous Pregnancy Details',
+    group: 'Obstetric History',
     is_repeatable: true,
     fields: [
       {
@@ -374,6 +417,7 @@ const SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'pregnancies.birth_date',
         },
+        config: { ui: { placeholder: 'Ex : 1/1/2026', colSpan: 4 } },
       },
       {
         code: 'outcome',
@@ -384,6 +428,7 @@ const SECTIONS: SectionSpec[] = [
           path: 'pregnancies.outcome',
         },
         config: {
+          ui: { placeholder: 'Ex : Live birth', colSpan: 4 },
           validation: {
             options: [
               opt('LIVE_BIRTH', 'Live birth'),
@@ -405,6 +450,7 @@ const SECTIONS: SectionSpec[] = [
           path: 'pregnancies.mode_of_delivery',
         },
         config: {
+          ui: { placeholder: 'Ex : Vaginal', colSpan: 4 },
           validation: {
             options: [
               opt('VAGINAL', 'Vaginal'),
@@ -417,13 +463,16 @@ const SECTIONS: SectionSpec[] = [
       },
       {
         code: 'gestational_age_weeks',
-        label: 'Gestational age at delivery (weeks)',
+        label: 'Gestational age at delivery',
         type: 'NUMBER',
         binding: {
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'pregnancies.gestational_age_weeks',
         },
-        config: { validation: { min: 0, max: 45 } },
+        config: {
+          ui: { placeholder: 'Ex : 40 week', colSpan: 6 },
+          validation: { min: 0, max: 45 },
+        },
       },
       {
         code: 'neonatal_outcome',
@@ -434,6 +483,7 @@ const SECTIONS: SectionSpec[] = [
           path: 'pregnancies.neonatal_outcome',
         },
         config: {
+          ui: { placeholder: 'Ex : Live birth', colSpan: 6 },
           validation: {
             options: [
               opt('LIVE_BIRTH', 'Live birth'),
@@ -450,6 +500,7 @@ const SECTIONS: SectionSpec[] = [
   {
     code: 'medical_chronic_illnesses',
     name: 'Chronic Illnesses',
+    group: 'Medical History',
     fields: [
       {
         code: 'items',
@@ -460,6 +511,7 @@ const SECTIONS: SectionSpec[] = [
           path: 'medical_chronic_illnesses.items',
         },
         config: {
+          ui: { variant: 'checkboxes' },
           validation: {
             options: [
               opt('NONE', 'None'),
@@ -500,6 +552,7 @@ const SECTIONS: SectionSpec[] = [
   {
     code: 'non_gyn_surgeries',
     name: 'Previous Surgeries (Non-gynecologic)',
+    group: 'Medical History',
     is_repeatable: true,
     fields: [
       {
@@ -511,6 +564,7 @@ const SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'non_gyn_surgeries.surgery_name',
         },
+        config: { ui: { placeholder: 'Ex : Up-to-date', colSpan: 6 } },
       },
       {
         code: 'surgery_date',
@@ -520,12 +574,14 @@ const SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'non_gyn_surgeries.surgery_date',
         },
+        config: { ui: { placeholder: 'Ex : 1/1/2026', colSpan: 6 } },
       },
     ],
   },
   {
     code: 'allergies',
     name: 'Allergies',
+    group: 'Medical History',
     is_repeatable: true,
     fields: [
       {
@@ -537,6 +593,7 @@ const SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'allergies.allergy_to',
         },
+        config: { ui: { placeholder: 'Ex : Up-to-date', colSpan: 6 } },
       },
       {
         code: 'associated_symptoms',
@@ -546,12 +603,14 @@ const SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'allergies.associated_symptoms',
         },
+        config: { ui: { placeholder: 'Ex : Complications', colSpan: 6 } },
       },
     ],
   },
   {
     code: 'medications',
     name: 'Medications (current / past, long-term)',
+    group: 'Medical History',
     is_repeatable: true,
     fields: [
       {
@@ -565,6 +624,8 @@ const SECTIONS: SectionSpec[] = [
         },
         config: {
           ui: {
+            placeholder: 'Ex : candalkan',
+            colSpan: 4,
             searchEntity: {
               kind: 'medication',
               idTarget: 'medication_id',
@@ -596,6 +657,7 @@ const SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'medications.indication',
         },
+        config: { ui: { placeholder: 'Blood pressure medications', colSpan: 4 } },
       },
       {
         code: 'from_date',
@@ -605,12 +667,14 @@ const SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'medications.from_date',
         },
+        config: { ui: { placeholder: 'Ex : 1/1/2026', colSpan: 4 } },
       },
     ],
   },
   {
     code: 'family_history',
     name: 'Family History',
+    group: 'Family History',
     fields: [
       {
         code: 'gynecologic_cancers',
@@ -621,6 +685,7 @@ const SECTIONS: SectionSpec[] = [
           path: 'family_history.gynecologic_cancers',
         },
         config: {
+          ui: { variant: 'checkboxes' },
           validation: {
             options: [
               opt('NONE', 'None'),
@@ -641,6 +706,7 @@ const SECTIONS: SectionSpec[] = [
           path: 'family_history.chronic_illnesses',
         },
         config: {
+          ui: { variant: 'checkboxes' },
           validation: {
             options: [
               opt('NONE', 'None'),
@@ -661,12 +727,14 @@ const SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'family_history.genetic_disorders',
         },
+        config: { ui: { placeholder: 'Ex : Complications' } },
       },
     ],
   },
   {
     code: 'fertility_history',
     name: 'Fertility History',
+    group: 'Fertility History',
     fields: [
       {
         code: 'duration_of_infertility',
@@ -676,6 +744,7 @@ const SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'fertility_history.duration_of_infertility',
         },
+        config: { ui: { placeholder: 'Ex : 3 years', colSpan: 6 } },
       },
       {
         code: 'partner_fertility_status',
@@ -686,6 +755,7 @@ const SECTIONS: SectionSpec[] = [
           path: 'fertility_history.partner_fertility_status',
         },
         config: {
+          ui: { placeholder: 'Ex : Normal', colSpan: 6 },
           validation: {
             options: [
               opt('NORMAL', 'Normal'),
@@ -704,6 +774,7 @@ const SECTIONS: SectionSpec[] = [
           path: 'fertility_history.treatments',
         },
         config: {
+          ui: { variant: 'checkboxes' },
           validation: {
             options: [
               opt('NONE', 'None'),
@@ -723,6 +794,7 @@ const SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'fertility_history.menstrual_ovulation_patterns',
         },
+        config: { ui: { placeholder: 'Ex : Complications' } },
       },
       {
         code: 'past_pregnancies_outcomes',
@@ -732,6 +804,7 @@ const SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'fertility_history.past_pregnancies_outcomes',
         },
+        config: { ui: { placeholder: 'Ex : Complications' } },
       },
     ],
   },
@@ -798,8 +871,12 @@ function assertAllValid(): void {
   }
 }
 
-function buildSectionConfig(_section: SectionSpec): SectionConfig {
-  return { ui: {}, validation: {}, logic: {} };
+function buildSectionConfig(section: SectionSpec): SectionConfig {
+  return {
+    ui: { group: section.group },
+    validation: {},
+    logic: {},
+  };
 }
 
 export async function seedObgynPatientHistoryTemplate(prisma: PrismaClient) {
