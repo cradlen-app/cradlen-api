@@ -315,5 +315,23 @@ describe('MedicationsService', () => {
       expect(db.prescriptionItem.findMany).not.toHaveBeenCalled();
       expect(db.medicalRepMedication.findMany).not.toHaveBeenCalled();
     });
+
+    it('does not drop org-scope filter when search term is provided', async () => {
+      db.$transaction.mockResolvedValue([[med1], 1]);
+      db.prescriptionItem.findMany.mockResolvedValue([]);
+      db.medicalRepMedication.findMany.mockResolvedValue([]);
+
+      await service.findAll({ search: 'drug' }, mockUser);
+
+      const findManyCall = db.medication.findMany.mock.calls[0][0];
+      expect(findManyCall.where).toHaveProperty('AND');
+      expect(findManyCall.where.AND[0]).toHaveProperty('OR');
+      expect(findManyCall.where.AND[0].OR).toContainEqual({
+        organization_id: null,
+      });
+      expect(findManyCall.where.AND[0].OR).toContainEqual({
+        organization_id: callerOrg,
+      });
+    });
   });
 });
