@@ -146,6 +146,9 @@ describe('ALLOWED_PATHS ↔ DTO contract', () => {
       for (const path of ALLOWED_PATHS.VISIT) {
         // Visit.notes is service-side only (status updates) — not on book payload.
         if (path === 'notes') continue;
+        // Visit.follow_up_date is set post-booking via the unified Examination
+        // tab PATCH (`/v1/visits/:id/examination`), not at booking time.
+        if (path === 'follow_up_date') continue;
         assertPathLandsOnDto(path, bookVisitProps, `VISIT.${path}`);
       }
     });
