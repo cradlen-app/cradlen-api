@@ -32,7 +32,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import type { Predicate } from '../../src/builder/rules/predicates.js';
 
 const TEMPLATE_CODE = 'obgyn_patient_history';
-const TEMPLATE_VERSION = 2;
+const TEMPLATE_VERSION = 3;
 
 type FieldType = keyof typeof FIELD_TYPES;
 type SectionConfig = { ui?: any; validation?: any; logic?: any };
@@ -181,18 +181,6 @@ const SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'gynecologic_procedures.notes',
         },
-        config: {
-          logic: {
-            predicates: [
-              {
-                effect: 'required',
-                when: { in: { 'gynecologic_procedures.items': ['OTHER'] } },
-                message:
-                  'Describe the procedure when "Other" is selected above.',
-              },
-            ] satisfies Predicate[],
-          },
-        },
       },
     ],
   },
@@ -206,7 +194,6 @@ const SECTIONS: SectionSpec[] = [
         code: 'method',
         label: 'Method',
         type: 'SELECT',
-        required: true,
         binding: {
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'contraceptives.method',
@@ -532,20 +519,6 @@ const SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'medical_chronic_illnesses.notes',
         },
-        config: {
-          logic: {
-            predicates: [
-              {
-                effect: 'required',
-                when: {
-                  in: { 'medical_chronic_illnesses.items': ['OTHER'] },
-                },
-                message:
-                  'Describe the illness when "Other" is selected above.',
-              },
-            ] satisfies Predicate[],
-          },
-        },
       },
     ],
   },
@@ -559,7 +532,6 @@ const SECTIONS: SectionSpec[] = [
         code: 'surgery_name',
         label: 'Surgery name',
         type: 'TEXT',
-        required: true,
         binding: {
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'non_gyn_surgeries.surgery_name',
@@ -588,7 +560,6 @@ const SECTIONS: SectionSpec[] = [
         code: 'allergy_to',
         label: 'Allergy to',
         type: 'TEXT',
-        required: true,
         binding: {
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'allergies.allergy_to',
@@ -617,7 +588,6 @@ const SECTIONS: SectionSpec[] = [
         code: 'drug_name',
         label: 'Drug name',
         type: 'ENTITY_SEARCH',
-        required: true,
         binding: {
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'medications.drug_name',

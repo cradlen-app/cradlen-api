@@ -363,7 +363,7 @@ export class ObgynHistoryService {
       await tx.patientContraceptiveHistory.update({
         where: { id: row.id! },
         data: {
-          method: row.method,
+          ...(row.method !== undefined && { method: row.method }),
           ...(row.duration !== undefined && { duration: row.duration }),
           ...(row.complications !== undefined && {
             complications: row.complications,
@@ -376,7 +376,9 @@ export class ObgynHistoryService {
       await tx.patientContraceptiveHistory.create({
         data: {
           patient_id: patientId,
-          method: row.method,
+          // Column is NOT NULL — coalesce missing values to "" so partial rows
+          // (date-only contraceptive, e.g.) still persist.
+          method: row.method ?? '',
           duration: row.duration ?? null,
           complications: row.complications ?? null,
           notes: row.notes ?? null,
@@ -405,7 +407,9 @@ export class ObgynHistoryService {
       await tx.patientNonGynSurgery.update({
         where: { id: row.id! },
         data: {
-          surgery_name: row.surgery_name,
+          ...(row.surgery_name !== undefined && {
+            surgery_name: row.surgery_name,
+          }),
           ...(row.surgery_date !== undefined && {
             surgery_date: row.surgery_date ? new Date(row.surgery_date) : null,
           }),
@@ -418,7 +422,7 @@ export class ObgynHistoryService {
       await tx.patientNonGynSurgery.create({
         data: {
           patient_id: patientId,
-          surgery_name: row.surgery_name,
+          surgery_name: row.surgery_name ?? '',
           surgery_date: row.surgery_date ? new Date(row.surgery_date) : null,
           facility: row.facility ?? null,
           notes: row.notes ?? null,
@@ -447,7 +451,7 @@ export class ObgynHistoryService {
       await tx.patientMedication.update({
         where: { id: row.id! },
         data: {
-          drug_name: row.drug_name,
+          ...(row.drug_name !== undefined && { drug_name: row.drug_name }),
           ...(row.medication_id !== undefined && {
             medication_id: row.medication_id,
           }),
@@ -470,7 +474,7 @@ export class ObgynHistoryService {
         data: {
           patient_id: patientId,
           medication_id: row.medication_id ?? null,
-          drug_name: row.drug_name,
+          drug_name: row.drug_name ?? '',
           indication: row.indication ?? null,
           dose: row.dose ?? null,
           frequency: row.frequency ?? null,
@@ -503,7 +507,7 @@ export class ObgynHistoryService {
       await tx.patientAllergy.update({
         where: { id: row.id! },
         data: {
-          allergy_to: row.allergy_to,
+          ...(row.allergy_to !== undefined && { allergy_to: row.allergy_to }),
           ...(row.associated_symptoms !== undefined && {
             associated_symptoms: row.associated_symptoms,
           }),
@@ -516,7 +520,7 @@ export class ObgynHistoryService {
       await tx.patientAllergy.create({
         data: {
           patient_id: patientId,
-          allergy_to: row.allergy_to,
+          allergy_to: row.allergy_to ?? '',
           associated_symptoms: row.associated_symptoms ?? null,
           severity: row.severity ?? null,
           notes: row.notes ?? null,
