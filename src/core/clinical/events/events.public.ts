@@ -5,4 +5,5 @@ export {
   type PregnancyBookedEvent,
   type PregnancyRiskLevelChangedEvent,
   type VisitPregnancyRecordUpdatedEvent,
+  type VisitExaminationUpdatedEvent,
 } from './clinical-events';

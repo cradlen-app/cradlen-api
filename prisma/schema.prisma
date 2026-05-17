@@ -139,6 +139,11 @@ enum BindingNamespace {
   SYSTEM
   COMPUTED
   PATIENT_OBGYN_HISTORY
+  VISIT_ENCOUNTER
+  VISIT_VITALS
+  VISIT_OBGYN_ENCOUNTER
+  VISIT_INVESTIGATION
+  PRESCRIPTION_ITEM
 }
 
 enum MedicalRepVisitStatus {
@@ -847,6 +852,9 @@ model Visit {
   queue_number       Int?
   follow_up_date     DateTime?
   follow_up_notes    String?
+  // Single optimistic-concurrency token for the unified Examination tab
+  // (PATCH /v1/visits/:id/examination). Bumped on every successful save.
+  examination_version Int                  @default(1)
   // Specialty captured at booking. Drives the patient-history template
   // resolver on the frontend (e.g. "OBGYN" → obgyn_patient_history). Nullable
   // for pre-existing rows; new bookings always populate it.
