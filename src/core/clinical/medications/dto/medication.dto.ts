@@ -11,3 +11,21 @@ export class MedicationDto {
   created_at!: Date;
   updated_at!: Date;
 }
+
+export class MedicationPrescriberDto {
+  profile_id!: string;
+  full_name!: string;
+  count!: number;
+}
+
+export class MedicalRepLinkDto {
+  id!: string;
+  full_name!: string;
+  company_name!: string;
+}
+
+export class MedicationWithStatsDto extends MedicationDto {
+  total_prescriptions!: number;
+  top_prescribers!: MedicationPrescriberDto[];
+  medical_reps!: MedicalRepLinkDto[];
+}
