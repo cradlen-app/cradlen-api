@@ -11,6 +11,7 @@ export interface SectionDescriptor {
   code: string;
   name: string;
   order: number;
+  is_repeatable: boolean;
   config: ConfigShape;
   fields: FieldDescriptor[];
 }
