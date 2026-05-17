@@ -199,6 +199,11 @@ describe('ALLOWED_PATHS ↔ DTO contract', () => {
       }
     });
 
+    // TODO(obgyn-history): PATIENT_OBGYN_HISTORY is not introspected here yet
+    // because it spans `UpdateObgynHistoryDto` plus five nested row DTOs
+    // (PregnancyRowDto, ContraceptiveRowDto, ...). Wiring DTO introspection
+    // for it lands together with TemplateValidator enforcement on the
+    // /patients/:id/obgyn-history endpoint.
     it('COMPUTED leaf paths are NOT decorated on the wire DTOs (server recomputes them)', () => {
       // The "container" namespace (e.g. UpsertVitalsDto.vitals exists on
       // BookVisitDto via VisitIntakeFieldsDto), but the COMPUTED leaf field
