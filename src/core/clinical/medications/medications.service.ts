@@ -13,6 +13,10 @@ import { paginated } from '@common/utils/pagination.utils';
 import { CreateMedicationDto } from './dto/create-medication.dto';
 import { UpdateMedicationDto } from './dto/update-medication.dto';
 import { ListMedicationsQueryDto } from './dto/list-medications-query.dto';
+import {
+  MedicationPrescriberDto,
+  MedicalRepLinkDto,
+} from './dto/medication.dto';
 
 @Injectable()
 export class MedicationsService {
@@ -67,7 +71,19 @@ export class MedicationsService {
       }),
       this.prismaService.db.medication.count({ where }),
     ]);
-    return paginated(items, { page, limit, total });
+    if (items.length === 0) return paginated([], { page, limit, total });
+
+    const medicationIds = items.map((m) => m.id);
+    const stats = await this.gatherStats(medicationIds, user.organizationId);
+
+    const enriched = items.map((m) => ({
+      ...m,
+      total_prescriptions: stats.get(m.id)?.total_prescriptions ?? 0,
+      top_prescribers: stats.get(m.id)?.top_prescribers ?? [],
+      medical_reps: stats.get(m.id)?.medical_reps ?? [],
+    }));
+
+    return paginated(enriched, { page, limit, total });
   }
 
   async create(dto: CreateMedicationDto, user: AuthContext) {
@@ -144,6 +160,113 @@ export class MedicationsService {
       where: { id },
       data: { is_deleted: true, deleted_at: new Date() },
     });
+  }
+
+  private async gatherStats(
+    medicationIds: string[],
+    organizationId: string,
+  ): Promise<
+    Map<
+      string,
+      {
+        total_prescriptions: number;
+        top_prescribers: MedicationPrescriberDto[];
+        medical_reps: MedicalRepLinkDto[];
+      }
+    >
+  > {
+    const [prescriptionItems, repLinks] = await Promise.all([
+      this.prismaService.db.prescriptionItem.findMany({
+        where: {
+          medication_id: { in: medicationIds },
+          is_deleted: false,
+          prescription: {
+            is_deleted: false,
+            prescribed_by: { organization_id: organizationId },
+          },
+        },
+        select: {
+          medication_id: true,
+          prescription: {
+            select: {
+              prescribed_by_id: true,
+              prescribed_by: {
+                select: {
+                  user: { select: { first_name: true, last_name: true } },
+                },
+              },
+            },
+          },
+        },
+      }),
+      this.prismaService.db.medicalRepMedication.findMany({
+        where: { medication_id: { in: medicationIds } },
+        select: {
+          medication_id: true,
+          medical_rep: {
+            select: { id: true, full_name: true, company_name: true },
+          },
+        },
+      }),
+    ]);
+
+    const prescribersByMed = new Map<
+      string,
+      Map<string, MedicationPrescriberDto>
+    >();
+    const totalByMed = new Map<string, number>();
+
+    for (const item of prescriptionItems) {
+      const medId = item.medication_id!;
+      const profileId = item.prescription.prescribed_by_id;
+      const { first_name, last_name } = item.prescription.prescribed_by.user;
+
+      totalByMed.set(medId, (totalByMed.get(medId) ?? 0) + 1);
+
+      if (!prescribersByMed.has(medId)) prescribersByMed.set(medId, new Map());
+      const pm = prescribersByMed.get(medId)!;
+      if (!pm.has(profileId)) {
+        pm.set(profileId, {
+          profile_id: profileId,
+          full_name: `${first_name} ${last_name}`,
+          count: 0,
+        });
+      }
+      pm.get(profileId)!.count++;
+    }
+
+    const repsByMed = new Map<string, MedicalRepLinkDto[]>();
+    for (const link of repLinks) {
+      if (!repsByMed.has(link.medication_id))
+        repsByMed.set(link.medication_id, []);
+      repsByMed.get(link.medication_id)!.push(link.medical_rep);
+    }
+
+    const result = new Map<
+      string,
+      {
+        total_prescriptions: number;
+        top_prescribers: MedicationPrescriberDto[];
+        medical_reps: MedicalRepLinkDto[];
+      }
+    >();
+
+    for (const medId of medicationIds) {
+      const prescriberMap = prescribersByMed.get(medId);
+      const top_prescribers = prescriberMap
+        ? [...prescriberMap.values()]
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 5)
+        : [];
+
+      result.set(medId, {
+        total_prescriptions: totalByMed.get(medId) ?? 0,
+        top_prescribers,
+        medical_reps: repsByMed.get(medId) ?? [],
+      });
+    }
+
+    return result;
   }
 
   /**
