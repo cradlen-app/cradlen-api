@@ -1,26 +1,12 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Param,
-  ParseUUIDPipe,
-  Patch,
-  Post,
-} from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { AllergiesService } from './allergies.service';
-import {
-  AllergyDto,
-  CreateAllergyDto,
-  UpdateAllergyDto,
-} from './dto/allergy.dto';
-import { ApiStandardResponse, ApiVoidResponse } from '@common/swagger';
+import { AllergyDto } from './dto/allergy.dto';
+import { ApiStandardResponse } from '@common/swagger';
 import { CurrentUser } from '@common/decorators/current-user.decorator';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 
+// Read-only. Writes go through `PATCH /patients/:id/obgyn-history`.
 @ApiTags('Patient History')
 @Controller()
 export class AllergiesController {
@@ -33,35 +19,5 @@ export class AllergiesController {
     @CurrentUser() user: AuthContext,
   ) {
     return this.allergiesService.findAll(id, user);
-  }
-
-  @Post('patients/:id/allergies')
-  @ApiStandardResponse(AllergyDto)
-  create(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: CreateAllergyDto,
-    @CurrentUser() user: AuthContext,
-  ) {
-    return this.allergiesService.create(id, dto, user);
-  }
-
-  @Patch('allergies/:id')
-  @ApiStandardResponse(AllergyDto)
-  update(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateAllergyDto,
-    @CurrentUser() user: AuthContext,
-  ) {
-    return this.allergiesService.update(id, dto, user);
-  }
-
-  @Delete('allergies/:id')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiVoidResponse()
-  remove(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: AuthContext,
-  ) {
-    return this.allergiesService.remove(id, user);
   }
 }

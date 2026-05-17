@@ -146,3 +146,31 @@ Adding a new extension version means re-seeding the bundle (see
 - Active extension: `WHERE parent_template_id=? AND extension_key=? AND is_active AND NOT is_deleted`.
 - DB enforces both via partial unique indexes; the symmetry CHECK guarantees
   `(parent_template_id IS NULL) = (extension_key IS NULL)`.
+
+## Unified bulk PATCH + repeatable sections (PATIENT_HISTORY scope)
+
+The `obgyn_patient_history` template (FormScope = `PATIENT_HISTORY`) and any
+future history templates use a single bulk PATCH endpoint with optimistic
+concurrency. `FormSection.is_repeatable=true` marks sections whose body lives
+inside an array on the unified DTO; `section.code` doubles as the array key.
+
+| Concern                            | Convention                                                            |
+|------------------------------------|-----------------------------------------------------------------------|
+| Write endpoint                     | `PATCH /patients/:id/obgyn-history` (single transactional writer)     |
+| Concurrency token                  | `If-Match: "version:<N>"` against `PatientObgynHistory.version`       |
+| Repeatable section body shape      | `{ [section.code]: Array<{ id?, ...row }> }`                          |
+| Row diff (per repeatable section)  | id present → update; id absent → create; live id missing → soft-delete |
+| Sending key as `[]`                | clears the collection                                                 |
+| Omitting the key                   | leaves the collection untouched                                       |
+| Singleton JSON columns             | sent as nested objects on the same body (e.g. `gynecological_baseline.*`) |
+| Per-section "notes" (eye icon)     | `PatientHistoryNote` keyed on `section_code = section.code`, via `POST/PATCH /patients/:id/history/notes` |
+| Granular per-row routes (`/pregnancies`, `/contraceptives`, `/medications`, `/allergies`, `/non-gyn-surgeries`) | **read-only** (GET only). All writes flow through the unified PATCH so the singleton `version` token covers them. |
+
+PATIENT_OBGYN_HISTORY paths use `<resource>.<column>` for repeatable child
+collections (e.g. `pregnancies.birth_date`) — no `[]` in the path, since the
+section's `is_repeatable=true` flag carries the array semantics.
+
+`ENTITY_SEARCH` fields in this scope carry their catalog kind under
+`config.logic.entity` (e.g. `'medication'`) and bind to the column that
+stores the resolved foreign key (e.g. `medications.medication_id`). The
+frontend consults `ENTITIES[<kind>]` for the search endpoint.

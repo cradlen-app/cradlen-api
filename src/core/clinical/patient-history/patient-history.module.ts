@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { MedicationsModule } from '../medications/medications.module';
 import { PatientAccessService } from './patient-access.service';
 import { AllergiesController } from './allergies.controller';
 import { AllergiesService } from './allergies.service';
@@ -15,7 +14,6 @@ import { NotesController } from './notes.controller';
 import { NotesService } from './notes.service';
 
 @Module({
-  imports: [MedicationsModule],
   controllers: [
     AllergiesController,
     PregnanciesController,
