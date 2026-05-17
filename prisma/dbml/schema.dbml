@@ -579,6 +579,7 @@ Table visits {
   queue_number Int
   follow_up_date DateTime
   follow_up_notes String
+  examination_version Int [not null, default: 1]
   specialty_code String
   form_template_id String
   form_template form_templates
@@ -1512,6 +1513,11 @@ Enum BindingNamespace {
   SYSTEM
   COMPUTED
   PATIENT_OBGYN_HISTORY
+  VISIT_ENCOUNTER
+  VISIT_VITALS
+  VISIT_OBGYN_ENCOUNTER
+  VISIT_INVESTIGATION
+  PRESCRIPTION_ITEM
 }
 
 Enum MedicalRepVisitStatus {
