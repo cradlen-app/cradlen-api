@@ -47,18 +47,44 @@ export class MedicationsService {
 
     const where: Prisma.MedicationWhereInput = {
       is_deleted: false,
-      OR: [{ organization_id: null }, { organization_id: user.organizationId }],
+      AND: [
+        {
+          OR: [
+            { organization_id: null },
+            { organization_id: user.organizationId },
+          ],
+        },
+        ...(query.search
+          ? [
+              {
+                OR: [
+                  {
+                    name: {
+                      contains: query.search,
+                      mode: 'insensitive' as const,
+                    },
+                  },
+                  {
+                    generic_name: {
+                      contains: query.search,
+                      mode: 'insensitive' as const,
+                    },
+                  },
+                  {
+                    code: {
+                      contains: query.search,
+                      mode: 'insensitive' as const,
+                    },
+                  },
+                ],
+              },
+            ]
+          : []),
+      ],
       ...(query.medical_rep_id && {
         medical_rep_links: {
           some: { medical_rep_id: query.medical_rep_id },
         },
-      }),
-      ...(query.search && {
-        OR: [
-          { name: { contains: query.search, mode: 'insensitive' } },
-          { generic_name: { contains: query.search, mode: 'insensitive' } },
-          { code: { contains: query.search, mode: 'insensitive' } },
-        ],
       }),
     };
 
@@ -200,7 +226,10 @@ export class MedicationsService {
         },
       }),
       this.prismaService.db.medicalRepMedication.findMany({
-        where: { medication_id: { in: medicationIds } },
+        where: {
+          medication_id: { in: medicationIds },
+          medical_rep: { is_deleted: false },
+        },
         select: {
           medication_id: true,
           medical_rep: {
