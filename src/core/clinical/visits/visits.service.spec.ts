@@ -432,6 +432,60 @@ describe('VisitsService', () => {
         }),
       );
     });
+
+    describe('updateStatus CHECKED_IN enrollment activation', () => {
+      const visitWithJourney = {
+        ...mockVisit,
+        status: 'SCHEDULED' as const,
+        episode: {
+          id: 'ep-uuid',
+          journey: {
+            organization_id: 'org-uuid',
+            patient: { id: 'patient-uuid', full_name: 'Jane Doe' },
+            care_path: null,
+          },
+        },
+      };
+
+      it('activates a PENDING enrollment when visit moves to CHECKED_IN', async () => {
+        db.visit.findUnique.mockResolvedValue(visitWithJourney);
+        db.patientEpisode.findUnique.mockResolvedValue({ journey_id: 'journey-uuid' });
+        db.$transaction.mockImplementation(
+          async (cb: (tx: typeof db) => Promise<unknown>) => {
+            db.visit.update.mockResolvedValue({ ...visitWithJourney, status: 'CHECKED_IN' });
+            return cb(db);
+          },
+        );
+
+        await service.updateStatus('visit-uuid', { status: 'CHECKED_IN' }, mockUser);
+
+        expect(db.patientOrgEnrollment.updateMany).toHaveBeenCalledWith({
+          where: {
+            patient_id: 'patient-uuid',
+            organization_id: 'org-uuid',
+            status: 'PENDING',
+            is_deleted: false,
+          },
+          data: expect.objectContaining({ status: 'ACTIVE' }),
+        });
+      });
+
+      it('does not call enrollment updateMany for non-CHECKED_IN transitions', async () => {
+        const checkedInVisit = { ...visitWithJourney, status: 'CHECKED_IN' as const };
+        db.visit.findUnique.mockResolvedValue(checkedInVisit);
+        db.patientEpisode.findUnique.mockResolvedValue({ journey_id: 'journey-uuid' });
+        db.$transaction.mockImplementation(
+          async (cb: (tx: typeof db) => Promise<unknown>) => {
+            db.visit.update.mockResolvedValue({ ...checkedInVisit, status: 'IN_PROGRESS' });
+            return cb(db);
+          },
+        );
+
+        await service.updateStatus('visit-uuid', { status: 'IN_PROGRESS' }, mockUser);
+
+        expect(db.patientOrgEnrollment.updateMany).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe('bookVisit', () => {
