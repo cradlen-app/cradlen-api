@@ -30,6 +30,8 @@ export const ALLOWED_PATHS = {
     'assigned_doctor_id',
     'branch_id',
     'notes',
+    'care_path_code',
+    'follow_up_date',
   ],
   INTAKE: [
     'chief_complaint',
@@ -50,9 +52,9 @@ export const ALLOWED_PATHS = {
   ],
   GUARDIAN: ['full_name', 'national_id', 'phone_number'],
   MEDICAL_REP: [
-    'full_name',
-    'national_id',
-    'phone_number',
+    'rep_full_name',
+    'rep_national_id',
+    'rep_phone_number',
     'email',
     'company_name',
     'scheduled_at',
@@ -62,9 +64,164 @@ export const ALLOWED_PATHS = {
     'medication_ids',
     'notes',
   ],
-  LOOKUP: ['patient_id', 'medical_rep_id'],
+  LOOKUP: ['patient_id', 'medical_rep_id', 'guardian_id'],
   SYSTEM: ['visitor_type', 'specialty_code'],
   COMPUTED: ['vitals.bmi'],
+  // PATIENT_OBGYN_HISTORY targets the unified bulk PATCH at
+  // `/patients/:id/obgyn-history`. Singleton JSON columns are reached via
+  // their dotted nested path. Repeatable child collections (pregnancies,
+  // contraceptives, non_gyn_surgeries, medications, allergies) use the
+  // resource slug as the prefix — the array wrapper is conveyed by
+  // `FormSection.is_repeatable=true`, not by `[]` in the path.
+  PATIENT_OBGYN_HISTORY: [
+    'gynecological_baseline.age_at_menarche',
+    'gynecological_baseline.cycle_regularity',
+    'gynecological_baseline.duration',
+    'gynecological_baseline.flow',
+    'gynecological_baseline.dysmenorrhea',
+    'gynecologic_procedures.items',
+    'gynecologic_procedures.notes',
+    'screening_history.pap_smear',
+    'screening_history.pap_smear_date',
+    'screening_history.mammography',
+    'screening_history.mammography_date',
+    'screening_history.vaccines',
+    'obstetric_summary.gravida',
+    'obstetric_summary.para',
+    'obstetric_summary.abortion',
+    'obstetric_summary.ectopic',
+    'obstetric_summary.stillbirths',
+    'medical_chronic_illnesses.items',
+    'medical_chronic_illnesses.notes',
+    'family_history.gynecologic_cancers',
+    'family_history.chronic_illnesses',
+    'family_history.genetic_disorders',
+    'fertility_history.duration_of_infertility',
+    'fertility_history.partner_fertility_status',
+    'fertility_history.treatments',
+    'fertility_history.menstrual_ovulation_patterns',
+    'fertility_history.past_pregnancies_outcomes',
+    'pregnancies.birth_date',
+    'pregnancies.outcome',
+    'pregnancies.mode_of_delivery',
+    'pregnancies.gestational_age_weeks',
+    'pregnancies.neonatal_outcome',
+    'contraceptives.method',
+    'contraceptives.duration',
+    'contraceptives.complications',
+    'non_gyn_surgeries.surgery_name',
+    'non_gyn_surgeries.surgery_date',
+    'medications.drug_name',
+    'medications.medication_id',
+    'medications.indication',
+    'medications.from_date',
+    'allergies.allergy_to',
+    'allergies.associated_symptoms',
+  ],
+  // VISIT_ENCOUNTER targets the singleton `visit_encounters` row attached to
+  // a visit. Holds main-complaint metadata, free-text complaint, provisional
+  // diagnosis, certainty, clinical reasoning, and case path. Examination
+  // findings JSON columns live on a separate namespace
+  // (`VISIT_OBGYN_ENCOUNTER`) so OB/GYN-specific bindings can't accidentally
+  // collide with the generic encounter fields.
+  VISIT_ENCOUNTER: [
+    'chief_complaint',
+    'chief_complaint_meta.categories',
+    'chief_complaint_meta.onset',
+    'chief_complaint_meta.duration',
+    'chief_complaint_meta.severity',
+    'provisional_diagnosis',
+    'diagnosis_code',
+    'diagnosis_certainty',
+    'clinical_reasoning',
+    'case_path',
+  ],
+  // VISIT_VITALS targets the singleton `visit_vitals` row. BP is modelled as
+  // two siblings (`systolic_bp` + `diastolic_bp`) rather than a composite;
+  // BMI is COMPUTED.
+  VISIT_VITALS: [
+    'systolic_bp',
+    'diastolic_bp',
+    'pulse',
+    'temperature_c',
+    'respiratory_rate',
+    'spo2',
+    'weight_kg',
+    'height_cm',
+    'rbs_mmol_l',
+  ],
+  // VISIT_OBGYN_ENCOUNTER targets the OB/GYN exam JSON sections on the
+  // `visit_obgyn_encounters` row. Section keys (menstrual_findings,
+  // abdominal_findings, pelvic_findings, breast_findings) are the JSON
+  // column names; the dotted tail is a nested path inside that JSON.
+  VISIT_OBGYN_ENCOUNTER: [
+    // Menstrual exam
+    'menstrual_findings.lmp',
+    'menstrual_findings.cycle',
+    'menstrual_findings.pelvic_pain',
+    'menstrual_findings.pelvic_pain_type',
+    'menstrual_findings.vaginal_discharge',
+    'menstrual_findings.discharge_color',
+    'menstrual_findings.discharge_odor',
+    'menstrual_findings.discharge_amount',
+    'menstrual_findings.intermenstrual_bleeding',
+    'menstrual_findings.post_coital_bleeding',
+    'menstrual_findings.notes',
+    // Abdominal exam
+    'abdominal_findings.inspection',
+    'abdominal_findings.guarding',
+    'abdominal_findings.tenderness',
+    'abdominal_findings.tenderness_site',
+    'abdominal_findings.mass',
+    'abdominal_findings.mass_site',
+    'abdominal_findings.mass_size',
+    'abdominal_findings.mass_tenderness',
+    'abdominal_findings.notes',
+    // Pelvic — Speculum
+    'pelvic_findings.speculum.cervix',
+    'pelvic_findings.speculum.vagina',
+    'pelvic_findings.speculum.os',
+    'pelvic_findings.speculum.notes',
+    // Pelvic — Bimanual / Uterus
+    'pelvic_findings.bimanual.uterus.size',
+    'pelvic_findings.bimanual.uterus.position',
+    'pelvic_findings.bimanual.uterus.mobility',
+    'pelvic_findings.bimanual.uterus.tenderness',
+    'pelvic_findings.bimanual.uterus.surface',
+    // Pelvic — Bimanual / Adnexa
+    'pelvic_findings.bimanual.adnexa.right',
+    'pelvic_findings.bimanual.adnexa.left',
+    'pelvic_findings.bimanual.adnexa.cervical_motion_tenderness',
+    'pelvic_findings.bimanual.notes',
+    // Breast exam
+    'breast_findings.inspection.skin',
+    'breast_findings.inspection.nipple',
+    'breast_findings.inspection.color',
+    'breast_findings.inspection.site',
+    'breast_findings.palpation.right',
+    'breast_findings.palpation.left',
+    'breast_findings.notes',
+  ],
+  // VISIT_INVESTIGATION targets repeatable rows in `visit_investigations`.
+  // Row diff is id-keyed (id present → update, absent → create, missing live
+  // id → soft-delete). Conveyed by `FormSection.is_repeatable=true`.
+  VISIT_INVESTIGATION: [
+    'lab_test_id',
+    'custom_test_name',
+    'lab_facility',
+    'notes',
+  ],
+  // PRESCRIPTION_ITEM targets repeatable rows in `prescription_items` under
+  // the visit's `prescriptions` singleton. Row diff semantics identical to
+  // VISIT_INVESTIGATION.
+  PRESCRIPTION_ITEM: [
+    'medication_id',
+    'custom_drug_name',
+    'dose',
+    'frequency',
+    'duration_days',
+    'instructions',
+  ],
 } as const satisfies Record<BindingNamespace, readonly string[]>;
 
 export class InvalidBindingError extends Error {

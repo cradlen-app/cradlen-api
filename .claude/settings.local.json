@@ -66,10 +66,40 @@
       "Bash(git -C \"f:\\\\Cradlen\\\\cradlen-api\" show --stat c0eb45c)",
       "Bash(git -C \"f:\\\\Cradlen\\\\cradlen-api\" log -1 --format=\"%h %ai %s\" HEAD)",
       "Bash(git -C \"f:\\\\Cradlen\\\\cradlen-api\" log -1 --format=\"%h %ai %s\" -- prisma/migrations/)",
-      "Bash(PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=yes npx prisma migrate reset --force)"
+      "Bash(PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=yes npx prisma migrate reset --force)",
+      "PowerShell($cd = 'f:\\\\Cradlen\\\\cradlen-web'; & cmd /c \"cd /d $cd && npx tsc --noEmit 2>&1\")",
+      "Bash(bash -c \"cd /f/Cradlen/cradlen-web && npx tsc --noEmit 2>&1 | tail -80\")",
+      "Bash(echo \"tsc=$?\")",
+      "Bash(npx vitest *)",
+      "Bash(echo \"vit=$?\")",
+      "Bash(echo \"api-tsc=$?\")",
+      "Bash(pushd f:/Cradlen/cradlen-web)",
+      "Bash(popd)",
+      "Bash(rm f:/Cradlen/cradlen-web/src/features/visits/components/EditVisitDrawer.tsx && echo \"deleted\")",
+      "Bash(grep -r \"TemplateValidator\" \"f:\\\\Cradlen\\\\cradlen-api\\\\src\\\\core\\\\clinical\\\\visits\\\\\\\\\")",
+      "Bash(grep -r \"TemplateValidator\" \"f:\\\\Cradlen\\\\cradlen-api\\\\src\\\\core\\\\clinical\\\\\\\\\" --include=\"*.ts\")",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(node --require ts-node/register --require tsconfig-paths/register prisma/scenarios/multi-specialty.ts)",
+      "Bash(Get-ChildItem -Path \"f:\\\\Cradlen\\\\cradlen-api\\\\src\\\\core\\\\clinical\" -Recurse -Filter \"*visit*\" -File)",
+      "Bash(git -C f:/Cradlen/cradlen-api log --oneline -5)",
+      "Bash(git -C f:/Cradlen/cradlen-api show --stat 2dffef8)",
+      "Bash(grep -E \"\\\\.\\(controller|service\\)\\\\.ts$\")",
+      "Bash(find src/app/[locale]/[orgId]/[branchId]/dashboard/visits -type f -name \"*.tsx\")",
+      "PowerShell(npx --prefix f:\\\\Cradlen\\\\cradlen-web tsc -p f:\\\\Cradlen\\\\cradlen-web\\\\tsconfig.json --noEmit 2>&1)",
+      "Bash(rm f:/Cradlen/cradlen-web/src/features/calendar/hooks/useCancelCalendarEvent.ts f:/Cradlen/cradlen-web/src/features/calendar/hooks/useCheckConflicts.ts f:/Cradlen/cradlen-web/src/features/calendar/lib/calendar.mock.ts f:/Cradlen/cradlen-web/src/features/calendar/components/ConflictDialog.tsx)",
+      "Bash(xargs -I {} cat {}/migration.sql)",
+      "Bash(xargs -I {} sh -c 'echo \"=== {} ===\" && head -100 {}')",
+      "Bash(cat prisma/migrations/20260515000003_working_shift_minutes/migration.sql 2>nul | head -50)",
+      "Bash(npx --prefix \"f:/Cradlen/cradlen-web\" tsc -p \"f:/Cradlen/cradlen-web/tsconfig.json\" --noEmit)",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "PowerShell(npm --prefix F:\\\\Cradlen\\\\cradlen-web run lint 2>&1)",
+      "PowerShell(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('F:/Cradlen/cradlen-web/src/messages/en.json','utf8'\\)\\); JSON.parse\\(require\\('fs'\\).readFileSync\\('F:/Cradlen/cradlen-web/src/messages/ar.json','utf8'\\)\\); console.log\\('ok'\\)\")"
     ],
     "additionalDirectories": [
-      "\\tmp"
+      "\\tmp",
+      "f:\\Cradlen\\cradlen-web\\src\\features\\visits\\components",
+      "f:\\Cradlen\\cradlen-web\\src\\features\\calendar\\components",
+      "F:\\Cradlen\\cradlen-api"
     ]
   }
 }

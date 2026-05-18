@@ -34,6 +34,7 @@ Table organizations {
   care_path_episodes care_path_episodes [not null]
   medical_reps medical_reps [not null]
   medical_rep_visits medical_rep_visits [not null]
+  calendar_events calendar_events [not null]
 }
 
 Table branches {
@@ -56,6 +57,7 @@ Table branches {
   workingSchedules working_schedules [not null]
   visits visits [not null]
   medical_rep_visits medical_rep_visits [not null]
+  calendar_events calendar_events [not null]
 
   indexes {
     (id, organization_id) [unique]
@@ -86,6 +88,7 @@ Table users {
 
 Table roles {
   id String [pk]
+  code String [unique, not null]
   name String [unique, not null]
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
@@ -151,7 +154,6 @@ Table profiles {
   history_contraceptives_added patient_contraceptive_history [not null]
   history_surgeries_added patient_non_gyn_surgeries [not null]
   history_medications_added patient_medications [not null]
-  history_notes_updated patient_history_notes [not null]
   patient_obgyn_history_updates patient_obgyn_histories [not null]
   visit_obgyn_encounter_updates visit_obgyn_encounters [not null]
   pregnancy_journey_updates pregnancy_journey_records [not null]
@@ -161,11 +163,11 @@ Table profiles {
   prescription_updates prescriptions [not null]
   prescription_item_updates prescription_items [not null]
   investigation_updates visit_investigations [not null]
-  pregnancy_history_updates patient_pregnancy_history [not null]
-  contraceptive_history_updates patient_contraceptive_history [not null]
-  non_gyn_surgery_updates patient_non_gyn_surgeries [not null]
   patient_obgyn_history_revisions patient_obgyn_history_revisions [not null]
+  visit_encounter_revisions visit_encounter_revisions [not null]
   visit_obgyn_encounter_revisions visit_obgyn_encounter_revisions [not null]
+  prescription_revisions prescription_revisions [not null]
+  prescription_item_revisions prescription_item_revisions [not null]
   pregnancy_journey_revisions pregnancy_journey_record_revisions [not null]
   pregnancy_episode_revisions pregnancy_episode_record_revisions [not null]
   visit_pregnancy_revisions visit_pregnancy_record_revisions [not null]
@@ -173,6 +175,8 @@ Table profiles {
   form_templates_updated form_templates [not null]
   medical_rep_visits_doctor medical_rep_visits [not null]
   medical_rep_visits_created medical_rep_visits [not null]
+  calendar_events calendar_events [not null]
+  calendar_event_assists calendar_event_assistants [not null]
 
   indexes {
     (user_id, organization_id) [unique]
@@ -263,7 +267,7 @@ Table invitations {
   phone_number String
   executive_title ExecutiveTitle
   engagement_type EngagementType [not null, default: 'FULL_TIME']
-  token_hash String [not null]
+  token_hash String [unique, not null]
   status InvitationStatus [not null, default: 'PENDING']
   expires_at DateTime [not null]
   accepted_at DateTime
@@ -309,6 +313,7 @@ Table invitation_branches {
 Table notifications {
   id String [pk]
   user_id String [not null]
+  code String [not null]
   category String [not null]
   title String [not null]
   description String [not null]
@@ -354,8 +359,8 @@ Table working_days {
 Table working_shifts {
   id String [pk]
   day_id String [not null]
-  start_time String [not null]
-  end_time String [not null]
+  start_minute Int [not null]
+  end_minute Int [not null]
   created_at DateTime [default: `now()`, not null]
   day working_days [not null]
 }
@@ -390,6 +395,7 @@ Table procedures {
   updated_at DateTime [not null]
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
+  calendar_events calendar_events [not null]
 }
 
 Table profile_specialties {
@@ -448,15 +454,22 @@ Table journey_templates {
   id String [pk]
   specialty_id String [not null]
   specialty specialties [not null]
-  name String [unique, not null]
+  code String [not null]
+  name String [not null]
   type JourneyTemplateType [not null]
   description String
   episodes episode_templates [not null]
   journeys patient_journeys [not null]
+  care_paths care_paths [not null]
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
+
+  indexes {
+    (specialty_id, code) [unique]
+    (specialty_id, name) [unique]
+  }
 }
 
 Table episode_templates {
@@ -470,25 +483,20 @@ Table episode_templates {
   updated_at DateTime [not null]
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
+
+  indexes {
+    (journey_template_id, order) [unique]
+  }
 }
 
 Table patients {
   id String [pk]
   national_id String [unique, not null]
   full_name String [not null]
-  husband_name String
   date_of_birth DateTime [not null]
   phone_number String [not null]
   address String [not null]
   marital_status MaritalStatus [not null, default: 'UNKNOWN']
-  gynecological_baseline Json
-  gynecologic_procedures Json
-  screening_history Json
-  obstetric_summary Json
-  medical_chronic_illnesses Json
-  family_history Json
-  fertility_history Json
-  social_history Json
   journeys patient_journeys [not null]
   allergies patient_allergies [not null]
   pregnancies patient_pregnancy_history [not null]
@@ -499,6 +507,7 @@ Table patients {
   guardian_links patient_guardians [not null]
   guardian_record guardians
   obgyn_history patient_obgyn_histories
+  calendar_events calendar_events [not null]
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   is_deleted Boolean [not null, default: false]
@@ -570,6 +579,10 @@ Table visits {
   queue_number Int
   follow_up_date DateTime
   follow_up_notes String
+  examination_version Int [not null, default: 1]
+  specialty_code String
+  form_template_id String
+  form_template form_templates
   vitals visit_vitals
   encounter visit_encounters
   obgyn_encounter visit_obgyn_encounters
@@ -646,6 +659,8 @@ Table visit_vitals {
   recorded_by_id String [not null]
   recorded_by profiles [not null]
   recorded_at DateTime [default: `now()`, not null]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
 }
@@ -675,6 +690,9 @@ Table visit_encounters {
   version Int [not null, default: 1]
   updated_by_id String
   updated_by profiles
+  revisions visit_encounter_revisions [not null]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
 }
@@ -721,6 +739,7 @@ Table prescriptions {
   prescribed_at DateTime [default: `now()`, not null]
   notes String
   items prescription_items [not null]
+  revisions prescription_revisions [not null]
   version Int [not null, default: 1]
   updated_by_id String
   updated_by profiles
@@ -743,9 +762,12 @@ Table prescription_items {
   duration_days Int
   instructions String
   order Int [not null]
+  revisions prescription_item_revisions [not null]
   version Int [not null, default: 1]
   updated_by_id String
   updated_by profiles
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
 }
@@ -779,9 +801,6 @@ Table patient_pregnancy_history {
   notes String
   created_by_id String
   created_by profiles
-  version Int [not null, default: 1]
-  updated_by_id String
-  updated_by profiles
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
@@ -798,9 +817,6 @@ Table patient_contraceptive_history {
   notes String
   created_by_id String
   created_by profiles
-  version Int [not null, default: 1]
-  updated_by_id String
-  updated_by profiles
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
@@ -817,9 +833,6 @@ Table patient_non_gyn_surgeries {
   notes String
   created_by_id String
   created_by profiles
-  version Int [not null, default: 1]
-  updated_by_id String
-  updated_by profiles
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
@@ -856,13 +869,9 @@ Table patient_history_notes {
   organization organizations [not null]
   author_id String [not null]
   author profiles [not null]
-  section PatientHistorySection [not null]
-  section_code String
+  section_code String [not null]
   content String [not null]
   visibility NoteVisibility [not null, default: 'PRIVATE_TO_ORG']
-  version Int [not null, default: 1]
-  updated_by_id String
-  updated_by profiles
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
@@ -912,6 +921,8 @@ Table care_paths {
   parent_id String
   parent care_paths
   children care_paths [not null]
+  journey_template_id String [not null]
+  journey_template journey_templates [not null]
   code String [not null]
   name String [not null]
   description String
@@ -1090,6 +1101,45 @@ Table patient_obgyn_history_revisions {
   revision_reason String
 }
 
+Table prescription_revisions {
+  id String [pk]
+  entity_id String [not null]
+  entity prescriptions [not null]
+  version Int [not null]
+  snapshot Json [not null]
+  changed_fields Json [not null]
+  revised_by_id String [not null]
+  revised_by profiles [not null]
+  revised_at DateTime [default: `now()`, not null]
+  revision_reason String
+}
+
+Table prescription_item_revisions {
+  id String [pk]
+  entity_id String [not null]
+  entity prescription_items [not null]
+  version Int [not null]
+  snapshot Json [not null]
+  changed_fields Json [not null]
+  revised_by_id String [not null]
+  revised_by profiles [not null]
+  revised_at DateTime [default: `now()`, not null]
+  revision_reason String
+}
+
+Table visit_encounter_revisions {
+  id String [pk]
+  entity_id String [not null]
+  entity visit_encounters [not null]
+  version Int [not null]
+  snapshot Json [not null]
+  changed_fields Json [not null]
+  revised_by_id String [not null]
+  revised_by profiles [not null]
+  revised_at DateTime [default: `now()`, not null]
+  revision_reason String
+}
+
 Table visit_obgyn_encounter_revisions {
   id String [pk]
   entity_id String [not null]
@@ -1168,6 +1218,8 @@ Table form_templates {
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   sections form_sections [not null]
+  visits visits [not null]
+  medical_rep_visits medical_rep_visits [not null]
 
   indexes {
     (code, version) [unique]
@@ -1181,8 +1233,12 @@ Table form_sections {
   code String [not null]
   name String [not null]
   order Int [not null]
+  is_repeatable Boolean [not null, default: false]
   config Json [not null, default: '{"ui":{},"validation":{},"logic":{}}']
   is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
   fields form_fields [not null]
 
   indexes {
@@ -1203,6 +1259,9 @@ Table form_fields {
   binding_path String
   config Json [not null, default: '{"ui":{},"validation":{},"logic":{}}']
   is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
 
   indexes {
     (section_id, code) [unique]
@@ -1259,7 +1318,13 @@ Table medical_rep_visits {
   scheduled_at DateTime [not null]
   status MedicalRepVisitStatus [not null, default: 'SCHEDULED']
   priority VisitPriority [not null, default: 'NORMAL']
+  queue_number Int
   notes String
+  form_template_id String
+  form_template form_templates
+  checked_in_at DateTime
+  started_at DateTime
+  completed_at DateTime
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
@@ -1277,6 +1342,45 @@ Table medical_rep_visit_medications {
 
   indexes {
     (medical_rep_visit_id, medication_id) [unique]
+  }
+}
+
+Table calendar_events {
+  id String [pk]
+  profile_id String [not null]
+  organization_id String [not null]
+  branch_id String
+  event_type CalendarEventType [not null]
+  visibility CalendarVisibility [not null, default: 'PRIVATE']
+  title String [not null]
+  description String
+  start_at DateTime [not null]
+  end_at DateTime [not null]
+  all_day Boolean [not null, default: false]
+  procedure_id String
+  patient_id String
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  profile profiles [not null]
+  organization organizations [not null]
+  branch branches
+  procedure procedures
+  patient patients
+  assistants calendar_event_assistants [not null]
+}
+
+Table calendar_event_assistants {
+  id String [pk]
+  calendar_event_id String [not null]
+  profile_id String [not null]
+  created_at DateTime [default: `now()`, not null]
+  event calendar_events [not null]
+  profile profiles [not null]
+
+  indexes {
+    (calendar_event_id, profile_id) [unique]
   }
 }
 
@@ -1408,11 +1512,18 @@ Enum BindingNamespace {
   LOOKUP
   SYSTEM
   COMPUTED
+  PATIENT_OBGYN_HISTORY
+  VISIT_ENCOUNTER
+  VISIT_VITALS
+  VISIT_OBGYN_ENCOUNTER
+  VISIT_INVESTIGATION
+  PRESCRIPTION_ITEM
 }
 
 Enum MedicalRepVisitStatus {
   SCHEDULED
   CHECKED_IN
+  IN_PROGRESS
   COMPLETED
   CANCELLED
   NO_SHOW
@@ -1465,20 +1576,21 @@ Enum InvestigationResultSource {
   EXTERNAL_LAB
 }
 
-Enum PatientHistorySection {
-  MENSTRUAL
-  GYNECOLOGIC_PROCEDURES
-  CONTRACEPTIVE
-  SCREENING
-  OBSTETRIC
-  MEDICAL
-  FAMILY
-  FERTILITY
-}
-
 Enum NoteVisibility {
   PRIVATE_TO_ORG
   SHARED_GLOBAL
+}
+
+Enum CalendarEventType {
+  DAY_OFF
+  PROCEDURE
+  MEETING
+  GENERIC
+}
+
+Enum CalendarVisibility {
+  PRIVATE
+  ORGANIZATION
 }
 
 Ref: branches.organization_id > organizations.id [delete: Cascade]
@@ -1575,6 +1687,8 @@ Ref: visits.branch_id > branches.id [delete: Cascade]
 
 Ref: visits.created_by_id > profiles.id [delete: Cascade]
 
+Ref: visits.form_template_id > form_templates.id [delete: Restrict]
+
 Ref: medications.organization_id > organizations.id [delete: Cascade]
 
 Ref: medications.added_by_id > profiles.id [delete: Set Null]
@@ -1625,19 +1739,13 @@ Ref: patient_pregnancy_history.patient_id > patients.id [delete: Cascade]
 
 Ref: patient_pregnancy_history.created_by_id > profiles.id [delete: Set Null]
 
-Ref: patient_pregnancy_history.updated_by_id > profiles.id [delete: Set Null]
-
 Ref: patient_contraceptive_history.patient_id > patients.id [delete: Cascade]
 
 Ref: patient_contraceptive_history.created_by_id > profiles.id [delete: Set Null]
 
-Ref: patient_contraceptive_history.updated_by_id > profiles.id [delete: Set Null]
-
 Ref: patient_non_gyn_surgeries.patient_id > patients.id [delete: Cascade]
 
 Ref: patient_non_gyn_surgeries.created_by_id > profiles.id [delete: Set Null]
-
-Ref: patient_non_gyn_surgeries.updated_by_id > profiles.id [delete: Set Null]
 
 Ref: patient_medications.patient_id > patients.id [delete: Cascade]
 
@@ -1651,8 +1759,6 @@ Ref: patient_history_notes.organization_id > organizations.id [delete: Cascade]
 
 Ref: patient_history_notes.author_id > profiles.id [delete: Cascade]
 
-Ref: patient_history_notes.updated_by_id > profiles.id [delete: Cascade]
-
 Ref: guardians.patient_id - patients.id [delete: Set Null]
 
 Ref: patient_guardians.patient_id > patients.id [delete: Cascade]
@@ -1664,6 +1770,8 @@ Ref: care_paths.specialty_id > specialties.id [delete: Cascade]
 Ref: care_paths.organization_id > organizations.id [delete: Cascade]
 
 Ref: care_paths.parent_id - care_paths.id [delete: Set Null]
+
+Ref: care_paths.journey_template_id > journey_templates.id [delete: Restrict]
 
 Ref: care_path_episodes.care_path_id > care_paths.id [delete: Cascade]
 
@@ -1692,6 +1800,18 @@ Ref: visit_pregnancy_records.updated_by_id > profiles.id [delete: Set Null]
 Ref: patient_obgyn_history_revisions.entity_id > patient_obgyn_histories.id [delete: Cascade]
 
 Ref: patient_obgyn_history_revisions.revised_by_id > profiles.id [delete: Cascade]
+
+Ref: prescription_revisions.entity_id > prescriptions.id [delete: Cascade]
+
+Ref: prescription_revisions.revised_by_id > profiles.id [delete: Cascade]
+
+Ref: prescription_item_revisions.entity_id > prescription_items.id [delete: Cascade]
+
+Ref: prescription_item_revisions.revised_by_id > profiles.id [delete: Cascade]
+
+Ref: visit_encounter_revisions.entity_id > visit_encounters.id [delete: Cascade]
+
+Ref: visit_encounter_revisions.revised_by_id > profiles.id [delete: Cascade]
 
 Ref: visit_obgyn_encounter_revisions.entity_id > visit_obgyn_encounters.id [delete: Cascade]
 
@@ -1737,6 +1857,22 @@ Ref: medical_rep_visits.assigned_doctor_id > profiles.id [delete: Cascade]
 
 Ref: medical_rep_visits.created_by_id > profiles.id [delete: Cascade]
 
+Ref: medical_rep_visits.form_template_id > form_templates.id [delete: Set Null]
+
 Ref: medical_rep_visit_medications.medical_rep_visit_id > medical_rep_visits.id [delete: Cascade]
 
 Ref: medical_rep_visit_medications.medication_id > medications.id [delete: Cascade]
+
+Ref: calendar_events.profile_id > profiles.id [delete: Cascade]
+
+Ref: calendar_events.organization_id > organizations.id [delete: Cascade]
+
+Ref: calendar_events.branch_id > branches.id [delete: Set Null]
+
+Ref: calendar_events.procedure_id > procedures.id [delete: Set Null]
+
+Ref: calendar_events.patient_id > patients.id [delete: Set Null]
+
+Ref: calendar_event_assistants.calendar_event_id > calendar_events.id [delete: Cascade]
+
+Ref: calendar_event_assistants.profile_id > profiles.id [delete: Cascade]

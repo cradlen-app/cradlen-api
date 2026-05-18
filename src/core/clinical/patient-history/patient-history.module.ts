@@ -1,8 +1,5 @@
 import { Module } from '@nestjs/common';
-import { MedicationsModule } from '../medications/medications.module';
 import { PatientAccessService } from './patient-access.service';
-import { SnapshotController } from './snapshot.controller';
-import { SnapshotService } from './snapshot.service';
 import { AllergiesController } from './allergies.controller';
 import { AllergiesService } from './allergies.service';
 import { PregnanciesController } from './pregnancies.controller';
@@ -17,9 +14,7 @@ import { NotesController } from './notes.controller';
 import { NotesService } from './notes.service';
 
 @Module({
-  imports: [MedicationsModule],
   controllers: [
-    SnapshotController,
     AllergiesController,
     PregnanciesController,
     ContraceptivesController,
@@ -29,7 +24,6 @@ import { NotesService } from './notes.service';
   ],
   providers: [
     PatientAccessService,
-    SnapshotService,
     AllergiesService,
     PregnanciesService,
     ContraceptivesService,

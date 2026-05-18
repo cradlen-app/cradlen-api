@@ -27,6 +27,12 @@ const ALL_NS: readonly BindingNamespace[] = [
   'LOOKUP',
   'SYSTEM',
   'COMPUTED',
+  'PATIENT_OBGYN_HISTORY',
+  'VISIT_ENCOUNTER',
+  'VISIT_VITALS',
+  'VISIT_OBGYN_ENCOUNTER',
+  'VISIT_INVESTIGATION',
+  'PRESCRIPTION_ITEM',
 ];
 
 function assertSelectOptions(config: ConfigShape, label: string) {
@@ -114,6 +120,10 @@ export const FIELD_TYPES: Record<FormFieldType, FieldTypeDescriptor> = {
       'LOOKUP',
       'VISIT',
       'MEDICAL_REP',
+      'PATIENT_OBGYN_HISTORY',
+      'VISIT_INVESTIGATION',
+      'PRESCRIPTION_ITEM',
+      'VISIT_ENCOUNTER',
     ]),
     assertConfig: assertEntitySearch,
   },
