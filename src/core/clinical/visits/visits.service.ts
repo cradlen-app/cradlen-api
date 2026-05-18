@@ -695,15 +695,7 @@ export class VisitsService {
       return { visit, episode: episode, journey, patient };
     });
 
-    const existingEnrollment =
-      await this.prismaService.db.patientOrgEnrollment.findFirst({
-        where: {
-          patient_id: result.patient.id,
-          organization_id: result.journey.organization_id,
-          is_deleted: false,
-        },
-      });
-    if (!existingEnrollment) {
+    try {
       await this.prismaService.db.patientOrgEnrollment.create({
         data: {
           patient_id: result.patient.id,
@@ -711,6 +703,17 @@ export class VisitsService {
           status: 'PENDING',
         },
       });
+    } catch (error) {
+      if (
+        !(
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        )
+      ) {
+        throw error;
+      }
+      // P2002 = unique constraint violation — concurrent booking already created
+      // the enrollment. Safe to ignore.
     }
 
     this.eventBus.publish('visit.booked', {

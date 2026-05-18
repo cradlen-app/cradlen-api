@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { VisitsService } from './visits.service';
 import { EventBus } from '@infrastructure/messaging/event-bus';
 import { PrismaService } from '@infrastructure/database/prisma.service';
@@ -460,6 +461,9 @@ describe('VisitsService', () => {
       db.profile = {
         findFirst: jest.fn().mockResolvedValue({ id: 'doctor-uuid' }),
       };
+      // enrollment create returns a resolved Promise by default so the
+      // try/catch path succeeds silently in the pre-existing tests.
+      db.patientOrgEnrollment.create.mockResolvedValue({ id: 'enroll-uuid' });
     });
 
     it('throws BadRequestException when patient_id absent and required patient fields missing', async () => {
@@ -623,19 +627,11 @@ describe('VisitsService', () => {
       );
     });
 
-    it('creates a PENDING enrollment when no enrollment exists for this patient+org', async () => {
-      db.patientOrgEnrollment.findFirst.mockResolvedValue(null);
+    it('creates a PENDING enrollment when no enrollment exists', async () => {
       db.patientOrgEnrollment.create.mockResolvedValue({ id: 'enroll-uuid' });
 
       await service.bookVisit(bookDto, mockUser);
 
-      expect(db.patientOrgEnrollment.findFirst).toHaveBeenCalledWith({
-        where: {
-          patient_id: mockPatient.id,
-          organization_id: mockJourney.organization_id,
-          is_deleted: false,
-        },
-      });
       expect(db.patientOrgEnrollment.create).toHaveBeenCalledWith({
         data: {
           patient_id: mockPatient.id,
@@ -645,15 +641,26 @@ describe('VisitsService', () => {
       });
     });
 
-    it('skips enrollment creation when enrollment already exists (returning patient)', async () => {
-      db.patientOrgEnrollment.findFirst.mockResolvedValue({
-        id: 'existing-enroll-uuid',
-        status: 'ACTIVE',
+    it('silently handles P2002 when concurrent booking creates enrollment first', async () => {
+      const p2002 = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: '7.0.0',
+        meta: { target: ['patient_id', 'organization_id'] },
       });
+      db.patientOrgEnrollment.create.mockRejectedValue(p2002);
 
-      await service.bookVisit(bookDto, mockUser);
+      await expect(service.bookVisit(bookDto, mockUser)).resolves.not.toThrow();
+    });
 
-      expect(db.patientOrgEnrollment.create).not.toHaveBeenCalled();
+    it('re-throws non-P2002 errors from enrollment creation', async () => {
+      const dbError = new Prisma.PrismaClientKnownRequestError('Connection error', {
+        code: 'P1001',
+        clientVersion: '7.0.0',
+        meta: {},
+      });
+      db.patientOrgEnrollment.create.mockRejectedValue(dbError);
+
+      await expect(service.bookVisit(bookDto, mockUser)).rejects.toThrow();
     });
   });
 
