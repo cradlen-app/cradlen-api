@@ -1215,6 +1215,22 @@ export class VisitsService {
       },
     );
 
+    if (dto.status === 'CHECKED_IN') {
+      const patientId = visit.episode?.journey?.patient?.id;
+      const organizationId = visit.episode?.journey?.organization_id;
+      if (patientId && organizationId) {
+        await this.prismaService.db.patientOrgEnrollment.updateMany({
+          where: {
+            patient_id: patientId,
+            organization_id: organizationId,
+            status: 'PENDING',
+            is_deleted: false,
+          },
+          data: { status: 'ACTIVE', activated_at: now },
+        });
+      }
+    }
+
     if (cascaded) {
       this.eventBus.publish(CLINICAL_EVENTS.journey.cancelledEmpty, {
         journeyId,
