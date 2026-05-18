@@ -1225,7 +1225,7 @@ model PatientHistoryNote {
 
 model Guardian {
   id            String            @id @default(uuid()) @db.Uuid
-  national_id   String            @unique
+  national_id   String?           @unique
   full_name     String
   phone_number  String?
   patient_id    String?           @unique @db.Uuid
@@ -1313,6 +1313,23 @@ model CarePathEpisode {
   @@unique([care_path_id, organization_id, code])
   @@index([organization_id])
   @@map("care_path_episodes")
+}
+
+model ChiefComplaintCategory {
+  id             String    @id @default(uuid()) @db.Uuid
+  specialty_code String
+  care_path_code String?
+  code           String
+  label          String
+  order          Int       @default(0)
+  is_deleted     Boolean   @default(false)
+  deleted_at     DateTime?
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+
+  @@unique([specialty_code, care_path_code, code])
+  @@index([specialty_code, care_path_code])
+  @@map("chief_complaint_categories")
 }
 
 // ----- OB/GYN specialty sidecars -----

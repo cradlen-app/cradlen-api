@@ -16,7 +16,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import type { Predicate } from '../../src/builder/rules/predicates.js';
 
 const TEMPLATE_CODE = 'book_visit';
-const TEMPLATE_VERSION = 7;
+const TEMPLATE_VERSION = 9;
 
 interface FieldSpec {
   code: string;
@@ -65,6 +65,7 @@ const SECTIONS: SectionSpec[] = [
           ui: {
             optionsSource: '/v1/organizations/{org_id}/specialties',
             default: { kind: 'first_option' },
+            prefillFrom: 'specialty_code',
           },
           logic: {
             is_discriminator: true,
@@ -154,29 +155,6 @@ const SECTIONS: SectionSpec[] = [
         },
       },
       {
-        code: 'priority_rep',
-        label: 'Priority',
-        type: 'SELECT',
-        binding: { namespace: 'MEDICAL_REP', path: 'priority' },
-        config: {
-          ui: { default: 'NORMAL' },
-          validation: {
-            options: [
-              { code: 'NORMAL', label: 'Normal' },
-              { code: 'EMERGENCY', label: 'Emergency' },
-            ],
-          },
-          logic: {
-            predicates: [
-              {
-                effect: 'visible',
-                when: { eq: { visitor_type: 'MEDICAL_REP' } },
-              },
-            ] satisfies Predicate[],
-          },
-        },
-      },
-      {
         code: 'assigned_doctor_patient',
         label: 'Assigned doctor',
         type: 'SELECT',
@@ -186,6 +164,7 @@ const SECTIONS: SectionSpec[] = [
             optionsSource:
               '/v1/organizations/{org_id}/staff?doctors_only=true&specialty_code={specialty_code}',
             default: { kind: 'first_option' },
+            prefillFrom: 'assigned_doctor_id',
           },
           logic: {
             predicates: [
@@ -431,68 +410,6 @@ const SECTIONS: SectionSpec[] = [
     ],
   },
   {
-    code: 'vitals',
-    name: 'Vitals',
-    visibleWhen: { eq: { visitor_type: 'PATIENT' } },
-    exclusivityKey: {
-      field: 'visitor_type',
-      thisValue: 'PATIENT',
-      otherValues: ['MEDICAL_REP'],
-    },
-    fields: [
-      {
-        code: 'systolic_bp',
-        label: 'Systolic BP',
-        type: 'NUMBER',
-        binding: { namespace: 'INTAKE', path: 'vitals.systolic_bp' },
-        config: { validation: { min: 40, max: 300 } },
-      },
-      {
-        code: 'diastolic_bp',
-        label: 'Diastolic BP',
-        type: 'NUMBER',
-        binding: { namespace: 'INTAKE', path: 'vitals.diastolic_bp' },
-        config: { validation: { min: 30, max: 200 } },
-      },
-      {
-        code: 'pulse',
-        label: 'Pulse',
-        type: 'NUMBER',
-        binding: { namespace: 'INTAKE', path: 'vitals.pulse' },
-        config: { validation: { min: 20, max: 250 } },
-      },
-      {
-        code: 'temperature_c',
-        label: 'Temperature (°C)',
-        type: 'DECIMAL',
-        binding: { namespace: 'INTAKE', path: 'vitals.temperature_c' },
-        config: { validation: { min: 25, max: 45 } },
-      },
-      {
-        code: 'weight_kg',
-        label: 'Weight (kg)',
-        type: 'DECIMAL',
-        binding: { namespace: 'INTAKE', path: 'vitals.weight_kg' },
-      },
-      {
-        code: 'height_cm',
-        label: 'Height (cm)',
-        type: 'DECIMAL',
-        binding: { namespace: 'INTAKE', path: 'vitals.height_cm' },
-      },
-      {
-        code: 'bmi',
-        label: 'BMI',
-        type: 'COMPUTED',
-        binding: { namespace: 'COMPUTED', path: 'vitals.bmi' },
-        config: {
-          ui: { derivedFrom: ['weight_kg', 'height_cm'] },
-          logic: { formula: 'weight_kg / ((height_cm / 100) ^ 2)' },
-        },
-      },
-    ],
-  },
-  {
     code: 'medical_rep_info',
     name: 'Medical rep info',
     visibleWhen: { eq: { visitor_type: 'MEDICAL_REP' } },
@@ -525,22 +442,13 @@ const SECTIONS: SectionSpec[] = [
               idTarget: 'medical_rep_id',
               allowCreate: true,
               fillFields: {
-                national_id: 'rep_national_id',
                 phone_number: 'rep_phone_number',
-                email: 'rep_email',
                 company_name: 'company_name',
               },
             },
           },
           validation: { maxLength: 200 },
         },
-      },
-      {
-        code: 'rep_national_id',
-        label: 'Rep national ID',
-        type: 'TEXT',
-        binding: { namespace: 'MEDICAL_REP', path: 'rep_national_id' },
-        config: { validation: { maxLength: 50 } },
       },
       {
         code: 'rep_phone_number',
@@ -550,39 +458,14 @@ const SECTIONS: SectionSpec[] = [
         config: { validation: { maxLength: 30 } },
       },
       {
-        code: 'rep_email',
-        label: 'Rep email',
-        type: 'TEXT',
-        binding: { namespace: 'MEDICAL_REP', path: 'email' },
-        config: { validation: { maxLength: 200 } },
-      },
-      {
         code: 'company_name',
         label: 'Company',
         type: 'TEXT',
         binding: { namespace: 'MEDICAL_REP', path: 'company_name' },
-        config: { validation: { maxLength: 200 } },
-      },
-      {
-        code: 'medication_ids',
-        label: 'Medications discussed',
-        type: 'MULTISELECT',
-        binding: { namespace: 'MEDICAL_REP', path: 'medication_ids' },
         config: {
-          ui: {
-            optionsSource:
-              '/v1/medications?medical_rep_id={medical_rep_id}&search=',
-            helpText:
-              'Pick an existing medical rep above to see the medications they promote.',
-          },
+          ui: { autocompleteEndpoint: '/v1/medical-reps/companies' },
+          validation: { maxLength: 200 },
         },
-      },
-      {
-        code: 'rep_notes',
-        label: 'Discussion notes',
-        type: 'TEXTAREA',
-        binding: { namespace: 'MEDICAL_REP', path: 'notes' },
-        config: { validation: { maxLength: 2000 } },
       },
     ],
   },

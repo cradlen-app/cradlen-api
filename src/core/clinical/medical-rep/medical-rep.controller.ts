@@ -42,6 +42,15 @@ export class MedicalRepController {
     return this.service.searchReps(user, query);
   }
 
+  @Get('medical-reps/companies')
+  @ApiStandardResponse(String)
+  async findCompanies(
+    @Query('search') search: string = '',
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.service.findCompanies(search, user.organizationId);
+  }
+
   @Get('medical-reps/:id')
   @ApiStandardResponse(MedicalRepDto)
   async getRep(
