@@ -35,6 +35,13 @@ export class PatientsService {
 
     const where = {
       is_deleted: false,
+      enrollments: {
+        some: {
+          organization_id: user.organizationId,
+          status: { in: ['ACTIVE', 'DISCHARGED'] as const },
+          is_deleted: false,
+        },
+      },
       ...(query.search
         ? {
             OR: [

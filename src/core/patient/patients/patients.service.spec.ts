@@ -107,6 +107,32 @@ describe('PatientsService', () => {
       guardian_links: [],
     };
 
+    it('passes enrollment filter (ACTIVE/DISCHARGED) to findMany and count', async () => {
+      db.$transaction.mockResolvedValue([[], 0]);
+      await service.findAll({}, mockUser);
+
+      const enrollmentFilter = {
+        enrollments: {
+          some: {
+            organization_id: mockUser.organizationId,
+            status: { in: ['ACTIVE', 'DISCHARGED'] },
+            is_deleted: false,
+          },
+        },
+      };
+
+      expect(db.patient.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining(enrollmentFilter),
+        }),
+      );
+      expect(db.patient.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining(enrollmentFilter),
+        }),
+      );
+    });
+
     it('returns episode summaries (id, name, order) for non-clinical roles', async () => {
       db.$transaction.mockResolvedValue([[patientWithJourney], 1]);
       const result = await service.findAll({}, mockUser);
