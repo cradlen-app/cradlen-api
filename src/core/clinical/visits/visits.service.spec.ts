@@ -449,19 +449,24 @@ describe('VisitsService', () => {
         },
       };
 
-      it('activates a PENDING enrollment when visit moves to CHECKED_IN', async () => {
+      it('activates a PENDING enrollment inside the transaction when visit moves to CHECKED_IN', async () => {
         db.visit.findUnique.mockResolvedValue(visitWithJourney);
         db.patientEpisode.findUnique.mockResolvedValue({ journey_id: 'journey-uuid' });
-        db.$transaction.mockImplementation(
-          async (cb: (tx: typeof db) => Promise<unknown>) => {
-            db.visit.update.mockResolvedValue({ ...visitWithJourney, status: 'CHECKED_IN' });
-            return cb(db);
+        const tx = {
+          visit: {
+            update: jest.fn().mockResolvedValue({ ...visitWithJourney, status: 'CHECKED_IN' }),
+            count: jest.fn().mockResolvedValue(0),
+            updateMany: jest.fn().mockResolvedValue({ count: 0 }),
           },
-        );
+          patientOrgEnrollment: {
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+          },
+        };
+        db.$transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx));
 
         await service.updateStatus('visit-uuid', { status: 'CHECKED_IN' }, mockUser);
 
-        expect(db.patientOrgEnrollment.updateMany).toHaveBeenCalledWith({
+        expect(tx.patientOrgEnrollment.updateMany).toHaveBeenCalledWith({
           where: {
             patient_id: 'patient-uuid',
             organization_id: 'org-uuid',
@@ -470,21 +475,29 @@ describe('VisitsService', () => {
           },
           data: expect.objectContaining({ status: 'ACTIVE', activated_at: expect.any(Date) }),
         });
+        // Verify it did NOT run on the outer db client
+        expect(db.patientOrgEnrollment.updateMany).not.toHaveBeenCalled();
       });
 
       it('does not call enrollment updateMany for non-CHECKED_IN transitions', async () => {
         const checkedInVisit = { ...visitWithJourney, status: 'CHECKED_IN' as const };
         db.visit.findUnique.mockResolvedValue(checkedInVisit);
         db.patientEpisode.findUnique.mockResolvedValue({ journey_id: 'journey-uuid' });
-        db.$transaction.mockImplementation(
-          async (cb: (tx: typeof db) => Promise<unknown>) => {
-            db.visit.update.mockResolvedValue({ ...checkedInVisit, status: 'IN_PROGRESS' });
-            return cb(db);
+        const tx = {
+          visit: {
+            update: jest.fn().mockResolvedValue({ ...checkedInVisit, status: 'IN_PROGRESS' }),
+            count: jest.fn().mockResolvedValue(0),
+            updateMany: jest.fn().mockResolvedValue({ count: 0 }),
           },
-        );
+          patientOrgEnrollment: {
+            updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+          },
+        };
+        db.$transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx));
 
         await service.updateStatus('visit-uuid', { status: 'IN_PROGRESS' }, mockUser);
 
+        expect(tx.patientOrgEnrollment.updateMany).not.toHaveBeenCalled();
         expect(db.patientOrgEnrollment.updateMany).not.toHaveBeenCalled();
       });
     });
