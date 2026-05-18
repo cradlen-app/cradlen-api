@@ -23,8 +23,11 @@ describe('PatientEnrollmentCleanupService', () => {
     service = module.get(PatientEnrollmentCleanupService);
   });
 
-  it('calls updateStatus with NO_SHOW for each overdue visit', async () => {
-    db.visit.findMany.mockResolvedValue([{ id: 'v1' }, { id: 'v2' }]);
+  it('calls updateStatus with NO_SHOW for each overdue visit using per-visit org context', async () => {
+    db.visit.findMany.mockResolvedValue([
+      { id: 'v1', episode: { journey: { organization_id: 'org-1' } } },
+      { id: 'v2', episode: { journey: { organization_id: 'org-2' } } },
+    ]);
 
     await service.sweepOverdueVisits();
 
@@ -32,12 +35,12 @@ describe('PatientEnrollmentCleanupService', () => {
     expect(visitsServiceMock.updateStatus).toHaveBeenCalledWith(
       'v1',
       { status: 'NO_SHOW' },
-      expect.objectContaining({ userId: 'system', profileId: 'system' }),
+      expect.objectContaining({ userId: 'system', profileId: 'system', organizationId: 'org-1' }),
     );
     expect(visitsServiceMock.updateStatus).toHaveBeenCalledWith(
       'v2',
       { status: 'NO_SHOW' },
-      expect.objectContaining({ userId: 'system', profileId: 'system' }),
+      expect.objectContaining({ userId: 'system', profileId: 'system', organizationId: 'org-2' }),
     );
   });
 
@@ -52,7 +55,6 @@ describe('PatientEnrollmentCleanupService', () => {
           is_deleted: false,
           scheduled_at: { lt: expect.any(Date) },
         }),
-        select: { id: true },
       }),
     );
   });
@@ -65,21 +67,22 @@ describe('PatientEnrollmentCleanupService', () => {
     expect(visitsServiceMock.updateStatus).not.toHaveBeenCalled();
   });
 
-  it('passes SYSTEM_AUTH_CONTEXT to updateStatus', async () => {
-    db.visit.findMany.mockResolvedValue([{ id: 'v1' }]);
+  it('continues processing remaining visits when one fails', async () => {
+    db.visit.findMany.mockResolvedValue([
+      { id: 'v1', episode: { journey: { organization_id: 'org-1' } } },
+      { id: 'v2', episode: { journey: { organization_id: 'org-2' } } },
+    ]);
+    visitsServiceMock.updateStatus
+      .mockRejectedValueOnce(new Error('visit locked'))
+      .mockResolvedValueOnce(undefined);
 
     await service.sweepOverdueVisits();
 
+    expect(visitsServiceMock.updateStatus).toHaveBeenCalledTimes(2);
     expect(visitsServiceMock.updateStatus).toHaveBeenCalledWith(
-      'v1',
+      'v2',
       { status: 'NO_SHOW' },
-      expect.objectContaining({
-        userId: 'system',
-        profileId: 'system',
-        organizationId: 'system',
-        roles: ['SYSTEM'],
-        branchIds: [],
-      }),
+      expect.objectContaining({ organizationId: 'org-2' }),
     );
   });
 });

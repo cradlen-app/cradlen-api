@@ -31,17 +31,41 @@ export class PatientEnrollmentCleanupService {
         checked_in_at: null,
         is_deleted: false,
       },
-      select: { id: true },
+      select: {
+        id: true,
+        episode: {
+          select: {
+            journey: {
+              select: { organization_id: true },
+            },
+          },
+        },
+      },
     });
 
     this.logger.log(`Sweeping ${overdueVisits.length} overdue visits`);
 
     for (const visit of overdueVisits) {
-      await this.visitsService.updateStatus(
-        visit.id,
-        { status: 'NO_SHOW' },
-        SYSTEM_AUTH_CONTEXT,
-      );
+      const organizationId = visit.episode?.journey?.organization_id;
+      if (!organizationId) continue;
+
+      const visitAuthContext: AuthContext = {
+        ...SYSTEM_AUTH_CONTEXT,
+        organizationId,
+      };
+
+      try {
+        await this.visitsService.updateStatus(
+          visit.id,
+          { status: 'NO_SHOW' },
+          visitAuthContext,
+        );
+      } catch (err) {
+        this.logger.error(
+          `Failed to mark visit ${visit.id} as NO_SHOW`,
+          err instanceof Error ? err.stack : String(err),
+        );
+      }
     }
   }
 }
