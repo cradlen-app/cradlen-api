@@ -9,6 +9,7 @@ import { MedicationsService } from './medications.service';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
+import { MedicationWithStatsDto } from './dto/medication.dto';
 
 const callerOrg = 'org-A';
 
@@ -29,7 +30,13 @@ describe('MedicationsService', () => {
       findFirst: jest.Mock;
       create: jest.Mock;
       update: jest.Mock;
+      findMany: jest.Mock;
+      count: jest.Mock;
     };
+    prescriptionItem: { findMany: jest.Mock };
+    medicalRepMedication: { findMany: jest.Mock };
+    medicalRep: { findFirst: jest.Mock };
+    $transaction: jest.Mock;
   };
   let auth: { isOwner: jest.Mock; assertOwnerOnly: jest.Mock };
 
@@ -40,7 +47,15 @@ describe('MedicationsService', () => {
         findFirst: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
       },
+      prescriptionItem: { findMany: jest.fn().mockResolvedValue([]) },
+      medicalRepMedication: { findMany: jest.fn().mockResolvedValue([]) },
+      medicalRep: { findFirst: jest.fn().mockResolvedValue(null) },
+      $transaction: jest
+        .fn()
+        .mockImplementation((arr: Promise<unknown>[]) => Promise.all(arr)),
     };
     auth = {
       isOwner: jest.fn().mockResolvedValue(true),
@@ -152,6 +167,171 @@ describe('MedicationsService', () => {
       await expect(
         service.update('med-uuid', { name: 'edited' }, mockUser),
       ).resolves.toEqual({ id: 'med-uuid', name: 'edited' });
+    });
+  });
+
+  describe('findAll stats enrichment', () => {
+    const med1 = {
+      id: 'med-1',
+      organization_id: callerOrg,
+      code: 'MED1',
+      name: 'Drug A',
+      generic_name: null,
+      form: null,
+      strength: null,
+      added_by_id: 'profile-A',
+      is_deleted: false,
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+
+    it('returns total_prescriptions: 0 and empty arrays when no data', async () => {
+      db.$transaction.mockResolvedValue([[med1], 1]);
+      db.prescriptionItem.findMany.mockResolvedValue([]);
+      db.medicalRepMedication.findMany.mockResolvedValue([]);
+
+      const result = await service.findAll({}, mockUser);
+      const item = result.items[0] as MedicationWithStatsDto;
+
+      expect(item.total_prescriptions).toBe(0);
+      expect(item.top_prescribers).toEqual([]);
+      expect(item.medical_reps).toEqual([]);
+    });
+
+    it('counts prescription items per prescriber and sums total', async () => {
+      db.$transaction.mockResolvedValue([[med1], 1]);
+      db.prescriptionItem.findMany.mockResolvedValue([
+        {
+          medication_id: 'med-1',
+          prescription: {
+            prescribed_by_id: 'doc-1',
+            prescribed_by: {
+              user: { first_name: 'Alice', last_name: 'Smith' },
+            },
+          },
+        },
+        {
+          medication_id: 'med-1',
+          prescription: {
+            prescribed_by_id: 'doc-1',
+            prescribed_by: {
+              user: { first_name: 'Alice', last_name: 'Smith' },
+            },
+          },
+        },
+        {
+          medication_id: 'med-1',
+          prescription: {
+            prescribed_by_id: 'doc-2',
+            prescribed_by: { user: { first_name: 'Bob', last_name: 'Jones' } },
+          },
+        },
+      ]);
+      db.medicalRepMedication.findMany.mockResolvedValue([]);
+
+      const result = await service.findAll({}, mockUser);
+      const item = result.items[0] as MedicationWithStatsDto;
+
+      expect(item.total_prescriptions).toBe(3);
+      expect(item.top_prescribers).toHaveLength(2);
+      expect(item.top_prescribers[0]).toEqual({
+        profile_id: 'doc-1',
+        full_name: 'Alice Smith',
+        count: 2,
+      });
+      expect(item.top_prescribers[1]).toEqual({
+        profile_id: 'doc-2',
+        full_name: 'Bob Jones',
+        count: 1,
+      });
+    });
+
+    it('caps top_prescribers at 5 sorted by count descending', async () => {
+      db.$transaction.mockResolvedValue([[med1], 1]);
+      // 6 distinct prescribers with decreasing counts (6, 5, 4, 3, 2, 1)
+      db.prescriptionItem.findMany.mockResolvedValue(
+        Array.from({ length: 6 }, (_, i) =>
+          Array(6 - i).fill({
+            medication_id: 'med-1',
+            prescription: {
+              prescribed_by_id: `doc-${i}`,
+              prescribed_by: {
+                user: { first_name: `Doc${i}`, last_name: 'Test' },
+              },
+            },
+          }),
+        ).flat(),
+      );
+      db.medicalRepMedication.findMany.mockResolvedValue([]);
+
+      const result = await service.findAll({}, mockUser);
+      const item = result.items[0] as MedicationWithStatsDto;
+
+      expect(item.top_prescribers).toHaveLength(5);
+      expect(item.top_prescribers[0].count).toBeGreaterThanOrEqual(
+        item.top_prescribers[1].count,
+      );
+    });
+
+    it('attaches medical_reps from MedicalRepMedication', async () => {
+      db.$transaction.mockResolvedValue([[med1], 1]);
+      db.prescriptionItem.findMany.mockResolvedValue([]);
+      db.medicalRepMedication.findMany.mockResolvedValue([
+        {
+          medication_id: 'med-1',
+          medical_rep: {
+            id: 'rep-1',
+            full_name: 'Rep One',
+            company_name: 'Pharma A',
+          },
+        },
+        {
+          medication_id: 'med-1',
+          medical_rep: {
+            id: 'rep-2',
+            full_name: 'Rep Two',
+            company_name: 'Pharma B',
+          },
+        },
+      ]);
+
+      const result = await service.findAll({}, mockUser);
+      const item = result.items[0] as MedicationWithStatsDto;
+
+      expect(item.medical_reps).toHaveLength(2);
+      expect(item.medical_reps[0]).toEqual({
+        id: 'rep-1',
+        full_name: 'Rep One',
+        company_name: 'Pharma A',
+      });
+    });
+
+    it('returns empty page without making stats queries when no medications found', async () => {
+      db.$transaction.mockResolvedValue([[], 0]);
+
+      const result = await service.findAll({}, mockUser);
+
+      expect(result.items).toEqual([]);
+      expect(db.prescriptionItem.findMany).not.toHaveBeenCalled();
+      expect(db.medicalRepMedication.findMany).not.toHaveBeenCalled();
+    });
+
+    it('does not drop org-scope filter when search term is provided', async () => {
+      db.$transaction.mockResolvedValue([[med1], 1]);
+      db.prescriptionItem.findMany.mockResolvedValue([]);
+      db.medicalRepMedication.findMany.mockResolvedValue([]);
+
+      await service.findAll({ search: 'drug' }, mockUser);
+
+      const findManyCall = db.medication.findMany.mock.calls[0][0];
+      expect(findManyCall.where).toHaveProperty('AND');
+      expect(findManyCall.where.AND[0]).toHaveProperty('OR');
+      expect(findManyCall.where.AND[0].OR).toContainEqual({
+        organization_id: null,
+      });
+      expect(findManyCall.where.AND[0].OR).toContainEqual({
+        organization_id: callerOrg,
+      });
     });
   });
 });
