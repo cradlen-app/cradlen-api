@@ -1409,6 +1409,7 @@ Table patient_org_enrollments {
   organization_id String [not null]
   status PatientOrgEnrollmentStatus [not null, default: 'PENDING']
   created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
   activated_at DateTime
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
