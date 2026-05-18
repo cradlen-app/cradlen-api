@@ -44,6 +44,20 @@ export interface ConfigShape {
         }
       >;
     };
+    /**
+     * Signals the frontend renderer to fetch server-side suggestions as the
+     * user types. The field value is still a plain string — no ID resolution.
+     * Must be listed in `ALLOWED_AUTOCOMPLETE_ENDPOINTS` in field-type.registry.ts
+     * or seed-time validation will throw.
+     */
+    autocompleteEndpoint?: string;
+    /**
+     * Dot-path into the existing entity response (visit, patient, …) that the
+     * frontend should read in edit-mode to pre-populate this field's initial
+     * value. Pure renderer hint — no server-side effect.
+     * Example: `"specialty_code"` → reads `visit.specialty_code`.
+     */
+    prefillFrom?: string;
     [k: string]: unknown;
   };
   validation?: {

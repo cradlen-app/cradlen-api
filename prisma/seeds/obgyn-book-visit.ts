@@ -20,7 +20,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import type { Predicate } from '../../src/builder/rules/predicates.js';
 
 const TEMPLATE_CODE = 'obgyn_book_visit_ext';
-const TEMPLATE_VERSION = 1;
+const TEMPLATE_VERSION = 2;
 const EXTENSION_KEY = 'OBGYN';
 
 interface FieldSpec {
@@ -42,8 +42,8 @@ interface SectionSpec {
 
 const SECTIONS: SectionSpec[] = [
   {
-    code: 'clinical_info',
-    name: 'Clinical info',
+    code: 'notes',
+    name: 'Notes',
     visibleWhen: { eq: { visitor_type: 'PATIENT' } },
     exclusivityKey: {
       field: 'visitor_type',
@@ -60,55 +60,12 @@ const SECTIONS: SectionSpec[] = [
           path: 'chief_complaint_meta.categories',
         },
         config: {
-          validation: {
-            options: [
-              { code: 'PELVIC_PAIN', label: 'Pelvic pain' },
-              { code: 'ABNORMAL_BLEEDING', label: 'Abnormal bleeding' },
-              { code: 'MENSTRUAL_IRREGULARITY', label: 'Menstrual irregularity' },
-              { code: 'VAGINAL_DISCHARGE', label: 'Vaginal discharge' },
-              { code: 'INFERTILITY', label: 'Infertility concern' },
-              { code: 'PREGNANCY_FOLLOWUP', label: 'Pregnancy follow-up' },
-              { code: 'CONTRACEPTION', label: 'Contraception counselling' },
-              { code: 'POSTPARTUM_CHECK', label: 'Postpartum check' },
-              { code: 'OTHER', label: 'Other' },
-            ],
+          ui: {
+            optionsSource:
+              '/v1/chief-complaint-categories?specialty_code={specialty_code}&care_path_code={care_path_code}',
           },
+          validation: { maxItems: 20 },
         },
-      },
-      {
-        code: 'severity',
-        label: 'Severity',
-        type: 'SELECT',
-        binding: {
-          namespace: 'INTAKE',
-          path: 'chief_complaint_meta.severity',
-        },
-        config: {
-          validation: {
-            options: [
-              { code: 'mild', label: 'Mild' },
-              { code: 'moderate', label: 'Moderate' },
-              { code: 'severe', label: 'Severe' },
-            ],
-          },
-        },
-      },
-      {
-        code: 'duration',
-        label: 'Duration',
-        type: 'TEXT',
-        binding: {
-          namespace: 'INTAKE',
-          path: 'chief_complaint_meta.duration',
-        },
-        config: { validation: { maxLength: 256 } },
-      },
-      {
-        code: 'onset',
-        label: 'Onset',
-        type: 'TEXT',
-        binding: { namespace: 'INTAKE', path: 'chief_complaint_meta.onset' },
-        config: { validation: { maxLength: 256 } },
       },
       {
         code: 'chief_complaint_notes',

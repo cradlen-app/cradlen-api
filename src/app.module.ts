@@ -31,6 +31,7 @@ import { LabTestsModule } from '@core/clinical/lab-tests/lab-tests.module';
 import { ClinicalModule } from '@core/clinical/clinical/clinical.module';
 import { PatientHistoryModule } from '@core/clinical/patient-history/patient-history.module';
 import { CarePathsModule } from '@core/clinical/care-paths/care-paths.module';
+import { ChiefComplaintsModule } from '@core/clinical/chief-complaints/chief-complaints.module';
 import { CalendarModule } from '@core/calendar/calendar.module';
 import { ProceduresModule } from '@core/org/procedures/procedures.module';
 import { ObgynModule } from '@specialties/obgyn/obgyn.module';
@@ -80,6 +81,7 @@ import type { AppConfig } from './config/app.config';
     ClinicalModule,
     PatientHistoryModule,
     CarePathsModule,
+    ChiefComplaintsModule,
     CalendarModule,
     ProceduresModule,
     ObgynModule,
