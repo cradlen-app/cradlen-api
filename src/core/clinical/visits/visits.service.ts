@@ -506,11 +506,9 @@ export class VisitsService {
       }
 
       // SPOUSE link. Three paths:
-      //   1. `spouse_guardian_id` provided  → existing Guardian picked from
-      //      autocomplete; just ensure the PatientGuardian link exists.
-      //   2. `spouse_national_id` provided  → upsert Guardian by national_id.
-      //   3. Only `spouse_full_name`        → upsert PatientObgynHistory
-      //      .husband_name; no Guardian row.
+      //   1. `spouse_guardian_id` provided           → existing Guardian picked from autocomplete.
+      //   2. `spouse_national_id` provided           → upsert Guardian by national_id.
+      //   3. `spouse_full_name` only (no national_id) → update existing linked spouse or create new Guardian.
       let spouseGuardianId: string | null = null;
       if (resolvedMaritalStatus === 'MARRIED' && dto.spouse_guardian_id) {
         const picked = await tx.guardian.findFirst({
@@ -542,6 +540,35 @@ export class VisitsService {
           },
         });
         spouseGuardianId = spouse.id;
+      } else if (resolvedMaritalStatus === 'MARRIED' && dto.spouse_full_name) {
+        const existingSpouseLink = await tx.patientGuardian.findFirst({
+          where: {
+            patient_id: patient.id,
+            relation_to_patient: 'SPOUSE',
+            is_primary: true,
+            is_deleted: false,
+          },
+        });
+        if (existingSpouseLink) {
+          await tx.guardian.update({
+            where: { id: existingSpouseLink.guardian_id },
+            data: {
+              full_name: dto.spouse_full_name,
+              ...(dto.spouse_phone_number !== undefined && {
+                phone_number: dto.spouse_phone_number,
+              }),
+            },
+          });
+          spouseGuardianId = existingSpouseLink.guardian_id;
+        } else {
+          const spouse = await tx.guardian.create({
+            data: {
+              full_name: dto.spouse_full_name,
+              phone_number: dto.spouse_phone_number ?? null,
+            },
+          });
+          spouseGuardianId = spouse.id;
+        }
       }
 
       if (spouseGuardianId) {
@@ -1215,17 +1242,34 @@ export class VisitsService {
       });
       spouseGuardianId = spouse.id;
     } else if (dto.spouse_full_name) {
-      // Name-only update — store on PatientObgynHistory.husband_name (lazy
-      // upsert; no version bump/audit since this is bookkeeping, not a
-      // clinical mutation through the obgyn-history PATCH path).
-      await tx.patientObgynHistory.upsert({
-        where: { patient_id: patientId },
-        create: {
+      const existingSpouseLink = await tx.patientGuardian.findFirst({
+        where: {
           patient_id: patientId,
-          husband_name: dto.spouse_full_name,
+          relation_to_patient: 'SPOUSE',
+          is_primary: true,
+          is_deleted: false,
         },
-        update: { husband_name: dto.spouse_full_name },
       });
+      if (existingSpouseLink) {
+        await tx.guardian.update({
+          where: { id: existingSpouseLink.guardian_id },
+          data: {
+            full_name: dto.spouse_full_name,
+            ...(dto.spouse_phone_number !== undefined && {
+              phone_number: dto.spouse_phone_number,
+            }),
+          },
+        });
+        spouseGuardianId = existingSpouseLink.guardian_id;
+      } else {
+        const spouse = await tx.guardian.create({
+          data: {
+            full_name: dto.spouse_full_name,
+            phone_number: dto.spouse_phone_number ?? null,
+          },
+        });
+        spouseGuardianId = spouse.id;
+      }
     }
 
     if (spouseGuardianId) {

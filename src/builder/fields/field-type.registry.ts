@@ -82,6 +82,27 @@ function assertEntitySearch(config: ConfigShape, label: string) {
   }
 }
 
+const ALLOWED_AUTOCOMPLETE_ENDPOINTS: ReadonlySet<string> = new Set([
+  '/v1/medical-reps/companies',
+]);
+
+function assertTextConfig(config: ConfigShape, label: string) {
+  const endpoint = config.ui?.autocompleteEndpoint;
+  if (endpoint !== undefined) {
+    if (typeof endpoint !== 'string' || endpoint.length === 0) {
+      throw new InvalidConfigError(
+        `${label}: config.ui.autocompleteEndpoint must be a non-empty string`,
+      );
+    }
+    if (!ALLOWED_AUTOCOMPLETE_ENDPOINTS.has(endpoint)) {
+      throw new InvalidConfigError(
+        `${label}: config.ui.autocompleteEndpoint "${endpoint}" is not in the allowlist. ` +
+          `Add it to ALLOWED_AUTOCOMPLETE_ENDPOINTS in field-type.registry.ts.`,
+      );
+    }
+  }
+}
+
 function assertComputed(config: ConfigShape, label: string) {
   if (typeof config.logic?.formula !== 'string') {
     throw new InvalidConfigError(
@@ -97,7 +118,7 @@ function assertComputed(config: ConfigShape, label: string) {
 }
 
 export const FIELD_TYPES: Record<FormFieldType, FieldTypeDescriptor> = {
-  TEXT: { type: 'TEXT', allowedNamespaces: new Set(ALL_NS) },
+  TEXT: { type: 'TEXT', allowedNamespaces: new Set(ALL_NS), assertConfig: assertTextConfig },
   TEXTAREA: { type: 'TEXTAREA', allowedNamespaces: new Set(ALL_NS) },
   NUMBER: { type: 'NUMBER', allowedNamespaces: new Set(ALL_NS) },
   DECIMAL: { type: 'DECIMAL', allowedNamespaces: new Set(ALL_NS) },

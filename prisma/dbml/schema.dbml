@@ -960,6 +960,23 @@ Table care_path_episodes {
   }
 }
 
+Table chief_complaint_categories {
+  id String [pk]
+  specialty_code String [not null]
+  care_path_code String
+  code String [not null]
+  label String [not null]
+  order Int [not null, default: 0]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+
+  indexes {
+    (specialty_code, care_path_code, code) [unique]
+  }
+}
+
 Table patient_obgyn_histories {
   id String [pk]
   patient_id String [unique, not null]
