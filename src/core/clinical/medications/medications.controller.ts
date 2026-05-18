@@ -16,7 +16,7 @@ import { MedicationsService } from './medications.service';
 import { CreateMedicationDto } from './dto/create-medication.dto';
 import { UpdateMedicationDto } from './dto/update-medication.dto';
 import { ListMedicationsQueryDto } from './dto/list-medications-query.dto';
-import { MedicationDto } from './dto/medication.dto';
+import { MedicationDto, MedicationWithStatsDto } from './dto/medication.dto';
 import {
   ApiPaginatedResponse,
   ApiStandardResponse,
@@ -31,7 +31,7 @@ export class MedicationsController {
   constructor(private readonly medicationsService: MedicationsService) {}
 
   @Get()
-  @ApiPaginatedResponse(MedicationDto)
+  @ApiPaginatedResponse(MedicationWithStatsDto)
   findAll(
     @Query() query: ListMedicationsQueryDto,
     @CurrentUser() user: AuthContext,
