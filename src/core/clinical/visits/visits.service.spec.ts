@@ -466,7 +466,7 @@ describe('VisitsService', () => {
             status: 'PENDING',
             is_deleted: false,
           },
-          data: expect.objectContaining({ status: 'ACTIVE' }),
+          data: expect.objectContaining({ status: 'ACTIVE', activated_at: expect.any(Date) }),
         });
       });
 
