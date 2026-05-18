@@ -73,6 +73,12 @@ enum JourneyStatus {
   CANCELLED
 }
 
+enum PatientOrgEnrollmentStatus {
+  PENDING
+  ACTIVE
+  DISCHARGED
+}
+
 enum EpisodeStatus {
   PENDING
   ACTIVE
@@ -242,6 +248,7 @@ model Organization {
   medical_reps          MedicalRep[]
   medical_rep_visits    MedicalRepVisit[]
   calendar_events       CalendarEvent[]
+  patient_org_enrollments PatientOrgEnrollment[]
 
   @@index([status, is_deleted])
   @@map("organizations")
@@ -769,6 +776,7 @@ model Patient {
   guardian_record     Guardian?                     @relation("PatientGuardianRecord")
   obgyn_history       PatientObgynHistory?
   calendar_events     CalendarEvent[]
+  enrollments         PatientOrgEnrollment[]
 
   created_at DateTime  @default(now())
   updated_at DateTime  @updatedAt
@@ -1863,4 +1871,21 @@ model CalendarEventAssistant {
   @@unique([calendar_event_id, profile_id])
   @@index([profile_id])
   @@map("calendar_event_assistants")
+}
+
+model PatientOrgEnrollment {
+  id              String                     @id @default(uuid()) @db.Uuid
+  patient_id      String                     @db.Uuid
+  organization_id String                     @db.Uuid
+  status          PatientOrgEnrollmentStatus @default(PENDING)
+  created_at      DateTime                   @default(now())
+  activated_at    DateTime?
+  is_deleted      Boolean                    @default(false)
+  deleted_at      DateTime?
+
+  patient         Patient                    @relation(fields: [patient_id], references: [id], onDelete: Cascade)
+  organization    Organization               @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@index([patient_id, organization_id, is_deleted])
+  @@map("patient_org_enrollments")
 }
