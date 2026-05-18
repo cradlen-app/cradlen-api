@@ -146,10 +146,28 @@ describe('PatientsService', () => {
   });
 
   describe('findOne', () => {
-    it('returns patient when found', async () => {
-      db.patient.findUnique.mockResolvedValue(mockPatient);
+    it('returns patient when found (no spouse)', async () => {
+      db.patient.findUnique.mockResolvedValue({
+        ...mockPatient,
+        guardian_links: [],
+      });
       const result = await service.findOne('patient-uuid');
-      expect(result).toEqual(mockPatient);
+      expect(result).toMatchObject({ id: mockPatient.id, full_name: mockPatient.full_name });
+    });
+
+    it('returns patient with flat spouse fields when spouse linked', async () => {
+      const spouseGuardian = { id: 'guardian-uuid', full_name: 'Ahmed Ali', national_id: '99999', phone_number: '0101' };
+      db.patient.findUnique.mockResolvedValue({
+        ...mockPatient,
+        guardian_links: [{ guardian: spouseGuardian }],
+      });
+      const result = await service.findOne('patient-uuid');
+      expect(result).toMatchObject({
+        spouse_guardian_id: spouseGuardian.id,
+        spouse_full_name: spouseGuardian.full_name,
+        spouse_national_id: spouseGuardian.national_id,
+        spouse_phone_number: spouseGuardian.phone_number,
+      });
     });
 
     it('throws NotFoundException when not found', async () => {
