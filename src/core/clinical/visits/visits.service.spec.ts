@@ -507,27 +507,26 @@ describe('VisitsService', () => {
     it('soft-deletes PENDING enrollment when cascade fires and no other journeys remain', async () => {
       db.visit.findUnique.mockResolvedValue(scheduledVisit);
       db.patientEpisode.findUnique.mockResolvedValue({ journey_id: 'journey-uuid' });
-      db.$transaction.mockImplementation(
-        async (cb: (tx: typeof db) => Promise<unknown>) => {
-          db.visit.update.mockResolvedValue({ ...scheduledVisit, status: 'CANCELLED' });
-          // realCount=0, liveCount=0 — triggers cascade
-          db.visit.count
+      const tx = {
+        visit: {
+          update: jest.fn().mockResolvedValue({ ...scheduledVisit, status: 'CANCELLED' }),
+          count: jest.fn()
             .mockResolvedValueOnce(0)  // realCount
-            .mockResolvedValueOnce(0); // liveCount
-          db.visitEncounter = { updateMany: jest.fn() } as any;
-          db.visitVitals = { updateMany: jest.fn() } as any;
-          db.patientEpisode.updateMany = jest.fn();
-          db.patientJourney.update = jest.fn();
-          // remaining journeys after cascade = 0 → patient gets soft-deleted
-          db.patientJourney.count = jest.fn().mockResolvedValue(0);
-          db.patient.update = jest.fn();
-          return cb(db);
+            .mockResolvedValueOnce(0), // liveCount
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         },
-      );
+        visitEncounter: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        visitVitals: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        patientEpisode: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        patientJourney: { update: jest.fn().mockResolvedValue({}) },
+        patientOrgEnrollment: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        $executeRaw: jest.fn().mockResolvedValue(1),
+      };
+      db.$transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx));
 
       await service.updateStatus('visit-uuid', { status: 'CANCELLED' }, mockUser);
 
-      expect(db.patientOrgEnrollment.updateMany).toHaveBeenCalledWith(
+      expect(tx.patientOrgEnrollment.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
             patient_id: 'patient-uuid',
@@ -538,38 +537,68 @@ describe('VisitsService', () => {
           data: expect.objectContaining({ is_deleted: true }),
         }),
       );
-      expect(db.patient.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: 'patient-uuid' },
-          data: expect.objectContaining({ is_deleted: true }),
-        }),
-      );
+      expect(tx.$executeRaw).toHaveBeenCalled();
     });
 
     it('does not soft-delete patient when other journeys exist', async () => {
       db.visit.findUnique.mockResolvedValue(scheduledVisit);
       db.patientEpisode.findUnique.mockResolvedValue({ journey_id: 'journey-uuid' });
-      db.$transaction.mockImplementation(
-        async (cb: (tx: typeof db) => Promise<unknown>) => {
-          db.visit.update.mockResolvedValue({ ...scheduledVisit, status: 'CANCELLED' });
-          db.visit.count
-            .mockResolvedValueOnce(0)
-            .mockResolvedValueOnce(0);
-          db.visitEncounter = { updateMany: jest.fn() } as any;
-          db.visitVitals = { updateMany: jest.fn() } as any;
-          db.patientEpisode.updateMany = jest.fn();
-          db.patientJourney.update = jest.fn();
-          // patient has another journey at a different org → do not soft-delete
-          db.patientJourney.count = jest.fn().mockResolvedValue(1);
-          db.patient.update = jest.fn();
-          return cb(db);
+      const tx = {
+        visit: {
+          update: jest.fn().mockResolvedValue({ ...scheduledVisit, status: 'CANCELLED' }),
+          count: jest.fn()
+            .mockResolvedValueOnce(0)  // realCount
+            .mockResolvedValueOnce(0), // liveCount
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         },
-      );
+        visitEncounter: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        visitVitals: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        patientEpisode: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        patientJourney: { update: jest.fn().mockResolvedValue({}) },
+        patientOrgEnrollment: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        $executeRaw: jest.fn().mockResolvedValue(0), // NOT EXISTS returns false → no row updated
+      };
+      db.$transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx));
 
       await service.updateStatus('visit-uuid', { status: 'CANCELLED' }, mockUser);
 
-      expect(db.patientOrgEnrollment.updateMany).toHaveBeenCalled();
-      expect(db.patient.update).not.toHaveBeenCalled();
+      expect(tx.patientOrgEnrollment.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            patient_id: 'patient-uuid',
+            organization_id: 'org-uuid',
+            status: 'PENDING',
+            is_deleted: false,
+          }),
+        }),
+      );
+      expect(tx.$executeRaw).toHaveBeenCalled();
+    });
+
+    it('does not clean up enrollment when checked-in visits still exist (cascade not entered)', async () => {
+      db.visit.findUnique.mockResolvedValue(scheduledVisit);
+      db.patientEpisode.findUnique.mockResolvedValue({ journey_id: 'journey-uuid' });
+      const tx = {
+        visit: {
+          update: jest.fn().mockResolvedValue({ ...scheduledVisit, status: 'CANCELLED' }),
+          count: jest.fn()
+            .mockResolvedValueOnce(1)  // realCount > 0 — cascade not entered
+            .mockResolvedValueOnce(0), // liveCount (not reached)
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        },
+        visitEncounter: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        visitVitals: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        patientEpisode: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        patientJourney: { update: jest.fn().mockResolvedValue({}) },
+        patientOrgEnrollment: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        $executeRaw: jest.fn().mockResolvedValue(0),
+      };
+      db.$transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx));
+
+      await service.updateStatus('visit-uuid', { status: 'CANCELLED' }, mockUser);
+
+      expect(tx.patientOrgEnrollment.updateMany).not.toHaveBeenCalled();
+      expect(tx.$executeRaw).not.toHaveBeenCalled();
     });
   });
 

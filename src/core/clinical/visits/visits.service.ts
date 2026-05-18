@@ -1221,15 +1221,14 @@ export class VisitsService {
                 },
                 data: { is_deleted: true, deleted_at: now },
               });
-              const remainingJourneys = await tx.patientJourney.count({
-                where: { patient_id: patientId, is_deleted: false },
-              });
-              if (remainingJourneys === 0) {
-                await tx.patient.update({
-                  where: { id: patientId },
-                  data: { is_deleted: true, deleted_at: now },
-                });
-              }
+              await tx.$executeRaw`
+                UPDATE "patients" SET is_deleted = true, deleted_at = NOW()
+                WHERE id = ${patientId}::uuid
+                AND NOT EXISTS (
+                  SELECT 1 FROM "patient_journeys"
+                  WHERE patient_id = ${patientId}::uuid AND is_deleted = false
+                )
+              `;
             }
           }
         }
