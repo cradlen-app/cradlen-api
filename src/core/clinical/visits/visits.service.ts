@@ -695,6 +695,24 @@ export class VisitsService {
       return { visit, episode: episode, journey, patient };
     });
 
+    const existingEnrollment =
+      await this.prismaService.db.patientOrgEnrollment.findFirst({
+        where: {
+          patient_id: result.patient.id,
+          organization_id: result.journey.organization_id,
+          is_deleted: false,
+        },
+      });
+    if (!existingEnrollment) {
+      await this.prismaService.db.patientOrgEnrollment.create({
+        data: {
+          patient_id: result.patient.id,
+          organization_id: result.journey.organization_id,
+          status: 'PENDING',
+        },
+      });
+    }
+
     this.eventBus.publish('visit.booked', {
       assignedDoctorId: dto.assigned_doctor_id,
       branchId,

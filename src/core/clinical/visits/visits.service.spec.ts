@@ -107,6 +107,11 @@ describe('VisitsService', () => {
     profileBranch: { findFirst: jest.Mock };
     visitEncounter: { findUnique: jest.Mock; upsert: jest.Mock };
     visitVitals: { upsert: jest.Mock };
+    patientOrgEnrollment: {
+      findFirst: jest.Mock;
+      create: jest.Mock;
+      updateMany: jest.Mock;
+    };
     $transaction: jest.Mock;
   };
   let prismaMock: { db: typeof db };
@@ -133,6 +138,11 @@ describe('VisitsService', () => {
       profileBranch: { findFirst: jest.fn().mockResolvedValue({ id: 'pb-1' }) },
       visitEncounter: { findUnique: jest.fn(), upsert: jest.fn() },
       visitVitals: { upsert: jest.fn() },
+      patientOrgEnrollment: {
+        findFirst: jest.fn(),
+        create: jest.fn(),
+        updateMany: jest.fn(),
+      },
       $transaction: jest.fn(),
     };
     prismaMock = { db };
@@ -575,6 +585,75 @@ describe('VisitsService', () => {
           payload: expect.any(Object),
         }),
       );
+    });
+  });
+
+  describe('bookVisit enrollment', () => {
+    const bookDto = {
+      patient_id: 'patient-uuid',
+      assigned_doctor_id: 'doctor-uuid',
+      branch_id: 'branch-uuid',
+      specialty_code: 'OBGYN',
+      appointment_type: 'VISIT' as const,
+      priority: 'NORMAL' as const,
+      scheduled_at: new Date(Date.now() + 86400000).toISOString(),
+    };
+
+    beforeEach(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (db as any).profile = {
+        findFirst: jest.fn().mockResolvedValue({ id: 'doctor-uuid' }),
+      };
+      db.branch.findFirst.mockResolvedValue({ id: 'branch-uuid', organization_id: 'org-uuid' });
+      db.profileBranch.findFirst.mockResolvedValue({ id: 'pb-1' });
+      db.journeyTemplate.findFirst.mockResolvedValue({
+        ...mockTemplate,
+        episodes: [{ id: 'ep-template-uuid', name: 'General Consultation', order: 1 }],
+      });
+      db.patient.findUnique.mockResolvedValue(mockPatient);
+      db.patientJourney.findFirst.mockResolvedValue(mockJourney);
+      db.patientEpisode.findFirst.mockResolvedValue(mockEpisode);
+      db.visit.create.mockResolvedValue(mockVisit);
+      db.visit.findMany.mockResolvedValue([]);
+      db.$transaction.mockImplementation(
+        async (cb: (tx: typeof db) => Promise<unknown>) => {
+          const result = await cb(db);
+          return result;
+        },
+      );
+    });
+
+    it('creates a PENDING enrollment when no enrollment exists for this patient+org', async () => {
+      db.patientOrgEnrollment.findFirst.mockResolvedValue(null);
+      db.patientOrgEnrollment.create.mockResolvedValue({ id: 'enroll-uuid' });
+
+      await service.bookVisit(bookDto, mockUser);
+
+      expect(db.patientOrgEnrollment.findFirst).toHaveBeenCalledWith({
+        where: {
+          patient_id: mockPatient.id,
+          organization_id: mockJourney.organization_id,
+          is_deleted: false,
+        },
+      });
+      expect(db.patientOrgEnrollment.create).toHaveBeenCalledWith({
+        data: {
+          patient_id: mockPatient.id,
+          organization_id: mockJourney.organization_id,
+          status: 'PENDING',
+        },
+      });
+    });
+
+    it('skips enrollment creation when enrollment already exists (returning patient)', async () => {
+      db.patientOrgEnrollment.findFirst.mockResolvedValue({
+        id: 'existing-enroll-uuid',
+        status: 'ACTIVE',
+      });
+
+      await service.bookVisit(bookDto, mockUser);
+
+      expect(db.patientOrgEnrollment.create).not.toHaveBeenCalled();
     });
   });
 
