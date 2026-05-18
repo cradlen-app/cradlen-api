@@ -137,6 +137,23 @@ export class MedicalRepService {
     return paginated(reps, { page, limit, total });
   }
 
+  async findCompanies(search: string, organizationId: string): Promise<string[]> {
+    const rows = await this.prismaService.db.medicalRep.findMany({
+      where: {
+        organization_id: organizationId,
+        is_deleted: false,
+        ...(search
+          ? { company_name: { contains: search, mode: 'insensitive' } }
+          : {}),
+      },
+      select: { company_name: true },
+      distinct: ['company_name'],
+      orderBy: { company_name: 'asc' },
+      take: 20,
+    });
+    return rows.map((r) => r.company_name).filter((n): n is string => !!n);
+  }
+
   async findOne(id: string, user: AuthContext) {
     const rep = await this.prismaService.db.medicalRep.findFirst({
       where: { id, organization_id: user.organizationId, is_deleted: false },
