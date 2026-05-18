@@ -6,6 +6,6 @@ import { RendererModule } from '../renderer/renderer.module.js';
 @Module({
   imports: [TemplatesModule, RendererModule],
   providers: [TemplateValidator],
-  exports: [TemplateValidator],
+  exports: [TemplateValidator, TemplatesModule],
 })
 export class ValidatorModule {}

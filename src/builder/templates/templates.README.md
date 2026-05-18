@@ -37,7 +37,16 @@ discriminator). PATIENT → `/v1/visits/book` with the PATIENT/VISIT/INTAKE/
 GUARDIAN/LOOKUP→patient_id fields. MEDICAL_REP → `/v1/medical-rep-visits/book`
 with the MEDICAL_REP/LOOKUP→medical_rep_id fields.
 
-## Search-field lifecycle (ENTITY_SEARCH)
+## Search-field lifecycle
+
+Two related field-level constructs:
+
+1. A hidden `ENTITY_SEARCH` field bound to a `LOOKUP` path (e.g. `patient_id`,
+   `guardian_id`, `medical_rep_id`). It receives the resolved entity id.
+2. A visible `TEXT` field bound to a creation namespace (`PATIENT`,
+   `GUARDIAN`, `MEDICAL_REP`) carrying `config.ui.searchEntity` —
+   `{ kind, idTarget, fillFields?, allowCreate? }`. This is the field the user
+   types into; the autocomplete dropdown is rendered against it.
 
 Search fields are **dual-state**. The frontend MUST keep two buckets and
 never merge them:
@@ -51,9 +60,21 @@ searchState:  Record<fieldCode, {
 }>
 ```
 
-Only `resolvedEntityId.id` is submitted — placed at the field's
+Two modes, gated by `searchEntity.allowCreate` on the visible TEXT field:
+
+**lookup-only** (`allowCreate` absent/false). The pure-lookup case (e.g.
+the hidden `ENTITY_SEARCH` LOOKUP field on its own). Only
+`resolvedEntityId.id` is submitted — placed at the LOOKUP field's
 `binding.path`. `transientValue` is discarded on blur-without-selection,
 on submit, and on discriminator change.
+
+**lookup-or-create** (`allowCreate: true`, namespace `PATIENT | GUARDIAN |
+MEDICAL_REP`). If `resolvedEntityId` is set, submit the id to `idTarget`
+(LOOKUP) and suppress the host TEXT field plus its `fillFields` from the
+payload (existing `suppressedByResolvedLookup` rule). Otherwise submit
+`transientValue` at the host field's own `binding.path` so the server
+takes the "new entity" branch. Sibling create-path required fields (e.g.
+`national_id`, `company_name`) are enforced by the backend, not the DSL.
 
 ## Discriminator state-reset rule
 
@@ -125,3 +146,31 @@ Adding a new extension version means re-seeding the bundle (see
 - Active extension: `WHERE parent_template_id=? AND extension_key=? AND is_active AND NOT is_deleted`.
 - DB enforces both via partial unique indexes; the symmetry CHECK guarantees
   `(parent_template_id IS NULL) = (extension_key IS NULL)`.
+
+## Unified bulk PATCH + repeatable sections (PATIENT_HISTORY scope)
+
+The `obgyn_patient_history` template (FormScope = `PATIENT_HISTORY`) and any
+future history templates use a single bulk PATCH endpoint with optimistic
+concurrency. `FormSection.is_repeatable=true` marks sections whose body lives
+inside an array on the unified DTO; `section.code` doubles as the array key.
+
+| Concern                            | Convention                                                            |
+|------------------------------------|-----------------------------------------------------------------------|
+| Write endpoint                     | `PATCH /patients/:id/obgyn-history` (single transactional writer)     |
+| Concurrency token                  | `If-Match: "version:<N>"` against `PatientObgynHistory.version`       |
+| Repeatable section body shape      | `{ [section.code]: Array<{ id?, ...row }> }`                          |
+| Row diff (per repeatable section)  | id present → update; id absent → create; live id missing → soft-delete |
+| Sending key as `[]`                | clears the collection                                                 |
+| Omitting the key                   | leaves the collection untouched                                       |
+| Singleton JSON columns             | sent as nested objects on the same body (e.g. `gynecological_baseline.*`) |
+| Per-section "notes" (eye icon)     | `PatientHistoryNote` keyed on `section_code = section.code`, via `POST/PATCH /patients/:id/history/notes` |
+| Granular per-row routes (`/pregnancies`, `/contraceptives`, `/medications`, `/allergies`, `/non-gyn-surgeries`) | **read-only** (GET only). All writes flow through the unified PATCH so the singleton `version` token covers them. |
+
+PATIENT_OBGYN_HISTORY paths use `<resource>.<column>` for repeatable child
+collections (e.g. `pregnancies.birth_date`) — no `[]` in the path, since the
+section's `is_repeatable=true` flag carries the array semantics.
+
+`ENTITY_SEARCH` fields in this scope carry their catalog kind under
+`config.logic.entity` (e.g. `'medication'`) and bind to the column that
+stores the resolved foreign key (e.g. `medications.medication_id`). The
+frontend consults `ENTITIES[<kind>]` for the search endpoint.

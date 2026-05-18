@@ -12,6 +12,38 @@ export interface ConfigShape {
     helpText?: string;
     optionsSource?: string;
     derivedFrom?: string[];
+    hidden?: boolean;
+    /**
+     * Turns a plain TEXT field into an autocomplete that searches an entity
+     * registered in `ENTITIES`. On pick, the frontend fills the form id field
+     * named by `idTarget` with the selected entity's id and copies the entity
+     * fields listed in `fillFields` onto the matching form-field codes.
+     *
+     * `allowCreate` opts the field into lookup-or-create semantics: when the
+     * user types a value and submits without picking a suggestion, the typed
+     * text is preserved at the host field's own `binding.path` so the server
+     * can take the "new entity" branch. When `allowCreate` is absent/false,
+     * the typed text is discarded on blur-without-selection (lookup-only).
+     */
+    searchEntity?: {
+      kind: string;
+      idTarget: string;
+      fillFields?: Record<string, string>;
+      allowCreate?: boolean;
+      /**
+       * Resolves a sibling ENTITY_SEARCH field from the same raw payload. Keyed
+       * by the target search field's `code`. Used e.g. to pre-resolve the
+       * spouse guardian search when an existing patient is picked.
+       */
+      fillEntitySearches?: Record<
+        string,
+        {
+          idSource: string;
+          labelSource: string;
+          fillFields?: Record<string, string>;
+        }
+      >;
+    };
     [k: string]: unknown;
   };
   validation?: {

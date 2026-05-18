@@ -19,7 +19,6 @@ export class PatientsService {
     return this.prismaService.db.patient.create({
       data: {
         full_name: dto.full_name,
-        husband_name: dto.husband_name ?? null,
         date_of_birth: new Date(dto.date_of_birth),
         national_id: dto.national_id,
         phone_number: dto.phone_number,
@@ -30,7 +29,7 @@ export class PatientsService {
 
   async findAll(query: ListPatientsQueryDto, user: AuthContext) {
     const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 11;
     const isClinicianRole =
       user.roles.includes('DOCTOR') || user.roles.includes('OWNER');
 
@@ -65,11 +64,27 @@ export class PatientsService {
               status: 'ACTIVE',
               is_deleted: false,
             },
+            orderBy: { started_at: 'desc' },
             take: 1,
             include: {
               episodes: {
                 where: { is_deleted: false },
                 orderBy: { order: 'asc' },
+              },
+              care_path: { select: { code: true } },
+            },
+          },
+          guardian_links: {
+            where: { is_deleted: false, relation_to_patient: 'SPOUSE' },
+            take: 1,
+            include: {
+              guardian: {
+                select: {
+                  id: true,
+                  full_name: true,
+                  national_id: true,
+                  phone_number: true,
+                },
               },
             },
           },
@@ -79,10 +94,28 @@ export class PatientsService {
     ]);
 
     const shaped = patients.map((patient) => {
-      const { journeys, ...rest } = patient;
+      const { journeys, guardian_links, ...rest } = patient;
       const activeJourney = journeys[0] ?? null;
+      const activeCarePathCode = activeJourney?.care_path?.code;
+      const carePathField = activeCarePathCode
+        ? { active_care_path_code: activeCarePathCode }
+        : {};
+      const spouse = guardian_links[0]?.guardian ?? null;
+      const spouseFields = spouse
+        ? {
+            spouse_guardian_id: spouse.id,
+            spouse_full_name: spouse.full_name,
+            spouse_national_id: spouse.national_id,
+            spouse_phone_number: spouse.phone_number,
+          }
+        : {};
       if (isClinicianRole) {
-        return { ...rest, active_journey: activeJourney };
+        return {
+          ...rest,
+          active_journey: activeJourney,
+          ...carePathField,
+          ...spouseFields,
+        };
       }
       return {
         ...rest,
@@ -93,6 +126,8 @@ export class PatientsService {
               order: e.order,
             }))
           : [],
+        ...carePathField,
+        ...spouseFields,
       };
     });
 
@@ -111,7 +146,7 @@ export class PatientsService {
     );
 
     const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
+    const limit = query.limit ?? 11;
 
     const journeyWhere = {
       organization_id: user.organizationId,
@@ -122,10 +157,19 @@ export class PatientsService {
       }),
     };
 
+    // F5 — a patient counts as "in this org" only after a visit at this branch
+    // has actually been checked in. Pre-checkin bookings (and pure cancels)
+    // are not surfaced in the org's branch patient list.
     const branchVisitFilter = {
       some: {
         is_deleted: false,
-        visits: { some: { branch_id: branchId, is_deleted: false } },
+        visits: {
+          some: {
+            branch_id: branchId,
+            is_deleted: false,
+            checked_in_at: { not: null },
+          },
+        },
       },
     };
 
@@ -224,6 +268,24 @@ export class PatientsService {
   async findOne(id: string) {
     const patient = await this.prismaService.db.patient.findUnique({
       where: { id, is_deleted: false },
+      include: {
+        guardian_links: {
+          where: {
+            is_deleted: false,
+            relation_to_patient: 'SPOUSE',
+          },
+          include: {
+            guardian: {
+              select: {
+                id: true,
+                full_name: true,
+                national_id: true,
+                phone_number: true,
+              },
+            },
+          },
+        },
+      },
     });
     if (!patient) throw new NotFoundException(`Patient ${id} not found`);
     return patient;
@@ -235,9 +297,6 @@ export class PatientsService {
       where: { id },
       data: {
         ...(dto.full_name !== undefined && { full_name: dto.full_name }),
-        ...(dto.husband_name !== undefined && {
-          husband_name: dto.husband_name,
-        }),
         ...(dto.date_of_birth !== undefined && {
           date_of_birth: new Date(dto.date_of_birth),
         }),

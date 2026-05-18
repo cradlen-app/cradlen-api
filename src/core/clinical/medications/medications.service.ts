@@ -28,6 +28,23 @@ export class MedicationsService {
   async findAll(query: ListMedicationsQueryDto, user: AuthContext) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 50;
+
+    if (query.medical_rep_id) {
+      const rep = await this.prismaService.db.medicalRep.findFirst({
+        where: {
+          id: query.medical_rep_id,
+          organization_id: user.organizationId,
+          is_deleted: false,
+        },
+        select: { id: true },
+      });
+      if (!rep) {
+        throw new BadRequestException(
+          `Medical rep ${query.medical_rep_id} is not available to this organization`,
+        );
+      }
+    }
+
     const where: Prisma.MedicationWhereInput = {
       is_deleted: false,
       AND: [

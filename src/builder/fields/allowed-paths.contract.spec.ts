@@ -146,6 +146,9 @@ describe('ALLOWED_PATHS ↔ DTO contract', () => {
       for (const path of ALLOWED_PATHS.VISIT) {
         // Visit.notes is service-side only (status updates) — not on book payload.
         if (path === 'notes') continue;
+        // Visit.follow_up_date is set post-booking via the unified Examination
+        // tab PATCH (`/v1/visits/:id/examination`), not at booking time.
+        if (path === 'follow_up_date') continue;
         assertPathLandsOnDto(path, bookVisitProps, `VISIT.${path}`);
       }
     });
@@ -177,15 +180,33 @@ describe('ALLOWED_PATHS ↔ DTO contract', () => {
     it('LOOKUP paths are submitted as top-level DTO properties (resolved IDs)', () => {
       expect(bookVisitProps.has('patient_id')).toBe(true);
       expect(bookRepProps.has('medical_rep_id')).toBe(true);
+      // guardian_id lands on BookVisitDto as spouse_guardian_id (the
+      // autocomplete-resolved id for the spouse picker).
+      expect(bookVisitProps.has('spouse_guardian_id')).toBe(true);
     });
 
-    it('SYSTEM paths are NOT on any DTO (never persisted)', () => {
+    it('SYSTEM paths land on both wire DTOs (pinned discriminator values)', () => {
+      // SYSTEM fields are still never PERSISTED, but they ARE on the wire so
+      // the server-side TemplateValidator can evaluate visitor_type and
+      // specialty_code-keyed predicates against the submitted payload.
+      // The booking endpoints pin visitor_type to a literal value via @Equals.
       for (const path of ALLOWED_PATHS.SYSTEM) {
-        expect(bookVisitProps.has(path)).toBe(false);
-        expect(bookRepProps.has(path)).toBe(false);
+        if (path === 'visitor_type') {
+          expect(bookVisitProps.has(path)).toBe(true);
+          expect(bookRepProps.has(path)).toBe(true);
+        } else if (path === 'specialty_code') {
+          expect(bookVisitProps.has(path)).toBe(true);
+          // specialty_code is patient-side only — medical-rep bookings have
+          // no specialty context.
+        }
       }
     });
 
+    // TODO(obgyn-history): PATIENT_OBGYN_HISTORY is not introspected here yet
+    // because it spans `UpdateObgynHistoryDto` plus five nested row DTOs
+    // (PregnancyRowDto, ContraceptiveRowDto, ...). Wiring DTO introspection
+    // for it lands together with TemplateValidator enforcement on the
+    // /patients/:id/obgyn-history endpoint.
     it('COMPUTED leaf paths are NOT decorated on the wire DTOs (server recomputes them)', () => {
       // The "container" namespace (e.g. UpsertVitalsDto.vitals exists on
       // BookVisitDto via VisitIntakeFieldsDto), but the COMPUTED leaf field

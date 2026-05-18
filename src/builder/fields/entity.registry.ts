@@ -49,6 +49,17 @@ export const ENTITIES = {
     submitTargetNamespace: 'LOOKUP',
     submitTargetPath: 'medical_rep_id',
   },
+  guardian: {
+    kind: 'guardian',
+    searchEndpoint: '/v1/guardians?search=',
+    resultShape: {
+      idKey: 'id',
+      labelKeys: ['full_name'],
+      subtitleKeys: ['national_id', 'phone_number'],
+    },
+    submitTargetNamespace: 'LOOKUP',
+    submitTargetPath: 'guardian_id',
+  },
   doctor: {
     kind: 'doctor',
     // Filtered by an OBGYN/OTHER_DOCTOR job function at the endpoint.
@@ -60,6 +71,17 @@ export const ENTITIES = {
     },
     submitTargetNamespace: 'VISIT',
     submitTargetPath: 'assigned_doctor_id',
+  },
+  medication: {
+    kind: 'medication',
+    searchEndpoint: '/v1/medications?search=',
+    resultShape: {
+      idKey: 'id',
+      labelKeys: ['name'],
+      subtitleKeys: ['code'],
+    },
+    submitTargetNamespace: 'PATIENT_OBGYN_HISTORY',
+    submitTargetPath: 'medications.medication_id',
   },
 } as const satisfies Record<string, EntityDescriptor>;
 

@@ -22,6 +22,7 @@ import { SpecialtiesModule } from '@core/org/specialties/specialties.module';
 import { JobFunctionsModule } from '@core/org/job-functions/job-functions.module';
 import { JourneyTemplatesModule } from '@core/clinical/journey-templates/journey-templates.module';
 import { PatientsModule } from '@core/patient/patients/patients.module';
+import { GuardiansModule } from '@core/patient/guardians/guardians.module';
 import { JourneysModule } from '@core/clinical/journeys/journeys.module';
 import { VisitsModule } from '@core/clinical/visits/visits.module';
 import { MedicalRepModule } from '@core/clinical/medical-rep/medical-rep.module';
@@ -30,6 +31,8 @@ import { LabTestsModule } from '@core/clinical/lab-tests/lab-tests.module';
 import { ClinicalModule } from '@core/clinical/clinical/clinical.module';
 import { PatientHistoryModule } from '@core/clinical/patient-history/patient-history.module';
 import { CarePathsModule } from '@core/clinical/care-paths/care-paths.module';
+import { CalendarModule } from '@core/calendar/calendar.module';
+import { ProceduresModule } from '@core/org/procedures/procedures.module';
 import { ObgynModule } from '@specialties/obgyn/obgyn.module';
 import { TemplatesModule } from '@builder/templates/templates.module.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -68,6 +71,7 @@ import type { AppConfig } from './config/app.config';
     JobFunctionsModule,
     JourneyTemplatesModule,
     PatientsModule,
+    GuardiansModule,
     JourneysModule,
     VisitsModule,
     MedicalRepModule,
@@ -76,6 +80,8 @@ import type { AppConfig } from './config/app.config';
     ClinicalModule,
     PatientHistoryModule,
     CarePathsModule,
+    CalendarModule,
+    ProceduresModule,
     ObgynModule,
     TemplatesModule,
   ],

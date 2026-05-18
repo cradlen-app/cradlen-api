@@ -59,7 +59,7 @@ export class ProfilesService {
         })),
         status: profile.organization.status,
       },
-      roles: profile.roles.map((item) => item.role.name),
+      roles: profile.roles.map((item) => item.role.code),
       branches: profile.branches.map((item) => ({
         id: item.branch.id,
         name: item.branch.name,
@@ -183,7 +183,7 @@ export class ProfilesService {
       phone_number: profile.user.phone_number,
       executive_title: profile.executive_title,
       engagement_type: profile.engagement_type,
-      roles: profile.roles.map((item) => item.role.name),
+      roles: profile.roles.map((item) => item.role.code),
       organization: {
         id: profile.organization.id,
         name: profile.organization.name,

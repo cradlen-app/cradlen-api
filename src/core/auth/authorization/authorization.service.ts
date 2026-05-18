@@ -47,7 +47,7 @@ export class AuthorizationService {
       profileId,
       organizationId,
       activeBranchId,
-      roles: profile.roles.map((item) => item.role.name),
+      roles: profile.roles.map((item) => item.role.code),
       branchIds,
     };
   }
@@ -312,13 +312,13 @@ export class AuthorizationService {
     if (!roleIds.length) return;
     if (await this.isOwner(callerProfileId, organizationId)) return;
     const privileged = await this.prismaService.db.role.findMany({
-      where: { id: { in: roleIds }, name: { in: ['OWNER', 'BRANCH_MANAGER'] } },
-      select: { name: true },
+      where: { id: { in: roleIds }, code: { in: ['OWNER', 'BRANCH_MANAGER'] } },
+      select: { code: true },
     });
     if (privileged.length) {
       throw new ForbiddenException(
         `Only OWNER can assign privileged roles: ${privileged
-          .map((r) => r.name)
+          .map((r) => r.code)
           .join(', ')}`,
       );
     }

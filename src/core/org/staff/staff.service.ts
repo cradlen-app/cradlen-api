@@ -20,11 +20,26 @@ import {
   STAFF_ROLE_NAMES,
   type BranchScheduleDto,
   type CreateStaffDto,
+  type ListStaffQueryDto,
   type UpdateStaffDto,
 } from './dto/staff.dto.js';
 import { persistSchedules } from './schedule.helpers.js';
+import { minutesToHhmm } from './shift-time.helpers.js';
 
 const STAFF_EMAIL_DOMAIN = 'cradlen.com';
+
+/**
+ * JobFunction codes that count as "doctors" for the `doctors_only=true`
+ * staff filter — used by the book-visit `assigned_doctor` picker. Nurses
+ * and assistants are clinical (`is_clinical=true`) but NOT doctors, so we
+ * filter by these explicit codes rather than the `is_clinical` flag.
+ */
+const DOCTOR_JOB_FUNCTION_CODES: string[] = [
+  'OBGYN',
+  'ANESTHESIOLOGIST',
+  'PEDIATRICIAN',
+  'OTHER_DOCTOR',
+];
 
 interface ResolvedAccess {
   jobFunctions: JobFunction[];
@@ -156,13 +171,23 @@ export class StaffService {
   async listStaff(
     profileId: string,
     organizationId: string,
-    branchId?: string,
-    role?: string,
-    page = 1,
-    limit = 20,
-    scope?: 'org' | 'mine',
-    clinical?: boolean,
+    query: ListStaffQueryDto = {},
   ) {
+    const {
+      branch_id: branchId,
+      role,
+      scope,
+      clinical,
+      doctors_only: doctorsOnly,
+      specialty_code: specialtyCode,
+      search,
+      job_function_codes: jobFunctionCodes,
+      engagement_type: engagementType,
+      executive_title: executiveTitle,
+    } = query;
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 11;
+
     await this.authorizationService.assertCanViewStaff(
       profileId,
       organizationId,
@@ -207,11 +232,50 @@ export class StaffService {
       where.branches = { some: { branch_id: { in: callerBranches } } };
     }
     if (role) {
-      where.roles = { some: { role: { name: role.toUpperCase() } } };
+      where.roles = { some: { role: { code: role.toUpperCase() } } };
     }
-    if (clinical === true) {
-      where.job_functions = {
+
+    const jobFunctionFilters: Prisma.ProfileJobFunctionListRelationFilter[] =
+      [];
+    if (doctorsOnly === true) {
+      jobFunctionFilters.push({
+        some: { job_function: { code: { in: DOCTOR_JOB_FUNCTION_CODES } } },
+      });
+    } else if (clinical === true) {
+      jobFunctionFilters.push({
         some: { job_function: { is_clinical: true } },
+      });
+    }
+    if (jobFunctionCodes?.length) {
+      jobFunctionFilters.push({
+        some: { job_function: { code: { in: jobFunctionCodes } } },
+      });
+    }
+    if (jobFunctionFilters.length === 1) {
+      where.job_functions = jobFunctionFilters[0];
+    } else if (jobFunctionFilters.length > 1) {
+      where.AND = jobFunctionFilters.map((f) => ({ job_functions: f }));
+    }
+
+    if (specialtyCode) {
+      where.specialty_links = {
+        some: { specialty: { code: specialtyCode, is_deleted: false } },
+      };
+    }
+    if (engagementType) {
+      where.engagement_type = engagementType;
+    }
+    if (executiveTitle) {
+      where.executive_title = executiveTitle;
+    }
+    if (search) {
+      where.user = {
+        OR: [
+          { first_name: { contains: search, mode: 'insensitive' } },
+          { last_name: { contains: search, mode: 'insensitive' } },
+          { email: { contains: search, mode: 'insensitive' } },
+          { phone_number: { contains: search, mode: 'insensitive' } },
+        ],
       };
     }
 
@@ -574,7 +638,7 @@ export class StaffService {
       branch_id: string;
       days: {
         day_of_week: string;
-        shifts: { start_time: string; end_time: string }[];
+        shifts: { start_minute: number; end_minute: number }[];
       }[];
     }[];
   }) {
@@ -610,8 +674,8 @@ export class StaffService {
         days: ws.days.map((d) => ({
           day_of_week: d.day_of_week,
           shifts: d.shifts.map((s) => ({
-            start_time: s.start_time,
-            end_time: s.end_time,
+            start_time: minutesToHhmm(s.start_minute),
+            end_time: minutesToHhmm(s.end_minute),
           })),
         })),
       })),
