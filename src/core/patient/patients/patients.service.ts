@@ -270,10 +270,7 @@ export class PatientsService {
       where: { id, is_deleted: false },
       include: {
         guardian_links: {
-          where: {
-            is_deleted: false,
-            relation_to_patient: 'SPOUSE',
-          },
+          where: { is_deleted: false, relation_to_patient: 'SPOUSE' },
           include: {
             guardian: {
               select: {
@@ -288,7 +285,19 @@ export class PatientsService {
       },
     });
     if (!patient) throw new NotFoundException(`Patient ${id} not found`);
-    return patient;
+    const { guardian_links, ...rest } = patient;
+    const spouse = guardian_links[0]?.guardian ?? null;
+    return {
+      ...rest,
+      ...(spouse
+        ? {
+            spouse_guardian_id: spouse.id,
+            spouse_full_name: spouse.full_name,
+            spouse_national_id: spouse.national_id,
+            spouse_phone_number: spouse.phone_number,
+          }
+        : {}),
+    };
   }
 
   async update(id: string, dto: UpdatePatientDto) {

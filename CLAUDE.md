@@ -23,6 +23,10 @@ npm run test:integration # ./test/jest-integration.json
 npx jest src/core/health/health.service.spec.ts
 npx jest -t 'descriptive test name fragment'
 
+# Test layout: unit tests are co-located as *.spec.ts next to source under src/.
+# Integration tests (test/jest-integration.json) and e2e (test/jest-e2e.json) live under test/.
+# Integration tests expect a .env.test override of DATABASE_URL — create one before running.
+
 # Code quality
 npm run lint             # ESLint with --fix
 npm run format           # Prettier
@@ -44,7 +48,7 @@ npm run seed:fixtures                                # 3 demo orgs (jasmin, jana
 
 ```
 src/
-├── main.ts                   # First import is '@infrastructure/monitoring/sentry' (must stay first)
+├── main.ts                   # First import is '@infrastructure/monitoring/sentry' (must stay first — Sentry's instrumentation must register before any other module is loaded)
 ├── app.module.ts             # Wires Sentry + MessagingModule + ConfigModule + Throttler + every core module; registers JwtAuthGuard + ThrottlerGuard globally
 ├── common/                   # Foundation: decorators, filters, guards, interceptors, pipes, swagger helpers, paginated() utility
 ├── config/                   # @nestjs/config factories — env var schemas (app, auth, database)
@@ -284,7 +288,7 @@ Core entities:
 
 All models have UUID primary keys, `created_at` / `updated_at`, and soft-delete fields. Lookup tables (`Role`, `JobFunction`, `SubscriptionPlan`, `Specialty`, `Procedure`) are seed-only — `prisma/seed.ts` is the source of truth, runs via `npx prisma db seed`.
 
-`prisma/seeds/` holds self-contained per-feature seed modules called by `prisma/seed.ts`. Convention: each module is idempotent (upserts keyed on natural keys), validates its own input shape via the builder validators before any DB write, and ends with an activation transaction when relevant (e.g. flipping `FormTemplate.is_active`). See `prisma/seeds/obgyn-book-visit.ts` for the canonical example.
+`prisma/seeds/` holds self-contained per-feature seed modules called by `prisma/seed.ts`. Convention: each module is idempotent (upserts keyed on natural keys), validates its own input shape via the builder validators before any DB write, and ends with an activation transaction when relevant (e.g. flipping `FormTemplate.is_active`). See `prisma/seeds/obgyn-book-visit.ts` for the canonical example. Ordering matters: `prisma/seed.ts` runs lookup seeds (roles, job functions, plans, specialties, procedures) before feature seeds — register new seed modules there so dependencies resolve.
 
 `prisma/seed-fixtures.ts` builds three demo organizations (jasmin, janah, amshag) with cross-org doctors. Idempotent. Refuses to run when `NODE_ENV=production`.
 
