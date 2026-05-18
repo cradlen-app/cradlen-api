@@ -8,6 +8,7 @@ CREATE TABLE "patient_org_enrollments" (
     "organization_id" UUID NOT NULL,
     "status" "PatientOrgEnrollmentStatus" NOT NULL DEFAULT 'PENDING',
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT NOW(),
     "activated_at" TIMESTAMP(3),
     "is_deleted" BOOLEAN NOT NULL DEFAULT false,
     "deleted_at" TIMESTAMP(3),

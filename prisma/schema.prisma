@@ -1879,6 +1879,7 @@ model PatientOrgEnrollment {
   organization_id String                     @db.Uuid
   status          PatientOrgEnrollmentStatus @default(PENDING)
   created_at      DateTime                   @default(now())
+  updated_at      DateTime                   @updatedAt
   activated_at    DateTime?
   is_deleted      Boolean                    @default(false)
   deleted_at      DateTime?
