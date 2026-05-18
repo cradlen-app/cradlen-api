@@ -1208,6 +1208,29 @@ export class VisitsService {
               },
             });
             didCascade = true;
+
+            const patientId = visit.episode?.journey?.patient?.id;
+            const orgId = visit.episode?.journey?.organization_id;
+            if (patientId && orgId) {
+              await tx.patientOrgEnrollment.updateMany({
+                where: {
+                  patient_id: patientId,
+                  organization_id: orgId,
+                  status: 'PENDING',
+                  is_deleted: false,
+                },
+                data: { is_deleted: true, deleted_at: now },
+              });
+              const remainingJourneys = await tx.patientJourney.count({
+                where: { patient_id: patientId, is_deleted: false },
+              });
+              if (remainingJourneys === 0) {
+                await tx.patient.update({
+                  where: { id: patientId },
+                  data: { is_deleted: true, deleted_at: now },
+                });
+              }
+            }
           }
         }
 
