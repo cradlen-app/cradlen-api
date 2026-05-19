@@ -243,6 +243,7 @@ model Organization {
   medications           Medication[]
   lab_tests             LabTest[]
   patient_history_notes PatientHistoryNote[]
+  field_flags           PatientFieldFlag[]
   care_paths            CarePath[]
   care_path_episodes    CarePathEpisode[]
   medical_reps          MedicalRep[]
@@ -373,6 +374,7 @@ model Profile {
   investigations_reviewed         VisitInvestigation[]             @relation("InvestigationReviewedBy")
   prescriptions_authored          Prescription[]                   @relation("PrescriptionPrescribedBy")
   history_notes_authored          PatientHistoryNote[]             @relation("HistoryNoteAuthor")
+  authored_field_flags            PatientFieldFlag[]               @relation("FieldFlagAuthor")
   history_allergies_added         PatientAllergy[]                 @relation("AllergyCreatedBy")
   history_pregnancies_added       PatientPregnancyHistory[]        @relation("PregnancyCreatedBy")
   history_contraceptives_added    PatientContraceptiveHistory[]    @relation("ContraceptiveCreatedBy")
@@ -772,6 +774,7 @@ model Patient {
   non_gyn_surgeries   PatientNonGynSurgery[]
   current_medications PatientMedication[]
   history_notes       PatientHistoryNote[]
+  field_flags         PatientFieldFlag[]
   guardian_links      PatientGuardian[]
   guardian_record     Guardian?                     @relation("PatientGuardianRecord")
   obgyn_history       PatientObgynHistory?
@@ -1231,6 +1234,28 @@ model PatientHistoryNote {
   @@index([organization_id])
   @@index([author_id])
   @@map("patient_history_notes")
+}
+
+model PatientFieldFlag {
+  id              String       @id @default(uuid()) @db.Uuid
+  patient_id      String       @db.Uuid
+  patient         Patient      @relation(fields: [patient_id], references: [id], onDelete: Cascade)
+  organization_id String       @db.Uuid
+  organization    Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  author_id       String       @db.Uuid
+  author          Profile      @relation("FieldFlagAuthor", fields: [author_id], references: [id], onDelete: Cascade)
+  section_code    String
+  field_code      String
+  note            String?      @db.Text
+  is_deleted      Boolean      @default(false)
+  deleted_at      DateTime?
+  created_at      DateTime     @default(now())
+  updated_at      DateTime     @updatedAt
+
+  @@unique([patient_id, organization_id, section_code, field_code], name: "unique_flag_per_field")
+  @@index([patient_id, organization_id, is_deleted])
+  @@index([author_id])
+  @@map("patient_field_flags")
 }
 
 // ============================================================================

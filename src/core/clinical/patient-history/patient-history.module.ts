@@ -12,6 +12,8 @@ import { PatientMedicationsController } from './patient-medications.controller';
 import { PatientMedicationsService } from './patient-medications.service';
 import { NotesController } from './notes.controller';
 import { NotesService } from './notes.service';
+import { FieldFlagsController } from './field-flags.controller';
+import { FieldFlagsService } from './field-flags.service';
 
 @Module({
   controllers: [
@@ -21,6 +23,7 @@ import { NotesService } from './notes.service';
     NonGynSurgeriesController,
     PatientMedicationsController,
     NotesController,
+    FieldFlagsController,
   ],
   providers: [
     PatientAccessService,
@@ -30,6 +33,7 @@ import { NotesService } from './notes.service';
     NonGynSurgeriesService,
     PatientMedicationsService,
     NotesService,
+    FieldFlagsService,
   ],
   exports: [PatientAccessService],
 })
