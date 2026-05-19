@@ -117,6 +117,25 @@ export const ALLOWED_PATHS = {
     'medications.from_date',
     'allergies.allergy_to',
     'allergies.associated_symptoms',
+    // social_history — column existed but paths were missing
+    'social_history.smoking',
+    'social_history.alcohol',
+    'social_history.occupation',
+    // medications — 4 fields present in DTO but absent from template
+    'medications.dose',
+    'medications.frequency',
+    'medications.to_date',
+    'medications.is_ongoing',
+    // screening_history — HPV/Bethesda clinical fields
+    'screening_history.hpv_result',
+    'screening_history.bethesda_category',
+    // menopause_history — new JSON column
+    'menopause_history.menopausal_status',
+    'menopause_history.age_at_menopause',
+    'menopause_history.hrt_current',
+    'menopause_history.hrt_details',
+    // blood_group_rh — top-level enum column (no dot)
+    'blood_group_rh',
   ],
   // VISIT_ENCOUNTER targets the singleton `visit_encounters` row attached to
   // a visit. Holds main-complaint metadata, free-text complaint, provisional
