@@ -6,6 +6,13 @@ export class MedicationDto {
   generic_name!: string | null;
   form!: string | null;
   strength!: string | null;
+  category!: string | null;
+  company!: string | null;
+  notes!: string | null;
+  default_dose_amount!: number | null;
+  default_dose_unit!: string | null;
+  default_dose_frequency!: string | null;
+  default_dose_route!: string | null;
   added_by_id!: string | null;
   is_deleted!: boolean;
   created_at!: Date;
