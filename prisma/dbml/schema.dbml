@@ -606,6 +606,13 @@ Table medications {
   generic_name String
   form String
   strength String
+  category String
+  company String
+  notes String
+  default_dose_amount Float
+  default_dose_unit String
+  default_dose_frequency String
+  default_dose_route String
   added_by_id String
   added_by profiles
   items prescription_items [not null]
