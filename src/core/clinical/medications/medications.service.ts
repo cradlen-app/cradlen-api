@@ -121,23 +121,37 @@ export class MedicationsService {
         `Medication with code "${dto.code}" already exists in this organization`,
       );
     }
-    return this.prismaService.db.medication.create({
-      data: {
-        organization_id: user.organizationId,
-        code: dto.code,
-        name: dto.name,
-        generic_name: dto.generic_name ?? null,
-        form: dto.form ?? null,
-        strength: dto.strength ?? null,
-        category: dto.category ?? null,
-        company: dto.company ?? null,
-        notes: dto.notes ?? null,
-        default_dose_amount: dto.default_dose_amount ?? null,
-        default_dose_unit: dto.default_dose_unit ?? null,
-        default_dose_frequency: dto.default_dose_frequency ?? null,
-        default_dose_route: dto.default_dose_route ?? null,
-        added_by_id: user.profileId,
-      },
+    if (dto.medical_rep_id) {
+      await this.assertRepExists(dto.medical_rep_id, user.organizationId);
+    }
+
+    return this.prismaService.db.$transaction(async (tx) => {
+      const medication = await tx.medication.create({
+        data: {
+          organization_id: user.organizationId,
+          code: dto.code,
+          name: dto.name,
+          generic_name: dto.generic_name ?? null,
+          form: dto.form ?? null,
+          strength: dto.strength ?? null,
+          category: dto.category ?? null,
+          company: dto.company ?? null,
+          notes: dto.notes ?? null,
+          default_dose_amount: dto.default_dose_amount ?? null,
+          default_dose_unit: dto.default_dose_unit ?? null,
+          default_dose_frequency: dto.default_dose_frequency ?? null,
+          default_dose_route: dto.default_dose_route ?? null,
+          added_by_id: user.profileId,
+        },
+      });
+
+      if (dto.medical_rep_id) {
+        await tx.medicalRepMedication.create({
+          data: { medical_rep_id: dto.medical_rep_id, medication_id: medication.id },
+        });
+      }
+
+      return medication;
     });
   }
 
@@ -161,21 +175,36 @@ export class MedicationsService {
         'Only the OWNER or the original creator can edit this medication',
       );
     }
-    return this.prismaService.db.medication.update({
-      where: { id },
-      data: {
-        ...(dto.name !== undefined && { name: dto.name }),
-        ...(dto.generic_name !== undefined && { generic_name: dto.generic_name }),
-        ...(dto.form !== undefined && { form: dto.form }),
-        ...(dto.strength !== undefined && { strength: dto.strength }),
-        ...(dto.category !== undefined && { category: dto.category }),
-        ...(dto.company !== undefined && { company: dto.company }),
-        ...(dto.notes !== undefined && { notes: dto.notes }),
-        ...(dto.default_dose_amount !== undefined && { default_dose_amount: dto.default_dose_amount }),
-        ...(dto.default_dose_unit !== undefined && { default_dose_unit: dto.default_dose_unit }),
-        ...(dto.default_dose_frequency !== undefined && { default_dose_frequency: dto.default_dose_frequency }),
-        ...(dto.default_dose_route !== undefined && { default_dose_route: dto.default_dose_route }),
-      },
+    if ('medical_rep_id' in dto && dto.medical_rep_id) {
+      await this.assertRepExists(dto.medical_rep_id, user.organizationId);
+    }
+
+    return this.prismaService.db.$transaction(async (tx) => {
+      if ('medical_rep_id' in dto) {
+        await tx.medicalRepMedication.deleteMany({ where: { medication_id: id } });
+        if (dto.medical_rep_id) {
+          await tx.medicalRepMedication.create({
+            data: { medical_rep_id: dto.medical_rep_id, medication_id: id },
+          });
+        }
+      }
+
+      return tx.medication.update({
+        where: { id },
+        data: {
+          ...(dto.name !== undefined && { name: dto.name }),
+          ...(dto.generic_name !== undefined && { generic_name: dto.generic_name }),
+          ...(dto.form !== undefined && { form: dto.form }),
+          ...(dto.strength !== undefined && { strength: dto.strength }),
+          ...(dto.category !== undefined && { category: dto.category }),
+          ...(dto.company !== undefined && { company: dto.company }),
+          ...(dto.notes !== undefined && { notes: dto.notes }),
+          ...(dto.default_dose_amount !== undefined && { default_dose_amount: dto.default_dose_amount }),
+          ...(dto.default_dose_unit !== undefined && { default_dose_unit: dto.default_dose_unit }),
+          ...(dto.default_dose_frequency !== undefined && { default_dose_frequency: dto.default_dose_frequency }),
+          ...(dto.default_dose_route !== undefined && { default_dose_route: dto.default_dose_route }),
+        },
+      });
     });
   }
 
@@ -198,6 +227,18 @@ export class MedicationsService {
       where: { id },
       data: { is_deleted: true, deleted_at: new Date() },
     });
+  }
+
+  private async assertRepExists(repId: string, organizationId: string): Promise<void> {
+    const rep = await this.prismaService.db.medicalRep.findFirst({
+      where: { id: repId, organization_id: organizationId, is_deleted: false },
+      select: { id: true },
+    });
+    if (!rep) {
+      throw new BadRequestException(
+        `Medical rep ${repId} is not available to this organization`,
+      );
+    }
   }
 
   private async gatherStats(
