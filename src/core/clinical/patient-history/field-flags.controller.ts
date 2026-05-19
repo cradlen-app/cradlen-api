@@ -10,7 +10,7 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiExtraModels, ApiResponse, ApiTags, getSchemaPath } from '@nestjs/swagger';
 import { FieldFlagsService } from './field-flags.service';
 import { FieldFlagDto, UpdateFieldFlagNoteDto, UpsertFieldFlagDto } from './dto/field-flag.dto';
 import { ApiStandardResponse, ApiVoidResponse } from '@common/swagger';
@@ -19,11 +19,20 @@ import { AuthContext } from '@common/interfaces/auth-context.interface';
 
 @ApiTags('Patient History')
 @Controller()
+@ApiExtraModels(FieldFlagDto)
 export class FieldFlagsController {
   constructor(private readonly fieldFlagsService: FieldFlagsService) {}
 
   @Get('patients/:id/field-flags')
-  @ApiStandardResponse(FieldFlagDto)
+  @ApiResponse({
+    status: 200,
+    schema: {
+      properties: {
+        data: { type: 'array', items: { $ref: getSchemaPath(FieldFlagDto) } },
+        meta: { type: 'object', example: {} },
+      },
+    },
+  })
   list(
     @Param('id', ParseUUIDPipe) patientId: string,
     @CurrentUser() user: AuthContext,
