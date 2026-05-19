@@ -176,7 +176,11 @@ export class ObgynHistoryService {
       }
 
       const now = new Date().toISOString();
-      const existingTimestamps = (current.section_timestamps ?? {}) as Record<string, string>;
+      const raw = current.section_timestamps;
+      const existingTimestamps: Record<string, string> =
+        raw !== null && typeof raw === 'object' && !Array.isArray(raw)
+          ? (raw as Record<string, string>)
+          : {};
       const updatedTimestamps = { ...existingTimestamps };
       for (const section of changedSections) {
         updatedTimestamps[section] = now;
