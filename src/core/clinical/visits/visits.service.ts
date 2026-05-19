@@ -695,6 +695,27 @@ export class VisitsService {
       return { visit, episode: episode, journey, patient };
     });
 
+    try {
+      await this.prismaService.db.patientOrgEnrollment.create({
+        data: {
+          patient_id: result.patient.id,
+          organization_id: result.journey.organization_id,
+          status: 'PENDING',
+        },
+      });
+    } catch (error) {
+      if (
+        !(
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        )
+      ) {
+        throw error;
+      }
+      // P2002 = unique constraint violation — concurrent booking already created
+      // the enrollment. Safe to ignore.
+    }
+
     this.eventBus.publish('visit.booked', {
       assignedDoctorId: dto.assigned_doctor_id,
       branchId,
@@ -1187,6 +1208,44 @@ export class VisitsService {
               },
             });
             didCascade = true;
+
+            const patientId = visit.episode?.journey?.patient?.id;
+            const orgId = visit.episode?.journey?.organization_id;
+            if (patientId && orgId) {
+              await tx.patientOrgEnrollment.updateMany({
+                where: {
+                  patient_id: patientId,
+                  organization_id: orgId,
+                  status: 'PENDING',
+                  is_deleted: false,
+                },
+                data: { is_deleted: true, deleted_at: now },
+              });
+              await tx.$executeRaw`
+                UPDATE "patients" SET is_deleted = true, deleted_at = NOW()
+                WHERE id = ${patientId}::uuid
+                AND NOT EXISTS (
+                  SELECT 1 FROM "patient_journeys"
+                  WHERE patient_id = ${patientId}::uuid AND is_deleted = false
+                )
+              `;
+            }
+          }
+        }
+
+        if (dto.status === 'CHECKED_IN') {
+          const patientId = visit.episode?.journey?.patient?.id;
+          const organizationId = visit.episode?.journey?.organization_id;
+          if (patientId && organizationId) {
+            await tx.patientOrgEnrollment.updateMany({
+              where: {
+                patient_id: patientId,
+                organization_id: organizationId,
+                status: 'PENDING',
+                is_deleted: false,
+              },
+              data: { status: 'ACTIVE', activated_at: now },
+            });
           }
         }
 

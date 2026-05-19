@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { VisitsService } from './visits.service';
 import { EventBus } from '@infrastructure/messaging/event-bus';
 import { PrismaService } from '@infrastructure/database/prisma.service';
@@ -101,12 +102,18 @@ describe('VisitsService', () => {
       findFirst: jest.Mock;
       findUnique: jest.Mock;
       update: jest.Mock;
+      updateMany: jest.Mock;
       count: jest.Mock;
     };
     branch: { findFirst: jest.Mock };
     profileBranch: { findFirst: jest.Mock };
     visitEncounter: { findUnique: jest.Mock; upsert: jest.Mock };
     visitVitals: { upsert: jest.Mock };
+    patientOrgEnrollment: {
+      findFirst: jest.Mock;
+      create: jest.Mock;
+      updateMany: jest.Mock;
+    };
     $transaction: jest.Mock;
   };
   let prismaMock: { db: typeof db };
@@ -127,12 +134,18 @@ describe('VisitsService', () => {
         findFirst: jest.fn(),
         findUnique: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn(),
         count: jest.fn(),
       },
       branch: { findFirst: jest.fn() },
       profileBranch: { findFirst: jest.fn().mockResolvedValue({ id: 'pb-1' }) },
       visitEncounter: { findUnique: jest.fn(), upsert: jest.fn() },
       visitVitals: { upsert: jest.fn() },
+      patientOrgEnrollment: {
+        findFirst: jest.fn(),
+        create: jest.fn(),
+        updateMany: jest.fn(),
+      },
       $transaction: jest.fn(),
     };
     prismaMock = { db };
@@ -421,6 +434,185 @@ describe('VisitsService', () => {
         }),
       );
     });
+
+    describe('updateStatus CHECKED_IN enrollment activation', () => {
+      const visitWithJourney = {
+        ...mockVisit,
+        status: 'SCHEDULED' as const,
+        episode: {
+          id: 'ep-uuid',
+          journey: {
+            organization_id: 'org-uuid',
+            patient: { id: 'patient-uuid', full_name: 'Jane Doe' },
+            care_path: null,
+          },
+        },
+      };
+
+      it('activates a PENDING enrollment inside the transaction when visit moves to CHECKED_IN', async () => {
+        db.visit.findUnique.mockResolvedValue(visitWithJourney);
+        db.patientEpisode.findUnique.mockResolvedValue({ journey_id: 'journey-uuid' });
+        const tx = {
+          visit: {
+            update: jest.fn().mockResolvedValue({ ...visitWithJourney, status: 'CHECKED_IN' }),
+            count: jest.fn().mockResolvedValue(0),
+            updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+          },
+          patientOrgEnrollment: {
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+          },
+        };
+        db.$transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx));
+
+        await service.updateStatus('visit-uuid', { status: 'CHECKED_IN' }, mockUser);
+
+        expect(tx.patientOrgEnrollment.updateMany).toHaveBeenCalledWith({
+          where: {
+            patient_id: 'patient-uuid',
+            organization_id: 'org-uuid',
+            status: 'PENDING',
+            is_deleted: false,
+          },
+          data: expect.objectContaining({ status: 'ACTIVE', activated_at: expect.any(Date) }),
+        });
+        // Verify it did NOT run on the outer db client
+        expect(db.patientOrgEnrollment.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('does not call enrollment updateMany for non-CHECKED_IN transitions', async () => {
+        const checkedInVisit = { ...visitWithJourney, status: 'CHECKED_IN' as const };
+        db.visit.findUnique.mockResolvedValue(checkedInVisit);
+        db.patientEpisode.findUnique.mockResolvedValue({ journey_id: 'journey-uuid' });
+        const tx = {
+          visit: {
+            update: jest.fn().mockResolvedValue({ ...checkedInVisit, status: 'IN_PROGRESS' }),
+            count: jest.fn().mockResolvedValue(0),
+            updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+          },
+          patientOrgEnrollment: {
+            updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+          },
+        };
+        db.$transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx));
+
+        await service.updateStatus('visit-uuid', { status: 'IN_PROGRESS' }, mockUser);
+
+        expect(tx.patientOrgEnrollment.updateMany).not.toHaveBeenCalled();
+        expect(db.patientOrgEnrollment.updateMany).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe('updateStatus cascade enrollment cleanup', () => {
+    const scheduledVisit = {
+      ...mockVisit,
+      status: 'SCHEDULED' as const,
+      episode: {
+        id: 'ep-uuid',
+        journey: {
+          organization_id: 'org-uuid',
+          patient: { id: 'patient-uuid', full_name: 'Jane Doe' },
+          care_path: null,
+        },
+      },
+    };
+
+    it('soft-deletes PENDING enrollment when cascade fires and no other journeys remain', async () => {
+      db.visit.findUnique.mockResolvedValue(scheduledVisit);
+      db.patientEpisode.findUnique.mockResolvedValue({ journey_id: 'journey-uuid' });
+      const tx = {
+        visit: {
+          update: jest.fn().mockResolvedValue({ ...scheduledVisit, status: 'CANCELLED' }),
+          count: jest.fn()
+            .mockResolvedValueOnce(0)  // realCount
+            .mockResolvedValueOnce(0), // liveCount
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        },
+        visitEncounter: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        visitVitals: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        patientEpisode: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        patientJourney: { update: jest.fn().mockResolvedValue({}) },
+        patientOrgEnrollment: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        $executeRaw: jest.fn().mockResolvedValue(1),
+      };
+      db.$transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx));
+
+      await service.updateStatus('visit-uuid', { status: 'CANCELLED' }, mockUser);
+
+      expect(tx.patientOrgEnrollment.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            patient_id: 'patient-uuid',
+            organization_id: 'org-uuid',
+            status: 'PENDING',
+            is_deleted: false,
+          }),
+          data: expect.objectContaining({ is_deleted: true }),
+        }),
+      );
+      expect(tx.$executeRaw).toHaveBeenCalled();
+    });
+
+    it('does not soft-delete patient when other journeys exist', async () => {
+      db.visit.findUnique.mockResolvedValue(scheduledVisit);
+      db.patientEpisode.findUnique.mockResolvedValue({ journey_id: 'journey-uuid' });
+      const tx = {
+        visit: {
+          update: jest.fn().mockResolvedValue({ ...scheduledVisit, status: 'CANCELLED' }),
+          count: jest.fn()
+            .mockResolvedValueOnce(0)  // realCount
+            .mockResolvedValueOnce(0), // liveCount
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        },
+        visitEncounter: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        visitVitals: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        patientEpisode: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        patientJourney: { update: jest.fn().mockResolvedValue({}) },
+        patientOrgEnrollment: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        $executeRaw: jest.fn().mockResolvedValue(0), // NOT EXISTS returns false → no row updated
+      };
+      db.$transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx));
+
+      await service.updateStatus('visit-uuid', { status: 'CANCELLED' }, mockUser);
+
+      expect(tx.patientOrgEnrollment.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            patient_id: 'patient-uuid',
+            organization_id: 'org-uuid',
+            status: 'PENDING',
+            is_deleted: false,
+          }),
+        }),
+      );
+      expect(tx.$executeRaw).toHaveBeenCalled();
+    });
+
+    it('does not clean up enrollment when checked-in visits still exist (cascade not entered)', async () => {
+      db.visit.findUnique.mockResolvedValue(scheduledVisit);
+      db.patientEpisode.findUnique.mockResolvedValue({ journey_id: 'journey-uuid' });
+      const tx = {
+        visit: {
+          update: jest.fn().mockResolvedValue({ ...scheduledVisit, status: 'CANCELLED' }),
+          count: jest.fn()
+            .mockResolvedValueOnce(1)  // realCount > 0 — cascade not entered
+            .mockResolvedValueOnce(0), // liveCount (not reached)
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        },
+        visitEncounter: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        visitVitals: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        patientEpisode: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        patientJourney: { update: jest.fn().mockResolvedValue({}) },
+        patientOrgEnrollment: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        $executeRaw: jest.fn().mockResolvedValue(0),
+      };
+      db.$transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx));
+
+      await service.updateStatus('visit-uuid', { status: 'CANCELLED' }, mockUser);
+
+      expect(tx.patientOrgEnrollment.updateMany).not.toHaveBeenCalled();
+      expect(tx.$executeRaw).not.toHaveBeenCalled();
+    });
   });
 
   describe('bookVisit', () => {
@@ -450,6 +642,9 @@ describe('VisitsService', () => {
       db.profile = {
         findFirst: jest.fn().mockResolvedValue({ id: 'doctor-uuid' }),
       };
+      // enrollment create returns a resolved Promise by default so the
+      // try/catch path succeeds silently in the pre-existing tests.
+      db.patientOrgEnrollment.create.mockResolvedValue({ id: 'enroll-uuid' });
     });
 
     it('throws BadRequestException when patient_id absent and required patient fields missing', async () => {
@@ -575,6 +770,78 @@ describe('VisitsService', () => {
           payload: expect.any(Object),
         }),
       );
+    });
+  });
+
+  describe('bookVisit enrollment', () => {
+    const bookDto = {
+      patient_id: 'patient-uuid',
+      assigned_doctor_id: 'doctor-uuid',
+      branch_id: 'branch-uuid',
+      specialty_code: 'OBGYN',
+      appointment_type: 'VISIT' as const,
+      priority: 'NORMAL' as const,
+      scheduled_at: new Date(Date.now() + 86400000).toISOString(),
+    };
+
+    beforeEach(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (db as any).profile = {
+        findFirst: jest.fn().mockResolvedValue({ id: 'doctor-uuid' }),
+      };
+      db.branch.findFirst.mockResolvedValue({ id: 'branch-uuid', organization_id: 'org-uuid' });
+      db.profileBranch.findFirst.mockResolvedValue({ id: 'pb-1' });
+      db.journeyTemplate.findFirst.mockResolvedValue({
+        ...mockTemplate,
+        episodes: [{ id: 'ep-template-uuid', name: 'General Consultation', order: 1 }],
+      });
+      db.patient.findUnique.mockResolvedValue(mockPatient);
+      db.patientJourney.findFirst.mockResolvedValue(mockJourney);
+      db.patientEpisode.findFirst.mockResolvedValue(mockEpisode);
+      db.visit.create.mockResolvedValue(mockVisit);
+      db.visit.findMany.mockResolvedValue([]);
+      db.$transaction.mockImplementation(
+        async (cb: (tx: typeof db) => Promise<unknown>) => {
+          const result = await cb(db);
+          return result;
+        },
+      );
+    });
+
+    it('creates a PENDING enrollment when no enrollment exists', async () => {
+      db.patientOrgEnrollment.create.mockResolvedValue({ id: 'enroll-uuid' });
+
+      await service.bookVisit(bookDto, mockUser);
+
+      expect(db.patientOrgEnrollment.create).toHaveBeenCalledWith({
+        data: {
+          patient_id: mockPatient.id,
+          organization_id: mockJourney.organization_id,
+          status: 'PENDING',
+        },
+      });
+    });
+
+    it('silently handles P2002 when concurrent booking creates enrollment first', async () => {
+      const p2002 = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: '7.0.0',
+        meta: { target: ['patient_id', 'organization_id'] },
+      });
+      db.patientOrgEnrollment.create.mockRejectedValue(p2002);
+
+      await expect(service.bookVisit(bookDto, mockUser)).resolves.not.toThrow();
+    });
+
+    it('re-throws non-P2002 errors from enrollment creation', async () => {
+      const dbError = new Prisma.PrismaClientKnownRequestError('Connection error', {
+        code: 'P1001',
+        clientVersion: '7.0.0',
+        meta: {},
+      });
+      db.patientOrgEnrollment.create.mockRejectedValue(dbError);
+
+      await expect(service.bookVisit(bookDto, mockUser)).rejects.toThrow();
     });
   });
 

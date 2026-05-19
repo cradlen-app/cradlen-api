@@ -9,6 +9,6 @@ import { AuthorizationModule } from '@core/auth/authorization/authorization.modu
   imports: [ValidatorModule, AuthorizationModule],
   controllers: [VisitsController],
   providers: [VisitsService, EncounterMutationGuard],
-  exports: [EncounterMutationGuard],
+  exports: [EncounterMutationGuard, VisitsService],
 })
 export class VisitsModule {}
