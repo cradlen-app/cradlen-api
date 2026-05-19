@@ -30,6 +30,7 @@ Table organizations {
   medications medications [not null]
   lab_tests lab_tests [not null]
   patient_history_notes patient_history_notes [not null]
+  field_flags patient_field_flags [not null]
   care_paths care_paths [not null]
   care_path_episodes care_path_episodes [not null]
   medical_reps medical_reps [not null]
@@ -150,6 +151,7 @@ Table profiles {
   investigations_reviewed visit_investigations [not null]
   prescriptions_authored prescriptions [not null]
   history_notes_authored patient_history_notes [not null]
+  authored_field_flags patient_field_flags [not null]
   history_allergies_added patient_allergies [not null]
   history_pregnancies_added patient_pregnancy_history [not null]
   history_contraceptives_added patient_contraceptive_history [not null]
@@ -505,6 +507,7 @@ Table patients {
   non_gyn_surgeries patient_non_gyn_surgeries [not null]
   current_medications patient_medications [not null]
   history_notes patient_history_notes [not null]
+  field_flags patient_field_flags [not null]
   guardian_links patient_guardians [not null]
   guardian_record guardians
   obgyn_history patient_obgyn_histories
@@ -887,6 +890,27 @@ Table patient_history_notes {
   updated_at DateTime [not null]
 }
 
+Table patient_field_flags {
+  id String [pk]
+  patient_id String [not null]
+  patient patients [not null]
+  organization_id String [not null]
+  organization organizations [not null]
+  author_id String [not null]
+  author profiles [not null]
+  section_code String [not null]
+  field_code String [not null]
+  note String
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+
+  indexes {
+    (patient_id, organization_id, section_code, field_code) [unique]
+  }
+}
+
 Table guardians {
   id String [pk]
   national_id String [unique]
@@ -1001,6 +1025,7 @@ Table patient_obgyn_histories {
   social_history Json
   menopause_history Json
   blood_group_rh BloodGroupRh
+  section_timestamps Json
   version Int [not null, default: 1]
   updated_by_id String
   updated_by profiles
@@ -1816,6 +1841,12 @@ Ref: patient_history_notes.patient_id > patients.id [delete: Cascade]
 Ref: patient_history_notes.organization_id > organizations.id [delete: Cascade]
 
 Ref: patient_history_notes.author_id > profiles.id [delete: Cascade]
+
+Ref: patient_field_flags.patient_id > patients.id [delete: Cascade]
+
+Ref: patient_field_flags.organization_id > organizations.id [delete: Cascade]
+
+Ref: patient_field_flags.author_id > profiles.id [delete: Cascade]
 
 Ref: guardians.patient_id - patients.id [delete: Set Null]
 
