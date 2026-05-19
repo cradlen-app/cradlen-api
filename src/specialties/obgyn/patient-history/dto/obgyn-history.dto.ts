@@ -255,6 +255,7 @@ export class PatientObgynHistoryDto {
   social_history!: unknown;
   menopause_history!: unknown;
   blood_group_rh!: BloodGroupRh | null;
+  section_timestamps!: Record<string, string> | null;
   pregnancies!: unknown[];
   contraceptives!: unknown[];
   non_gyn_surgeries!: unknown[];
