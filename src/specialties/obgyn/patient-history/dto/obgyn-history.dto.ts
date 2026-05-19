@@ -2,6 +2,7 @@ import {
   IsArray,
   IsBoolean,
   IsDateString,
+  IsEnum,
   IsInt,
   IsNumber,
   IsObject,
@@ -12,6 +13,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { BloodGroupRh } from '@prisma/client';
 
 // JSON sub-shapes — kept lightweight; class-validator enforces only top-level
 // presence and basic typing. Free-form fields stay free-form to match early-
@@ -37,6 +39,8 @@ export class ScreeningHistoryDto {
   @IsOptional() @IsString() mammography?: string;
   @IsOptional() @IsString() mammography_date?: string;
   @IsOptional() @IsArray() @IsString({ each: true }) vaccines?: string[];
+  @IsOptional() @IsString() hpv_result?: string;
+  @IsOptional() @IsString() bethesda_category?: string;
 }
 
 export class ObstetricSummaryDto {
@@ -76,6 +80,13 @@ export class SocialHistoryDto {
   @IsOptional() @IsString() smoking?: string;
   @IsOptional() @IsString() alcohol?: string;
   @IsOptional() @IsString() occupation?: string;
+}
+
+export class MenopauseHistoryDto {
+  @IsOptional() @IsString() menopausal_status?: string;
+  @IsOptional() @IsNumber() age_at_menopause?: number;
+  @IsOptional() @IsString() hrt_current?: string;
+  @IsOptional() @IsString() hrt_details?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -192,6 +203,16 @@ export class UpdateObgynHistoryDto {
   social_history?: SocialHistoryDto;
 
   @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => MenopauseHistoryDto)
+  menopause_history?: MenopauseHistoryDto;
+
+  @IsOptional()
+  @IsEnum(BloodGroupRh)
+  blood_group_rh?: BloodGroupRh;
+
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => PregnancyRowDto)
@@ -232,6 +253,8 @@ export class PatientObgynHistoryDto {
   family_history!: unknown;
   fertility_history!: unknown;
   social_history!: unknown;
+  menopause_history!: unknown;
+  blood_group_rh!: BloodGroupRh | null;
   pregnancies!: unknown[];
   contraceptives!: unknown[];
   non_gyn_surgeries!: unknown[];

@@ -32,7 +32,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import type { Predicate } from '../../src/builder/rules/predicates.js';
 
 const TEMPLATE_CODE = 'obgyn_patient_history';
-const TEMPLATE_VERSION = 3;
+const TEMPLATE_VERSION = 4;
 
 type FieldType = keyof typeof FIELD_TYPES;
 type SectionConfig = { ui?: any; validation?: any; logic?: any };
@@ -312,6 +312,131 @@ const SECTIONS: SectionSpec[] = [
               opt('HPV', 'HPV'),
               opt('HEP_B', 'Hep B'),
               opt('OTHER', 'Other'),
+            ],
+          },
+        },
+      },
+      {
+        code: 'hpv_result',
+        label: 'HPV test result',
+        type: 'SELECT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'screening_history.hpv_result',
+        },
+        config: {
+          ui: { placeholder: 'Ex : Negative', colSpan: 6 },
+          validation: {
+            options: [
+              opt('POSITIVE', 'Positive'),
+              opt('NEGATIVE', 'Negative'),
+              opt('PENDING', 'Pending'),
+              opt('NOT_DONE', 'Not done'),
+            ],
+          },
+        },
+      },
+      {
+        code: 'bethesda_category',
+        label: 'Bethesda category',
+        type: 'SELECT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'screening_history.bethesda_category',
+        },
+        config: {
+          ui: { placeholder: 'Ex : NILM', colSpan: 6 },
+          validation: {
+            options: [
+              opt('NILM', 'NILM (Normal)'),
+              opt('ASCUS', 'ASC-US'),
+              opt('ASC_H', 'ASC-H'),
+              opt('LSIL', 'LSIL'),
+              opt('HSIL', 'HSIL'),
+              opt('AGC', 'AGC'),
+              opt('AIS', 'AIS'),
+              opt('SQUAMOUS_CELL_CARCINOMA', 'Squamous cell carcinoma'),
+              opt('NOT_DONE', 'Not done'),
+            ],
+          },
+        },
+      },
+    ],
+  },
+  {
+    code: 'social_history',
+    name: 'Social History',
+    group: 'Social History',
+    fields: [
+      {
+        code: 'smoking',
+        label: 'Smoking',
+        type: 'SELECT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'social_history.smoking',
+        },
+        config: {
+          ui: { placeholder: 'Ex : Never', colSpan: 4 },
+          validation: {
+            options: [
+              opt('NEVER', 'Never'),
+              opt('CURRENT', 'Current'),
+              opt('FORMER', 'Former'),
+            ],
+          },
+        },
+      },
+      {
+        code: 'alcohol',
+        label: 'Alcohol use',
+        type: 'SELECT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'social_history.alcohol',
+        },
+        config: {
+          ui: { placeholder: 'Ex : Never', colSpan: 4 },
+          validation: {
+            options: [
+              opt('NEVER', 'Never'),
+              opt('OCCASIONAL', 'Occasional'),
+              opt('REGULAR', 'Regular'),
+              opt('FORMER', 'Former'),
+            ],
+          },
+        },
+      },
+      {
+        code: 'occupation',
+        label: 'Occupation',
+        type: 'TEXT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'social_history.occupation',
+        },
+        config: { ui: { placeholder: 'Ex : Teacher', colSpan: 4 } },
+      },
+      {
+        code: 'blood_group_rh',
+        label: 'Blood group / Rh',
+        type: 'SELECT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'blood_group_rh',
+        },
+        config: {
+          ui: { placeholder: 'Ex : O+', colSpan: 4 },
+          validation: {
+            options: [
+              opt('A_POS', 'A+'),
+              opt('A_NEG', 'A−'),
+              opt('B_POS', 'B+'),
+              opt('B_NEG', 'B−'),
+              opt('AB_POS', 'AB+'),
+              opt('AB_NEG', 'AB−'),
+              opt('O_POS', 'O+'),
+              opt('O_NEG', 'O−'),
             ],
           },
         },
@@ -637,7 +762,52 @@ const SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'medications.from_date',
         },
-        config: { ui: { placeholder: 'Ex : 1/1/2026', colSpan: 4 } },
+        config: { ui: { placeholder: 'Ex : 1/1/2026', colSpan: 3 } },
+      },
+      {
+        code: 'dose',
+        label: 'Dose',
+        type: 'TEXT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'medications.dose',
+        },
+        config: { ui: { placeholder: 'Ex : 500mg', colSpan: 3 } },
+      },
+      {
+        code: 'frequency',
+        label: 'Frequency',
+        type: 'TEXT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'medications.frequency',
+        },
+        config: { ui: { placeholder: 'Ex : twice daily', colSpan: 3 } },
+      },
+      {
+        code: 'to_date',
+        label: 'To',
+        type: 'DATE',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'medications.to_date',
+        },
+        config: { ui: { placeholder: 'Ex : 1/1/2026', colSpan: 3 } },
+      },
+      {
+        code: 'is_ongoing',
+        label: 'Ongoing',
+        type: 'SELECT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'medications.is_ongoing',
+        },
+        config: {
+          ui: { placeholder: 'Ex : Yes', colSpan: 3 },
+          validation: {
+            options: [opt('YES', 'Yes'), opt('NO', 'No')],
+          },
+        },
       },
     ],
   },
@@ -698,6 +868,91 @@ const SECTIONS: SectionSpec[] = [
           path: 'family_history.genetic_disorders',
         },
         config: { ui: { placeholder: 'Ex : Complications' } },
+      },
+    ],
+  },
+  {
+    code: 'menopause_history',
+    name: 'Menopause History',
+    group: 'Menopause & HRT',
+    fields: [
+      {
+        code: 'menopausal_status',
+        label: 'Menopausal status',
+        type: 'SELECT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'menopause_history.menopausal_status',
+        },
+        config: {
+          ui: { placeholder: 'Ex : Pre-menopausal', colSpan: 6 },
+          validation: {
+            options: [
+              opt('PRE', 'Pre-menopausal'),
+              opt('PERI', 'Peri-menopausal'),
+              opt('POST', 'Post-menopausal'),
+              opt('PREMATURE', 'Premature menopause'),
+            ],
+          },
+        },
+      },
+      {
+        code: 'age_at_menopause',
+        label: 'Age at menopause',
+        type: 'NUMBER',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'menopause_history.age_at_menopause',
+        },
+        config: {
+          ui: { placeholder: 'Ex : 52', colSpan: 6 },
+          validation: { min: 30, max: 65 },
+          logic: {
+            predicates: [
+              {
+                effect: 'visible',
+                when: {
+                  in: { 'menopause_history.menopausal_status': ['POST', 'PREMATURE'] },
+                },
+              } as Predicate,
+            ],
+          },
+        },
+      },
+      {
+        code: 'hrt_current',
+        label: 'On HRT',
+        type: 'SELECT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'menopause_history.hrt_current',
+        },
+        config: {
+          ui: { placeholder: 'Ex : No', colSpan: 6 },
+          validation: {
+            options: [opt('YES', 'Yes'), opt('NO', 'No')],
+          },
+        },
+      },
+      {
+        code: 'hrt_details',
+        label: 'HRT details',
+        type: 'TEXTAREA',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'menopause_history.hrt_details',
+        },
+        config: {
+          ui: { placeholder: 'Ex : Estrogen-only patch since 2022' },
+          logic: {
+            predicates: [
+              {
+                effect: 'visible',
+                when: { eq: { 'menopause_history.hrt_current': 'YES' } },
+              } as Predicate,
+            ],
+          },
+        },
       },
     ],
   },
