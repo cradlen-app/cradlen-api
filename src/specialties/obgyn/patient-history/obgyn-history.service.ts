@@ -28,6 +28,7 @@ const SINGLETON_JSON_FIELDS = [
   'family_history',
   'fertility_history',
   'social_history',
+  'menopause_history',
 ] as const;
 
 type SingletonJsonField = (typeof SINGLETON_JSON_FIELDS)[number];
@@ -98,6 +99,11 @@ export class ObgynHistoryService {
         (data as Record<string, unknown>)[field] =
           value as Prisma.InputJsonValue;
         changedSections.push(field);
+      }
+
+      if (dto.blood_group_rh !== undefined) {
+        data.blood_group_rh = dto.blood_group_rh;
+        changedSections.push('blood_group_rh');
       }
 
       // ----- Child collection diffs -----
