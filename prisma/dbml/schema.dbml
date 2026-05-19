@@ -35,6 +35,7 @@ Table organizations {
   medical_reps medical_reps [not null]
   medical_rep_visits medical_rep_visits [not null]
   calendar_events calendar_events [not null]
+  patient_org_enrollments patient_org_enrollments [not null]
 }
 
 Table branches {
@@ -508,6 +509,7 @@ Table patients {
   guardian_record guardians
   obgyn_history patient_obgyn_histories
   calendar_events calendar_events [not null]
+  enrollments patient_org_enrollments [not null]
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   is_deleted Boolean [not null, default: false]
@@ -880,7 +882,7 @@ Table patient_history_notes {
 
 Table guardians {
   id String [pk]
-  national_id String [unique, not null]
+  national_id String [unique]
   full_name String [not null]
   phone_number String
   patient_id String [unique]
@@ -1401,6 +1403,20 @@ Table calendar_event_assistants {
   }
 }
 
+Table patient_org_enrollments {
+  id String [pk]
+  patient_id String [not null]
+  organization_id String [not null]
+  status PatientOrgEnrollmentStatus [not null, default: 'PENDING']
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  activated_at DateTime
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  patient patients [not null]
+  organization organizations [not null]
+}
+
 Enum RegistrationStatus {
   PENDING
   ACTIVE
@@ -1462,6 +1478,12 @@ Enum JourneyStatus {
   ACTIVE
   COMPLETED
   CANCELLED
+}
+
+Enum PatientOrgEnrollmentStatus {
+  PENDING
+  ACTIVE
+  DISCHARGED
 }
 
 Enum EpisodeStatus {
@@ -1893,3 +1915,7 @@ Ref: calendar_events.patient_id > patients.id [delete: Set Null]
 Ref: calendar_event_assistants.calendar_event_id > calendar_events.id [delete: Cascade]
 
 Ref: calendar_event_assistants.profile_id > profiles.id [delete: Cascade]
+
+Ref: patient_org_enrollments.patient_id > patients.id [delete: Cascade]
+
+Ref: patient_org_enrollments.organization_id > organizations.id [delete: Cascade]
