@@ -7,6 +7,7 @@ import { UpdatePatientDto } from './dto/update-patient.dto';
 import { ListPatientsQueryDto } from './dto/list-patients-query.dto';
 import { ListBranchPatientsQueryDto } from './dto/list-branch-patients-query.dto';
 import { paginated } from '@common/utils/pagination.utils';
+import { PatientOrgEnrollmentStatus } from '@prisma/client';
 
 @Injectable()
 export class PatientsService {
@@ -38,7 +39,7 @@ export class PatientsService {
       enrollments: {
         some: {
           organization_id: user.organizationId,
-          status: { in: ['ACTIVE', 'DISCHARGED'] as const },
+          status: { in: ['ACTIVE', 'DISCHARGED'] as PatientOrgEnrollmentStatus[] },
           is_deleted: false,
         },
       },
