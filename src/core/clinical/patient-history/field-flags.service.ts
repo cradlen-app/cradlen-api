@@ -58,9 +58,10 @@ export class FieldFlagsService {
 
   async updateNote(flagId: string, dto: UpdateFieldFlagNoteDto, user: AuthContext): Promise<FieldFlagDto> {
     const flag = await this.loadOrThrow(flagId, user);
+    if (dto.note === undefined) return this.toDto(flag);
     const updated = await this.prismaService.db.patientFieldFlag.update({
       where: { id: flag.id },
-      data: { ...(dto.note !== undefined ? { note: dto.note } : {}) },
+      data: { note: dto.note },
     });
     return this.toDto(updated);
   }
