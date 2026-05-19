@@ -119,6 +119,47 @@ describe('MedicationsService', () => {
       expect(data.organization_id).toBe(callerOrg);
       expect(data.added_by_id).toBe('profile-A');
     });
+
+    it('persists all new fields when provided', async () => {
+      db.medication.findFirst.mockResolvedValue(null);
+      db.medication.create.mockImplementation(({ data }) => data);
+      await service.create(
+        {
+          code: 'MED1',
+          name: 'Drug',
+          category: 'Antibiotic',
+          company: 'Pharma Co',
+          notes: 'Take with food',
+          default_dose_amount: 500,
+          default_dose_unit: 'mg',
+          default_dose_frequency: 'twice daily',
+          default_dose_route: 'oral',
+        },
+        mockUser,
+      );
+      const data = db.medication.create.mock.calls[0][0].data;
+      expect(data.category).toBe('Antibiotic');
+      expect(data.company).toBe('Pharma Co');
+      expect(data.notes).toBe('Take with food');
+      expect(data.default_dose_amount).toBe(500);
+      expect(data.default_dose_unit).toBe('mg');
+      expect(data.default_dose_frequency).toBe('twice daily');
+      expect(data.default_dose_route).toBe('oral');
+    });
+
+    it('stores null for omitted new fields', async () => {
+      db.medication.findFirst.mockResolvedValue(null);
+      db.medication.create.mockImplementation(({ data }) => data);
+      await service.create({ code: 'MED2', name: 'Drug B' }, mockUser);
+      const data = db.medication.create.mock.calls[0][0].data;
+      expect(data.category).toBeNull();
+      expect(data.company).toBeNull();
+      expect(data.notes).toBeNull();
+      expect(data.default_dose_amount).toBeNull();
+      expect(data.default_dose_unit).toBeNull();
+      expect(data.default_dose_frequency).toBeNull();
+      expect(data.default_dose_route).toBeNull();
+    });
   });
 
   describe('update', () => {
@@ -167,6 +208,25 @@ describe('MedicationsService', () => {
       await expect(
         service.update('med-uuid', { name: 'edited' }, mockUser),
       ).resolves.toEqual({ id: 'med-uuid', name: 'edited' });
+    });
+
+    it('patches new fields selectively when provided', async () => {
+      db.medication.findUnique.mockResolvedValue({
+        id: 'med-uuid',
+        organization_id: callerOrg,
+        added_by_id: 'profile-A',
+      });
+      db.medication.update.mockResolvedValue({ id: 'med-uuid' });
+      await service.update(
+        'med-uuid',
+        { category: 'Analgesic', default_dose_amount: 250 },
+        mockUser,
+      );
+      const updateData = db.medication.update.mock.calls[0][0].data;
+      expect(updateData.category).toBe('Analgesic');
+      expect(updateData.default_dose_amount).toBe(250);
+      expect(updateData).not.toHaveProperty('company');
+      expect(updateData).not.toHaveProperty('notes');
     });
   });
 

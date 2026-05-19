@@ -129,6 +129,13 @@ export class MedicationsService {
         generic_name: dto.generic_name ?? null,
         form: dto.form ?? null,
         strength: dto.strength ?? null,
+        category: dto.category ?? null,
+        company: dto.company ?? null,
+        notes: dto.notes ?? null,
+        default_dose_amount: dto.default_dose_amount ?? null,
+        default_dose_unit: dto.default_dose_unit ?? null,
+        default_dose_frequency: dto.default_dose_frequency ?? null,
+        default_dose_route: dto.default_dose_route ?? null,
         added_by_id: user.profileId,
       },
     });
@@ -158,11 +165,16 @@ export class MedicationsService {
       where: { id },
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
-        ...(dto.generic_name !== undefined && {
-          generic_name: dto.generic_name,
-        }),
+        ...(dto.generic_name !== undefined && { generic_name: dto.generic_name }),
         ...(dto.form !== undefined && { form: dto.form }),
         ...(dto.strength !== undefined && { strength: dto.strength }),
+        ...(dto.category !== undefined && { category: dto.category }),
+        ...(dto.company !== undefined && { company: dto.company }),
+        ...(dto.notes !== undefined && { notes: dto.notes }),
+        ...(dto.default_dose_amount !== undefined && { default_dose_amount: dto.default_dose_amount }),
+        ...(dto.default_dose_unit !== undefined && { default_dose_unit: dto.default_dose_unit }),
+        ...(dto.default_dose_frequency !== undefined && { default_dose_frequency: dto.default_dose_frequency }),
+        ...(dto.default_dose_route !== undefined && { default_dose_route: dto.default_dose_route }),
       },
     });
   }
