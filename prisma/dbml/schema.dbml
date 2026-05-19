@@ -991,7 +991,6 @@ Table patient_obgyn_histories {
   patient_id String [unique, not null]
   patient patients [not null]
   revisions patient_obgyn_history_revisions [not null]
-  husband_name String
   gynecological_baseline Json
   gynecologic_procedures Json
   screening_history Json
@@ -1000,6 +999,8 @@ Table patient_obgyn_histories {
   family_history Json
   fertility_history Json
   social_history Json
+  menopause_history Json
+  blood_group_rh BloodGroupRh
   version Int [not null, default: 1]
   updated_by_id String
   updated_by profiles
@@ -1625,6 +1626,17 @@ Enum InvestigationResultSource {
 Enum NoteVisibility {
   PRIVATE_TO_ORG
   SHARED_GLOBAL
+}
+
+Enum BloodGroupRh {
+  A_POS
+  A_NEG
+  B_POS
+  B_NEG
+  AB_POS
+  AB_NEG
+  O_POS
+  O_NEG
 }
 
 Enum CalendarEventType {
