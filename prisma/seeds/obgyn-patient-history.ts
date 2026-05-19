@@ -797,17 +797,12 @@ const SECTIONS: SectionSpec[] = [
       {
         code: 'is_ongoing',
         label: 'Ongoing',
-        type: 'SELECT',
+        type: 'BOOLEAN',
         binding: {
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'medications.is_ongoing',
         },
-        config: {
-          ui: { placeholder: 'Ex : Yes', colSpan: 3 },
-          validation: {
-            options: [opt('YES', 'Yes'), opt('NO', 'No')],
-          },
-        },
+        config: { ui: { colSpan: 3 } },
       },
     ],
   },
