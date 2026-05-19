@@ -1375,6 +1375,7 @@ model PatientObgynHistory {
   social_history            Json?
   menopause_history         Json?
   blood_group_rh            BloodGroupRh?
+  section_timestamps        Json?
   version                   Int                           @default(1)
   updated_by_id             String?                       @db.Uuid
   updated_by                Profile?                      @relation("PatientObgynHistoryUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)

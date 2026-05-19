@@ -175,6 +175,14 @@ export class ObgynHistoryService {
         return this.composeEnvelope(tx, current);
       }
 
+      const now = new Date().toISOString();
+      const existingTimestamps = (current.section_timestamps ?? {}) as Record<string, string>;
+      const updatedTimestamps = { ...existingTimestamps };
+      for (const section of changedSections) {
+        updatedTimestamps[section] = now;
+      }
+      data.section_timestamps = updatedTimestamps;
+
       // Snapshot the full prior state (singleton + all child arrays) before
       // mutating the singleton. The revision's `version` field is the prior
       // version — buildRevision handles that.
