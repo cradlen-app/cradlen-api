@@ -1,13 +1,18 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
+import { PatientAccessService } from './patient-access.service';
 import { UpsertFieldFlagDto, UpdateFieldFlagNoteDto, FieldFlagDto } from './dto/field-flag.dto';
 
 @Injectable()
 export class FieldFlagsService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly patientAccess: PatientAccessService,
+  ) {}
 
   async list(patientId: string, user: AuthContext): Promise<FieldFlagDto[]> {
+    await this.patientAccess.assertPatientInOrg(patientId, user);
     const flags = await this.prismaService.db.patientFieldFlag.findMany({
       where: {
         patient_id: patientId,
@@ -20,6 +25,10 @@ export class FieldFlagsService {
   }
 
   async upsert(patientId: string, dto: UpsertFieldFlagDto, user: AuthContext): Promise<FieldFlagDto> {
+    await this.patientAccess.assertPatientInOrg(patientId, user);
+    // Last-writer-wins: re-flagging an existing field transfers authorship to the
+    // caller. Only the current author can edit/remove, so this is intentional —
+    // whoever raises the flag owns it.
     const flag = await this.prismaService.db.patientFieldFlag.upsert({
       where: {
         unique_flag_per_field: {
@@ -51,7 +60,7 @@ export class FieldFlagsService {
     const flag = await this.loadOrThrow(flagId, user);
     const updated = await this.prismaService.db.patientFieldFlag.update({
       where: { id: flag.id },
-      data: { note: dto.note ?? null },
+      data: { ...(dto.note !== undefined ? { note: dto.note } : {}) },
     });
     return this.toDto(updated);
   }
