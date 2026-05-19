@@ -1,4 +1,4 @@
-import { IsNumber, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 export class CreateMedicationDto {
   @IsString() @MinLength(1) @MaxLength(64) code!: string;
@@ -13,4 +13,5 @@ export class CreateMedicationDto {
   @IsString() @IsOptional() @MaxLength(32) default_dose_unit?: string;
   @IsString() @IsOptional() @MaxLength(64) default_dose_frequency?: string;
   @IsString() @IsOptional() @MaxLength(64) default_dose_route?: string;
+  @IsUUID('4') @IsOptional() medical_rep_id?: string;
 }
