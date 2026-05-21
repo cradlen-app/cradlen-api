@@ -12,6 +12,7 @@ export type PredicateCondition =
   | { eq: Record<string, unknown> }
   | { in: Record<string, unknown[]> }
   | { ne: Record<string, unknown> }
+  | { contains: Record<string, unknown> }
   | { and: PredicateCondition[] }
   | { or: PredicateCondition[] };
 
