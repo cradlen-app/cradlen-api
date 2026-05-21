@@ -64,7 +64,7 @@ export const ALLOWED_PATHS = {
     'medication_ids',
     'notes',
   ],
-  LOOKUP: ['patient_id', 'medical_rep_id', 'guardian_id'],
+  LOOKUP: ['patient_id', 'medical_rep_id', 'spouse_guardian_id'],
   SYSTEM: ['visitor_type', 'specialty_code'],
   COMPUTED: ['vitals.bmi'],
   // PATIENT_OBGYN_HISTORY targets the unified bulk PATCH at
