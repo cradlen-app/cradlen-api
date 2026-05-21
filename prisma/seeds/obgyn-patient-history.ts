@@ -181,6 +181,13 @@ const SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'gynecologic_procedures.notes',
         },
+        config: {
+          logic: {
+            predicates: [
+              { effect: 'visible', when: { contains: { items: 'OTHER' } } },
+            ],
+          },
+        },
       },
     ],
   },
