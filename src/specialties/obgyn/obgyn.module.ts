@@ -11,6 +11,8 @@ import { PregnancyController } from './pregnancy/pregnancy.controller';
 import { PregnancyService } from './pregnancy/pregnancy.service';
 import { AmendmentsController } from './amendments/amendments.controller';
 import { AmendmentsService } from './amendments/amendments.service';
+import { HistorySummaryController } from './history-summary/history-summary.controller';
+import { HistorySummaryService } from './history-summary/history-summary.service';
 
 @Module({
   imports: [VisitsModule],
@@ -20,6 +22,7 @@ import { AmendmentsService } from './amendments/amendments.service';
     ObgynExaminationController,
     PregnancyController,
     AmendmentsController,
+    HistorySummaryController,
   ],
   providers: [
     ObgynPatientAccessService,
@@ -28,6 +31,7 @@ import { AmendmentsService } from './amendments/amendments.service';
     ObgynExaminationService,
     PregnancyService,
     AmendmentsService,
+    HistorySummaryService,
   ],
 })
 export class ObgynModule {}
