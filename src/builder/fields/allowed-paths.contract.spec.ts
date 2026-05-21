@@ -180,8 +180,7 @@ describe('ALLOWED_PATHS ↔ DTO contract', () => {
     it('LOOKUP paths are submitted as top-level DTO properties (resolved IDs)', () => {
       expect(bookVisitProps.has('patient_id')).toBe(true);
       expect(bookRepProps.has('medical_rep_id')).toBe(true);
-      // guardian_id lands on BookVisitDto as spouse_guardian_id (the
-      // autocomplete-resolved id for the spouse picker).
+      // spouse_guardian_id is the LOOKUP-resolved id for the spouse picker.
       expect(bookVisitProps.has('spouse_guardian_id')).toBe(true);
     });
 
