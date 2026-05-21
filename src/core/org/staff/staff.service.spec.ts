@@ -39,7 +39,7 @@ const mockStaffProfile = {
     },
   ],
   specialty_links: [
-    { specialty: { id: 'spec-uuid', code: 'GYN', name: 'Gynecology' } },
+    { specialty: { id: 'spec-uuid', code: 'OBGYN', name: 'Gynecology' } },
   ],
   workingSchedules: [],
 };
