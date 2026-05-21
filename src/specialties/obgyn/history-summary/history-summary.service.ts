@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@infrastructure/database/prisma.service';
-import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { ObgynPatientAccessService } from '../patient-access.service';
 import { ObgynHistorySummaryDto } from './dto/obgyn-history-summary.dto';
 
@@ -13,43 +12,41 @@ export class HistorySummaryService {
 
   async getObgynHistorySummary(
     patientId: string,
-    user: AuthContext,
+    user: { organizationId: string; [key: string]: unknown },
   ): Promise<ObgynHistorySummaryDto> {
-    await this.access.assertPatientInOrg(patientId, user);
+    await this.access.assertPatientInOrg(patientId, user as any);
 
-    const history = await this.prismaService.db.patientObgynHistory.findUnique({
-      where: { patient_id: patientId, is_deleted: false },
-      select: {
-        obstetric_summary: true,
-        gynecological_baseline: true,
-        medical_chronic_illnesses: true,
-        family_history: true,
-        social_history: true,
-        screening_history: true,
-        section_timestamps: true,
-        patient: {
-          select: {
-            allergies: {
-              where: { is_deleted: false },
-              select: {
-                allergy_to: true,
-                severity: true,
-                associated_symptoms: true,
-              },
-            },
-            current_medications: {
-              where: { is_deleted: false, is_ongoing: true },
-              select: {
-                drug_name: true,
-                dose: true,
-                frequency: true,
-                is_ongoing: true,
-              },
-            },
-          },
+    const [history, allergies, medications] = await Promise.all([
+      this.prismaService.db.patientObgynHistory.findUnique({
+        where: { patient_id: patientId, is_deleted: false },
+        select: {
+          obstetric_summary: true,
+          gynecological_baseline: true,
+          medical_chronic_illnesses: true,
+          family_history: true,
+          social_history: true,
+          screening_history: true,
+          section_timestamps: true,
         },
-      },
-    });
+      }),
+      this.prismaService.db.patientAllergy.findMany({
+        where: { patient_id: patientId, is_deleted: false },
+        select: {
+          allergy_to: true,
+          severity: true,
+          associated_symptoms: true,
+        },
+      }),
+      this.prismaService.db.patientMedication.findMany({
+        where: { patient_id: patientId, is_deleted: false, is_ongoing: true },
+        select: {
+          drug_name: true,
+          dose: true,
+          frequency: true,
+          is_ongoing: true,
+        },
+      }),
+    ]);
 
     if (!history) {
       return {
@@ -66,18 +63,10 @@ export class HistorySummaryService {
       };
     }
 
-    const allergies = (history as unknown as { allergies?: ObgynHistorySummaryDto['allergies']; patient?: { allergies: ObgynHistorySummaryDto['allergies'] } }).allergies
-      ?? history.patient?.allergies
-      ?? [];
-
-    const current_medications = (history as unknown as { medications?: ObgynHistorySummaryDto['current_medications']; patient?: { current_medications: ObgynHistorySummaryDto['current_medications'] } }).medications
-      ?? history.patient?.current_medications
-      ?? [];
-
     return {
       history_exists: true,
       allergies,
-      current_medications,
+      current_medications: medications,
       obstetric_summary: history.obstetric_summary,
       gynecological_baseline: history.gynecological_baseline,
       medical_chronic_illnesses: history.medical_chronic_illnesses,
