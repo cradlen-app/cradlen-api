@@ -72,7 +72,7 @@ async function main() {
 interface RefData {
   roles: { OWNER: string; STAFF: string; EXTERNAL: string };
   jobFunctions: Record<JobFunctionCode, string>;
-  specialties: { GYN: string };
+  specialties: { OBGYN: string };
   procedures: { CESAREAN_SECTION: string };
   plans: { free_trial: string; plus: string; pro: string; enterprise: string };
 }
@@ -104,7 +104,7 @@ async function loadReferenceData(): Promise<RefData> {
     prisma.role.findUniqueOrThrow({ where: { name: 'STAFF' } }),
     prisma.role.findUniqueOrThrow({ where: { name: 'EXTERNAL' } }),
     prisma.jobFunction.findMany(),
-    prisma.specialty.findUniqueOrThrow({ where: { code: 'GYN' } }),
+    prisma.specialty.findUniqueOrThrow({ where: { code: 'OBGYN' } }),
     prisma.procedure.findUniqueOrThrow({ where: { code: 'CESAREAN_SECTION' } }),
     prisma.subscriptionPlan.findUniqueOrThrow({ where: { plan: 'free_trial' } }),
     prisma.subscriptionPlan.findUniqueOrThrow({ where: { plan: 'plus' } }),
@@ -119,7 +119,7 @@ async function loadReferenceData(): Promise<RefData> {
   return {
     roles: { OWNER: ownerRole.id, STAFF: staffRole.id, EXTERNAL: externalRole.id },
     jobFunctions,
-    specialties: { GYN: gynSpecialty.id },
+    specialties: { OBGYN: gynSpecialty.id },
     procedures: { CESAREAN_SECTION: cesareanProcedure.id },
     plans: {
       free_trial: freeTrialPlan.id,
@@ -335,7 +335,7 @@ interface OrgContext {
 async function buildJasmin(refs: RefData, passwordHash: string): Promise<OrgContext> {
   const org = await ensureOrganization('jasmin');
   await ensureSubscription(org.id, refs.plans.plus);
-  await ensureOrganizationSpecialty(org.id, refs.specialties.GYN);
+  await ensureOrganizationSpecialty(org.id, refs.specialties.OBGYN);
 
   const sohag = await ensureBranch(org.id, {
     name: 'Sohag Branch',
@@ -363,7 +363,7 @@ async function buildJasmin(refs: RefData, passwordHash: string): Promise<OrgCont
     roleIds: [refs.roles.OWNER],
     jobFunctionIds: [refs.jobFunctions.OBGYN],
     branchIds,
-    specialtyIds: [refs.specialties.GYN],
+    specialtyIds: [refs.specialties.OBGYN],
   });
   for (const b of branchIds) await ensureStandardSchedule(ownerProfile.id, b);
 
@@ -387,7 +387,7 @@ async function buildJasmin(refs: RefData, passwordHash: string): Promise<OrgCont
 async function buildJanah(refs: RefData, passwordHash: string): Promise<OrgContext> {
   const org = await ensureOrganization('janah');
   await ensureSubscription(org.id, refs.plans.plus);
-  await ensureOrganizationSpecialty(org.id, refs.specialties.GYN);
+  await ensureOrganizationSpecialty(org.id, refs.specialties.OBGYN);
 
   const elmaragha = await ensureBranch(org.id, {
     name: 'Elmaragha Branch',
@@ -412,7 +412,7 @@ async function buildJanah(refs: RefData, passwordHash: string): Promise<OrgConte
     roleIds: [refs.roles.OWNER],
     jobFunctionIds: [refs.jobFunctions.OBGYN],
     branchIds,
-    specialtyIds: [refs.specialties.GYN],
+    specialtyIds: [refs.specialties.OBGYN],
   });
   for (const b of branchIds) await ensureStandardSchedule(ownerProfile.id, b);
 
@@ -436,7 +436,7 @@ async function buildJanah(refs: RefData, passwordHash: string): Promise<OrgConte
 async function buildAmshag(refs: RefData, passwordHash: string): Promise<OrgContext> {
   const org = await ensureOrganization('amshag');
   await ensureSubscription(org.id, refs.plans.enterprise);
-  await ensureOrganizationSpecialty(org.id, refs.specialties.GYN);
+  await ensureOrganizationSpecialty(org.id, refs.specialties.OBGYN);
 
   const hq = await ensureBranch(org.id, {
     name: 'HQ Branch',
@@ -488,7 +488,7 @@ async function buildAmshag(refs: RefData, passwordHash: string): Promise<OrgCont
       roleIds: [refs.roles.OWNER],
       jobFunctionIds: [refs.jobFunctions.OBGYN],
       branchIds,
-      specialtyIds: [refs.specialties.GYN],
+      specialtyIds: [refs.specialties.OBGYN],
       executive_title: title,
     });
     await ensureStandardSchedule(p.id, hq.id);
@@ -554,7 +554,7 @@ async function seedStaff(
         roleIds: [refs.roles.STAFF],
         jobFunctionIds: [refs.jobFunctions[code]],
         branchIds: [branchId],
-        specialtyIds: isClinical ? [refs.specialties.GYN] : undefined,
+        specialtyIds: isClinical ? [refs.specialties.OBGYN] : undefined,
       });
       await ensureStandardSchedule(profile.id, branchId);
     }
@@ -585,7 +585,7 @@ async function addCrossOrgLinks(
     roleIds: [refs.roles.STAFF, refs.roles.EXTERNAL],
     jobFunctionIds: [refs.jobFunctions.OBGYN],
     branchIds: amshag.branches.map((b) => b.id),
-    specialtyIds: [refs.specialties.GYN],
+    specialtyIds: [refs.specialties.OBGYN],
     engagement_type: 'PART_TIME',
   });
 
@@ -606,7 +606,7 @@ async function addCrossOrgLinks(
       roleIds: [refs.roles.EXTERNAL],
       jobFunctionIds: [refs.jobFunctions.PEDIATRICIAN],
       branchIds: Object.values(ctx.branches),
-      specialtyIds: [refs.specialties.GYN],
+      specialtyIds: [refs.specialties.OBGYN],
       engagement_type: 'ON_DEMAND',
     });
     // ON_DEMAND profiles intentionally have no fixed working schedule.
