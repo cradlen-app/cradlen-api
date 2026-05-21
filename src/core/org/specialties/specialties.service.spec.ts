@@ -6,7 +6,7 @@ import { PrismaService } from '@infrastructure/database/prisma.service';
 const mockSpecialty = {
   id: 'spec-uuid',
   name: 'Gynecology',
-  code: 'GYN',
+  code: 'OBGYN',
   description: null,
   templates: [
     {

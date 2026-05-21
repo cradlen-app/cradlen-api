@@ -67,11 +67,11 @@ async function main() {
     create: { plan: 'enterprise', max_organizations: 10, max_branches: 10, max_staff: 100 },
   });
 
-  // Specialty: GYN
+  // Specialty: OB/GYN
   const gynSpecialty = await prisma.specialty.upsert({
-    where: { code: 'GYN' },
-    update: {},
-    create: { name: 'Gynecology', code: 'GYN', description: 'Obstetrics and Gynecology' },
+    where: { code: 'OBGYN' },
+    update: { name: 'Obstetrics & Gynecology' },
+    create: { name: 'Obstetrics & Gynecology', code: 'OBGYN', description: 'Obstetrics and Gynecology' },
   });
 
   // Procedures — structured catalog of surgical procedures.
