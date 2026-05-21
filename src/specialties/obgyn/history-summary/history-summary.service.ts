@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { ObgynPatientAccessService } from '../patient-access.service';
 import { ObgynHistorySummaryDto } from './dto/obgyn-history-summary.dto';
@@ -12,11 +13,14 @@ export class HistorySummaryService {
 
   async getObgynHistorySummary(
     patientId: string,
-    user: { organizationId: string; [key: string]: unknown },
+    user: AuthContext,
   ): Promise<ObgynHistorySummaryDto> {
-    await this.access.assertPatientInOrg(patientId, user as any);
+    await this.access.assertPatientInOrg(patientId, user);
 
     const [history, allergies, medications] = await Promise.all([
+      // is_deleted: false intentionally applied here — read path never returns soft-deleted singletons.
+      // The write path (ObgynHistoryService.loadOrCreateSingleton) omits this filter because it
+      // lazy-creates the row, making a deleted+recreated scenario possible there.
       this.prismaService.db.patientObgynHistory.findUnique({
         where: { patient_id: patientId, is_deleted: false },
         select: {
@@ -43,7 +47,6 @@ export class HistorySummaryService {
           drug_name: true,
           dose: true,
           frequency: true,
-          is_ongoing: true,
         },
       }),
     ]);
@@ -63,6 +66,12 @@ export class HistorySummaryService {
       };
     }
 
+    const raw = history.section_timestamps;
+    const sectionTimestamps: Record<string, string> | null =
+      raw !== null && typeof raw === 'object' && !Array.isArray(raw)
+        ? (raw as Record<string, string>)
+        : null;
+
     return {
       history_exists: true,
       allergies,
@@ -73,7 +82,7 @@ export class HistorySummaryService {
       family_history: history.family_history,
       social_history: history.social_history,
       screening_history: history.screening_history,
-      section_timestamps: history.section_timestamps as Record<string, string> | null,
+      section_timestamps: sectionTimestamps,
     };
   }
 }

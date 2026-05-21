@@ -8,7 +8,6 @@ export class MedicationSnapshotDto {
   drug_name!: string;
   dose!: string | null;
   frequency!: string | null;
-  is_ongoing!: boolean;
 }
 
 export class ObgynHistorySummaryDto {

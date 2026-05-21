@@ -88,7 +88,7 @@ describe('HistorySummaryService', () => {
         section_timestamps: { gynecological_baseline: '2025-01-01T00:00:00.000Z' },
       };
       const mockAllergies = [{ allergy_to: 'Penicillin', severity: 'SEVERE', associated_symptoms: 'Rash' }];
-      const mockMedications = [{ drug_name: 'Metformin', dose: '500mg', frequency: 'TWICE_DAILY', is_ongoing: true }];
+      const mockMedications = [{ drug_name: 'Metformin', dose: '500mg', frequency: 'TWICE_DAILY' }];
 
       mockPrismaService.db.patientObgynHistory.findUnique.mockResolvedValue(mockHistory);
       mockPrismaService.db.patientAllergy.findMany.mockResolvedValue(mockAllergies);
