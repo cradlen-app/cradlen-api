@@ -159,7 +159,7 @@ export async function seedObgynBookVisitExtension(
   assertAllValid();
 
   const gynSpecialty = await prisma.specialty.findUnique({
-    where: { code: 'GYN' },
+    where: { code: 'OBGYN' },
   });
 
   const extension = await prisma.formTemplate.upsert({
