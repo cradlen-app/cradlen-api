@@ -337,6 +337,7 @@ export class VisitsService {
           scheduled_at: scheduledAt,
           created_by_id: user.profileId,
           queue_number: queueNumber,
+          ...(dto.specialty_code && { specialty_code: dto.specialty_code }),
         },
       });
       await this.applyIntake(tx, visit.id, dto, user.profileId);

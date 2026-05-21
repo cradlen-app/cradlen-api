@@ -1,4 +1,4 @@
-import { IsDateString, IsEnum, IsOptional, IsUUID } from 'class-validator';
+import { IsDateString, IsEnum, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { AppointmentType, VisitPriority } from '@prisma/client';
 import { VisitIntakeFieldsDto } from './visit-intake.dto';
 
@@ -8,4 +8,5 @@ export class CreateVisitDto extends VisitIntakeFieldsDto {
   @IsEnum(AppointmentType) appointment_type!: AppointmentType;
   @IsEnum(VisitPriority) priority!: VisitPriority;
   @IsDateString() scheduled_at!: string;
+  @IsString() @MaxLength(50) @IsOptional() specialty_code?: string;
 }
