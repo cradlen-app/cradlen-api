@@ -1,6 +1,6 @@
 export class AllergySnapshotDto {
   allergy_to!: string;
-  severity!: string;
+  severity!: string | null;
   associated_symptoms!: string | null;
 }
 
