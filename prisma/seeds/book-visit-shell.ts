@@ -326,7 +326,7 @@ const SECTIONS: SectionSpec[] = [
         code: 'spouse_guardian_id',
         label: 'Spouse (resolved id)',
         type: 'ENTITY_SEARCH',
-        binding: { namespace: 'LOOKUP', path: 'guardian_id' },
+        binding: { namespace: 'LOOKUP', path: 'spouse_guardian_id' },
         config: {
           ui: { hidden: true },
           logic: {
