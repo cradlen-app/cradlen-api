@@ -37,6 +37,9 @@ describe('HistorySummaryService', () => {
       mockPrismaService.db.patientObgynHistory.findUnique.mockResolvedValue(null);
       await service.getObgynHistorySummary('patient-1', mockUser as any);
       expect(mockAccess.assertPatientInOrg).toHaveBeenCalledWith('patient-1', mockUser);
+      expect(mockPrismaService.db.patientObgynHistory.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ patient_id: 'patient-1' }) }),
+      );
     });
 
     it('returns history_exists: false when no history row exists', async () => {
@@ -74,6 +77,9 @@ describe('HistorySummaryService', () => {
       expect(result.allergies).toEqual([{ allergy_to: 'Penicillin', severity: 'SEVERE', associated_symptoms: 'Rash' }]);
       expect(result.current_medications).toEqual([{ drug_name: 'Metformin', dose: '500mg', frequency: 'TWICE_DAILY', is_ongoing: true }]);
       expect(result.obstetric_summary).toEqual(mockHistory.obstetric_summary);
+      expect(result.gynecological_baseline).toEqual(mockHistory.gynecological_baseline);
+      expect(result.family_history).toEqual(mockHistory.family_history);
+      expect(result.social_history).toEqual(mockHistory.social_history);
       expect(result.medical_chronic_illnesses).toEqual(mockHistory.medical_chronic_illnesses);
       expect(result.screening_history).toEqual(mockHistory.screening_history);
       expect(result.section_timestamps).toEqual(mockHistory.section_timestamps);
