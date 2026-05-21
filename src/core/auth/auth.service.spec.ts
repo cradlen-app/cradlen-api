@@ -547,7 +547,7 @@ describe('AuthService', () => {
               {
                 specialty: {
                   id: 'spec-1',
-                  code: 'GYN',
+                  code: 'OBGYN',
                   name: 'Gynecology',
                 },
               },
@@ -569,7 +569,7 @@ describe('AuthService', () => {
             {
               specialty: {
                 id: 'spec-1',
-                code: 'GYN',
+                code: 'OBGYN',
                 name: 'Gynecology',
               },
             },
@@ -605,7 +605,7 @@ describe('AuthService', () => {
           organization: {
             id: '33333333-3333-4333-8333-333333333333',
             name: 'Clinic',
-            specialties: [{ id: 'spec-1', code: 'GYN', name: 'Gynecology' }],
+            specialties: [{ id: 'spec-1', code: 'OBGYN', name: 'Gynecology' }],
           },
           roles: [{ id: 'role-1', name: 'OWNER' }],
           branches: [
@@ -618,7 +618,7 @@ describe('AuthService', () => {
           job_functions: [
             { id: 'jf-1', code: 'OBGYN', name: 'OB/GYN', is_clinical: true },
           ],
-          specialties: [{ id: 'spec-1', code: 'GYN', name: 'Gynecology' }],
+          specialties: [{ id: 'spec-1', code: 'OBGYN', name: 'Gynecology' }],
         },
       ],
     });

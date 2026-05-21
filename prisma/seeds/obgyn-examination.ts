@@ -1173,7 +1173,7 @@ export async function seedObgynExaminationTemplate(prisma: PrismaClient) {
   assertAllValid();
 
   const gynSpecialty = await prisma.specialty.findUnique({
-    where: { code: 'GYN' },
+    where: { code: 'OBGYN' },
   });
 
   const template = await prisma.formTemplate.upsert({
