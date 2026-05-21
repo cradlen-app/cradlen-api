@@ -129,6 +129,25 @@ describe('HistorySummaryService', () => {
       expect(result.current_medications).toEqual([]);
     });
 
+    it('returns section_timestamps: null when DB value is malformed (array or primitive)', async () => {
+      const mockHistory = {
+        obstetric_summary: null,
+        gynecological_baseline: null,
+        medical_chronic_illnesses: null,
+        family_history: null,
+        social_history: null,
+        screening_history: null,
+        section_timestamps: ['bad'],
+      };
+      mockPrismaService.db.patientObgynHistory.findUnique.mockResolvedValue(mockHistory);
+      mockPrismaService.db.patientAllergy.findMany.mockResolvedValue([]);
+      mockPrismaService.db.patientMedication.findMany.mockResolvedValue([]);
+
+      const result = await service.getObgynHistorySummary('patient-1', mockUser as any);
+
+      expect(result.section_timestamps).toBeNull();
+    });
+
     it('propagates NotFoundException from assertPatientInOrg and skips all DB queries', async () => {
       mockAccess.assertPatientInOrg.mockRejectedValue(new NotFoundException('Patient patient-1 not found'));
 
