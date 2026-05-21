@@ -17,9 +17,9 @@ export class ObgynHistorySummaryDto {
   current_medications!: MedicationSnapshotDto[];
   obstetric_summary!: unknown | null;
   gynecological_baseline!: unknown | null;
-  chronic_illnesses!: unknown | null;
+  medical_chronic_illnesses!: unknown | null;
   family_history!: unknown | null;
   social_history!: unknown | null;
-  screening_status!: unknown | null;
+  screening_history!: unknown | null;
   section_timestamps!: Record<string, string> | null;
 }
