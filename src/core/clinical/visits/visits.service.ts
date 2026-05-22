@@ -404,53 +404,43 @@ export class VisitsService {
       });
     }
 
-    // Resolve the JourneyTemplate from the supplied care path (1:1 link added
-    // in M14 — care_paths.journey_template_id). When no care_path_code is
-    // sent, fall back to the specialty's GENERAL_GYN-coded template.
-    let carePathId: string | null = null;
-    let template: Prisma.JourneyTemplateGetPayload<{
-      include: { episodes: true };
-    }> | null = null;
-    if (dto.care_path_code) {
-      const carePath = await this.prismaService.db.carePath.findFirst({
-        where: {
-          code: dto.care_path_code,
-          is_deleted: false,
-          OR: [
-            { organization_id: null },
-            { organization_id: user.organizationId },
-          ],
-        },
+    // Resolve the CarePath (and its linked JourneyTemplate) for this booking.
+    // Always resolved via CarePath so journey.care_path_id is never null —
+    // enabling consistent querying and analytics across all care paths.
+    // When no care_path_code is sent, default to the specialty's GENERAL_GYN path.
+    const carePathCode = dto.care_path_code ?? 'GENERAL_GYN';
+    const carePathInclude = {
+      journey_template: {
         include: {
-          journey_template: {
-            include: {
-              episodes: {
-                where: { is_deleted: false },
-                orderBy: { order: 'asc' },
-              },
-            },
+          episodes: {
+            where: { is_deleted: false },
+            orderBy: { order: 'asc' as const },
           },
         },
-      });
-      if (!carePath) {
-        throw new NotFoundException(
-          `Care path "${dto.care_path_code}" not found`,
-        );
-      }
-      carePathId = carePath.id;
-      template = carePath.journey_template;
-    } else {
-      template = await this.prismaService.db.journeyTemplate.findFirst({
-        where: {
-          specialty: { code: dto.specialty_code, is_deleted: false },
-          code: 'GENERAL_GYN',
-          is_deleted: false,
-        },
-        include: {
-          episodes: { where: { is_deleted: false }, orderBy: { order: 'asc' } },
-        },
-      });
+      },
+    } as const;
+
+    const resolvedCarePath = await this.prismaService.db.carePath.findFirst({
+      where: {
+        code: carePathCode,
+        is_deleted: false,
+        specialty: { code: dto.specialty_code, is_deleted: false },
+        OR: [
+          { organization_id: null },
+          { organization_id: user.organizationId },
+        ],
+      },
+      include: carePathInclude,
+    });
+    if (!resolvedCarePath) {
+      throw new NotFoundException(
+        `Care path "${carePathCode}" not found for specialty "${dto.specialty_code}"`,
+      );
     }
+    const carePathId: string = resolvedCarePath.id;
+    let template: Prisma.JourneyTemplateGetPayload<{
+      include: { episodes: true };
+    }> | null = resolvedCarePath.journey_template;
     if (!template || !template.episodes.length) {
       throw new NotFoundException(
         'No journey template resolved for this booking',
