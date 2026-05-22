@@ -408,7 +408,7 @@ export class VisitsService {
     // Always resolved via CarePath so journey.care_path_id is never null —
     // enabling consistent querying and analytics across all care paths.
     // When no care_path_code is sent, default to the specialty's GENERAL_GYN path.
-    const carePathCode = dto.care_path_code ?? 'GENERAL_GYN';
+    const carePathCode = dto.care_path_code ?? 'OBGYN_GENERAL';
     const carePathInclude = {
       journey_template: {
         include: {
