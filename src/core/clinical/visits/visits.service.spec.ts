@@ -62,6 +62,11 @@ const mockTemplate = {
   ],
 };
 
+const mockCarePath = {
+  id: 'care-path-uuid',
+  journey_template: mockTemplate,
+};
+
 const mockPatient = {
   id: 'patient-uuid',
   national_id: '12345',
@@ -95,7 +100,7 @@ describe('VisitsService', () => {
     };
     patient: { findUnique: jest.Mock; create: jest.Mock };
     patientJourney: { findFirst: jest.Mock; create: jest.Mock };
-    journeyTemplate: { findFirst: jest.Mock };
+    carePath: { findFirst: jest.Mock };
     visit: {
       create: jest.Mock;
       findMany: jest.Mock;
@@ -127,7 +132,7 @@ describe('VisitsService', () => {
       },
       patient: { findUnique: jest.fn(), create: jest.fn() },
       patientJourney: { findFirst: jest.fn(), create: jest.fn() },
-      journeyTemplate: { findFirst: jest.fn() },
+      carePath: { findFirst: jest.fn() },
       visit: {
         create: jest.fn(),
         findMany: jest.fn(),
@@ -664,7 +669,7 @@ describe('VisitsService', () => {
     });
 
     it('throws BadRequestException when branch_id absent and user has no activeBranchId', async () => {
-      db.journeyTemplate.findFirst.mockResolvedValue(mockTemplate);
+      db.carePath.findFirst.mockResolvedValue(mockCarePath);
       const userNoBranch = { ...mockUser, activeBranchId: undefined };
       await expect(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -673,14 +678,14 @@ describe('VisitsService', () => {
     });
 
     it('throws NotFoundException when GENERAL_GYN template not found', async () => {
-      db.journeyTemplate.findFirst.mockResolvedValue(null);
+      db.carePath.findFirst.mockResolvedValue(null);
       await expect(service.bookVisit(baseDto, mockUser)).rejects.toThrow(
         NotFoundException,
       );
     });
 
     it('throws NotFoundException when patient_id provided but patient not found', async () => {
-      db.journeyTemplate.findFirst.mockResolvedValue(mockTemplate);
+      db.carePath.findFirst.mockResolvedValue(mockCarePath);
       db.patient.findUnique.mockResolvedValue(null);
       await expect(
         service.bookVisit(
@@ -691,7 +696,7 @@ describe('VisitsService', () => {
     });
 
     it('throws ConflictException when new patient has duplicate national_id', async () => {
-      db.journeyTemplate.findFirst.mockResolvedValue(mockTemplate);
+      db.carePath.findFirst.mockResolvedValue(mockCarePath);
       db.patient.findUnique.mockResolvedValue({
         ...mockPatient,
         is_deleted: false,
@@ -702,7 +707,7 @@ describe('VisitsService', () => {
     });
 
     it('creates new patient, journey, episodes and visit on first walk-in', async () => {
-      db.journeyTemplate.findFirst.mockResolvedValue(mockTemplate);
+      db.carePath.findFirst.mockResolvedValue(mockCarePath);
       db.patient.findUnique.mockResolvedValue(null);
       db.patient.create.mockResolvedValue(mockPatient);
       db.patientJourney.findFirst.mockResolvedValue(null);
@@ -727,7 +732,7 @@ describe('VisitsService', () => {
     });
 
     it('reuses existing journey episode on second walk-in', async () => {
-      db.journeyTemplate.findFirst.mockResolvedValue(mockTemplate);
+      db.carePath.findFirst.mockResolvedValue(mockCarePath);
       db.patient.findUnique.mockResolvedValueOnce(null); // national_id check
       db.patient.create.mockResolvedValue(mockPatient);
       db.patientJourney.findFirst.mockResolvedValue(mockJourney);
@@ -748,7 +753,7 @@ describe('VisitsService', () => {
     });
 
     it('emits visit.booked WebSocket event after successful booking', async () => {
-      db.journeyTemplate.findFirst.mockResolvedValue(mockTemplate);
+      db.carePath.findFirst.mockResolvedValue(mockCarePath);
       db.patient.findUnique.mockResolvedValue(null);
       db.patient.create.mockResolvedValue(mockPatient);
       db.patientJourney.findFirst.mockResolvedValue(null);
@@ -791,9 +796,12 @@ describe('VisitsService', () => {
       };
       db.branch.findFirst.mockResolvedValue({ id: 'branch-uuid', organization_id: 'org-uuid' });
       db.profileBranch.findFirst.mockResolvedValue({ id: 'pb-1' });
-      db.journeyTemplate.findFirst.mockResolvedValue({
-        ...mockTemplate,
-        episodes: [{ id: 'ep-template-uuid', name: 'General Consultation', order: 1 }],
+      db.carePath.findFirst.mockResolvedValue({
+        ...mockCarePath,
+        journey_template: {
+          ...mockTemplate,
+          episodes: [{ id: 'ep-template-uuid', name: 'General Consultation', order: 1 }],
+        },
       });
       db.patient.findUnique.mockResolvedValue(mockPatient);
       db.patientJourney.findFirst.mockResolvedValue(mockJourney);
