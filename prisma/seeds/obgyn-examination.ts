@@ -999,15 +999,13 @@ const SECTIONS: SectionSpec[] = [
           path: 'case_path',
         },
         config: {
-          ui: { variant: 'segmented', colSpan: 12 },
-          validation: {
-            options: [
-              opt('GENERAL_GYN', 'General GYN'),
-              opt('PREGNANCY', 'Pregnancy'),
-              opt('SURGERY', 'Surgery'),
-              opt('INFERTILITY', 'Infertility'),
-            ],
+          ui: {
+            variant: 'case-path',
+            specialtyCode: 'OBGYN',
+            optionsSource: '/v1/care-paths?specialtyCode=OBGYN',
+            colSpan: 12,
           },
+          validation: { options: [] },
         },
       },
     ],
