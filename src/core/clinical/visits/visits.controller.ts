@@ -20,6 +20,7 @@ import {
   IsInt,
   IsNotEmpty,
   IsOptional,
+  IsUUID,
   Max,
   Min,
 } from 'class-validator';
@@ -32,6 +33,7 @@ import { UpdateVisitDto } from './dto/update-visit.dto';
 import { UpdateVisitStatusDto } from './dto/update-visit-status.dto';
 import { SetFollowUpDto } from './dto/set-follow-up.dto';
 import { VisitDto } from './dto/visit.dto';
+import { VisitHistorySummaryDto } from './dto/visit-history-summary.dto';
 import { ApiStandardResponse, ApiPaginatedResponse } from '@common/swagger';
 import { CurrentUser } from '@common/decorators/current-user.decorator';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
@@ -47,6 +49,13 @@ class ListBranchVisitsQueryDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number = 1;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit?: number =
     20;
+}
+
+class VisitHistoryQueryDto {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number = 1;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit?: number =
+    3;
+  @IsOptional() @IsUUID() exclude?: string;
 }
 
 @ApiTags('Visits')
@@ -109,6 +118,22 @@ export class VisitsController {
   @ApiStandardResponse(VisitDto)
   findOne(@Param('id') id: string, @CurrentUser() user: AuthContext) {
     return this.visitsService.findOne(id, user);
+  }
+
+  @Get('patients/:patientId/visits/history')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Paginated completed visit history for a patient' })
+  @ApiPaginatedResponse(VisitHistorySummaryDto)
+  findPatientVisitHistory(
+    @Param('patientId', ParseUUIDPipe) patientId: string,
+    @Query() query: VisitHistoryQueryDto,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.visitsService.findPatientVisitHistory(
+      patientId,
+      user.organizationId,
+      { page: query.page, limit: query.limit, excludeVisitId: query.exclude },
+    );
   }
 
   @Patch('visits/:id')
