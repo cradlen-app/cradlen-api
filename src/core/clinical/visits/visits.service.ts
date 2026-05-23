@@ -438,7 +438,7 @@ export class VisitsService {
       );
     }
     const carePathId: string = resolvedCarePath.id;
-    let template: Prisma.JourneyTemplateGetPayload<{
+    const template: Prisma.JourneyTemplateGetPayload<{
       include: { episodes: true };
     }> | null = resolvedCarePath.journey_template;
     if (!template || !template.episodes.length) {
@@ -734,6 +734,75 @@ export class VisitsService {
       this.prismaService.db.visit.count({ where }),
     ]);
     return paginated(visits, { page, limit, total });
+  }
+
+  async findPatientVisitHistory(
+    patientId: string,
+    organizationId: string,
+    query: { page?: number; limit?: number; excludeVisitId?: string },
+  ) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 3;
+
+    const where: Prisma.VisitWhereInput = {
+      is_deleted: false,
+      status: 'COMPLETED',
+      episode: {
+        journey: {
+          patient_id: patientId,
+          organization_id: organizationId,
+        },
+      },
+      ...(query.excludeVisitId ? { id: { not: query.excludeVisitId } } : {}),
+    };
+
+    const [visits, total] = await this.prismaService.db.$transaction([
+      this.prismaService.db.visit.findMany({
+        where,
+        orderBy: { completed_at: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          encounter: {
+            select: { provisional_diagnosis: true },
+          },
+          prescription: {
+            include: {
+              items: {
+                where: { is_deleted: false },
+                orderBy: { order: 'asc' },
+                include: {
+                  medication: { select: { name: true } },
+                },
+              },
+            },
+          },
+          investigations: {
+            where: { is_deleted: false },
+            include: {
+              lab_test: { select: { name: true } },
+            },
+          },
+        },
+      }),
+      this.prismaService.db.visit.count({ where }),
+    ]);
+
+    const summaries = visits.map((v) => ({
+      id: v.id,
+      appointment_type: v.appointment_type,
+      completed_at: v.completed_at!,
+      diagnosis: v.encounter?.provisional_diagnosis ?? null,
+      medications: (v.prescription?.items ?? []).map((item) => ({
+        name: item.medication?.name ?? item.custom_drug_name ?? '',
+        dose: item.dose,
+      })),
+      investigations: (v.investigations ?? [])
+        .map((inv) => inv.lab_test?.name ?? inv.custom_test_name ?? '')
+        .filter(Boolean),
+    }));
+
+    return paginated(summaries, { page, limit, total });
   }
 
   async findAllForBranch(
