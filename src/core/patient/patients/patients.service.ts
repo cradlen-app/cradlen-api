@@ -39,7 +39,9 @@ export class PatientsService {
       enrollments: {
         some: {
           organization_id: user.organizationId,
-          status: { in: ['ACTIVE', 'DISCHARGED'] as PatientOrgEnrollmentStatus[] },
+          status: {
+            in: ['ACTIVE', 'DISCHARGED'] as PatientOrgEnrollmentStatus[],
+          },
           is_deleted: false,
         },
       },

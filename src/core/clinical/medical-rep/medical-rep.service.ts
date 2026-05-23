@@ -137,7 +137,10 @@ export class MedicalRepService {
     return paginated(reps, { page, limit, total });
   }
 
-  async findCompanies(search: string, organizationId: string): Promise<string[]> {
+  async findCompanies(
+    search: string,
+    organizationId: string,
+  ): Promise<string[]> {
     const rows = await this.prismaService.db.medicalRep.findMany({
       where: {
         organization_id: organizationId,

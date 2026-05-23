@@ -10,7 +10,9 @@ describe('PatientEnrollmentCleanupService', () => {
 
   beforeEach(async () => {
     db = { visit: { findMany: jest.fn().mockResolvedValue([]) } };
-    visitsServiceMock = { updateStatus: jest.fn().mockResolvedValue(undefined) };
+    visitsServiceMock = {
+      updateStatus: jest.fn().mockResolvedValue(undefined),
+    };
 
     const module = await Test.createTestingModule({
       providers: [
@@ -35,12 +37,20 @@ describe('PatientEnrollmentCleanupService', () => {
     expect(visitsServiceMock.updateStatus).toHaveBeenCalledWith(
       'v1',
       { status: 'NO_SHOW' },
-      expect.objectContaining({ userId: 'system', profileId: 'system', organizationId: 'org-1' }),
+      expect.objectContaining({
+        userId: 'system',
+        profileId: 'system',
+        organizationId: 'org-1',
+      }),
     );
     expect(visitsServiceMock.updateStatus).toHaveBeenCalledWith(
       'v2',
       { status: 'NO_SHOW' },
-      expect.objectContaining({ userId: 'system', profileId: 'system', organizationId: 'org-2' }),
+      expect.objectContaining({
+        userId: 'system',
+        profileId: 'system',
+        organizationId: 'org-2',
+      }),
     );
   });
 

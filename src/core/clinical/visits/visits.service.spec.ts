@@ -1093,7 +1093,11 @@ describe('VisitsService', () => {
     it('passes excludeVisitId as id.not filter', async () => {
       db.visit.findMany.mockResolvedValue([]);
 
-      await service.findPatientVitalsTrend('patient-1', 'org-1', 'skip-this-visit');
+      await service.findPatientVitalsTrend(
+        'patient-1',
+        'org-1',
+        'skip-this-visit',
+      );
 
       expect(db.visit.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
