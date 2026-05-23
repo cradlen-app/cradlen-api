@@ -1,4 +1,14 @@
-import { IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
+import {
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+  ValidateIf,
+} from 'class-validator';
 
 export class UpdateMedicationDto {
   @IsString() @IsOptional() @MinLength(1) @MaxLength(200) name?: string;
@@ -13,5 +23,7 @@ export class UpdateMedicationDto {
   @IsString() @IsOptional() @MaxLength(64) default_dose_frequency?: string;
   @IsString() @IsOptional() @MaxLength(64) default_dose_route?: string;
   @ValidateIf((o) => o.medical_rep_id !== null)
-  @IsUUID('4') @IsOptional() medical_rep_id?: string | null;
+  @IsUUID('4')
+  @IsOptional()
+  medical_rep_id?: string | null;
 }
