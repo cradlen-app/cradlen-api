@@ -1058,8 +1058,8 @@ describe('VisitsService', () => {
           vitals: {
             systolic_bp: 120,
             diastolic_bp: 80,
-            weight_kg: new (require('@prisma/client').Prisma.Decimal)('70.50'),
-            bmi: new (require('@prisma/client').Prisma.Decimal)('24.2'),
+            weight_kg: new Prisma.Decimal('70.50'),
+            bmi: new Prisma.Decimal('24.2'),
           },
         },
         {
