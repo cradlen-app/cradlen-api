@@ -64,11 +64,13 @@ describe('MedicationsService', () => {
         findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
       },
-      $transaction: jest.fn().mockImplementation((fnOrArr: unknown) =>
-        typeof fnOrArr === 'function'
-          ? (fnOrArr as (tx: unknown) => Promise<unknown>)(db)
-          : Promise.all(fnOrArr as Promise<unknown>[]),
-      ),
+      $transaction: jest
+        .fn()
+        .mockImplementation((fnOrArr: unknown) =>
+          typeof fnOrArr === 'function'
+            ? (fnOrArr as (tx: unknown) => Promise<unknown>)(db)
+            : Promise.all(fnOrArr as Promise<unknown>[]),
+        ),
     };
     auth = {
       isOwner: jest.fn().mockResolvedValue(true),
@@ -275,7 +277,9 @@ describe('MedicationsService', () => {
 
     it('replaces the rep link when medical_rep_id is provided on update', async () => {
       db.medication.findUnique.mockResolvedValue({
-        id: 'med-uuid', organization_id: callerOrg, added_by_id: 'profile-A',
+        id: 'med-uuid',
+        organization_id: callerOrg,
+        added_by_id: 'profile-A',
       });
       db.medicalRep.findFirst.mockResolvedValue({ id: 'rep-1' });
       db.medication.update.mockResolvedValue({ id: 'med-uuid' });
@@ -290,7 +294,9 @@ describe('MedicationsService', () => {
 
     it('clears the rep link when medical_rep_id is null on update', async () => {
       db.medication.findUnique.mockResolvedValue({
-        id: 'med-uuid', organization_id: callerOrg, added_by_id: 'profile-A',
+        id: 'med-uuid',
+        organization_id: callerOrg,
+        added_by_id: 'profile-A',
       });
       db.medication.update.mockResolvedValue({ id: 'med-uuid' });
       await service.update('med-uuid', { medical_rep_id: null }, mockUser);
@@ -302,7 +308,9 @@ describe('MedicationsService', () => {
 
     it('leaves rep link unchanged when medical_rep_id is absent on update', async () => {
       db.medication.findUnique.mockResolvedValue({
-        id: 'med-uuid', organization_id: callerOrg, added_by_id: 'profile-A',
+        id: 'med-uuid',
+        organization_id: callerOrg,
+        added_by_id: 'profile-A',
       });
       db.medication.update.mockResolvedValue({ id: 'med-uuid' });
       await service.update('med-uuid', { name: 'New Name' }, mockUser);
