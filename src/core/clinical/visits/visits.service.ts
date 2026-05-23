@@ -805,6 +805,45 @@ export class VisitsService {
     return paginated(summaries, { page, limit, total });
   }
 
+  async findPatientVitalsTrend(
+    patientId: string,
+    organizationId: string,
+    excludeVisitId?: string,
+  ) {
+    const visits = await this.prismaService.db.visit.findMany({
+      where: {
+        is_deleted: false,
+        status: 'COMPLETED',
+        ...(excludeVisitId ? { id: { not: excludeVisitId } } : {}),
+        episode: {
+          journey: { patient_id: patientId, organization_id: organizationId },
+        },
+      },
+      orderBy: { completed_at: 'asc' },
+      select: {
+        id: true,
+        completed_at: true,
+        vitals: {
+          select: {
+            systolic_bp: true,
+            diastolic_bp: true,
+            weight_kg: true,
+            bmi: true,
+          },
+        },
+      },
+    });
+
+    return visits.map((v) => ({
+      visit_id: v.id,
+      completed_at: v.completed_at!,
+      systolic_bp: v.vitals?.systolic_bp ?? null,
+      diastolic_bp: v.vitals?.diastolic_bp ?? null,
+      weight_kg: v.vitals?.weight_kg != null ? Number(v.vitals.weight_kg) : null,
+      bmi: v.vitals?.bmi != null ? Number(v.vitals.bmi) : null,
+    }));
+  }
+
   async findAllForBranch(
     branchId: string,
     status: VisitStatus,
