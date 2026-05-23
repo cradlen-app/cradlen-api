@@ -178,11 +178,19 @@ describe('PatientsService', () => {
         guardian_links: [],
       });
       const result = await service.findOne('patient-uuid');
-      expect(result).toMatchObject({ id: mockPatient.id, full_name: mockPatient.full_name });
+      expect(result).toMatchObject({
+        id: mockPatient.id,
+        full_name: mockPatient.full_name,
+      });
     });
 
     it('returns patient with flat spouse fields when spouse linked', async () => {
-      const spouseGuardian = { id: 'guardian-uuid', full_name: 'Ahmed Ali', national_id: '99999', phone_number: '0101' };
+      const spouseGuardian = {
+        id: 'guardian-uuid',
+        full_name: 'Ahmed Ali',
+        national_id: '99999',
+        phone_number: '0101',
+      };
       db.patient.findUnique.mockResolvedValue({
         ...mockPatient,
         guardian_links: [{ guardian: spouseGuardian }],

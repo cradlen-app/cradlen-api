@@ -841,7 +841,8 @@ export class VisitsService {
       completed_at: v.completed_at!,
       systolic_bp: v.vitals?.systolic_bp ?? null,
       diastolic_bp: v.vitals?.diastolic_bp ?? null,
-      weight_kg: v.vitals?.weight_kg != null ? Number(v.vitals.weight_kg) : null,
+      weight_kg:
+        v.vitals?.weight_kg != null ? Number(v.vitals.weight_kg) : null,
       bmi: v.vitals?.bmi != null ? Number(v.vitals.bmi) : null,
     }));
   }

@@ -1,8 +1,16 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { PatientAccessService } from './patient-access.service';
-import { UpsertFieldFlagDto, UpdateFieldFlagNoteDto, FieldFlagDto } from './dto/field-flag.dto';
+import {
+  UpsertFieldFlagDto,
+  UpdateFieldFlagNoteDto,
+  FieldFlagDto,
+} from './dto/field-flag.dto';
 
 @Injectable()
 export class FieldFlagsService {
@@ -24,7 +32,11 @@ export class FieldFlagsService {
     return flags.map((f) => this.toDto(f));
   }
 
-  async upsert(patientId: string, dto: UpsertFieldFlagDto, user: AuthContext): Promise<FieldFlagDto> {
+  async upsert(
+    patientId: string,
+    dto: UpsertFieldFlagDto,
+    user: AuthContext,
+  ): Promise<FieldFlagDto> {
     await this.patientAccess.assertPatientInOrg(patientId, user);
     // Last-writer-wins: re-flagging an existing field transfers authorship to the
     // caller. Only the current author can edit/remove, so this is intentional —
@@ -56,7 +68,11 @@ export class FieldFlagsService {
     return this.toDto(flag);
   }
 
-  async updateNote(flagId: string, dto: UpdateFieldFlagNoteDto, user: AuthContext): Promise<FieldFlagDto> {
+  async updateNote(
+    flagId: string,
+    dto: UpdateFieldFlagNoteDto,
+    user: AuthContext,
+  ): Promise<FieldFlagDto> {
     const flag = await this.loadOrThrow(flagId, user);
     if (dto.note === undefined) return this.toDto(flag);
     const updated = await this.prismaService.db.patientFieldFlag.update({
@@ -76,10 +92,15 @@ export class FieldFlagsService {
 
   private async loadOrThrow(flagId: string, user: AuthContext) {
     const flag = await this.prismaService.db.patientFieldFlag.findFirst({
-      where: { id: flagId, organization_id: user.organizationId, is_deleted: false },
+      where: {
+        id: flagId,
+        organization_id: user.organizationId,
+        is_deleted: false,
+      },
     });
     if (!flag) throw new NotFoundException('Field flag not found');
-    if (flag.author_id !== user.profileId) throw new ForbiddenException('Not your flag');
+    if (flag.author_id !== user.profileId)
+      throw new ForbiddenException('Not your flag');
     return flag;
   }
 

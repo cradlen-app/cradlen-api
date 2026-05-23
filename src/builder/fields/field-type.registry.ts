@@ -118,7 +118,11 @@ function assertComputed(config: ConfigShape, label: string) {
 }
 
 export const FIELD_TYPES: Record<FormFieldType, FieldTypeDescriptor> = {
-  TEXT: { type: 'TEXT', allowedNamespaces: new Set(ALL_NS), assertConfig: assertTextConfig },
+  TEXT: {
+    type: 'TEXT',
+    allowedNamespaces: new Set(ALL_NS),
+    assertConfig: assertTextConfig,
+  },
   TEXTAREA: { type: 'TEXTAREA', allowedNamespaces: new Set(ALL_NS) },
   NUMBER: { type: 'NUMBER', allowedNamespaces: new Set(ALL_NS) },
   DECIMAL: { type: 'DECIMAL', allowedNamespaces: new Set(ALL_NS) },
