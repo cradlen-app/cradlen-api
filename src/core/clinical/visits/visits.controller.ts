@@ -34,6 +34,7 @@ import { UpdateVisitStatusDto } from './dto/update-visit-status.dto';
 import { SetFollowUpDto } from './dto/set-follow-up.dto';
 import { VisitDto } from './dto/visit.dto';
 import { VisitHistorySummaryDto } from './dto/visit-history-summary.dto';
+import { VitalsTrendPointDto } from './dto/vitals-trend-point.dto';
 import { ApiStandardResponse, ApiPaginatedResponse } from '@common/swagger';
 import { CurrentUser } from '@common/decorators/current-user.decorator';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
@@ -55,6 +56,10 @@ class VisitHistoryQueryDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number = 1;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit?: number =
     3;
+  @IsOptional() @IsUUID() exclude?: string;
+}
+
+class VitalsTrendQueryDto {
   @IsOptional() @IsUUID() exclude?: string;
 }
 
@@ -133,6 +138,24 @@ export class VisitsController {
       patientId,
       user.organizationId,
       { page: query.page, limit: query.limit, excludeVisitId: query.exclude },
+    );
+  }
+
+  @Get('patients/:patientId/vitals-trend')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Full vitals trend series for BP and Weight/BMI charts',
+  })
+  @ApiStandardResponse(VitalsTrendPointDto)
+  findPatientVitalsTrend(
+    @Param('patientId', ParseUUIDPipe) patientId: string,
+    @Query() query: VitalsTrendQueryDto,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.visitsService.findPatientVitalsTrend(
+      patientId,
+      user.organizationId,
+      query.exclude,
     );
   }
 
