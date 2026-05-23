@@ -1049,6 +1049,62 @@ describe('VisitsService', () => {
     });
   });
 
+  describe('findPatientVitalsTrend', () => {
+    it('returns chronologically-sorted vitals points mapped from completed visits', async () => {
+      const mockVisits = [
+        {
+          id: 'v1',
+          completed_at: new Date('2024-01-15T10:00:00Z'),
+          vitals: {
+            systolic_bp: 120,
+            diastolic_bp: 80,
+            weight_kg: new Prisma.Decimal('70.50'),
+            bmi: new Prisma.Decimal('24.2'),
+          },
+        },
+        {
+          id: 'v2',
+          completed_at: new Date('2024-02-20T10:00:00Z'),
+          vitals: null,
+        },
+      ];
+      db.visit.findMany.mockResolvedValue(mockVisits as any);
+
+      const result = await service.findPatientVitalsTrend('patient-1', 'org-1');
+
+      expect(result).toHaveLength(2);
+      expect(result[0]).toEqual({
+        visit_id: 'v1',
+        completed_at: new Date('2024-01-15T10:00:00Z'),
+        systolic_bp: 120,
+        diastolic_bp: 80,
+        weight_kg: 70.5,
+        bmi: 24.2,
+      });
+      expect(result[1]).toMatchObject({
+        visit_id: 'v2',
+        systolic_bp: null,
+        diastolic_bp: null,
+        weight_kg: null,
+        bmi: null,
+      });
+    });
+
+    it('passes excludeVisitId as id.not filter', async () => {
+      db.visit.findMany.mockResolvedValue([]);
+
+      await service.findPatientVitalsTrend('patient-1', 'org-1', 'skip-this-visit');
+
+      expect(db.visit.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            id: { not: 'skip-this-visit' },
+          }),
+        }),
+      );
+    });
+  });
+
   describe('findPatientVisitHistory', () => {
     it('returns paginated completed visits with clinical summaries, excluding the current visit', async () => {
       const completedAt = new Date('2025-09-30T10:00:00Z');
@@ -1066,9 +1122,7 @@ describe('VisitsService', () => {
             },
           ],
         },
-        investigations: [
-          { lab_test: { name: 'CBC' }, custom_test_name: null },
-        ],
+        investigations: [{ lab_test: { name: 'CBC' }, custom_test_name: null }],
       };
 
       db.visit.findMany.mockResolvedValue([mockHistoryVisit]);
