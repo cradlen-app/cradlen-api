@@ -58,6 +58,10 @@ class VisitHistoryQueryDto {
   @IsOptional() @IsUUID() exclude?: string;
 }
 
+class VitalsTrendQueryDto {
+  @IsOptional() @IsUUID() exclude?: string;
+}
+
 @ApiTags('Visits')
 @Controller()
 export class VisitsController {
@@ -133,6 +137,23 @@ export class VisitsController {
       patientId,
       user.organizationId,
       { page: query.page, limit: query.limit, excludeVisitId: query.exclude },
+    );
+  }
+
+  @Get('patients/:patientId/vitals-trend')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Full vitals trend series for BP and Weight/BMI charts',
+  })
+  findPatientVitalsTrend(
+    @Param('patientId', ParseUUIDPipe) patientId: string,
+    @Query() query: VitalsTrendQueryDto,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.visitsService.findPatientVitalsTrend(
+      patientId,
+      user.organizationId,
+      query.exclude,
     );
   }
 
