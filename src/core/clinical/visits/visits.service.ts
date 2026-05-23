@@ -25,6 +25,7 @@ import { TemplatesService } from '@builder/templates/templates.service.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import { buildRevision } from '@common/utils/revisions.helper.js';
 import { CLINICAL_EVENTS } from '@core/clinical/events/clinical-events.js';
+import { VitalsTrendPointDto } from './dto/vitals-trend-point.dto.js';
 
 const TERMINAL_STATES: VisitStatus[] = ['COMPLETED', 'CANCELLED', 'NO_SHOW'];
 
@@ -809,7 +810,7 @@ export class VisitsService {
     patientId: string,
     organizationId: string,
     excludeVisitId?: string,
-  ) {
+  ): Promise<VitalsTrendPointDto[]> {
     const visits = await this.prismaService.db.visit.findMany({
       where: {
         is_deleted: false,
@@ -824,6 +825,7 @@ export class VisitsService {
         id: true,
         completed_at: true,
         vitals: {
+          where: { is_deleted: false },
           select: {
             systolic_bp: true,
             diastolic_bp: true,
