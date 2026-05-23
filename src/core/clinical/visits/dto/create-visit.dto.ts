@@ -1,4 +1,11 @@
-import { IsDateString, IsEnum, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import {
+  IsDateString,
+  IsEnum,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 import { AppointmentType, VisitPriority } from '@prisma/client';
 import { VisitIntakeFieldsDto } from './visit-intake.dto';
 

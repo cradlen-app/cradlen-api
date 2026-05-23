@@ -31,8 +31,9 @@ export function evaluate(
     );
   }
   if ('contains' in condition) {
-    return Object.entries(condition.contains).every(([k, v]) =>
-      Array.isArray(values[k]) && (values[k] as unknown[]).includes(v),
+    return Object.entries(condition.contains).every(
+      ([k, v]) =>
+        Array.isArray(values[k]) && (values[k] as unknown[]).includes(v),
     );
   }
   if ('and' in condition) {
