@@ -10,6 +10,7 @@ import { paginated } from '@common/utils/pagination.utils.js';
 import type { CreatePriceListDto } from './dto/create-price-list.dto.js';
 import type { CreatePriceListItemDto } from './dto/create-price-list-item.dto.js';
 import type { UpdatePriceListItemDto } from './dto/update-price-list-item.dto.js';
+import type { UpdatePriceListDto } from './dto/update-price-list.dto.js';
 
 @Injectable()
 export class PriceListsService {
@@ -86,7 +87,9 @@ export class PriceListsService {
     return this.prismaService.db.priceListItem.findMany({
       where: { price_list_id: priceListId, is_deleted: false },
       include: {
-        service: { select: { id: true, name: true, code: true, service_type: true } },
+        service: {
+          select: { id: true, name: true, code: true, service_type: true },
+        },
       },
     });
   }
@@ -98,10 +101,18 @@ export class PriceListsService {
     user: AuthContext,
   ) {
     const list = await this.findListOrThrow(organizationId, priceListId);
-    await this.assertCanManageList(user, organizationId, list.branch_id ?? undefined);
+    await this.assertCanManageList(
+      user,
+      organizationId,
+      list.branch_id ?? undefined,
+    );
 
     const duplicate = await this.prismaService.db.priceListItem.findFirst({
-      where: { price_list_id: priceListId, service_id: dto.service_id, is_deleted: false },
+      where: {
+        price_list_id: priceListId,
+        service_id: dto.service_id,
+        is_deleted: false,
+      },
     });
     if (duplicate) {
       throw new ConflictException('Service already exists in this price list');
@@ -115,7 +126,9 @@ export class PriceListsService {
         created_by_id: user.profileId,
       },
       include: {
-        service: { select: { id: true, name: true, code: true, service_type: true } },
+        service: {
+          select: { id: true, name: true, code: true, service_type: true },
+        },
       },
     });
   }
@@ -128,7 +141,11 @@ export class PriceListsService {
     user: AuthContext,
   ) {
     const list = await this.findListOrThrow(organizationId, priceListId);
-    await this.assertCanManageList(user, organizationId, list.branch_id ?? undefined);
+    await this.assertCanManageList(
+      user,
+      organizationId,
+      list.branch_id ?? undefined,
+    );
 
     const item = await this.prismaService.db.priceListItem.findFirst({
       where: { id: itemId, price_list_id: priceListId, is_deleted: false },
@@ -139,7 +156,9 @@ export class PriceListsService {
       where: { id: itemId },
       data: { unit_price: dto.unit_price },
       include: {
-        service: { select: { id: true, name: true, code: true, service_type: true } },
+        service: {
+          select: { id: true, name: true, code: true, service_type: true },
+        },
       },
     });
   }
@@ -151,7 +170,11 @@ export class PriceListsService {
     user: AuthContext,
   ): Promise<void> {
     const list = await this.findListOrThrow(organizationId, priceListId);
-    await this.assertCanManageList(user, organizationId, list.branch_id ?? undefined);
+    await this.assertCanManageList(
+      user,
+      organizationId,
+      list.branch_id ?? undefined,
+    );
 
     const item = await this.prismaService.db.priceListItem.findFirst({
       where: { id: itemId, price_list_id: priceListId, is_deleted: false },
@@ -164,9 +187,76 @@ export class PriceListsService {
     });
   }
 
+  async update(
+    organizationId: string,
+    priceListId: string,
+    dto: UpdatePriceListDto,
+    user: AuthContext,
+  ) {
+    const list = await this.findListOrThrow(organizationId, priceListId);
+    await this.assertCanManageList(
+      user,
+      organizationId,
+      list.branch_id ?? undefined,
+    );
+
+    if (dto.is_default && !list.is_default) {
+      const existing = await this.prismaService.db.priceList.findFirst({
+        where: {
+          organization_id: organizationId,
+          branch_id: list.branch_id,
+          is_default: true,
+          is_deleted: false,
+          NOT: { id: priceListId },
+        },
+      });
+      if (existing) {
+        throw new ConflictException(
+          `A default price list already exists for this ${list.branch_id ? 'branch' : 'organization'}. Update the existing one first.`,
+        );
+      }
+    }
+
+    return this.prismaService.db.priceList.update({
+      where: { id: priceListId },
+      data: {
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.currency !== undefined && { currency: dto.currency }),
+        ...(dto.is_default !== undefined && { is_default: dto.is_default }),
+        ...(dto.valid_from !== undefined && {
+          valid_from: dto.valid_from ? new Date(dto.valid_from) : null,
+        }),
+        ...(dto.valid_to !== undefined && {
+          valid_to: dto.valid_to ? new Date(dto.valid_to) : null,
+        }),
+      },
+    });
+  }
+
+  async remove(
+    organizationId: string,
+    priceListId: string,
+    user: AuthContext,
+  ): Promise<void> {
+    const list = await this.findListOrThrow(organizationId, priceListId);
+    await this.assertCanManageList(
+      user,
+      organizationId,
+      list.branch_id ?? undefined,
+    );
+    await this.prismaService.db.priceList.update({
+      where: { id: priceListId },
+      data: { is_deleted: true, deleted_at: new Date(), is_active: false },
+    });
+  }
+
   private async findListOrThrow(organizationId: string, priceListId: string) {
     const list = await this.prismaService.db.priceList.findFirst({
-      where: { id: priceListId, organization_id: organizationId, is_deleted: false },
+      where: {
+        id: priceListId,
+        organization_id: organizationId,
+        is_deleted: false,
+      },
     });
     if (!list) throw new NotFoundException('Price list not found');
     return list;
