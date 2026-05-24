@@ -37,6 +37,7 @@ import { CalendarModule } from '@core/calendar/calendar.module';
 import { ProceduresModule } from '@core/org/procedures/procedures.module';
 import { ObgynModule } from '@specialties/obgyn/obgyn.module';
 import { TemplatesModule } from '@builder/templates/templates.module.js';
+import { FinancialModule } from '@core/financial/financial.module.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import type { AppConfig } from './config/app.config';
 
@@ -70,6 +71,7 @@ import type { AppConfig } from './config/app.config';
     StaffModule,
     SubscriptionsModule,
     NotificationsModule,
+    FinancialModule,
     SpecialtiesModule,
     JobFunctionsModule,
     JourneyTemplatesModule,
