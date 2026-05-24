@@ -11,7 +11,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@common/decorators/current-user.decorator.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import {
@@ -23,6 +23,7 @@ import { PriceListsService } from './price-lists.service.js';
 import { CreatePriceListDto } from './dto/create-price-list.dto.js';
 import { CreatePriceListItemDto } from './dto/create-price-list-item.dto.js';
 import { UpdatePriceListItemDto } from './dto/update-price-list-item.dto.js';
+import { ListPriceListsQueryDto } from './dto/list-price-lists-query.dto.js';
 
 @ApiTags('Financial — Price Lists')
 @ApiBearerAuth()
@@ -32,20 +33,15 @@ export class PriceListsController {
 
   @Get()
   @ApiPaginatedResponse(Object)
-  @ApiQuery({ name: 'branch_id', required: false })
-  @ApiQuery({ name: 'page', required: false })
-  @ApiQuery({ name: 'limit', required: false })
   findAll(
     @Param('orgId', ParseUUIDPipe) orgId: string,
-    @Query('branch_id') branchId?: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
+    @Query() query: ListPriceListsQueryDto,
   ) {
     return this.priceListsService.findAll(
       orgId,
-      branchId,
-      page ? Number(page) : 1,
-      limit ? Number(limit) : 20,
+      query.branch_id,
+      query.page,
+      query.limit,
     );
   }
 

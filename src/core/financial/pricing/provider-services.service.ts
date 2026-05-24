@@ -85,6 +85,16 @@ export class ProviderServicesService {
       organizationId,
     );
 
+    const record = await this.prismaService.db.providerService.findFirst({
+      where: {
+        organization_id: organizationId,
+        profile_id: profileId,
+        service_id: serviceId,
+        is_deleted: false,
+      },
+    });
+    if (!record) throw new NotFoundException('Provider service not found');
+
     await this.prismaService.db.providerService.updateMany({
       where: {
         organization_id: organizationId,
@@ -121,6 +131,21 @@ export class ProviderServicesService {
       user.profileId,
       organizationId,
     );
+
+    const existing =
+      await this.prismaService.db.providerPriceOverride.findFirst({
+        where: {
+          organization_id: organizationId,
+          profile_id: profileId,
+          service_id: dto.service_id,
+          branch_id: dto.branch_id ?? null,
+          is_deleted: false,
+        },
+      });
+    if (existing)
+      throw new ConflictException(
+        'An active price override already exists for this provider/service/branch combination',
+      );
 
     return this.prismaService.db.providerPriceOverride.create({
       data: {
