@@ -26,9 +26,11 @@ describe('InvoiceNumberService', () => {
     service = module.get(InvoiceNumberService);
     jest.clearAllMocks();
 
-    mockTransaction.mockImplementation(async (fn) => fn({
-      $queryRaw: mockQueryRaw,
-    }));
+    mockTransaction.mockImplementation(async (fn) =>
+      fn({
+        $queryRaw: mockQueryRaw,
+      }),
+    );
   });
 
   it('formats invoice number as INV-YYYY-NNNNN', async () => {

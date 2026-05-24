@@ -19,7 +19,9 @@ export class InvoiceNumberService {
 
     const sequence = rows[0];
     if (!sequence) {
-      throw new InternalServerErrorException('Failed to generate invoice sequence');
+      throw new InternalServerErrorException(
+        'Failed to generate invoice sequence',
+      );
     }
     return `INV-${sequence.year}-${String(sequence.last_seq).padStart(5, '0')}`;
   }
