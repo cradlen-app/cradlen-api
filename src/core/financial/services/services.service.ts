@@ -55,17 +55,27 @@ export class ServicesService {
     );
   }
 
-  async create(organizationId: string, dto: CreateServiceDto, user: AuthContext) {
+  async create(
+    organizationId: string,
+    dto: CreateServiceDto,
+    user: AuthContext,
+  ) {
     await this.authorizationService.assertCanManageOrganization(
       user.profileId,
       organizationId,
     );
 
     const existing = await this.prismaService.db.service.findFirst({
-      where: { organization_id: organizationId, code: dto.code, is_deleted: false },
+      where: {
+        organization_id: organizationId,
+        code: dto.code,
+        is_deleted: false,
+      },
     });
     if (existing) {
-      throw new ConflictException('Service code already exists in this organization');
+      throw new ConflictException(
+        'Service code already exists in this organization',
+      );
     }
 
     const created = await this.prismaService.db.service.create({
@@ -99,7 +109,9 @@ export class ServicesService {
 
     const updated = await this.prismaService.db.$transaction(async (tx) => {
       if (dto.specialty_ids !== undefined) {
-        await tx.serviceSpecialty.deleteMany({ where: { service_id: serviceId } });
+        await tx.serviceSpecialty.deleteMany({
+          where: { service_id: serviceId },
+        });
         if (dto.specialty_ids.length) {
           await tx.serviceSpecialty.createMany({
             data: dto.specialty_ids.map((id) => ({
@@ -113,8 +125,12 @@ export class ServicesService {
         where: { id: serviceId },
         data: {
           ...(dto.name !== undefined && { name: dto.name }),
-          ...(dto.description !== undefined && { description: dto.description }),
-          ...(dto.service_type !== undefined && { service_type: dto.service_type }),
+          ...(dto.description !== undefined && {
+            description: dto.description,
+          }),
+          ...(dto.service_type !== undefined && {
+            service_type: dto.service_type,
+          }),
           ...(dto.code !== undefined && { code: dto.code }),
         },
         include: { specialties: true },
@@ -141,7 +157,11 @@ export class ServicesService {
 
   private async findOwnedOrThrow(organizationId: string, serviceId: string) {
     const service = await this.prismaService.db.service.findFirst({
-      where: { id: serviceId, organization_id: organizationId, is_deleted: false },
+      where: {
+        id: serviceId,
+        organization_id: organizationId,
+        is_deleted: false,
+      },
     });
     if (!service) throw new NotFoundException('Service not found');
     return service;
@@ -161,6 +181,9 @@ export class ServicesService {
   }
 
   private toDto(service: any & { specialties: { specialty_id: string }[] }) {
-    return { ...service, specialty_ids: service.specialties.map((s: any) => s.specialty_id) };
+    return {
+      ...service,
+      specialty_ids: service.specialties.map((s: any) => s.specialty_id),
+    };
   }
 }

@@ -37,10 +37,15 @@ export class ServicesController {
     @Param('orgId', ParseUUIDPipe) orgId: string,
     @Query() query: ListServicesQueryDto,
   ) {
-    const activeFilter = query.active !== undefined ? query.active === 'true' : undefined;
+    const activeFilter =
+      query.active !== undefined ? query.active === 'true' : undefined;
     return this.servicesService.findAll(
       orgId,
-      { service_type: query.service_type, specialty_id: query.specialty_id, active: activeFilter },
+      {
+        service_type: query.service_type,
+        specialty_id: query.specialty_id,
+        active: activeFilter,
+      },
       query.page ?? 1,
       query.limit ?? 20,
     );
