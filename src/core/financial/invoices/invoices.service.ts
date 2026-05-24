@@ -469,7 +469,7 @@ export class InvoicesService {
         const discountAmount = new Prisma.Decimal(item.discount_amount ?? 0);
         let unitPrice: Prisma.Decimal;
         let currency = defaultCurrency;
-        let pricingSource = PricingSource.CUSTOM;
+        let pricingSource: PricingSource = PricingSource.CUSTOM;
 
         if (item.service_id) {
           const resolved = await this.pricingResolver.resolvePrice({
