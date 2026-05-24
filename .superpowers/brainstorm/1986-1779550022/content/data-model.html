@@ -1,0 +1,167 @@
+<h2>Financial Module — Data Model</h2>
+<p class="subtitle">Three sub-modules, each owning a slice of the domain. Does this structure look right?</p>
+
+<div style="display: flex; gap: 24px; flex-wrap: wrap; margin-top: 8px;">
+
+  <!-- Services -->
+  <div style="flex: 1; min-width: 260px;">
+    <div style="background: #1e293b; border: 1.5px solid #334155; border-radius: 10px; padding: 16px;">
+      <div style="color: #38bdf8; font-size: 11px; font-weight: 700; letter-spacing: 1px; margin-bottom: 8px;">CORE/FINANCIAL/SERVICES</div>
+      <div style="background: #0f172a; border-radius: 8px; padding: 12px; margin-bottom: 10px;">
+        <div style="color: #f8fafc; font-weight: 700; margin-bottom: 6px;">Service</div>
+        <div style="color: #94a3b8; font-size: 12px; line-height: 1.8;">
+          id · UUID PK<br>
+          organization_id · UUID? FK<br>
+          code · String (unique/org)<br>
+          name · String<br>
+          description · String?<br>
+          service_type · Enum<br>
+          <span style="color: #64748b;">CONSULTATION | PROCEDURE</span><br>
+          <span style="color: #64748b;">LAB_TEST | IMAGING | ADMIN | OTHER</span><br>
+          is_active · Boolean<br>
+          is_deleted · Boolean<br>
+          created_by_id · UUID FK (Profile)
+        </div>
+      </div>
+      <div style="background: #0f172a; border-radius: 8px; padding: 12px;">
+        <div style="color: #f8fafc; font-weight: 700; margin-bottom: 6px;">ServiceSpecialty <span style="color:#64748b;font-size:11px;">(M2M)</span></div>
+        <div style="color: #94a3b8; font-size: 12px; line-height: 1.8;">
+          service_id · UUID FK<br>
+          specialty_id · UUID FK<br>
+          <span style="color:#64748b;">null specialty_id = global service</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Price Lists -->
+  <div style="flex: 1; min-width: 260px;">
+    <div style="background: #1e293b; border: 1.5px solid #334155; border-radius: 10px; padding: 16px;">
+      <div style="color: #a78bfa; font-size: 11px; font-weight: 700; letter-spacing: 1px; margin-bottom: 8px;">CORE/FINANCIAL/PRICE-LISTS</div>
+      <div style="background: #0f172a; border-radius: 8px; padding: 12px; margin-bottom: 10px;">
+        <div style="color: #f8fafc; font-weight: 700; margin-bottom: 6px;">PriceList</div>
+        <div style="color: #94a3b8; font-size: 12px; line-height: 1.8;">
+          id · UUID PK<br>
+          organization_id · UUID FK<br>
+          branch_id · UUID? FK <span style="color:#64748b;">(null = org-level)</span><br>
+          name · String<br>
+          currency · String <span style="color:#64748b;">(e.g. "EGP")</span><br>
+          is_default · Boolean<br>
+          valid_from · DateTime?<br>
+          valid_to · DateTime?<br>
+          is_active · Boolean<br>
+          is_deleted · Boolean
+        </div>
+      </div>
+      <div style="background: #0f172a; border-radius: 8px; padding: 12px; margin-bottom: 10px;">
+        <div style="color: #f8fafc; font-weight: 700; margin-bottom: 6px;">PriceListItem</div>
+        <div style="color: #94a3b8; font-size: 12px; line-height: 1.8;">
+          id · UUID PK<br>
+          price_list_id · UUID FK<br>
+          service_id · UUID FK<br>
+          unit_price · Decimal<br>
+          is_active · Boolean<br>
+          is_deleted · Boolean
+        </div>
+      </div>
+      <div style="background: #0f172a; border-radius: 8px; padding: 12px;">
+        <div style="color: #f8fafc; font-weight: 700; margin-bottom: 6px;">ProviderService</div>
+        <div style="color: #94a3b8; font-size: 12px; line-height: 1.8;">
+          id · UUID PK<br>
+          profile_id · UUID FK <span style="color:#64748b;">(doctor)</span><br>
+          service_id · UUID FK<br>
+          organization_id · UUID FK<br>
+          branch_id · UUID? FK<br>
+          price_override · Decimal? <span style="color:#64748b;">(null = use branch/org)</span><br>
+          is_active · Boolean<br>
+          is_deleted · Boolean
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Invoices -->
+  <div style="flex: 1; min-width: 260px;">
+    <div style="background: #1e293b; border: 1.5px solid #334155; border-radius: 10px; padding: 16px;">
+      <div style="color: #34d399; font-size: 11px; font-weight: 700; letter-spacing: 1px; margin-bottom: 8px;">CORE/FINANCIAL/INVOICES</div>
+      <div style="background: #0f172a; border-radius: 8px; padding: 12px; margin-bottom: 10px;">
+        <div style="color: #f8fafc; font-weight: 700; margin-bottom: 6px;">Invoice</div>
+        <div style="color: #94a3b8; font-size: 12px; line-height: 1.8;">
+          id · UUID PK<br>
+          invoice_number · String <span style="color:#64748b;">(auto, unique/org)</span><br>
+          organization_id · UUID FK<br>
+          branch_id · UUID FK<br>
+          patient_id · UUID FK<br>
+          visit_id · UUID? FK<br>
+          assigned_doctor_id · UUID? FK<br>
+          status · Enum<br>
+          <span style="color:#64748b;">DRAFT | ISSUED | PARTIALLY_PAID</span><br>
+          <span style="color:#64748b;">PAID | REFUNDED | VOID</span><br>
+          subtotal · Decimal<br>
+          discount_amount · Decimal<br>
+          tax_amount · Decimal<br>
+          total_amount · Decimal<br>
+          paid_amount · Decimal<br>
+          currency · String<br>
+          notes · String?<br>
+          issued_at · DateTime?<br>
+          due_date · DateTime?<br>
+          created_by_id · UUID FK <span style="color:#64748b;">(receptionist)</span><br>
+          is_deleted · Boolean
+        </div>
+      </div>
+      <div style="background: #0f172a; border-radius: 8px; padding: 12px; margin-bottom: 10px;">
+        <div style="color: #f8fafc; font-weight: 700; margin-bottom: 6px;">InvoiceItem</div>
+        <div style="color: #94a3b8; font-size: 12px; line-height: 1.8;">
+          id · UUID PK<br>
+          invoice_id · UUID FK<br>
+          service_id · UUID? FK <span style="color:#64748b;">(null = free-text)</span><br>
+          description · String<br>
+          quantity · Int<br>
+          unit_price · Decimal<br>
+          discount_amount · Decimal<br>
+          total_amount · Decimal
+        </div>
+      </div>
+      <div style="background: #0f172a; border-radius: 8px; padding: 12px; margin-bottom: 10px;">
+        <div style="color: #f8fafc; font-weight: 700; margin-bottom: 6px;">Payment</div>
+        <div style="color: #94a3b8; font-size: 12px; line-height: 1.8;">
+          id · UUID PK<br>
+          invoice_id · UUID FK<br>
+          amount · Decimal<br>
+          payment_method · Enum<br>
+          <span style="color:#64748b;">CASH | CARD | BANK_TRANSFER | OTHER</span><br>
+          payment_date · DateTime<br>
+          reference_number · String?<br>
+          notes · String?<br>
+          recorded_by_id · UUID FK<br>
+          is_deleted · Boolean <span style="color:#64748b;">(soft refund)</span>
+        </div>
+      </div>
+      <div style="background: #0f172a; border-radius: 8px; padding: 12px; border: 1px dashed #334155;">
+        <div style="color: #64748b; font-weight: 700; margin-bottom: 6px;">InvoiceInsuranceClaim <span style="color:#475569;font-size:11px;">(stub — future)</span></div>
+        <div style="color: #475569; font-size: 12px; line-height: 1.8;">
+          invoice_id · UUID FK<br>
+          policy_number · String<br>
+          covered_amount · Decimal<br>
+          patient_copay · Decimal<br>
+          status · Enum <span style="color:#334155;">(PENDING→APPROVED)</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div style="margin-top: 20px; background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 14px;">
+  <div style="color: #f8fafc; font-weight: 700; margin-bottom: 8px;">Pricing Resolution Order (per service lookup)</div>
+  <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+    <div style="background: #7c3aed; color: white; padding: 6px 14px; border-radius: 20px; font-size: 13px;">1. ProviderService.price_override</div>
+    <div style="color:#64748b;">→ else</div>
+    <div style="background: #0369a1; color: white; padding: 6px 14px; border-radius: 20px; font-size: 13px;">2. Branch PriceListItem</div>
+    <div style="color:#64748b;">→ else</div>
+    <div style="background: #065f46; color: white; padding: 6px 14px; border-radius: 20px; font-size: 13px;">3. Org PriceListItem</div>
+    <div style="color:#64748b;">→ else</div>
+    <div style="background: #7f1d1d; color: white; padding: 6px 14px; border-radius: 20px; font-size: 13px;">null (not priced)</div>
+  </div>
+</div>

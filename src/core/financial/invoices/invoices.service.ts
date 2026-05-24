@@ -551,6 +551,29 @@ export class InvoicesService {
     return InvoiceStatus.ISSUED;
   }
 
+  private async assertIsReceptionistOrOwner(
+    user: AuthContext,
+    organizationId: string,
+  ): Promise<void> {
+    if (user.roles.includes('OWNER')) return;
+
+    const jobFunction = await this.prismaService.db.profileJobFunction.findFirst(
+      {
+        where: {
+          profile_id: user.profileId,
+          job_function: { code: 'RECEPTIONIST' },
+          profile: { organization_id: organizationId, is_deleted: false },
+        },
+      },
+    );
+
+    if (!jobFunction) {
+      throw new BadRequestException(
+        'Only RECEPTIONISTs or OWNERs can perform this action',
+      );
+    }
+  }
+
   private assertDraft(invoice: { status: InvoiceStatus; id: string }): void {
     if (invoice.status !== InvoiceStatus.DRAFT) {
       throw new BadRequestException(

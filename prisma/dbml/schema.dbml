@@ -191,8 +191,12 @@ Table profiles {
   calendar_events calendar_events [not null]
   calendar_event_assists calendar_event_assistants [not null]
   services_created services [not null]
+  price_lists_created price_lists [not null]
+  price_list_items_created price_list_items [not null]
   provider_services provider_services [not null]
+  provider_services_created provider_services [not null]
   provider_price_overrides provider_price_overrides [not null]
+  provider_price_overrides_created provider_price_overrides [not null]
   invoices_created invoices [not null]
   invoices_as_doctor invoices [not null]
   payments_recorded payments [not null]
@@ -1519,10 +1523,12 @@ Table price_lists {
   is_active Boolean [not null, default: true]
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
+  created_by_id String
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   organization organizations [not null]
   branch branches
+  created_by profiles
   items price_list_items [not null]
 }
 
@@ -1534,10 +1540,12 @@ Table price_list_items {
   is_active Boolean [not null, default: true]
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
+  created_by_id String
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   price_list price_lists [not null]
   service services [not null]
+  created_by profiles
 
   indexes {
     (price_list_id, service_id) [unique]
@@ -1554,12 +1562,14 @@ Table provider_services {
   is_active Boolean [not null, default: true]
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
+  created_by_id String
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   profile profiles [not null]
   service services [not null]
   organization organizations [not null]
   branch branches
+  created_by profiles
 
   indexes {
     (profile_id, service_id, organization_id, branch_id) [unique]
@@ -1579,12 +1589,14 @@ Table provider_price_overrides {
   is_active Boolean [not null, default: true]
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
+  created_by_id String
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   profile profiles [not null]
   service services [not null]
   organization organizations [not null]
   branch branches
+  created_by profiles
 }
 
 Table invoice_sequences {
@@ -1684,7 +1696,7 @@ Table refunds {
   payment_id String [not null]
   amount Decimal [not null]
   reason String [not null]
-  status String [not null, default: 'COMPLETED']
+  status RefundStatus [not null, default: 'COMPLETED']
   refunded_by_id String [not null]
   refunded_at DateTime [default: `now()`, not null]
   is_deleted Boolean [not null, default: false]
@@ -1965,6 +1977,13 @@ Enum InsuranceClaimStatus {
   SUBMITTED
   APPROVED
   REJECTED
+}
+
+Enum RefundStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  VOID
 }
 
 Enum BloodGroupRh {
@@ -2296,9 +2315,13 @@ Ref: price_lists.organization_id > organizations.id
 
 Ref: price_lists.branch_id > branches.id
 
+Ref: price_lists.created_by_id > profiles.id [delete: Set Null]
+
 Ref: price_list_items.price_list_id > price_lists.id [delete: Cascade]
 
 Ref: price_list_items.service_id > services.id
+
+Ref: price_list_items.created_by_id > profiles.id [delete: Set Null]
 
 Ref: provider_services.profile_id > profiles.id
 
@@ -2308,6 +2331,8 @@ Ref: provider_services.organization_id > organizations.id
 
 Ref: provider_services.branch_id > branches.id
 
+Ref: provider_services.created_by_id > profiles.id
+
 Ref: provider_price_overrides.profile_id > profiles.id
 
 Ref: provider_price_overrides.service_id > services.id
@@ -2315,6 +2340,8 @@ Ref: provider_price_overrides.service_id > services.id
 Ref: provider_price_overrides.organization_id > organizations.id
 
 Ref: provider_price_overrides.branch_id > branches.id
+
+Ref: provider_price_overrides.created_by_id > profiles.id
 
 Ref: invoice_sequences.organization_id > organizations.id
 

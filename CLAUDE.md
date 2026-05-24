@@ -62,12 +62,13 @@ src/
 ├── core/                     # Domain layer
 │   ├── auth/                 # auth (3-step signup, login, OTP, password reset) + authorization/ (role/branch checks)
 │   ├── org/                  # organizations, branches, profiles, staff, invitations, roles, job-functions, specialties, subscriptions
-│   ├── patient/patients/     # Patient records (cross-org via PatientJourney)
-│   ├── clinical/             # clinical/ (encounter/vitals/prescriptions/investigations), visits/ (+ encounter-mutation guard), care-paths/, journeys/, journey-templates/, patient-history/, lab-tests/, medications/, medical-rep/, events/ (domain-events catalog)
+│   ├── patient/patients/     # Patient records (cross-org via PatientJourney); PatientEnrollmentCleanupService purges stale draft enrollments hourly
+│   ├── calendar/             # Per-profile calendar events; publishes CALENDAR_EVENTS (created/updated/deleted) — see calendar.events.ts
+│   ├── clinical/             # clinical/ (encounter/vitals/prescriptions/investigations), visits/ (+ encounter-mutation guard), care-paths/, journeys/, journey-templates/, patient-history/, lab-tests/, medications/, chief-complaints/, medical-rep/, events/ (domain-events catalog)
 │   ├── notifications/        # In-app notifications + listener that maps invitation events → notifications
 │   └── health/               # DB connectivity probe
-├── builder/                  # Form-builder DSL — fields, sections, rules, runtime, renderer, validator, templates (workflows/ still empty)
-├── specialties/              # Vertical specialty modules — sibling layer to plugins. Currently obgyn/ (visit-encounter, patient-history, pregnancy, amendments)
+├── builder/                  # Form-builder DSL — fields, sections/, rules, runtime, renderer, validator, templates (workflows/ still empty)
+├── specialties/              # Vertical specialty modules — sibling layer to plugins. Currently obgyn/ (visit-encounter, visit-examination, patient-history, pregnancy, amendments, history-summary)
 └── plugins/                  # Scaffold only — extension layer for future verticals (telemedicine, billing, …)
 ```
 
@@ -183,7 +184,7 @@ The signup-complete payload accepts: `organization_name`, `specialties: string[]
 
 JWT tokens carry `{ userId, profileId, organizationId, type }`. Refresh tokens use JTI rotation (each refresh revokes the old token; bcrypt-hashed `token_hash` stored).
 
-**OTP:** 15-minute TTL, max 5 attempts. Resend cooldown 60s, max 5 resends/hour. `RegistrationCleanupService` purges PENDING users older than 24h hourly.
+**OTP:** 15-minute TTL, max 5 attempts. Resend cooldown 60s, max 5 resends/hour. `RegistrationCleanupService` purges PENDING users older than 24h hourly. `PatientEnrollmentCleanupService` (`src/core/patient/patients/`) runs a similar cron to purge stale draft patient enrollments.
 
 **Password reset:** `POST /auth/forgot-password` → `POST /auth/verify-reset-code` → `POST /auth/reset-password`.
 
@@ -192,6 +193,29 @@ JWT tokens carry `{ userId, profileId, organizationId, type }`. Refresh tokens u
 - `POST /organizations/:orgId/invitations` — single invite. DTO accepts `email`, `first_name`, `last_name`, `phone_number?`, `role_ids[]`, `branch_ids[]`, `job_function_codes?[]`, `specialty_codes?[]`, `executive_title?`, `engagement_type?`. Validates that codes exist in their respective tables.
 - `POST /organizations/:orgId/invitations/bulk` — array of up to 100. Single transaction for DB inserts (rolls back on any error); emails sent after commit; per-email failures returned in the response (`{ id, email, email_sent }`).
 - `POST /invitations/accept` — public endpoint. **Detects existing user by email**: if found, validates the supplied password against the existing account's password (security gate); creates a new `Profile` against the existing `User` rather than re-registering. This is what enables cross-org consultants (e.g. janah OWNER → amshag STAFF).
+
+### CarePath vs JourneyTemplate
+
+Two distinct but related structural concepts — do not conflate:
+
+- **`CarePath`** (`src/core/clinical/care-paths/`) — a clinical pathway defining an ordered set of `CarePathEpisode` steps for a specialty. Can be system-wide (`organization_id = null`) or org-specific. The `specialty_code` on a booking selects which care path the visit's journey follows. Read-only API at `GET /v1/care-paths`.
+- **`JourneyTemplate`** (`src/core/clinical/journey-templates/`) — a blueprint for creating `PatientJourney` + `PatientEpisode` rows. Has a `code` (unique per specialty) and `scope`. Read-only API at `GET /v1/journey-templates`. The booking flow resolves the template from `specialty_code` + `care_path_code` and creates the journey/episode structure automatically.
+- **`PatientJourney`** → **`PatientEpisode`** → **`Visit`** — the runtime instances created from templates. Managed by `JourneysService` (`src/core/clinical/journeys/`).
+
+At booking time (`bookVisit`), the service: resolves `specialty_code` → `specialty_id` → picks the correct `CarePath` → finds the matching `JourneyTemplate` by code → creates `PatientJourney` + first `PatientEpisode` if not already active.
+
+### OB/GYN specialty surfaces
+
+`src/specialties/obgyn/` exposes multiple controller groups, each mapping to a UI tab:
+
+- **`visit-encounter/`** — SOAP-style encounter: chief complaint, diagnosis, clinical reasoning, `case_path`. Versioned with `Visit.encounter_version`. `@LocksOnClosedVisit('id')`.
+- **`visit-examination/`** — unified examination tab aggregating five sub-records (encounter scalar fields, menstrual/abdominal/pelvic/breast findings, vitals, investigations, medications) in one GET/PATCH pair. Uses `Visit.examination_version` for optimistic concurrency. Single transaction → single revision row.
+- **`pregnancy/`** — pregnancy record for the visit. `@LocksOnClosedVisit('visitId')`.
+- **`patient-history/`** — patient-level (not visit-scoped) OB/GYN history singleton, plus subsections: allergies, contraceptives, non-gyn surgeries, patient-medications, notes, pregnancies, field-flags. All share `PatientAccessService.assertPatientInOrg`.
+- **`history-summary/`** — read-only aggregation of the patient's OB/GYN history, allergies, and medications into a single envelope for the sidebar/summary panel.
+- **`amendments/`** — the only legal write path for closed visits.
+
+`PatientFieldFlag` (`field-flags.service.ts`) stores per-patient clinical flag annotations (e.g. "high risk") that are independent of any single visit.
 
 ### Clinical write-path: immutability, amendments, revisions
 
@@ -227,6 +251,7 @@ DB-stored form templates the frontend renders against. Authored in code (`prisma
 
 **Subfolder roles:**
 
+- `sections/` — `SectionDescriptor` and `SectionConfigSchema` — schema types for declaring section-level config within a template. One descriptor per section kind; the seed validates against this before writing.
 - `fields/` — `FIELD_TYPES` registry (per-field-type config invariants), `ENTITIES` registry (the extension point for `ENTITY_SEARCH` — one entry per searchable kind, not a new `FormFieldType`), `ALLOWED_PATHS` map enforcing binding integrity at seed time (typos throw before any DB write), namespaced `ConfigShape` validator (`{ui, validation, logic}` only — no flat keys).
 - `rules/` — `Predicate { effect, when, message? }` types + pure `evaluate()` function. Operators: `eq` / `ne` / `in` / `and` / `or`. Effects: `visible` and `enabled` are UI-only; `required` and `forbidden` are server + UI. The server **never** consumes `visible` — a hidden-in-UI field can still be 400-rejected if its `required` predicate is true.
 - `runtime/` — `TemplateExecutionContext` indexes an in-flight payload by field code for predicate evaluation.
@@ -251,7 +276,7 @@ DB-stored form templates the frontend renders against. Authored in code (`prisma
 ### Adding a new feature
 
 1. Decide its layer:
-   - Domain feature with its own endpoints → `src/core/<bucket>/<feature>/` (pick the right bucket: `auth | org | patient | clinical | notifications | health`).
+   - Domain feature with its own endpoints → `src/core/<bucket>/<feature>/` (pick the right bucket: `auth | org | patient | calendar | clinical | notifications | health`).
    - Vendor SDK wrapper → `src/infrastructure/<feature>/`.
    - Vertical specialty (OB/GYN, pediatrics, dermatology, …) → `src/specialties/<specialty>/`. Imports `core/<x>/*.module.ts` to resolve guards/services; never imports another specialty.
    - Cross-cutting extension (telemedicine, billing, lab integration) → `src/plugins/<feature>/`.
@@ -279,7 +304,12 @@ Core entities:
 - **WorkingSchedule** → **WorkingDay** → **WorkingShift** — per (profile, branch).
 - **Patient** → many **PatientJourney** → many **PatientEpisode** → many **Visit**. `Patient.marital_status` (enum) gates spouse capture.
 - **Guardian** + **PatientGuardian** — guardian (national_id-keyed) linked to patient with `relation_to_patient: GuardianRelation` (SPOUSE / PARENT / CHILD / …). Spouses are upserted at booking time when `marital_status=MARRIED`.
+- **Visit** — now carries `specialty_code String?`, `form_template_id UUID?` (FK to the active template used at booking), `examination_version Int @default(1)` (optimistic lock for the unified examination tab), plus the pre-existing `encounter_version`. The `examination_version` token is used by `visit-examination/` PATCH; `encounter_version` is used by `visit-encounter/` PATCH.
 - **Visit.appointment_type** is `VISIT | FOLLOW_UP`. `MEDICAL_REP` visits live in a separate table — see below.
+- **CarePath** + **CarePathEpisode** — clinical pathway definitions (system or org-specific). Filtered by `specialty_code` + org scope at query time.
+- **JourneyTemplate** — visit/episode blueprint with `code` (unique per specialty) and `scope`. The booking flow resolves template → creates PatientJourney + PatientEpisode.
+- **CalendarEvent** — per-profile calendar entries with `event_type`, `visibility`, optional `branch_id`. Managed by `CalendarModule`; publishes `CALENDAR_EVENTS`.
+- **PatientFieldFlag** — per-patient clinical flag annotations (e.g. high-risk markers) independent of any visit. Managed by `FieldFlagsService` in `patient-history/`.
 - **MedicalRep** + **MedicalRepVisit** + **MedicalRepMedication** + **MedicalRepVisitMedication** — org-scoped pharma rep visits. Booked via `POST /v1/medical-rep-visits/book`; search via `GET /v1/medical-reps?search=`. No patient/episode/journey.
 - **FormTemplate** + **FormSection** + **FormField** — DB-stored form schemas for the builder DSL. See "Form-builder DSL" above.
 - **RefreshToken** — `jti` (UUID), `token_hash` (bcrypt), `profile_id`, `organization_id`, `active_branch_id`.
@@ -289,6 +319,8 @@ Core entities:
 All models have UUID primary keys, `created_at` / `updated_at`, and soft-delete fields. Lookup tables (`Role`, `JobFunction`, `SubscriptionPlan`, `Specialty`, `Procedure`) are seed-only — `prisma/seed.ts` is the source of truth, runs via `npx prisma db seed`.
 
 `prisma/seeds/` holds self-contained per-feature seed modules called by `prisma/seed.ts`. Convention: each module is idempotent (upserts keyed on natural keys), validates its own input shape via the builder validators before any DB write, and ends with an activation transaction when relevant (e.g. flipping `FormTemplate.is_active`). See `prisma/seeds/obgyn-book-visit.ts` for the canonical example. Ordering matters: `prisma/seed.ts` runs lookup seeds (roles, job functions, plans, specialties, procedures) before feature seeds — register new seed modules there so dependencies resolve.
+
+Current seed modules: `book-visit.ts` (general visit template), `book-visit-shell.ts` (shell template), `obgyn-book-visit.ts` (OB/GYN booking form — canonical template example), `obgyn-examination.ts` (examination tab template), `obgyn-patient-history.ts` (patient history template), `chief-complaint-categories.ts` (lookup categories).
 
 `prisma/seed-fixtures.ts` builds three demo organizations (jasmin, janah, amshag) with cross-org doctors. Idempotent. Refuses to run when `NODE_ENV=production`.
 
