@@ -268,6 +268,13 @@ enum InsuranceClaimStatus {
   REJECTED
 }
 
+enum RefundStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  VOID
+}
+
 model SubscriptionPlan {
   id                String         @id @default(uuid()) @db.Uuid
   plan              String         @unique
@@ -2262,7 +2269,7 @@ model Refund {
   payment_id     String    @db.Uuid
   amount         Decimal   @db.Decimal(10, 2)
   reason         String
-  status         String    @default("COMPLETED")
+  status         RefundStatus @default(COMPLETED)
   refunded_by_id String    @db.Uuid
   refunded_at    DateTime  @default(now())
   is_deleted     Boolean   @default(false)
