@@ -29,6 +29,8 @@ export interface InvoiceFilters {
   patientId?: string;
   status?: InvoiceStatus;
   invoiceType?: InvoiceType;
+  dateFrom?: string;
+  dateTo?: string;
 }
 
 @Injectable()
@@ -64,6 +66,14 @@ export class InvoicesService {
       ...(filters.patientId && { patient_id: filters.patientId }),
       ...(filters.status && { status: filters.status }),
       ...(filters.invoiceType && { invoice_type: filters.invoiceType }),
+      ...(filters.dateFrom || filters.dateTo
+        ? {
+            created_at: {
+              ...(filters.dateFrom && { gte: new Date(filters.dateFrom) }),
+              ...(filters.dateTo && { lte: new Date(filters.dateTo) }),
+            },
+          }
+        : {}),
     };
 
     const [items, total] = await Promise.all([
@@ -519,8 +529,8 @@ export class InvoicesService {
     totalAmount: Prisma.Decimal,
     paidAmount: Prisma.Decimal,
   ): InvoiceStatus {
-    if (paidAmount.gte(totalAmount) && totalAmount.gt(0))
-      return InvoiceStatus.PAID;
+    if (totalAmount.lte(0)) return InvoiceStatus.PAID;
+    if (paidAmount.gte(totalAmount)) return InvoiceStatus.PAID;
     if (paidAmount.gt(0)) return InvoiceStatus.PARTIALLY_PAID;
     return InvoiceStatus.ISSUED;
   }

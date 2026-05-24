@@ -2,6 +2,7 @@ import {
   IsArray,
   IsDateString,
   IsEnum,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
@@ -20,7 +21,7 @@ export class InvoiceItemInputDto {
   @IsString()
   description!: string;
 
-  @IsNumber()
+  @IsInt()
   @Min(1)
   @IsOptional()
   quantity?: number;
