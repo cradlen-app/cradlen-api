@@ -282,55 +282,55 @@ model SubscriptionPlan {
 }
 
 model Organization {
-  id                    String                  @id @default(uuid()) @db.Uuid
-  name                  String
-  status                OrganizationStatus      @default(ACTIVE)
-  is_deleted            Boolean                 @default(false)
-  deleted_at            DateTime?
-  created_at            DateTime                @default(now())
-  updated_at            DateTime                @updatedAt
-  branches              Branch[]
-  profiles              Profile[]
-  invitations           Invitation[]
-  subscriptions         Subscription[]
-  patient_journeys      PatientJourney[]
-  specialty_links       OrganizationSpecialty[]
-  medications           Medication[]
-  lab_tests             LabTest[]
-  patient_history_notes PatientHistoryNote[]
-  field_flags           PatientFieldFlag[]
-  care_paths            CarePath[]
-  care_path_episodes    CarePathEpisode[]
-  medical_reps          MedicalRep[]
-  medical_rep_visits    MedicalRepVisit[]
-  calendar_events       CalendarEvent[]
+  id                      String                  @id @default(uuid()) @db.Uuid
+  name                    String
+  status                  OrganizationStatus      @default(ACTIVE)
+  is_deleted              Boolean                 @default(false)
+  deleted_at              DateTime?
+  created_at              DateTime                @default(now())
+  updated_at              DateTime                @updatedAt
+  branches                Branch[]
+  profiles                Profile[]
+  invitations             Invitation[]
+  subscriptions           Subscription[]
+  patient_journeys        PatientJourney[]
+  specialty_links         OrganizationSpecialty[]
+  medications             Medication[]
+  lab_tests               LabTest[]
+  patient_history_notes   PatientHistoryNote[]
+  field_flags             PatientFieldFlag[]
+  care_paths              CarePath[]
+  care_path_episodes      CarePathEpisode[]
+  medical_reps            MedicalRep[]
+  medical_rep_visits      MedicalRepVisit[]
+  calendar_events         CalendarEvent[]
   patient_org_enrollments PatientOrgEnrollment[]
-  services              Service[]               @relation("OrgServices")
-  price_lists           PriceList[]             @relation("OrgPriceLists")
-  provider_services     ProviderService[]       @relation("OrgProviderServices")
-  provider_overrides    ProviderPriceOverride[] @relation("OrgPriceOverrides")
-  invoice_sequences     InvoiceSequence[]       @relation("OrgInvoiceSequences")
-  invoices              Invoice[]               @relation("OrgInvoices")
+  services                Service[]               @relation("OrgServices")
+  price_lists             PriceList[]             @relation("OrgPriceLists")
+  provider_services       ProviderService[]       @relation("OrgProviderServices")
+  provider_overrides      ProviderPriceOverride[] @relation("OrgPriceOverrides")
+  invoice_sequences       InvoiceSequence[]       @relation("OrgInvoiceSequences")
+  invoices                Invoice[]               @relation("OrgInvoices")
 
   @@index([status, is_deleted])
   @@map("organizations")
 }
 
 model Branch {
-  id                 String             @id @default(uuid()) @db.Uuid
+  id                 String                  @id @default(uuid()) @db.Uuid
   name               String
   address            String
   city               String
   governorate        String
   country            String?
-  is_main            Boolean            @default(false)
-  status             BranchStatus       @default(ACTIVE)
-  is_deleted         Boolean            @default(false)
+  is_main            Boolean                 @default(false)
+  status             BranchStatus            @default(ACTIVE)
+  is_deleted         Boolean                 @default(false)
   deleted_at         DateTime?
-  created_at         DateTime           @default(now())
-  updated_at         DateTime           @updatedAt
-  organization_id    String             @db.Uuid
-  organization       Organization       @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  created_at         DateTime                @default(now())
+  updated_at         DateTime                @updatedAt
+  organization_id    String                  @db.Uuid
+  organization       Organization            @relation(fields: [organization_id], references: [id], onDelete: Cascade)
   profileBranches    ProfileBranch[]
   invitationBranches InvitationBranch[]
   workingSchedules   WorkingSchedule[]
@@ -476,8 +476,12 @@ model Profile {
   calendar_event_assists          CalendarEventAssistant[]         @relation("CalendarEventAssistantProfile")
   // Financial back-relations
   services_created                Service[]                        @relation("ServiceCreatedBy")
+  price_lists_created             PriceList[]                      @relation("PriceListCreatedBy")
+  price_list_items_created        PriceListItem[]                  @relation("PriceListItemCreatedBy")
   provider_services               ProviderService[]                @relation("ProfileProviderServices")
+  provider_services_created       ProviderService[]                @relation("ProviderServiceCreatedBy")
   provider_price_overrides        ProviderPriceOverride[]          @relation("ProfilePriceOverrides")
+  provider_price_overrides_created ProviderPriceOverride[]         @relation("ProviderPriceOverrideCreatedBy")
   invoices_created                Invoice[]                        @relation("InvoiceCreatedBy")
   invoices_as_doctor              Invoice[]                        @relation("InvoiceDoctor")
   payments_recorded               Payment[]                        @relation("PaymentRecordedBy")
@@ -918,49 +922,49 @@ model PatientEpisode {
 }
 
 model Visit {
-  id                 String                @id @default(uuid()) @db.Uuid
-  episode_id         String                @db.Uuid
-  episode            PatientEpisode        @relation(fields: [episode_id], references: [id], onDelete: Cascade)
-  assigned_doctor_id String                @db.Uuid
-  assigned_doctor    Profile               @relation("DoctorVisits", fields: [assigned_doctor_id], references: [id], onDelete: Cascade)
-  branch_id          String                @db.Uuid
-  branch             Branch                @relation(fields: [branch_id], references: [id], onDelete: Cascade)
-  created_by_id      String                @db.Uuid
-  created_by         Profile               @relation("CreatedVisits", fields: [created_by_id], references: [id], onDelete: Cascade)
-  appointment_type   AppointmentType
-  priority           VisitPriority
-  status             VisitStatus           @default(SCHEDULED)
-  scheduled_at       DateTime
-  checked_in_at      DateTime?
-  started_at         DateTime?
-  completed_at       DateTime?
-  notes              String?
-  queue_number       Int?
-  follow_up_date     DateTime?
-  follow_up_notes    String?
+  id                  String                @id @default(uuid()) @db.Uuid
+  episode_id          String                @db.Uuid
+  episode             PatientEpisode        @relation(fields: [episode_id], references: [id], onDelete: Cascade)
+  assigned_doctor_id  String                @db.Uuid
+  assigned_doctor     Profile               @relation("DoctorVisits", fields: [assigned_doctor_id], references: [id], onDelete: Cascade)
+  branch_id           String                @db.Uuid
+  branch              Branch                @relation(fields: [branch_id], references: [id], onDelete: Cascade)
+  created_by_id       String                @db.Uuid
+  created_by          Profile               @relation("CreatedVisits", fields: [created_by_id], references: [id], onDelete: Cascade)
+  appointment_type    AppointmentType
+  priority            VisitPriority
+  status              VisitStatus           @default(SCHEDULED)
+  scheduled_at        DateTime
+  checked_in_at       DateTime?
+  started_at          DateTime?
+  completed_at        DateTime?
+  notes               String?
+  queue_number        Int?
+  follow_up_date      DateTime?
+  follow_up_notes     String?
   // Single optimistic-concurrency token for the unified Examination tab
   // (PATCH /v1/visits/:id/examination). Bumped on every successful save.
-  examination_version Int                  @default(1)
+  examination_version Int                   @default(1)
   // Specialty captured at booking. Drives the patient-history template
   // resolver on the frontend (e.g. "OBGYN" → obgyn_patient_history). Nullable
   // for pre-existing rows; new bookings always populate it.
-  specialty_code     String?
+  specialty_code      String?
   // Audit anchor: which form-template version this visit was booked from.
   // Never mutated on update — the original booking's contract is the legal
   // record. SetNull so deleting a template (rare) doesn't cascade visits.
-  form_template_id   String?               @db.Uuid
-  form_template      FormTemplate?         @relation("VisitFormTemplate", fields: [form_template_id], references: [id], onDelete: Restrict)
-  vitals             VisitVitals?
-  encounter          VisitEncounter?
-  obgyn_encounter    VisitObgynEncounter?
-  pregnancy_record   VisitPregnancyRecord?
-  investigations     VisitInvestigation[]
-  prescription       Prescription?
-  invoices           Invoice[]             @relation("VisitInvoices")
-  created_at         DateTime              @default(now())
-  updated_at         DateTime              @updatedAt
-  is_deleted         Boolean               @default(false)
-  deleted_at         DateTime?
+  form_template_id    String?               @db.Uuid
+  form_template       FormTemplate?         @relation("VisitFormTemplate", fields: [form_template_id], references: [id], onDelete: Restrict)
+  vitals              VisitVitals?
+  encounter           VisitEncounter?
+  obgyn_encounter     VisitObgynEncounter?
+  pregnancy_record    VisitPregnancyRecord?
+  investigations      VisitInvestigation[]
+  prescription        Prescription?
+  invoices            Invoice[]             @relation("VisitInvoices")
+  created_at          DateTime              @default(now())
+  updated_at          DateTime              @updatedAt
+  is_deleted          Boolean               @default(false)
+  deleted_at          DateTime?
 
   @@index([episode_id, is_deleted])
   @@index([branch_id, status, is_deleted])
@@ -978,13 +982,13 @@ model Medication {
   generic_name            String?
   form                    String?
   strength                String?
-  category               String?
-  company                String?
-  notes                  String?
-  default_dose_amount    Float?
-  default_dose_unit      String?
-  default_dose_frequency String?
-  default_dose_route     String?
+  category                String?
+  company                 String?
+  notes                   String?
+  default_dose_amount     Float?
+  default_dose_unit       String?
+  default_dose_frequency  String?
+  default_dose_route      String?
   added_by_id             String?                     @db.Uuid
   added_by                Profile?                    @relation("MedicationAddedBy", fields: [added_by_id], references: [id], onDelete: SetNull)
   items                   PrescriptionItem[]
@@ -2005,8 +2009,8 @@ model PatientOrgEnrollment {
   is_deleted      Boolean                    @default(false)
   deleted_at      DateTime?
 
-  patient         Patient                    @relation(fields: [patient_id], references: [id], onDelete: Cascade)
-  organization    Organization               @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  patient      Patient      @relation(fields: [patient_id], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
 
   @@index([patient_id, organization_id, is_deleted])
   @@map("patient_org_enrollments")
@@ -2030,8 +2034,8 @@ model Service {
   created_at      DateTime    @default(now())
   updated_at      DateTime    @updatedAt
 
-  organization       Organization?          @relation("OrgServices", fields: [organization_id], references: [id])
-  created_by         Profile                @relation("ServiceCreatedBy", fields: [created_by_id], references: [id])
+  organization       Organization?           @relation("OrgServices", fields: [organization_id], references: [id])
+  created_by         Profile                 @relation("ServiceCreatedBy", fields: [created_by_id], references: [id])
   specialties        ServiceSpecialty[]
   price_list_items   PriceListItem[]
   provider_services  ProviderService[]
@@ -2066,11 +2070,13 @@ model PriceList {
   is_active       Boolean   @default(true)
   is_deleted      Boolean   @default(false)
   deleted_at      DateTime?
+  created_by_id   String?   @db.Uuid
   created_at      DateTime  @default(now())
   updated_at      DateTime  @updatedAt
 
   organization Organization    @relation("OrgPriceLists", fields: [organization_id], references: [id])
   branch       Branch?         @relation("BranchPriceLists", fields: [branch_id], references: [id])
+  created_by   Profile?        @relation("PriceListCreatedBy", fields: [created_by_id], references: [id], onDelete: SetNull)
   items        PriceListItem[]
 
   @@index([organization_id, branch_id, is_default, is_active, is_deleted])
@@ -2085,33 +2091,37 @@ model PriceListItem {
   is_active     Boolean   @default(true)
   is_deleted    Boolean   @default(false)
   deleted_at    DateTime?
+  created_by_id String?   @db.Uuid
   created_at    DateTime  @default(now())
   updated_at    DateTime  @updatedAt
 
   price_list PriceList @relation(fields: [price_list_id], references: [id], onDelete: Cascade)
   service    Service   @relation(fields: [service_id], references: [id])
+  created_by Profile?  @relation("PriceListItemCreatedBy", fields: [created_by_id], references: [id], onDelete: SetNull)
 
   @@unique([price_list_id, service_id])
   @@map("price_list_items")
 }
 
 model ProviderService {
-  id              String    @id @default(uuid()) @db.Uuid
-  profile_id      String    @db.Uuid
-  service_id      String    @db.Uuid
-  organization_id String    @db.Uuid
-  branch_id       String?   @db.Uuid
+  id               String    @id @default(uuid()) @db.Uuid
+  profile_id       String    @db.Uuid
+  service_id       String    @db.Uuid
+  organization_id  String    @db.Uuid
+  branch_id        String?   @db.Uuid
   duration_minutes Int?
-  is_active       Boolean   @default(true)
-  is_deleted      Boolean   @default(false)
-  deleted_at      DateTime?
-  created_at      DateTime  @default(now())
-  updated_at      DateTime  @updatedAt
+  is_active        Boolean   @default(true)
+  is_deleted       Boolean   @default(false)
+  deleted_at       DateTime?
+  created_by_id    String?   @db.Uuid
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
 
   profile      Profile      @relation("ProfileProviderServices", fields: [profile_id], references: [id])
   service      Service      @relation(fields: [service_id], references: [id])
   organization Organization @relation("OrgProviderServices", fields: [organization_id], references: [id])
   branch       Branch?      @relation("BranchProviderServices", fields: [branch_id], references: [id])
+  created_by   Profile?     @relation("ProviderServiceCreatedBy", fields: [created_by_id], references: [id], onDelete: SetNull)
 
   @@unique([profile_id, service_id, organization_id, branch_id])
   @@index([profile_id, organization_id, is_active, is_deleted])
@@ -2131,6 +2141,7 @@ model ProviderPriceOverride {
   is_active       Boolean   @default(true)
   is_deleted      Boolean   @default(false)
   deleted_at      DateTime?
+  created_by_id   String?   @db.Uuid
   created_at      DateTime  @default(now())
   updated_at      DateTime  @updatedAt
 
@@ -2138,20 +2149,21 @@ model ProviderPriceOverride {
   service      Service      @relation(fields: [service_id], references: [id])
   organization Organization @relation("OrgPriceOverrides", fields: [organization_id], references: [id])
   branch       Branch?      @relation("BranchPriceOverrides", fields: [branch_id], references: [id])
+  created_by   Profile?     @relation("ProviderPriceOverrideCreatedBy", fields: [created_by_id], references: [id], onDelete: SetNull)
 
   @@index([profile_id, service_id, organization_id, is_active, is_deleted])
   @@map("provider_price_overrides")
 }
 
 model InvoiceSequence {
-  id              String   @id @default(uuid()) @db.Uuid
-  organization_id String   @db.Uuid
+  id              String    @id @default(uuid()) @db.Uuid
+  organization_id String    @db.Uuid
   year            Int
-  last_seq        Int      @default(0)
-  is_deleted      Boolean  @default(false)
+  last_seq        Int       @default(0)
+  is_deleted      Boolean   @default(false)
   deleted_at      DateTime?
-  created_at      DateTime @default(now())
-  updated_at      DateTime @updatedAt
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
 
   organization Organization @relation("OrgInvoiceSequences", fields: [organization_id], references: [id])
 
@@ -2184,12 +2196,12 @@ model Invoice {
   created_at         DateTime      @default(now())
   updated_at         DateTime      @updatedAt
 
-  organization    Organization          @relation("OrgInvoices", fields: [organization_id], references: [id])
-  branch          Branch                @relation("BranchInvoices", fields: [branch_id], references: [id])
-  patient         Patient               @relation("PatientInvoices", fields: [patient_id], references: [id])
-  visit           Visit?                @relation("VisitInvoices", fields: [visit_id], references: [id])
-  assigned_doctor Profile?              @relation("InvoiceDoctor", fields: [assigned_doctor_id], references: [id])
-  created_by      Profile               @relation("InvoiceCreatedBy", fields: [created_by_id], references: [id])
+  organization    Organization           @relation("OrgInvoices", fields: [organization_id], references: [id])
+  branch          Branch                 @relation("BranchInvoices", fields: [branch_id], references: [id])
+  patient         Patient                @relation("PatientInvoices", fields: [patient_id], references: [id])
+  visit           Visit?                 @relation("VisitInvoices", fields: [visit_id], references: [id])
+  assigned_doctor Profile?               @relation("InvoiceDoctor", fields: [assigned_doctor_id], references: [id])
+  created_by      Profile                @relation("InvoiceCreatedBy", fields: [created_by_id], references: [id])
   items           InvoiceItem[]
   payments        Payment[]
   insurance_claim InvoiceInsuranceClaim?
@@ -2274,8 +2286,8 @@ model InvoiceInsuranceClaim {
   created_at     DateTime             @default(now())
   updated_at     DateTime             @updatedAt
 
-  is_deleted     Boolean   @default(false)
-  deleted_at     DateTime?
+  is_deleted Boolean   @default(false)
+  deleted_at DateTime?
 
   invoice Invoice @relation(fields: [invoice_id], references: [id])
 
