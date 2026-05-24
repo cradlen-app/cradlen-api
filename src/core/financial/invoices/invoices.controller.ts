@@ -55,6 +55,7 @@ export class InvoicesController {
   }
 
   @Post()
+  @HttpCode(HttpStatus.CREATED)
   @ApiStandardResponse(Object)
   create(
     @Param('orgId', ParseUUIDPipe) orgId: string,
@@ -66,10 +67,12 @@ export class InvoicesController {
 
   @Get(':id')
   @ApiStandardResponse(Object)
-  findOne(
+  async findOne(
     @Param('orgId', ParseUUIDPipe) orgId: string,
     @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthContext,
   ) {
+    await this.invoicesService.assertViewAccess(user, orgId);
     return this.invoicesService.findOne(orgId, id);
   }
 
@@ -85,6 +88,7 @@ export class InvoicesController {
   }
 
   @Post(':id/items')
+  @HttpCode(HttpStatus.CREATED)
   @ApiStandardResponse(Object)
   addItem(
     @Param('orgId', ParseUUIDPipe) orgId: string,
@@ -128,6 +132,7 @@ export class InvoicesController {
   }
 
   @Post(':id/payments')
+  @HttpCode(HttpStatus.CREATED)
   @ApiStandardResponse(Object)
   recordPayment(
     @Param('orgId', ParseUUIDPipe) orgId: string,
@@ -140,10 +145,12 @@ export class InvoicesController {
 
   @Get(':id/payments')
   @ApiStandardResponse(Object)
-  findPayments(
+  async findPayments(
     @Param('orgId', ParseUUIDPipe) orgId: string,
     @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthContext,
   ) {
+    await this.invoicesService.assertViewAccess(user, orgId);
     return this.invoicesService.findPayments(orgId, id);
   }
 }
