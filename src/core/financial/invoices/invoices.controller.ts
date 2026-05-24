@@ -20,7 +20,10 @@ import {
   ApiVoidResponse,
 } from '@common/swagger/index.js';
 import { InvoicesService } from './invoices.service.js';
-import { CreateInvoiceDto, InvoiceItemInputDto } from './dto/create-invoice.dto.js';
+import {
+  CreateInvoiceDto,
+  InvoiceItemInputDto,
+} from './dto/create-invoice.dto.js';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto.js';
 import { RecordPaymentDto } from './dto/record-payment.dto.js';
 import { ListInvoicesQueryDto } from './dto/list-invoices-query.dto.js';
@@ -67,13 +70,12 @@ export class InvoicesController {
 
   @Get(':id')
   @ApiStandardResponse(Object)
-  async findOne(
+  findOne(
     @Param('orgId', ParseUUIDPipe) orgId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthContext,
   ) {
-    await this.invoicesService.assertViewAccess(user, orgId);
-    return this.invoicesService.findOne(orgId, id);
+    return this.invoicesService.findOne(orgId, id, user);
   }
 
   @Patch(':id')
@@ -145,12 +147,11 @@ export class InvoicesController {
 
   @Get(':id/payments')
   @ApiStandardResponse(Object)
-  async findPayments(
+  findPayments(
     @Param('orgId', ParseUUIDPipe) orgId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthContext,
   ) {
-    await this.invoicesService.assertViewAccess(user, orgId);
-    return this.invoicesService.findPayments(orgId, id);
+    return this.invoicesService.findPayments(orgId, id, user);
   }
 }

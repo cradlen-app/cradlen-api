@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -56,7 +55,10 @@ export class InvoicesService {
         filters.branchId,
       );
     } else {
-      await this.assertIsReceptionistOrOwner(user, organizationId);
+      await this.authorizationService.assertCanManageOrganization(
+        user.profileId,
+        organizationId,
+      );
     }
 
     const where: Prisma.InvoiceWhereInput = {
@@ -89,7 +91,7 @@ export class InvoicesService {
     return paginated(items, { page, limit, total });
   }
 
-  async findOne(organizationId: string, invoiceId: string) {
+  async findOne(organizationId: string, invoiceId: string, user: AuthContext) {
     const invoice = await this.prismaService.db.invoice.findFirst({
       where: {
         id: invoiceId,
@@ -108,6 +110,11 @@ export class InvoicesService {
       },
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
+    await this.authorizationService.assertCanAccessBranch(
+      user.profileId,
+      organizationId,
+      invoice.branch_id,
+    );
     return invoice;
   }
 
@@ -447,12 +454,17 @@ export class InvoicesService {
     });
   }
 
-  async assertViewAccess(user: AuthContext, organizationId: string): Promise<void> {
-    await this.assertIsReceptionistOrOwner(user, organizationId);
-  }
-
-  async findPayments(organizationId: string, invoiceId: string) {
-    await this.findOneOrThrow(organizationId, invoiceId);
+  async findPayments(
+    organizationId: string,
+    invoiceId: string,
+    user: AuthContext,
+  ) {
+    const invoice = await this.findOneOrThrow(organizationId, invoiceId);
+    await this.authorizationService.assertCanAccessBranch(
+      user.profileId,
+      organizationId,
+      invoice.branch_id,
+    );
 
     return this.prismaService.db.payment.findMany({
       where: { invoice_id: invoiceId, is_deleted: false },
@@ -544,32 +556,6 @@ export class InvoicesService {
       throw new BadRequestException(
         `Invoice ${invoice.id} is not in DRAFT status and cannot be modified`,
       );
-    }
-  }
-
-  private async assertIsReceptionistOrOwner(
-    user: AuthContext,
-    organizationId: string,
-  ): Promise<void> {
-    if (user.roles.includes('OWNER')) return;
-
-    const match = await this.prismaService.db.profile.findFirst({
-      where: {
-        id: user.profileId,
-        organization_id: organizationId,
-        is_deleted: false,
-        is_active: true,
-        job_functions: {
-          some: {
-            job_function: { code: 'RECEPTIONIST' },
-          },
-        },
-      },
-      select: { id: true },
-    });
-
-    if (!match) {
-      throw new ForbiddenException('OWNER or RECEPTIONIST role required');
     }
   }
 
