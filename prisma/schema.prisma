@@ -2148,6 +2148,8 @@ model InvoiceSequence {
   organization_id String   @db.Uuid
   year            Int
   last_seq        Int      @default(0)
+  is_deleted      Boolean  @default(false)
+  deleted_at      DateTime?
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
 

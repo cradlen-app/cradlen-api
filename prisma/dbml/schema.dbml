@@ -1592,6 +1592,8 @@ Table invoice_sequences {
   organization_id String [not null]
   year Int [not null]
   last_seq Int [not null, default: 0]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   organization organizations [not null]
