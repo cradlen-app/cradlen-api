@@ -18,8 +18,8 @@ export class ResolvePriceController {
   @ApiQuery({ name: 'profileId', required: false })
   resolvePrice(
     @Param('orgId', ParseUUIDPipe) orgId: string,
-    @Query('serviceId') serviceId: string,
-    @Query('branchId') branchId: string,
+    @Query('serviceId', ParseUUIDPipe) serviceId: string,
+    @Query('branchId', ParseUUIDPipe) branchId: string,
     @Query('profileId') profileId?: string,
   ) {
     return this.pricingResolverService.resolvePrice({
