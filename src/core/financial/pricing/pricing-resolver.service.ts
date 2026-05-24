@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { PricingSource } from '@prisma/client';
-import { Decimal } from '@prisma/client/runtime/library';
+import { Prisma, PricingSource } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 
 export interface ResolvePriceParams {
@@ -11,7 +10,7 @@ export interface ResolvePriceParams {
 }
 
 export interface ResolvedPrice {
-  price: Decimal;
+  price: Prisma.Decimal;
   currency: string;
   source: PricingSource;
 }
