@@ -3,13 +3,13 @@ import { InvoiceNumberService } from './invoice-number.service.js';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 
 const mockExecuteRaw = jest.fn().mockResolvedValue(1);
-const mockFindUnique = jest.fn();
+const mockFindFirst = jest.fn();
 const mockTransaction = jest.fn();
 
 const mockPrisma = {
   db: {
     $transaction: mockTransaction,
-    invoiceSequence: { findUnique: mockFindUnique },
+    invoiceSequence: { findFirst: mockFindFirst },
   },
 };
 
@@ -29,25 +29,25 @@ describe('InvoiceNumberService', () => {
 
     mockTransaction.mockImplementation(async (fn) => fn({
       $executeRaw: mockExecuteRaw,
-      invoiceSequence: { findUnique: mockFindUnique },
+      invoiceSequence: { findFirst: mockFindFirst },
     }));
   });
 
   it('formats invoice number as INV-YYYY-NNNNN', async () => {
-    mockFindUnique.mockResolvedValue({ last_seq: 1 });
+    const year = new Date().getFullYear();
+    mockFindFirst.mockResolvedValue({ last_seq: 1, year });
 
     const result = await service.generate('org-1');
 
-    const year = new Date().getFullYear();
     expect(result).toBe(`INV-${year}-00001`);
   });
 
   it('pads sequence to 5 digits', async () => {
-    mockFindUnique.mockResolvedValue({ last_seq: 42 });
+    const year = new Date().getFullYear();
+    mockFindFirst.mockResolvedValue({ last_seq: 42, year });
 
     const result = await service.generate('org-1');
 
-    const year = new Date().getFullYear();
     expect(result).toBe(`INV-${year}-00042`);
   });
 });
