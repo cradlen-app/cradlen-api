@@ -7,24 +7,17 @@ export class InvoiceNumberService {
   constructor(private readonly prismaService: PrismaService) {}
 
   async generate(organizationId: string): Promise<string> {
-    const year = new Date().getFullYear();
-
-    const sequence = await this.prismaService.db.$transaction(async (tx) => {
-      await tx.$executeRaw(Prisma.sql`
-        INSERT INTO "invoice_sequences" (id, organization_id, year, last_seq, created_at, updated_at)
-        VALUES (gen_random_uuid(), ${organizationId}, ${year}, 1, now(), now())
+    const rows = await this.prismaService.db.$transaction(async (tx) => {
+      return tx.$queryRaw<Array<{ last_seq: number; year: number }>>(Prisma.sql`
+        INSERT INTO "invoice_sequences" (id, organization_id, year, last_seq, is_deleted, created_at, updated_at)
+        VALUES (gen_random_uuid(), ${organizationId}, EXTRACT(YEAR FROM now())::int, 1, false, now(), now())
         ON CONFLICT (organization_id, year)
         DO UPDATE SET last_seq = "invoice_sequences".last_seq + 1, updated_at = now()
+        RETURNING last_seq, year
       `);
-      return tx.invoiceSequence.findFirst({
-        where: {
-          organization_id: organizationId,
-          year,
-          is_deleted: false,
-        },
-      });
     });
 
+    const sequence = rows[0];
     if (!sequence) {
       throw new InternalServerErrorException('Failed to generate invoice sequence');
     }
