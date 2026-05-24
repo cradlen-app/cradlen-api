@@ -63,7 +63,7 @@ export class ProviderServicesService {
         profile_id: profileId,
         service_id: dto.service_id,
         branch_id: dto.branch_id ?? null,
-        duration_minutes: dto.duration ?? null,
+        duration_minutes: dto.duration_minutes ?? null,
         created_by_id: user.profileId,
       },
       include: {

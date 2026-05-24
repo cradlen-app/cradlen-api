@@ -15,5 +15,5 @@ export class CreateProviderServiceDto {
   @IsInt()
   @Min(1)
   @IsOptional()
-  duration?: number;
+  duration_minutes?: number;
 }
