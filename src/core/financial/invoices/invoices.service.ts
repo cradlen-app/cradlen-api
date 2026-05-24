@@ -447,6 +447,10 @@ export class InvoicesService {
     });
   }
 
+  async assertViewAccess(user: AuthContext, organizationId: string): Promise<void> {
+    await this.assertIsReceptionistOrOwner(user, organizationId);
+  }
+
   async findPayments(organizationId: string, invoiceId: string) {
     await this.findOneOrThrow(organizationId, invoiceId);
 

@@ -1,7 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { InvoiceStatus, InvoiceType } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import { IsDateString, IsEnum, IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
 
 export class ListInvoicesQueryDto {
   @ApiPropertyOptional({ enum: InvoiceStatus })
@@ -25,10 +25,12 @@ export class ListInvoicesQueryDto {
   type?: InvoiceType;
 
   @ApiPropertyOptional()
+  @IsDateString()
   @IsOptional()
   date_from?: string;
 
   @ApiPropertyOptional()
+  @IsDateString()
   @IsOptional()
   date_to?: string;
 
