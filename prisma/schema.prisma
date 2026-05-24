@@ -2101,7 +2101,7 @@ model ProviderService {
   service_id      String    @db.Uuid
   organization_id String    @db.Uuid
   branch_id       String?   @db.Uuid
-  duration        Int?
+  duration_minutes Int?
   is_active       Boolean   @default(true)
   is_deleted      Boolean   @default(false)
   deleted_at      DateTime?
@@ -2217,6 +2217,7 @@ model InvoiceItem {
   invoice Invoice  @relation(fields: [invoice_id], references: [id], onDelete: Cascade)
   service Service? @relation(fields: [service_id], references: [id])
 
+  @@index([invoice_id])
   @@map("invoice_items")
 }
 
@@ -2240,17 +2241,22 @@ model Payment {
   recorded_by Profile  @relation("PaymentRecordedBy", fields: [recorded_by_id], references: [id])
   refunds     Refund[]
 
+  @@index([invoice_id, is_deleted])
   @@map("payments")
 }
 
 model Refund {
-  id             String   @id @default(uuid()) @db.Uuid
-  payment_id     String   @db.Uuid
-  amount         Decimal  @db.Decimal(10, 2)
+  id             String    @id @default(uuid()) @db.Uuid
+  payment_id     String    @db.Uuid
+  amount         Decimal   @db.Decimal(10, 2)
   reason         String
-  refunded_by_id String   @db.Uuid
-  refunded_at    DateTime @default(now())
-  created_at     DateTime @default(now())
+  status         String    @default("COMPLETED")
+  refunded_by_id String    @db.Uuid
+  refunded_at    DateTime  @default(now())
+  is_deleted     Boolean   @default(false)
+  deleted_at     DateTime?
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
 
   payment     Payment @relation(fields: [payment_id], references: [id])
   refunded_by Profile @relation("RefundedBy", fields: [refunded_by_id], references: [id])
@@ -2267,6 +2273,9 @@ model InvoiceInsuranceClaim {
   status         InsuranceClaimStatus @default(PENDING)
   created_at     DateTime             @default(now())
   updated_at     DateTime             @updatedAt
+
+  is_deleted     Boolean   @default(false)
+  deleted_at     DateTime?
 
   invoice Invoice @relation(fields: [invoice_id], references: [id])
 

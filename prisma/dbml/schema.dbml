@@ -1550,7 +1550,7 @@ Table provider_services {
   service_id String [not null]
   organization_id String [not null]
   branch_id String
-  duration Int
+  duration_minutes Int
   is_active Boolean [not null, default: true]
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
@@ -1684,9 +1684,13 @@ Table refunds {
   payment_id String [not null]
   amount Decimal [not null]
   reason String [not null]
+  status String [not null, default: 'COMPLETED']
   refunded_by_id String [not null]
   refunded_at DateTime [default: `now()`, not null]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
   payment payments [not null]
   refunded_by profiles [not null]
 }
@@ -1700,6 +1704,8 @@ Table invoice_insurance_claims {
   status InsuranceClaimStatus [not null, default: 'PENDING']
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
   invoice invoices [not null]
 }
 
