@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 
@@ -16,11 +16,18 @@ export class InvoiceNumberService {
         ON CONFLICT (organization_id, year)
         DO UPDATE SET last_seq = "invoice_sequences".last_seq + 1, updated_at = now()
       `);
-      return tx.invoiceSequence.findUnique({
-        where: { organization_id_year: { organization_id: organizationId, year } },
+      return tx.invoiceSequence.findFirst({
+        where: {
+          organization_id: organizationId,
+          year,
+          is_deleted: false,
+        },
       });
     });
 
-    return `INV-${year}-${String(sequence!.last_seq).padStart(5, '0')}`;
+    if (!sequence) {
+      throw new InternalServerErrorException('Failed to generate invoice sequence');
+    }
+    return `INV-${sequence.year}-${String(sequence.last_seq).padStart(5, '0')}`;
   }
 }
