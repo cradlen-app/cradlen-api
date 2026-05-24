@@ -25,7 +25,11 @@ describe('PricingResolverService', () => {
     jest.clearAllMocks();
   });
 
-  const base = { organizationId: 'org-1', branchId: 'branch-1', serviceId: 'svc-1' };
+  const base = {
+    organizationId: 'org-1',
+    branchId: 'branch-1',
+    serviceId: 'svc-1',
+  };
 
   it('returns PROVIDER_OVERRIDE when an active override exists', async () => {
     mockDb.providerPriceOverride.findFirst.mockResolvedValue({
@@ -35,7 +39,11 @@ describe('PricingResolverService', () => {
 
     const result = await resolver.resolvePrice({ ...base, profileId: 'doc-1' });
 
-    expect(result).toEqual({ price: new Prisma.Decimal('150.00'), currency: 'EGP', source: PricingSource.PROVIDER_OVERRIDE });
+    expect(result).toEqual({
+      price: new Prisma.Decimal('150.00'),
+      currency: 'EGP',
+      source: PricingSource.PROVIDER_OVERRIDE,
+    });
     expect(mockDb.priceListItem.findFirst).not.toHaveBeenCalled();
   });
 
@@ -56,7 +64,10 @@ describe('PricingResolverService', () => {
     mockDb.providerPriceOverride.findFirst.mockResolvedValue(null);
     mockDb.priceListItem.findFirst
       .mockResolvedValueOnce(null) // branch miss
-      .mockResolvedValueOnce({ unit_price: new Prisma.Decimal('100.00'), price_list: { currency: 'EGP' } });
+      .mockResolvedValueOnce({
+        unit_price: new Prisma.Decimal('100.00'),
+        price_list: { currency: 'EGP' },
+      });
 
     const result = await resolver.resolvePrice({ ...base, profileId: 'doc-1' });
 
@@ -80,7 +91,11 @@ describe('PricingResolverService', () => {
 
     const result = await resolver.resolvePrice(base); // no profileId
 
-    expect(result).toEqual({ price: new Prisma.Decimal('100.00'), currency: 'EGP', source: PricingSource.BRANCH_OVERRIDE });
+    expect(result).toEqual({
+      price: new Prisma.Decimal('100.00'),
+      currency: 'EGP',
+      source: PricingSource.BRANCH_OVERRIDE,
+    });
     expect(mockDb.providerPriceOverride.findFirst).not.toHaveBeenCalled();
   });
 });

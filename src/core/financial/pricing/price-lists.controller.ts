@@ -23,6 +23,7 @@ import { PriceListsService } from './price-lists.service.js';
 import { CreatePriceListDto } from './dto/create-price-list.dto.js';
 import { CreatePriceListItemDto } from './dto/create-price-list-item.dto.js';
 import { UpdatePriceListItemDto } from './dto/update-price-list-item.dto.js';
+import { UpdatePriceListDto } from './dto/update-price-list.dto.js';
 import { ListPriceListsQueryDto } from './dto/list-price-lists-query.dto.js';
 
 @ApiTags('Financial — Price Lists')
@@ -53,6 +54,28 @@ export class PriceListsController {
     @CurrentUser() user: AuthContext,
   ) {
     return this.priceListsService.create(orgId, dto, user);
+  }
+
+  @Patch(':id')
+  @ApiStandardResponse(Object)
+  update(
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdatePriceListDto,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.priceListsService.update(orgId, id, dto, user);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiVoidResponse()
+  remove(
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.priceListsService.remove(orgId, id, user);
   }
 
   @Get(':id/items')
