@@ -110,6 +110,7 @@
     },
     "moduleNameMapper": {
       "^(\\.{1,2}/.*)\\.js$": "$1",
+      "^@prisma/client/runtime/library$": "@prisma/client",
       "^@common/(.*?)(\\.js)?$": "<rootDir>/common/$1",
       "^@infrastructure/(.*?)(\\.js)?$": "<rootDir>/infrastructure/$1",
       "^@builder/(.*?)(\\.js)?$": "<rootDir>/builder/$1",
