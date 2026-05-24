@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ServiceType } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
@@ -20,7 +21,7 @@ export class ServicesService {
   async findAll(
     organizationId: string,
     filters: {
-      service_type?: string;
+      service_type?: ServiceType;
       specialty_id?: string;
       active?: boolean;
     },
@@ -30,9 +31,7 @@ export class ServicesService {
     const where = {
       is_deleted: false,
       OR: [{ organization_id: organizationId }, { organization_id: null }],
-      ...(filters.service_type && {
-        service_type: filters.service_type as any,
-      }),
+      ...(filters.service_type && { service_type: filters.service_type }),
       ...(filters.active !== undefined && { is_active: filters.active }),
       ...(filters.specialty_id && {
         specialties: { some: { specialty_id: filters.specialty_id } },
@@ -51,10 +50,7 @@ export class ServicesService {
     ]);
 
     return paginated(
-      items.map((s) => ({
-        ...s,
-        specialty_ids: s.specialties.map((ss) => ss.specialty_id),
-      })),
+      items.map((s) => this.toDto(s)),
       { page, limit, total },
     );
   }
@@ -72,7 +68,7 @@ export class ServicesService {
       throw new ConflictException('Service code already exists in this organization');
     }
 
-    return this.prismaService.db.service.create({
+    const created = await this.prismaService.db.service.create({
       data: {
         organization_id: organizationId,
         code: dto.code,
@@ -86,6 +82,7 @@ export class ServicesService {
       },
       include: { specialties: true },
     });
+    return this.toDto(created);
   }
 
   async update(
@@ -98,9 +95,9 @@ export class ServicesService {
       user.profileId,
       organizationId,
     );
-    await this.findOneOrThrow(organizationId, serviceId);
+    await this.findOwnedOrThrow(organizationId, serviceId);
 
-    return this.prismaService.db.$transaction(async (tx) => {
+    const updated = await this.prismaService.db.$transaction(async (tx) => {
       if (dto.specialty_ids !== undefined) {
         await tx.serviceSpecialty.deleteMany({ where: { service_id: serviceId } });
         if (dto.specialty_ids.length) {
@@ -123,24 +120,34 @@ export class ServicesService {
         include: { specialties: true },
       });
     });
+    return this.toDto(updated);
   }
 
   async remove(
     organizationId: string,
     serviceId: string,
     user: AuthContext,
-  ) {
+  ): Promise<void> {
     await this.authorizationService.assertCanManageOrganization(
       user.profileId,
       organizationId,
     );
-    await this.findOneOrThrow(organizationId, serviceId);
+    await this.findOwnedOrThrow(organizationId, serviceId);
     await this.prismaService.db.service.update({
       where: { id: serviceId },
       data: { is_deleted: true, deleted_at: new Date(), is_active: false },
     });
   }
 
+  private async findOwnedOrThrow(organizationId: string, serviceId: string) {
+    const service = await this.prismaService.db.service.findFirst({
+      where: { id: serviceId, organization_id: organizationId, is_deleted: false },
+    });
+    if (!service) throw new NotFoundException('Service not found');
+    return service;
+  }
+
+  // Kept for any future internal use that intentionally includes system-wide services.
   private async findOneOrThrow(organizationId: string, serviceId: string) {
     const service = await this.prismaService.db.service.findFirst({
       where: {
@@ -151,5 +158,9 @@ export class ServicesService {
     });
     if (!service) throw new NotFoundException('Service not found');
     return service;
+  }
+
+  private toDto(service: any & { specialties: { specialty_id: string }[] }) {
+    return { ...service, specialty_ids: service.specialties.map((s: any) => s.specialty_id) };
   }
 }

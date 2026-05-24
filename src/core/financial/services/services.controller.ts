@@ -23,6 +23,7 @@ import { ServicesService } from './services.service.js';
 import { CreateServiceDto } from './dto/create-service.dto.js';
 import { UpdateServiceDto } from './dto/update-service.dto.js';
 import { ServiceResponseDto } from './dto/service-response.dto.js';
+import { ListServicesQueryDto } from './dto/list-services-query.dto.js';
 
 @ApiTags('Financial — Services')
 @ApiBearerAuth()
@@ -34,18 +35,14 @@ export class ServicesController {
   @ApiPaginatedResponse(ServiceResponseDto)
   findAll(
     @Param('orgId', ParseUUIDPipe) orgId: string,
-    @Query('service_type') service_type?: string,
-    @Query('specialty_id') specialty_id?: string,
-    @Query('active') active?: string,
-    @Query('page') page = 1,
-    @Query('limit') limit = 20,
+    @Query() query: ListServicesQueryDto,
   ) {
-    const activeFilter = active !== undefined ? active === 'true' : undefined;
+    const activeFilter = query.active !== undefined ? query.active === 'true' : undefined;
     return this.servicesService.findAll(
       orgId,
-      { service_type, specialty_id, active: activeFilter },
-      +page,
-      +limit,
+      { service_type: query.service_type, specialty_id: query.specialty_id, active: activeFilter },
+      query.page ?? 1,
+      query.limit ?? 20,
     );
   }
 
