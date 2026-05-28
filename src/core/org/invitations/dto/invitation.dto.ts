@@ -23,12 +23,206 @@ import { BranchScheduleDto } from '../../staff/dto/staff.dto.js';
 export class PreviewInvitationQueryDto {
   @ApiProperty()
   @IsUUID('4')
-  invitation!: string;
+  invitation_id!: string;
 
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
   token!: string;
+}
+
+// ---------- Shared nested DTOs (mapper output shape) ----------
+
+export class InvitationRoleDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  name!: string;
+}
+
+export class InvitationBranchDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  name!: string;
+
+  @ApiProperty()
+  city!: string;
+
+  @ApiProperty()
+  governorate!: string;
+}
+
+export class InvitationJobFunctionDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  code!: string;
+
+  @ApiProperty()
+  name!: string;
+}
+
+export class InvitationSpecialtyDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  code!: string;
+
+  @ApiProperty()
+  name!: string;
+}
+
+export class InvitationInvitedByDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  first_name!: string;
+
+  @ApiProperty()
+  last_name!: string;
+
+  @ApiProperty()
+  email!: string;
+}
+
+export class InvitationWorkingScheduleBranchDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  name!: string;
+}
+
+export class InvitationShiftDto {
+  @ApiProperty({ description: 'HH:mm' })
+  start_time!: string;
+
+  @ApiProperty({ description: 'HH:mm' })
+  end_time!: string;
+}
+
+export class InvitationDayDto {
+  @ApiProperty()
+  day_of_week!: string;
+
+  @ApiProperty({ type: () => [InvitationShiftDto] })
+  shifts!: InvitationShiftDto[];
+}
+
+export class InvitationWorkingScheduleDto {
+  @ApiProperty({ type: () => InvitationWorkingScheduleBranchDto })
+  branch!: InvitationWorkingScheduleBranchDto;
+
+  @ApiProperty({ type: () => [InvitationDayDto] })
+  days!: InvitationDayDto[];
+}
+
+// ---------- Management response (create / get / list / cancel) ----------
+
+export class InvitationResponseDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  organization_id!: string;
+
+  @ApiProperty()
+  email!: string;
+
+  @ApiProperty()
+  first_name!: string;
+
+  @ApiProperty()
+  last_name!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  phone_number!: string | null;
+
+  @ApiPropertyOptional({ enum: ExecutiveTitle, nullable: true })
+  executive_title!: ExecutiveTitle | null;
+
+  @ApiProperty({ enum: EngagementType })
+  engagement_type!: EngagementType;
+
+  @ApiProperty({ enum: InvitationStatus })
+  status!: InvitationStatus;
+
+  @ApiProperty()
+  invited_at!: Date;
+
+  @ApiProperty()
+  expires_at!: Date;
+
+  @ApiPropertyOptional({ nullable: true })
+  accepted_at!: Date | null;
+
+  @ApiProperty({ type: () => InvitationInvitedByDto })
+  invited_by!: InvitationInvitedByDto;
+
+  @ApiProperty({ type: () => [InvitationRoleDto] })
+  roles!: InvitationRoleDto[];
+
+  @ApiProperty({ type: () => [InvitationBranchDto] })
+  branches!: InvitationBranchDto[];
+
+  @ApiProperty({ type: () => [InvitationJobFunctionDto] })
+  job_functions!: InvitationJobFunctionDto[];
+
+  @ApiProperty({ type: () => [InvitationSpecialtyDto] })
+  specialties!: InvitationSpecialtyDto[];
+
+  @ApiPropertyOptional({
+    type: () => [InvitationWorkingScheduleDto],
+    nullable: true,
+    description:
+      'Present (possibly null) only on GET invitation detail for ACCEPTED invitations.',
+  })
+  working_schedule?: InvitationWorkingScheduleDto[] | null;
+}
+
+// ---------- Bulk-create response ----------
+
+export class BulkInviteResultDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  email!: string;
+
+  @ApiProperty()
+  email_sent!: boolean;
+}
+
+export class BulkInviteResponseDto {
+  @ApiProperty()
+  created!: number;
+
+  @ApiProperty({ type: () => [BulkInviteResultDto] })
+  results!: BulkInviteResultDto[];
+}
+
+// ---------- Preview (public) ----------
+
+export class InvitationPreviewOrganizationDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  name!: string;
+}
+
+export class InvitationPreviewInvitedByDto {
+  @ApiProperty()
+  first_name!: string;
+
+  @ApiProperty()
+  last_name!: string;
 }
 
 export class InvitationPreviewResponseDto {
@@ -56,35 +250,31 @@ export class InvitationPreviewResponseDto {
   @ApiProperty({ enum: EngagementType })
   engagement_type!: EngagementType;
 
-  @ApiProperty({
-    type: [Object],
-    description: 'JobFunction { id, code, name } pairs',
-  })
-  job_functions!: { id: string; code: string; name: string }[];
+  @ApiProperty({ type: () => InvitationPreviewOrganizationDto })
+  organization!: InvitationPreviewOrganizationDto;
 
-  @ApiProperty({
-    type: [Object],
-    description: 'Specialty { id, code, name } pairs',
-  })
-  specialties!: { id: string; code: string; name: string }[];
+  @ApiProperty({ type: () => InvitationPreviewInvitedByDto })
+  invited_by!: InvitationPreviewInvitedByDto;
 
-  @ApiProperty()
-  organization!: { id: string; name: string };
+  @ApiProperty({ type: () => [InvitationRoleDto] })
+  roles!: InvitationRoleDto[];
 
-  @ApiProperty()
-  invited_by!: { first_name: string; last_name: string };
+  @ApiProperty({ type: () => [InvitationBranchDto] })
+  branches!: InvitationBranchDto[];
 
-  @ApiProperty()
-  roles!: { id: string; name: string }[];
+  @ApiProperty({ type: () => [InvitationJobFunctionDto] })
+  job_functions!: InvitationJobFunctionDto[];
 
-  @ApiProperty()
-  branches!: { id: string; name: string; city: string; governorate: string }[];
+  @ApiProperty({ type: () => [InvitationSpecialtyDto] })
+  specialties!: InvitationSpecialtyDto[];
 }
+
+// ---------- Decline / Accept request DTOs (in-bound) ----------
 
 export class DeclineInvitationDto {
   @ApiProperty()
   @IsUUID('4')
-  invitation!: string;
+  invitation_id!: string;
 
   @ApiProperty()
   @IsString()
@@ -167,11 +357,12 @@ export class BulkCreateInvitationsDto {
 
 export class AcceptInvitationDto {
   @ApiProperty()
-  @IsUUID()
+  @IsUUID('4')
   invitation_id!: string;
 
   @ApiProperty()
   @IsString()
+  @IsNotEmpty()
   token!: string;
 
   @ApiPropertyOptional()
@@ -199,4 +390,17 @@ export class AcceptInvitationDto {
   @ValidateNested({ each: true })
   @Type(() => BranchScheduleDto)
   schedule?: BranchScheduleDto[];
+}
+
+// ---------- Accept response ----------
+
+export class AcceptInvitationResponseDto {
+  @ApiProperty()
+  user_id!: string;
+
+  @ApiProperty()
+  profile_id!: string;
+
+  @ApiProperty()
+  organization_id!: string;
 }
