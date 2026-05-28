@@ -1,18 +1,13 @@
 import {
   BadRequestException,
-  ConflictException,
   ForbiddenException,
   Injectable,
-  InternalServerErrorException,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ERROR_CODES } from '@common/constant/error-codes.js';
-import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import type { User } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
-import type { AuthConfig } from '@config/auth.config.js';
 import type { AuthTokensDto } from './dto/auth-tokens.dto.js';
 import type { LoginDto } from './dto/login.dto.js';
 import type { RefreshDto } from './dto/refresh.dto.js';
@@ -32,10 +27,8 @@ import type { SwitchBranchDto } from './dto/switch-branch.dto.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import { TokensService } from './services/tokens.service.js';
-import { VerificationCodesService } from './services/verification-codes.service.js';
 import { PasswordResetService } from './services/password-reset.service.js';
-
-const BCRYPT_ROUNDS = 12;
+import { SignupService } from './services/signup.service.js';
 
 export interface SelectableProfile {
   profile_id: string;
@@ -62,324 +55,38 @@ export interface OnboardingRequiredResponse {
 
 @Injectable()
 export class AuthService {
-  private readonly authConfig: AuthConfig;
-
   constructor(
     private readonly prismaService: PrismaService,
-    private readonly configService: ConfigService,
     private readonly authorizationService: AuthorizationService,
     private readonly tokensService: TokensService,
-    private readonly verificationCodesService: VerificationCodesService,
     private readonly passwordResetService: PasswordResetService,
-  ) {
-    const config = this.configService.get<AuthConfig>('auth');
-    if (!config) throw new Error('Auth configuration not loaded');
-    this.authConfig = config;
+    private readonly signupService: SignupService,
+  ) {}
+
+  signupStart(dto: SignupStartDto) {
+    return this.signupService.start(dto);
   }
 
-  async signupStart(dto: SignupStartDto) {
-    const existing = await this.prismaService.db.user.findFirst({
-      where: {
-        OR: [
-          { email: dto.email },
-          ...(dto.phone_number ? [{ phone_number: dto.phone_number }] : []),
-        ],
-      },
-    });
-    if (existing) {
-      // Reactivate a previously deleted user so they can re-join with a new organization.
-      // Only reactivate when the email matches — a phone-only collision with a different
-      // email must not reactivate a foreign identity or send OTP to the wrong address.
-      if (existing.is_deleted && existing.email === dto.email) {
-        const password_hashed = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
-        await this.prismaService.db.user.update({
-          where: { id: existing.id },
-          data: {
-            is_deleted: false,
-            deleted_at: null,
-            is_active: true,
-            registration_status: 'PENDING',
-            onboarding_completed: false,
-            verified_at: null,
-            first_name: dto.first_name,
-            last_name: dto.last_name,
-            password_hashed,
-            phone_number: dto.phone_number ?? null,
-          },
-        });
-        await this.verificationCodesService.send({
-          userId: existing.id,
-          target: dto.email,
-          purpose: 'SIGNUP',
-        });
-        return this.tokensService.issueSignupToken(existing.id, 'signup');
-      }
-
-      // Only resume a pending registration when the submitted email matches.
-      // A phone-only collision (different email) must never issue a token for
-      // the matched user — treat it the same as any other conflict.
-      if (
-        existing.registration_status === 'PENDING' &&
-        existing.email === dto.email
-      ) {
-        try {
-          await this.resendOtp({ email: existing.email });
-        } catch {
-          // swallow rate-limit errors — caller gets token regardless
-        }
-        return this.tokensService.issueSignupToken(existing.id, 'signup');
-      }
-      const conflictFields = [
-        ...(existing.email === dto.email ? ['email'] : []),
-        ...(dto.phone_number && existing.phone_number === dto.phone_number
-          ? ['phone_number']
-          : []),
-      ];
-      throw new ConflictException({
-        message: 'User already exists',
-        code: ERROR_CODES.CONFLICT,
-        details: { fields: conflictFields },
-      });
-    }
-
-    const password_hashed = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
-    const user = await this.prismaService.db.user.create({
-      data: {
-        first_name: dto.first_name,
-        last_name: dto.last_name,
-        email: dto.email,
-        phone_number: dto.phone_number,
-        password_hashed,
-        registration_status: 'PENDING',
-        onboarding_completed: false,
-      },
-    });
-
-    await this.verificationCodesService.send({
-      userId: user.id,
-      target: dto.email,
-      purpose: 'SIGNUP',
-    });
-
-    return this.tokensService.issueSignupToken(user.id, 'signup');
-  }
-
-  async signupVerify(dto: SignupVerifyDto) {
-    const userId = this.tokensService.decodeSignupToken(
-      dto.signup_token,
-      'signup',
-    );
-    const user = await this.prismaService.db.user.findFirst({
-      where: { id: userId, is_deleted: false },
-    });
-    if (!user?.email) throw new UnauthorizedException('User not found');
-    if (user.registration_status !== 'PENDING') {
-      throw new ConflictException('Email already verified');
-    }
-
-    await this.verificationCodesService.consume({
-      userId,
-      target: user.email,
-      purpose: 'SIGNUP',
-      code: dto.code,
-    });
-
-    await this.prismaService.db.user.update({
-      where: { id: userId },
-      data: {
-        verified_at: new Date(),
-        registration_status: 'ACTIVE',
-        is_active: true,
-      },
-    });
-
-    return this.tokensService.issueSignupToken(userId, 'signup');
+  signupVerify(dto: SignupVerifyDto) {
+    return this.signupService.verify(dto);
   }
 
   async signupComplete(
     dto: SignupCompleteDto,
   ): Promise<ProfileSelectionResponse> {
-    const userId = this.tokensService.decodeSignupToken(
-      dto.signup_token,
-      'signup',
-    );
-    const user = await this.prismaService.db.user.findFirst({
-      where: { id: userId, is_deleted: false, is_active: true },
-    });
-    if (!user) throw new UnauthorizedException('User not found');
-    if (user.registration_status !== 'ACTIVE' || !user.verified_at) {
-      throw new ForbiddenException('Signup has not been verified');
-    }
-
-    const jobFunctionCodes = [...new Set(dto.job_function_codes ?? [])];
-    const jobFunctions = jobFunctionCodes.length
-      ? await this.prismaService.db.jobFunction.findMany({
-          where: { code: { in: jobFunctionCodes } },
-        })
-      : [];
-    if (jobFunctions.length !== jobFunctionCodes.length) {
-      const found = new Set(jobFunctions.map((jf) => jf.code));
-      const missing = jobFunctionCodes.filter((c) => !found.has(c));
-      throw new BadRequestException(
-        `Unknown job_function_codes: ${missing.join(', ')}`,
-      );
-    }
-
-    // Resolve specialties: match by Specialty.code first, then by case-insensitive name.
-    // Unmatched entries are silently skipped — the source of truth is the M2M.
-    const specialtyRows = dto.specialties.length
-      ? await this.prismaService.db.specialty.findMany({
-          where: {
-            OR: [
-              { code: { in: dto.specialties } },
-              {
-                name: {
-                  in: dto.specialties,
-                  mode: 'insensitive',
-                },
-              },
-            ],
-            is_deleted: false,
-          },
-        })
-      : [];
-
-    const [ownerRole, freePlan] = await Promise.all([
-      this.findRole('OWNER'),
-      this.prismaService.db.subscriptionPlan.findUnique({
-        where: { plan: 'free_trial' },
-      }),
-    ]);
-    if (!freePlan)
-      throw new InternalServerErrorException('Free trial plan not seeded');
-
-    const trialEndsAt = new Date();
-    trialEndsAt.setDate(trialEndsAt.getDate() + this.authConfig.freeTrialDays);
-
-    const result = await this.prismaService.db.$transaction(async (tx) => {
-      // Atomically claim onboarding. If another concurrent request already
-      // claimed it, updateMany returns count=0 and we abort before creating
-      // any tenant records, preventing duplicate organization/profile/subscription.
-      const claimed = await tx.user.updateMany({
-        where: {
-          id: userId,
-          registration_status: 'ACTIVE',
-          verified_at: { not: null },
-          onboarding_completed: false,
-        },
-        data: { onboarding_completed: true },
-      });
-      if (claimed.count === 0) {
-        throw new ConflictException('Onboarding already completed');
-      }
-
-      const organization = await tx.organization.create({
-        data: {
-          name: dto.organization_name,
-          specialty_links: specialtyRows.length
-            ? {
-                create: specialtyRows.map((s) => ({ specialty_id: s.id })),
-              }
-            : undefined,
-        },
-      });
-      await tx.branch.create({
-        data: {
-          organization_id: organization.id,
-          name: dto.branch_name,
-          address: dto.branch_address,
-          city: dto.branch_city,
-          governorate: dto.branch_governorate,
-          country: dto.branch_country,
-          is_main: true,
-        },
-      });
-      const profile = await tx.profile.create({
-        data: {
-          user_id: userId,
-          organization_id: organization.id,
-          executive_title: dto.executive_title ?? null,
-          engagement_type: dto.engagement_type ?? 'FULL_TIME',
-          roles: { create: [{ role_id: ownerRole.id }] },
-          job_functions: jobFunctions.length
-            ? {
-                create: jobFunctions.map((jf) => ({ job_function_id: jf.id })),
-              }
-            : undefined,
-          specialty_links: specialtyRows.length
-            ? {
-                create: specialtyRows.map((s) => ({ specialty_id: s.id })),
-              }
-            : undefined,
-        },
-      });
-      await tx.subscription.create({
-        data: {
-          organization_id: organization.id,
-          subscription_plan_id: freePlan.id,
-          trial_ends_at: trialEndsAt,
-        },
-      });
-      return { organizationId: organization.id, profileId: profile.id, userId };
-    });
-
-    return this.buildProfileSelectionResponse(result.userId);
+    const { userId } = await this.signupService.complete(dto);
+    return this.buildProfileSelectionResponse(userId);
   }
 
-  async resendOtp(dto: ResendOtpDto) {
-    const user = await this.prismaService.db.user.findFirst({
-      where: { email: dto.email, is_deleted: false },
-    });
-    if (!user) return { success: true as const };
-    if (user.registration_status !== 'PENDING') {
-      throw new ConflictException('Registration is not pending');
-    }
-
-    await this.verificationCodesService.assertCanResend({
-      userId: user.id,
-      purpose: 'SIGNUP',
-    });
-
-    await this.verificationCodesService.send({
-      userId: user.id,
-      target: dto.email,
-      purpose: 'SIGNUP',
-      isResend: true,
-    });
-
-    return { success: true as const };
+  resendOtp(dto: ResendOtpDto) {
+    return this.signupService.resendOtp(dto);
   }
 
-  async getRegistrationStatus(input: {
+  getRegistrationStatus(input: {
     email?: string;
     authorization?: string;
   }): Promise<{ step: RegistrationStep; email?: string }> {
-    const tokenUserId = this.tokensService.tryDecodeAccessToken(
-      input.authorization,
-    );
-    if (tokenUserId) {
-      const user = await this.prismaService.db.user.findFirst({
-        where: { id: tokenUserId, is_deleted: false },
-      });
-      if (!user) return { step: 'NONE' };
-      return {
-        step: this.resolveRegistrationStep(user),
-        ...(user.email ? { email: user.email } : {}),
-      };
-    }
-
-    if (!input.email) {
-      if (input.authorization) {
-        throw new UnauthorizedException('Invalid or expired token');
-      }
-      throw new BadRequestException('email is required');
-    }
-
-    const user = await this.prismaService.db.user.findFirst({
-      where: { email: input.email, is_deleted: false },
-    });
-    if (!user) return { step: 'NONE' };
-    return { step: this.resolveRegistrationStep(user) };
+    return this.signupService.getRegistrationStatus(input);
   }
 
   async login(dto: LoginDto) {
@@ -591,23 +298,6 @@ export class AuthService {
     if (branchId) return branchId;
     if (branches.length === 1) return branches[0].branch_id;
     throw new BadRequestException('branch_id is required');
-  }
-
-  private async findRole(name: string) {
-    const role = await this.prismaService.db.role.findUnique({
-      where: { name },
-    });
-    if (!role)
-      throw new InternalServerErrorException(`${name} role not seeded`);
-    return role;
-  }
-
-  private resolveRegistrationStep(
-    user: Pick<User, 'registration_status' | 'onboarding_completed'>,
-  ): RegistrationStep {
-    if (user.onboarding_completed) return 'DONE';
-    if (user.registration_status === 'PENDING') return 'VERIFY_OTP';
-    return 'COMPLETE_ONBOARDING';
   }
 
   async getMe(userId: string, profileId: string) {
