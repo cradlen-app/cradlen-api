@@ -4,6 +4,7 @@ import {
   ArrayNotEmpty,
   IsArray,
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -26,6 +27,9 @@ export const STAFF_ROLE_NAMES = [
 ] as const;
 export const STAFF_LIST_ROLE_FILTERS = STAFF_ROLE_NAMES;
 export type StaffRoleName = (typeof STAFF_ROLE_NAMES)[number];
+
+export const STAFF_LIST_SCOPES = ['org', 'mine'] as const;
+export type StaffListScope = (typeof STAFF_LIST_SCOPES)[number];
 
 export class WorkingShiftDto {
   @ApiProperty({ example: '09:00', description: 'HH:MM 24-hour format' })
@@ -155,10 +159,12 @@ export class CreateStaffDto {
   phone_number!: string;
 
   @ApiProperty({
-    description: 'Min 8 chars. Admin shares this with the staff member.',
+    description:
+      'Min 8 chars, max 72 (bcrypt input ceiling). Admin shares this with the staff member.',
   })
   @IsString()
   @MinLength(8)
+  @MaxLength(72)
   password!: string;
 
   @ApiProperty({ type: [String] })
@@ -222,8 +228,11 @@ export class ListStaffQueryDto {
 
   @ApiPropertyOptional({ enum: STAFF_ROLE_NAMES })
   @IsOptional()
-  @IsString()
-  role?: string;
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.toUpperCase() : value,
+  )
+  @IsIn(STAFF_ROLE_NAMES)
+  role?: StaffRoleName;
 
   @ApiPropertyOptional({ default: 1, minimum: 1 })
   @IsOptional()
@@ -241,13 +250,13 @@ export class ListStaffQueryDto {
   limit?: number;
 
   @ApiPropertyOptional({
-    enum: ['org', 'mine'],
+    enum: STAFF_LIST_SCOPES,
     description:
       'Listing scope. OWNER may pass "org" to see the full organization or "mine" to see only their assigned branches. Non-OWNER callers are always scoped to "mine" regardless of value.',
   })
   @IsOptional()
-  @IsEnum(['org', 'mine'])
-  scope?: 'org' | 'mine';
+  @IsIn(STAFF_LIST_SCOPES)
+  scope?: StaffListScope;
 
   @ApiPropertyOptional({
     description:
