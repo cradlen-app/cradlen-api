@@ -11,6 +11,7 @@ import { TokensService } from './services/tokens.service.js';
 import { VerificationCodesService } from './services/verification-codes.service.js';
 import { PasswordResetService } from './services/password-reset.service.js';
 import { SignupService } from './services/signup.service.js';
+import { SessionsService } from './services/sessions.service.js';
 import type { PrismaService } from '@infrastructure/database/prisma.service.js';
 import type { EmailService } from '@infrastructure/email/email.service.js';
 import type { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
@@ -117,13 +118,17 @@ function createService(prismaOverrides: Record<string, unknown> = {}) {
     verificationCodesService,
   );
 
+  const sessionsService = new SessionsService(
+    prismaService,
+    authorizationService,
+    tokensService,
+  );
+
   return {
     service: new AuthService(
-      prismaService,
-      authorizationService,
-      tokensService,
-      passwordResetService,
       signupService,
+      sessionsService,
+      passwordResetService,
     ),
     prismaService,
     mailService,
@@ -147,6 +152,7 @@ function createService(prismaOverrides: Record<string, unknown> = {}) {
     verificationCodesService,
     passwordResetService,
     signupService,
+    sessionsService,
   };
 }
 
