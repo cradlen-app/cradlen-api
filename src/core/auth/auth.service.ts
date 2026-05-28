@@ -504,16 +504,15 @@ export class AuthService {
       throw new UnauthorizedException('Refresh token has no profile context');
     }
 
-    await this.prismaService.db.refreshToken.update({
-      where: { id: stored.id },
-      data: { is_revoked: true, revoked_at: new Date() },
-    });
-
+    // Atomic rotation: revoke + new-row create run inside a single transaction
+    // guarded by a count check on the prior jti. Two concurrent refreshes for
+    // the same token cannot both succeed — only one updateMany returns count=1.
     return this.tokensService.issueTokenPair({
       user: stored.user,
       profileId: stored.profile_id,
       organizationId: stored.organization_id,
       activeBranchId: stored.active_branch_id ?? undefined,
+      revokeJti: stored.jti,
     });
   }
 
