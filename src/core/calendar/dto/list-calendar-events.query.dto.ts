@@ -12,15 +12,24 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class ListCalendarEventsQueryDto {
-  @ApiProperty({ description: 'Window start (ISO 8601)' })
+  @ApiProperty({
+    description:
+      'Window start, ISO 8601 with timezone offset (server compares in UTC). Must be strictly before "to".',
+  })
   @IsISO8601()
   from!: string;
 
-  @ApiProperty({ description: 'Window end (ISO 8601)' })
+  @ApiProperty({
+    description:
+      'Window end, ISO 8601 with timezone offset (server compares in UTC).',
+  })
   @IsISO8601()
   to!: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description:
+      'Restrict to events owned by a specific profile. Visibility still applies: when querying another profile, only their ORGANIZATION-visible events on branches the caller can access are returned. Caller-owned PRIVATE events are never excluded.',
+  })
   @IsOptional()
   @IsUUID()
   profile_id?: string;
