@@ -2,6 +2,8 @@ import { UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { TokensService } from './tokens.service.js';
 import type { PrismaService } from '@infrastructure/database/prisma.service.js';
+import type { EventBus } from '@infrastructure/messaging/event-bus.js';
+import { AUTH_EVENTS } from '../events/auth.events.js';
 
 interface TxMocks {
   refreshTokenUpdateMany: jest.Mock;
@@ -49,10 +51,14 @@ function buildService(txOverrides: Partial<TxMocks> = {}) {
     }),
   };
 
+  const publish = jest.fn();
+  const eventBus = { publish } as unknown as EventBus;
+
   const service = new TokensService(
     prismaService,
     jwtService,
     configService as never,
+    eventBus,
   );
 
   return {
@@ -60,6 +66,7 @@ function buildService(txOverrides: Partial<TxMocks> = {}) {
     refreshTokenUpdateMany,
     refreshTokenCreate,
     $transaction,
+    publish,
   };
 }
 
@@ -77,6 +84,7 @@ describe('TokensService.issueTokenPair atomic rotation', () => {
       refreshTokenUpdateMany,
       refreshTokenCreate,
       $transaction,
+      publish,
     } = buildService();
 
     const result = await service.issueTokenPair({
@@ -95,6 +103,17 @@ describe('TokensService.issueTokenPair atomic rotation', () => {
       }),
     );
     expect(refreshTokenCreate).toHaveBeenCalledTimes(1);
+    expect(publish).toHaveBeenCalledWith(
+      AUTH_EVENTS.refresh.rotated,
+      expect.objectContaining({
+        user_id: baseArgs.user.id,
+        profile_id: baseArgs.profileId,
+        organization_id: baseArgs.organizationId,
+        old_jti: 'prior-jti',
+        new_jti: expect.any(String),
+        rotated_at: expect.any(Date),
+      }),
+    );
   });
 
   it('rejects a refresh-token rotation when the prior jti is already revoked', async () => {

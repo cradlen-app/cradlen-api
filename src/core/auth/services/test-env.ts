@@ -5,6 +5,7 @@ import { JwtService } from '@nestjs/jwt';
 import type { PrismaService } from '@infrastructure/database/prisma.service.js';
 import type { EmailService } from '@infrastructure/email/email.service.js';
 import type { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
+import type { EventBus } from '@infrastructure/messaging/event-bus.js';
 import { TokensService } from './tokens.service.js';
 import { VerificationCodesService } from './verification-codes.service.js';
 import { PasswordResetService } from './password-reset.service.js';
@@ -90,10 +91,14 @@ export function createAuthTestEnv(
     getEffectiveBranchIds,
   } as unknown as AuthorizationService;
 
+  const publish = jest.fn();
+  const eventBus = { publish } as unknown as EventBus;
+
   const tokensService = new TokensService(
     prismaService,
     jwtService,
     configService as never,
+    eventBus,
   );
 
   const verificationCodesService = new VerificationCodesService(
@@ -106,12 +111,14 @@ export function createAuthTestEnv(
     prismaService,
     tokensService,
     verificationCodesService,
+    eventBus,
   );
 
   const sessionsService = new SessionsService(
     prismaService,
     authorizationService,
     tokensService,
+    eventBus,
   );
 
   const signupService = new SignupService(
@@ -120,6 +127,7 @@ export function createAuthTestEnv(
     tokensService,
     verificationCodesService,
     sessionsService,
+    eventBus,
   );
 
   return {
@@ -146,5 +154,7 @@ export function createAuthTestEnv(
     passwordResetService,
     signupService,
     sessionsService,
+    eventBus,
+    publish,
   };
 }

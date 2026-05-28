@@ -9,6 +9,7 @@ import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import type { User } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
+import { EventBus } from '@infrastructure/messaging/event-bus.js';
 import type { AuthConfig } from '@config/auth.config.js';
 import type { AuthTokensDto } from '../dto/auth-tokens.dto.js';
 import type { ResetTokenResponseDto } from '../dto/reset-token-response.dto.js';
@@ -18,6 +19,10 @@ import type {
   PasswordResetTokenPayload,
   SignupTokenPayload,
 } from '../interfaces/jwt-payload.interface.js';
+import {
+  AUTH_EVENTS,
+  type AuthRefreshRotatedPayload,
+} from '../events/auth.events.js';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -43,6 +48,7 @@ export class TokensService {
     private readonly prismaService: PrismaService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly eventBus: EventBus,
   ) {
     const config = this.configService.get<AuthConfig>('auth');
     if (!config) throw new Error('Auth configuration not loaded');
@@ -222,6 +228,18 @@ export class TokensService {
         },
       });
     });
+
+    if (args.revokeJti) {
+      const payload: AuthRefreshRotatedPayload = {
+        user_id: args.user.id,
+        profile_id: args.profileId,
+        organization_id: args.organizationId,
+        old_jti: args.revokeJti,
+        new_jti: jti,
+        rotated_at: new Date(),
+      };
+      this.eventBus.publish(AUTH_EVENTS.refresh.rotated, payload);
+    }
 
     return {
       type: 'tokens',
