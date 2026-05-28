@@ -11,6 +11,7 @@ import { AuthorizationModule } from '@core/auth/authorization/authorization.modu
 import { TokensService } from './services/tokens.service.js';
 import { VerificationCodesService } from './services/verification-codes.service.js';
 import { PasswordResetService } from './services/password-reset.service.js';
+import { SignupService } from './services/signup.service.js';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { PasswordResetService } from './services/password-reset.service.js';
     TokensService,
     VerificationCodesService,
     PasswordResetService,
+    SignupService,
     JwtStrategy,
     RegistrationCleanupService,
   ],
