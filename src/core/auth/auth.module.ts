@@ -10,6 +10,7 @@ import { RegistrationCleanupService } from './registration-cleanup.service.js';
 import { AuthorizationModule } from '@core/auth/authorization/authorization.module.js';
 import { TokensService } from './services/tokens.service.js';
 import { VerificationCodesService } from './services/verification-codes.service.js';
+import { PasswordResetService } from './services/password-reset.service.js';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { VerificationCodesService } from './services/verification-codes.service.
     AuthService,
     TokensService,
     VerificationCodesService,
+    PasswordResetService,
     JwtStrategy,
     RegistrationCleanupService,
   ],
