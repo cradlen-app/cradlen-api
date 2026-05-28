@@ -86,3 +86,115 @@ describe('PasswordResetService.start — enumeration symmetry (S-01)', () => {
     ).rejects.toBeInstanceOf(HttpException);
   });
 });
+
+describe('PasswordResetService — reset-token reuse prevention (S-04)', () => {
+  async function buildVerifiedToken(env: ReturnType<typeof createAuthTestEnv>) {
+    env.mocks.userFindFirst.mockResolvedValue({
+      id: 'user-1',
+      email: 'sara@example.com',
+    });
+    const codeHash = await import('bcryptjs').then((b) => b.hash('123456', 10));
+    env.mocks.verificationFindFirst.mockResolvedValue({
+      id: 'vc-1',
+      code_hash: codeHash,
+      expires_at: new Date(Date.now() + 60_000),
+      attempts: 0,
+      max_attempts: 5,
+    });
+    (
+      env.prismaService.db.verificationCode as unknown as { update: jest.Mock }
+    ).update = jest.fn().mockResolvedValue({});
+
+    const { reset_token } = await env.passwordResetService.start({
+      email: 'sara@example.com',
+    });
+
+    const verified = await env.passwordResetService.verify({
+      reset_token,
+      code: '123456',
+    });
+    return verified.reset_token;
+  }
+
+  it('verify writes a PasswordResetToken row keyed by the new verified jti', async () => {
+    const env = createAuthTestEnv();
+    const passwordResetCreate = jest.fn().mockResolvedValue({});
+    (
+      env.prismaService.db.passwordResetToken as unknown as {
+        create: jest.Mock;
+      }
+    ).create = passwordResetCreate;
+
+    await buildVerifiedToken(env);
+
+    expect(passwordResetCreate).toHaveBeenCalledTimes(1);
+    expect(passwordResetCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        jti: expect.any(String),
+        user_id: 'user-1',
+        target: 'sara@example.com',
+        expires_at: expect.any(Date),
+      }),
+    });
+  });
+
+  it('reset succeeds when the row is unconsumed; the row gets marked consumed_at atomically with the password update', async () => {
+    const env = createAuthTestEnv();
+    const passwordResetUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const userUpdate = jest.fn().mockResolvedValue({});
+    const refreshTokenUpdateMany = jest.fn().mockResolvedValue({ count: 0 });
+    (
+      env.prismaService.db as unknown as { $transaction: jest.Mock }
+    ).$transaction = jest.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn({
+        passwordResetToken: { updateMany: passwordResetUpdateMany },
+        user: { update: userUpdate },
+        refreshToken: { updateMany: refreshTokenUpdateMany },
+      }),
+    );
+
+    const verifiedToken = await buildVerifiedToken(env);
+
+    await env.passwordResetService.reset({
+      reset_token: verifiedToken,
+      password: 'NewPassword1!',
+      confirm_password: 'NewPassword1!',
+    });
+
+    expect(passwordResetUpdateMany).toHaveBeenCalledWith({
+      where: { jti: expect.any(String), consumed_at: null },
+      data: { consumed_at: expect.any(Date) },
+    });
+    expect(userUpdate).toHaveBeenCalledTimes(1);
+    expect(refreshTokenUpdateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('reset rejects a re-used verified token (count = 0) and does NOT touch the password or refresh tokens', async () => {
+    const env = createAuthTestEnv();
+    const passwordResetUpdateMany = jest.fn().mockResolvedValue({ count: 0 });
+    const userUpdate = jest.fn();
+    const refreshTokenUpdateMany = jest.fn();
+    (
+      env.prismaService.db as unknown as { $transaction: jest.Mock }
+    ).$transaction = jest.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn({
+        passwordResetToken: { updateMany: passwordResetUpdateMany },
+        user: { update: userUpdate },
+        refreshToken: { updateMany: refreshTokenUpdateMany },
+      }),
+    );
+
+    const verifiedToken = await buildVerifiedToken(env);
+
+    await expect(
+      env.passwordResetService.reset({
+        reset_token: verifiedToken,
+        password: 'NewPassword1!',
+        confirm_password: 'NewPassword1!',
+      }),
+    ).rejects.toThrow('Reset token already used or expired');
+
+    expect(userUpdate).not.toHaveBeenCalled();
+    expect(refreshTokenUpdateMany).not.toHaveBeenCalled();
+  });
+});

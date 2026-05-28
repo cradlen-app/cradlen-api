@@ -372,6 +372,7 @@ model User {
   profiles             Profile[]
   refreshTokens        RefreshToken[]
   verificationCodes    VerificationCode[]
+  passwordResetTokens  PasswordResetToken[]
   sentInvitations      Invitation[]       @relation("InvitedBy")
   notifications        Notification[]
 
@@ -562,6 +563,26 @@ model RefreshToken {
 
   @@index([user_id, is_revoked])
   @@map("refresh_tokens")
+}
+
+// Tracks reset tokens AFTER the verify step issues a verified token.
+// PasswordResetService.verify writes one row; reset() looks the row up by
+// jti and rejects re-use via consumed_at. Forgot-password.start does NOT
+// write a row — synthesized tokens for unknown emails have no underlying
+// user and the verify step short-circuits with INVALID_CODE before this
+// table is touched, so symmetry with the real-but-wrong-code path holds.
+model PasswordResetToken {
+  id          String    @id @default(uuid()) @db.Uuid
+  jti         String    @unique @db.Uuid
+  user_id     String    @db.Uuid
+  target      String
+  expires_at  DateTime
+  consumed_at DateTime?
+  created_at  DateTime  @default(now())
+  user        User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@map("password_reset_tokens")
 }
 
 model VerificationCode {
