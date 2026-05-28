@@ -1,3 +1,7 @@
+// createService returns a kitchen-sink test environment so individual tests
+// can pick the services they need without rebuilding the wiring. Suppress
+// no-unused-vars at the file level instead of per-destructure.
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import {
   BadRequestException,
   ConflictException,
@@ -6,7 +10,6 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
-import { AuthService } from './auth.service.js';
 import { TokensService } from './services/tokens.service.js';
 import { VerificationCodesService } from './services/verification-codes.service.js';
 import { PasswordResetService } from './services/password-reset.service.js';
@@ -111,25 +114,21 @@ function createService(prismaOverrides: Record<string, unknown> = {}) {
     verificationCodesService,
   );
 
-  const signupService = new SignupService(
-    prismaService,
-    configService as never,
-    tokensService,
-    verificationCodesService,
-  );
-
   const sessionsService = new SessionsService(
     prismaService,
     authorizationService,
     tokensService,
   );
 
+  const signupService = new SignupService(
+    prismaService,
+    configService as never,
+    tokensService,
+    verificationCodesService,
+    sessionsService,
+  );
+
   return {
-    service: new AuthService(
-      signupService,
-      sessionsService,
-      passwordResetService,
-    ),
     prismaService,
     mailService,
     mocks: {
@@ -156,14 +155,14 @@ function createService(prismaOverrides: Record<string, unknown> = {}) {
   };
 }
 
-describe('AuthService', () => {
+describe('Auth flows (SignupService + SessionsService)', () => {
   async function expectTooManyRequests(action: Promise<unknown>) {
     await expect(action).rejects.toBeInstanceOf(HttpException);
     await expect(action).rejects.toMatchObject({ status: 429 });
   }
 
   it('resends signup OTP when signup start is retried for a pending user', async () => {
-    const { service, mocks } = createService();
+    const { signupService, sessionsService, mocks } = createService();
     const existingUser = {
       id: '11111111-1111-4111-8111-111111111111',
       email: 'sara@example.com',
@@ -177,7 +176,7 @@ describe('AuthService', () => {
     mocks.verificationUpdateMany.mockResolvedValue({ count: 1 });
     mocks.verificationCreate.mockResolvedValue({});
 
-    const result = await service.signupStart({
+    const result = await signupService.start({
       first_name: 'Sara',
       last_name: 'Ali',
       email: 'sara@example.com',
@@ -199,14 +198,14 @@ describe('AuthService', () => {
   });
 
   it('rejects signup start when active email already exists', async () => {
-    const { service, mocks } = createService();
+    const { signupService, sessionsService, mocks } = createService();
     mocks.userFindFirst.mockResolvedValue({
       id: 'existing-user',
       registration_status: 'ACTIVE',
     });
 
     await expect(
-      service.signupStart({
+      signupService.start({
         first_name: 'Sara',
         last_name: 'Ali',
         email: 'sara@example.com',
@@ -217,14 +216,14 @@ describe('AuthService', () => {
   });
 
   it('rejects signup start when active phone already exists', async () => {
-    const { service, mocks } = createService();
+    const { signupService, sessionsService, mocks } = createService();
     mocks.userFindFirst.mockResolvedValue({
       id: 'existing-user',
       registration_status: 'ACTIVE',
     });
 
     await expect(
-      service.signupStart({
+      signupService.start({
         first_name: 'Sara',
         last_name: 'Ali',
         email: 'sara@example.com',
@@ -246,7 +245,7 @@ describe('AuthService', () => {
   });
 
   it('creates pending user and sends signup verification code', async () => {
-    const { service, mocks } = createService();
+    const { signupService, sessionsService, mocks } = createService();
     mocks.userFindFirst.mockResolvedValue(null);
     mocks.userCreate.mockResolvedValue({
       id: '11111111-1111-4111-8111-111111111111',
@@ -255,7 +254,7 @@ describe('AuthService', () => {
     mocks.verificationUpdateMany.mockResolvedValue({ count: 0 });
     mocks.verificationCreate.mockResolvedValue({});
 
-    const result = await service.signupStart({
+    const result = await signupService.start({
       first_name: 'Sara',
       last_name: 'Ali',
       email: 'sara@example.com',
@@ -278,17 +277,17 @@ describe('AuthService', () => {
   });
 
   it('returns success for resend when email is unknown', async () => {
-    const { service, mocks } = createService();
+    const { signupService, sessionsService, mocks } = createService();
     mocks.userFindFirst.mockResolvedValue(null);
 
     await expect(
-      service.resendOtp({ email: 'missing@example.com' }),
+      signupService.resendOtp({ email: 'missing@example.com' }),
     ).resolves.toEqual({ success: true });
     expect(mocks.sendVerificationEmail).not.toHaveBeenCalled();
   });
 
   it('resends signup OTP for pending users with resend tracking', async () => {
-    const { service, mocks } = createService();
+    const { signupService, sessionsService, mocks } = createService();
     mocks.userFindFirst.mockResolvedValue({
       id: '11111111-1111-4111-8111-111111111111',
       email: 'sara@example.com',
@@ -300,7 +299,7 @@ describe('AuthService', () => {
     mocks.verificationCreate.mockResolvedValue({});
 
     await expect(
-      service.resendOtp({ email: 'sara@example.com' }),
+      signupService.resendOtp({ email: 'sara@example.com' }),
     ).resolves.toEqual({ success: true });
     expect(mocks.verificationCreate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -314,7 +313,7 @@ describe('AuthService', () => {
   });
 
   it('rejects resend during cooldown', async () => {
-    const { service, mocks } = createService();
+    const { signupService, sessionsService, mocks } = createService();
     mocks.userFindFirst.mockResolvedValue({
       id: '11111111-1111-4111-8111-111111111111',
       email: 'sara@example.com',
@@ -325,12 +324,12 @@ describe('AuthService', () => {
     });
 
     await expectTooManyRequests(
-      service.resendOtp({ email: 'sara@example.com' }),
+      signupService.resendOtp({ email: 'sara@example.com' }),
     );
   });
 
   it('rejects resend after hourly limit is reached', async () => {
-    const { service, mocks } = createService();
+    const { signupService, sessionsService, mocks } = createService();
     mocks.userFindFirst.mockResolvedValue({
       id: '11111111-1111-4111-8111-111111111111',
       email: 'sara@example.com',
@@ -342,12 +341,12 @@ describe('AuthService', () => {
     mocks.verificationCount.mockResolvedValue(5);
 
     await expectTooManyRequests(
-      service.resendOtp({ email: 'sara@example.com' }),
+      signupService.resendOtp({ email: 'sara@example.com' }),
     );
   });
 
   it('rejects resend for active users', async () => {
-    const { service, mocks } = createService();
+    const { signupService, sessionsService, mocks } = createService();
     mocks.userFindFirst.mockResolvedValue({
       id: '11111111-1111-4111-8111-111111111111',
       email: 'sara@example.com',
@@ -355,16 +354,16 @@ describe('AuthService', () => {
     });
 
     await expect(
-      service.resendOtp({ email: 'sara@example.com' }),
+      signupService.resendOtp({ email: 'sara@example.com' }),
     ).rejects.toThrow(ConflictException);
   });
 
   it('returns NONE registration status without exposing public email', async () => {
-    const { service, mocks } = createService();
+    const { signupService, sessionsService, mocks } = createService();
     mocks.userFindFirst.mockResolvedValue(null);
 
     await expect(
-      service.getRegistrationStatus({ email: 'missing@example.com' }),
+      signupService.getRegistrationStatus({ email: 'missing@example.com' }),
     ).resolves.toEqual({ step: 'NONE' });
   });
 
@@ -375,20 +374,21 @@ describe('AuthService', () => {
   ] as const)(
     'maps %s registration status with onboarding=%s to %s',
     async (registration_status, onboarding_completed, step) => {
-      const { service, mocks } = createService();
+      const { signupService, sessionsService, mocks } = createService();
       mocks.userFindFirst.mockResolvedValue({
         registration_status,
         onboarding_completed,
       });
 
       await expect(
-        service.getRegistrationStatus({ email: 'sara@example.com' }),
+        signupService.getRegistrationStatus({ email: 'sara@example.com' }),
       ).resolves.toEqual({ step });
     },
   );
 
   it('includes email for valid bearer registration status', async () => {
-    const { service, mocks, jwtService } = createService();
+    const { signupService, sessionsService, mocks, jwtService } =
+      createService();
     mocks.userFindFirst.mockResolvedValue({
       email: 'sara@example.com',
       registration_status: 'ACTIVE',
@@ -405,14 +405,14 @@ describe('AuthService', () => {
     );
 
     await expect(
-      service.getRegistrationStatus({
+      signupService.getRegistrationStatus({
         authorization: `Bearer ${token}`,
       }),
     ).resolves.toEqual({ step: 'DONE', email: 'sara@example.com' });
   });
 
   it('returns verify OTP onboarding requirement when pending user logs in', async () => {
-    const { service, mocks } = createService();
+    const { signupService, sessionsService, mocks } = createService();
     mocks.userFindFirst.mockResolvedValue({
       id: '11111111-1111-4111-8111-111111111111',
       email: 'sara@example.com',
@@ -423,7 +423,10 @@ describe('AuthService', () => {
     });
 
     await expect(
-      service.login({ email: 'sara@example.com', password: 'Password1!' }),
+      sessionsService.login({
+        email: 'sara@example.com',
+        password: 'Password1!',
+      }),
     ).resolves.toEqual({
       type: 'ONBOARDING_REQUIRED',
       step: 'VERIFY_OTP',
@@ -432,7 +435,7 @@ describe('AuthService', () => {
   });
 
   it('returns complete onboarding requirement for active users without onboarding', async () => {
-    const { service, mocks } = createService();
+    const { signupService, sessionsService, mocks } = createService();
     mocks.userFindFirst.mockResolvedValue({
       id: '11111111-1111-4111-8111-111111111111',
       email: 'sara@example.com',
@@ -443,7 +446,10 @@ describe('AuthService', () => {
     });
 
     await expect(
-      service.login({ email: 'sara@example.com', password: 'Password1!' }),
+      sessionsService.login({
+        email: 'sara@example.com',
+        password: 'Password1!',
+      }),
     ).resolves.toEqual({
       type: 'ONBOARDING_REQUIRED',
       step: 'COMPLETE_ONBOARDING',
@@ -452,7 +458,7 @@ describe('AuthService', () => {
   });
 
   it('returns profile selection for active users with completed onboarding', async () => {
-    const { service, mocks } = createService();
+    const { signupService, sessionsService, mocks } = createService();
     mocks.userFindFirst.mockResolvedValue({
       id: '11111111-1111-4111-8111-111111111111',
       email: 'sara@example.com',
@@ -484,7 +490,10 @@ describe('AuthService', () => {
     ]);
 
     await expect(
-      service.login({ email: 'sara@example.com', password: 'Password1!' }),
+      sessionsService.login({
+        email: 'sara@example.com',
+        password: 'Password1!',
+      }),
     ).resolves.toEqual({
       type: 'profile_selection',
       selection_token: expect.any(String),
@@ -507,7 +516,8 @@ describe('AuthService', () => {
   });
 
   it('requires branch id when selected profile has multiple branches', async () => {
-    const { service, mocks, jwtService } = createService();
+    const { signupService, sessionsService, mocks, jwtService } =
+      createService();
     const selectionToken = jwtService.sign(
       {
         userId: '11111111-1111-4111-8111-111111111111',
@@ -530,7 +540,7 @@ describe('AuthService', () => {
     ]);
 
     await expect(
-      service.selectProfile({
+      sessionsService.selectProfile({
         selection_token: selectionToken,
         profile_id: '22222222-2222-4222-8222-222222222222',
       }),
@@ -538,7 +548,8 @@ describe('AuthService', () => {
   });
 
   it('rejects branch ids outside the selected profile', async () => {
-    const { service, mocks, jwtService } = createService();
+    const { signupService, sessionsService, mocks, jwtService } =
+      createService();
     const selectionToken = jwtService.sign(
       {
         userId: '11111111-1111-4111-8111-111111111111',
@@ -559,7 +570,7 @@ describe('AuthService', () => {
     ]);
 
     await expect(
-      service.selectProfile({
+      sessionsService.selectProfile({
         selection_token: selectionToken,
         profile_id: '22222222-2222-4222-8222-222222222222',
         branch_id: '55555555-5555-4555-8555-555555555555',
@@ -568,7 +579,7 @@ describe('AuthService', () => {
   });
 
   it('returns current user with active profile data for getMe', async () => {
-    const { service, mocks } = createService();
+    const { signupService, sessionsService, mocks } = createService();
     const userId = '11111111-1111-4111-8111-111111111111';
     const profileId = '22222222-2222-4222-8222-222222222222';
     const now = new Date();
@@ -637,7 +648,7 @@ describe('AuthService', () => {
       },
     ]);
 
-    const result = await service.getMe(userId, profileId);
+    const result = await sessionsService.getMe(userId, profileId);
 
     expect(result).toMatchObject({
       id: userId,
@@ -677,16 +688,16 @@ describe('AuthService', () => {
   });
 
   it('throws NotFoundException when user not found in getMe', async () => {
-    const { service, mocks } = createService();
+    const { signupService, sessionsService, mocks } = createService();
     mocks.userFindFirst.mockResolvedValue(null);
 
-    await expect(service.getMe('missing-user', 'any-profile')).rejects.toThrow(
-      'User not found',
-    );
+    await expect(
+      sessionsService.getMe('missing-user', 'any-profile'),
+    ).rejects.toThrow('User not found');
   });
 
   it('returns 409 and does not resend OTP when pending user found only by phone collision', async () => {
-    const { service, mocks } = createService();
+    const { signupService, sessionsService, mocks } = createService();
     // Existing PENDING user has a different email but same phone number
     mocks.userFindFirst.mockResolvedValue({
       id: 'other-user-id',
@@ -696,7 +707,7 @@ describe('AuthService', () => {
     });
 
     await expect(
-      service.signupStart({
+      signupService.start({
         first_name: 'Sara',
         last_name: 'Ali',
         email: 'sara@example.com',
@@ -712,7 +723,7 @@ describe('AuthService', () => {
   });
 
   it('resumes pending registration only when email matches, ignoring phone', async () => {
-    const { service, mocks } = createService();
+    const { signupService, sessionsService, mocks } = createService();
     const existingUser = {
       id: '11111111-1111-4111-8111-111111111111',
       email: 'sara@example.com',
@@ -728,7 +739,7 @@ describe('AuthService', () => {
     mocks.verificationUpdateMany.mockResolvedValue({ count: 1 });
     mocks.verificationCreate.mockResolvedValue({});
 
-    const result = await service.signupStart({
+    const result = await signupService.start({
       first_name: 'Sara',
       last_name: 'Ali',
       email: 'sara@example.com',
@@ -751,7 +762,7 @@ describe('AuthService', () => {
       profile: { create: jest.fn() },
       subscription: { create: jest.fn() },
     };
-    const { service, jwtService } = createService({
+    const { signupService, jwtService } = createService({
       $transaction: jest
         .fn()
         .mockImplementation((fn: (tx: typeof txMock) => Promise<unknown>) =>
@@ -789,7 +800,7 @@ describe('AuthService', () => {
     );
 
     await expect(
-      service.signupComplete({
+      signupService.complete({
         signup_token: signupToken,
         organization_name: 'Clinic',
         specialties: ['General Medicine'],

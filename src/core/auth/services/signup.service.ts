@@ -19,6 +19,10 @@ import type { SignupStartDto } from '../dto/signup-start.dto.js';
 import type { SignupVerifyDto } from '../dto/signup-verify.dto.js';
 import { TokensService } from './tokens.service.js';
 import { VerificationCodesService } from './verification-codes.service.js';
+import {
+  SessionsService,
+  type ProfileSelectionResponse,
+} from './sessions.service.js';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -31,6 +35,7 @@ export class SignupService {
     private readonly configService: ConfigService,
     private readonly tokensService: TokensService,
     private readonly verificationCodesService: VerificationCodesService,
+    private readonly sessionsService: SessionsService,
   ) {
     const config = this.configService.get<AuthConfig>('auth');
     if (!config) throw new Error('Auth configuration not loaded');
@@ -154,7 +159,7 @@ export class SignupService {
     return this.tokensService.issueSignupToken(userId, 'signup');
   }
 
-  async complete(dto: SignupCompleteDto): Promise<{ userId: string }> {
+  async complete(dto: SignupCompleteDto): Promise<ProfileSelectionResponse> {
     const userId = this.tokensService.decodeSignupToken(
       dto.signup_token,
       'signup',
@@ -194,7 +199,7 @@ export class SignupService {
       trialEndsAt,
     });
 
-    return { userId };
+    return this.sessionsService.buildProfileSelectionResponse(userId);
   }
 
   async resendOtp(dto: ResendOtpDto) {

@@ -3,7 +3,6 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AuthController } from './auth.controller.js';
-import { AuthService } from './auth.service.js';
 import { JwtStrategy } from './strategies/jwt.strategy.js';
 import { EmailModule } from '@infrastructure/email/email.module.js';
 import { RegistrationCleanupService } from './registration-cleanup.service.js';
@@ -24,7 +23,6 @@ import { SessionsService } from './services/sessions.service.js';
   ],
   controllers: [AuthController],
   providers: [
-    AuthService,
     TokensService,
     VerificationCodesService,
     PasswordResetService,
