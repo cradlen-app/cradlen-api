@@ -11,9 +11,8 @@ import {
 } from '@nestjs/common';
 import { ERROR_CODES } from '@common/constant/error-codes.js';
 import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
-import { randomInt, randomUUID } from 'crypto';
+import { randomInt } from 'crypto';
 import type { User, VerificationPurpose } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { EmailService } from '@infrastructure/email/email.service.js';
@@ -27,12 +26,7 @@ import type { SignupCompleteDto } from './dto/signup-complete.dto.js';
 import type { SignupStartDto } from './dto/signup-start.dto.js';
 import type { SignupVerifyDto } from './dto/signup-verify.dto.js';
 import type { SelectProfileDto } from './dto/select-profile.dto.js';
-import type {
-  JwtAccessPayload,
-  JwtRefreshPayload,
-  PasswordResetTokenPayload,
-  SignupTokenPayload,
-} from './interfaces/jwt-payload.interface.js';
+import type { JwtRefreshPayload } from './interfaces/jwt-payload.interface.js';
 import type { ForgotPasswordDto } from './dto/forgot-password.dto.js';
 import type { VerifyResetCodeDto } from './dto/verify-reset-code.dto.js';
 import type { ResetPasswordDto } from './dto/reset-password.dto.js';
@@ -41,6 +35,7 @@ import type { ResendResetCodeDto } from './dto/resend-reset-code.dto.js';
 import type { SwitchBranchDto } from './dto/switch-branch.dto.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
+import { TokensService } from './services/tokens.service.js';
 
 const BCRYPT_ROUNDS = 12;
 const OTP_TTL_MINUTES = 15;
@@ -78,10 +73,10 @@ export class AuthService {
 
   constructor(
     private readonly prismaService: PrismaService,
-    private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly mailService: EmailService,
     private readonly authorizationService: AuthorizationService,
+    private readonly tokensService: TokensService,
   ) {
     const config = this.configService.get<AuthConfig>('auth');
     if (!config) throw new Error('Auth configuration not loaded');
@@ -123,7 +118,7 @@ export class AuthService {
           target: dto.email,
           purpose: 'SIGNUP',
         });
-        return this.issueSignupToken(existing.id, 'signup');
+        return this.tokensService.issueSignupToken(existing.id, 'signup');
       }
 
       // Only resume a pending registration when the submitted email matches.
@@ -138,7 +133,7 @@ export class AuthService {
         } catch {
           // swallow rate-limit errors — caller gets token regardless
         }
-        return this.issueSignupToken(existing.id, 'signup');
+        return this.tokensService.issueSignupToken(existing.id, 'signup');
       }
       const conflictFields = [
         ...(existing.email === dto.email ? ['email'] : []),
@@ -172,11 +167,14 @@ export class AuthService {
       purpose: 'SIGNUP',
     });
 
-    return this.issueSignupToken(user.id, 'signup');
+    return this.tokensService.issueSignupToken(user.id, 'signup');
   }
 
   async signupVerify(dto: SignupVerifyDto) {
-    const userId = this.decodeSignupToken(dto.signup_token, 'signup');
+    const userId = this.tokensService.decodeSignupToken(
+      dto.signup_token,
+      'signup',
+    );
     const user = await this.prismaService.db.user.findFirst({
       where: { id: userId, is_deleted: false },
     });
@@ -201,13 +199,16 @@ export class AuthService {
       },
     });
 
-    return this.issueSignupToken(userId, 'signup');
+    return this.tokensService.issueSignupToken(userId, 'signup');
   }
 
   async signupComplete(
     dto: SignupCompleteDto,
   ): Promise<ProfileSelectionResponse> {
-    const userId = this.decodeSignupToken(dto.signup_token, 'signup');
+    const userId = this.tokensService.decodeSignupToken(
+      dto.signup_token,
+      'signup',
+    );
     const user = await this.prismaService.db.user.findFirst({
       where: { id: userId, is_deleted: false, is_active: true },
     });
@@ -392,7 +393,9 @@ export class AuthService {
     email?: string;
     authorization?: string;
   }): Promise<{ step: RegistrationStep; email?: string }> {
-    const tokenUserId = this.tryDecodeAccessToken(input.authorization);
+    const tokenUserId = this.tokensService.tryDecodeAccessToken(
+      input.authorization,
+    );
     if (tokenUserId) {
       const user = await this.prismaService.db.user.findFirst({
         where: { id: tokenUserId, is_deleted: false },
@@ -434,7 +437,7 @@ export class AuthService {
   }
 
   async selectProfile(dto: SelectProfileDto): Promise<AuthTokensDto> {
-    const userId = this.decodeSignupToken(
+    const userId = this.tokensService.decodeSignupToken(
       dto.selection_token,
       'profile_selection',
     );
@@ -475,25 +478,18 @@ export class AuthService {
       throw new ForbiddenException('Invalid branch selection');
     }
 
-    return this.issueTokenPair(
-      profile.user,
-      profile.id,
-      profile.organization_id,
-      branchId,
-    );
+    return this.tokensService.issueTokenPair({
+      user: profile.user,
+      profileId: profile.id,
+      organizationId: profile.organization_id,
+      activeBranchId: branchId,
+    });
   }
 
   async refresh(dto: RefreshDto): Promise<AuthTokensDto> {
-    let payload: JwtRefreshPayload;
-    try {
-      payload = this.jwtService.verify<JwtRefreshPayload>(dto.refresh_token, {
-        secret: this.authConfig.jwt.refreshSecret,
-      });
-    } catch {
-      throw new UnauthorizedException('Invalid or expired refresh token');
-    }
-    if (payload.type !== 'refresh')
-      throw new UnauthorizedException('Invalid token type');
+    const payload: JwtRefreshPayload = this.tokensService.decodeRefreshToken(
+      dto.refresh_token,
+    );
 
     const stored = await this.prismaService.db.refreshToken.findUnique({
       where: { jti: payload.jti },
@@ -513,31 +509,16 @@ export class AuthService {
       data: { is_revoked: true, revoked_at: new Date() },
     });
 
-    return this.issueTokenPair(
-      stored.user,
-      stored.profile_id,
-      stored.organization_id,
-      stored.active_branch_id ?? undefined,
-    );
+    return this.tokensService.issueTokenPair({
+      user: stored.user,
+      profileId: stored.profile_id,
+      organizationId: stored.organization_id,
+      activeBranchId: stored.active_branch_id ?? undefined,
+    });
   }
 
   async logout(rawRefreshToken: string): Promise<void> {
-    try {
-      const payload = this.jwtService.verify<JwtRefreshPayload>(
-        rawRefreshToken,
-        {
-          secret: this.authConfig.jwt.refreshSecret,
-          ignoreExpiration: true,
-        },
-      );
-      if (payload.type !== 'refresh') return;
-      await this.prismaService.db.refreshToken.updateMany({
-        where: { jti: payload.jti, is_revoked: false },
-        data: { is_revoked: true, revoked_at: new Date() },
-      });
-    } catch {
-      return;
-    }
+    return this.tokensService.revokeRefreshToken(rawRefreshToken);
   }
 
   async switchBranch(
@@ -551,12 +532,12 @@ export class AuthService {
     );
     if (!canAccess) throw new ForbiddenException('Branch access denied');
 
-    return this.issueTokenPair(
-      { id: user.userId },
-      user.profileId,
-      user.organizationId,
-      dto.branch_id,
-    );
+    return this.tokensService.issueTokenPair({
+      user: { id: user.userId },
+      profileId: user.profileId,
+      organizationId: user.organizationId,
+      activeBranchId: dto.branch_id,
+    });
   }
 
   private async buildLoginResponse(
@@ -588,8 +569,10 @@ export class AuthService {
     const profiles = await this.getSelectableProfiles(userId);
     return {
       type: 'profile_selection',
-      selection_token: this.issueSignupToken(userId, 'profile_selection')
-        .signup_token,
+      selection_token: this.tokensService.issueSignupToken(
+        userId,
+        'profile_selection',
+      ).signup_token,
       profiles,
     };
   }
@@ -757,141 +740,12 @@ export class AuthService {
     return role;
   }
 
-  private issueSignupToken(
-    userId: string,
-    type: 'signup' | 'profile_selection',
-  ) {
-    const payload: SignupTokenPayload = { userId, type };
-    const signup_token = this.jwtService.sign(payload, {
-      secret: this.authConfig.jwt.accessSecret,
-      expiresIn: this.parseDurationToSeconds(
-        this.authConfig.jwt.registrationExpiration,
-      ),
-    });
-    return {
-      signup_token,
-      expires_in: this.parseDurationToSeconds(
-        this.authConfig.jwt.registrationExpiration,
-      ),
-    };
-  }
-
-  private decodeSignupToken(
-    token: string,
-    type: 'signup' | 'profile_selection',
-  ) {
-    let payload: SignupTokenPayload;
-    try {
-      payload = this.jwtService.verify<SignupTokenPayload>(token, {
-        secret: this.authConfig.jwt.accessSecret,
-      });
-    } catch {
-      throw new UnauthorizedException('Invalid or expired token');
-    }
-    if (payload.type !== type)
-      throw new UnauthorizedException('Invalid token type');
-    return payload.userId;
-  }
-
-  private tryDecodeAccessToken(authorization?: string): string | null {
-    if (!authorization) return null;
-
-    const match = /^Bearer\s+(.+)$/i.exec(authorization.trim());
-    if (!match) return null;
-
-    try {
-      const payload = this.jwtService.verify<JwtAccessPayload>(match[1], {
-        secret: this.authConfig.jwt.accessSecret,
-      });
-      return payload.type === 'access' ? payload.userId : null;
-    } catch {
-      return null;
-    }
-  }
-
   private resolveRegistrationStep(
     user: Pick<User, 'registration_status' | 'onboarding_completed'>,
   ): RegistrationStep {
     if (user.onboarding_completed) return 'DONE';
     if (user.registration_status === 'PENDING') return 'VERIFY_OTP';
     return 'COMPLETE_ONBOARDING';
-  }
-
-  private async issueTokenPair(
-    user: Pick<User, 'id'>,
-    profileId: string,
-    organizationId: string,
-    activeBranchId?: string,
-  ): Promise<AuthTokensDto> {
-    await this.assertProfileBelongsToUser(user.id, profileId, organizationId);
-
-    const jti = randomUUID();
-    const accessExpiresIn = this.parseDurationToSeconds(
-      this.authConfig.jwt.accessExpiration,
-    );
-    const refreshExpiresIn = this.parseDurationToSeconds(
-      this.authConfig.jwt.refreshExpiration,
-    );
-    const accessPayload: JwtAccessPayload = {
-      userId: user.id,
-      profileId,
-      organizationId,
-      ...(activeBranchId && { activeBranchId }),
-      type: 'access',
-    };
-    const refreshPayload: JwtRefreshPayload = {
-      userId: user.id,
-      profileId,
-      organizationId,
-      jti,
-      type: 'refresh',
-    };
-    const access_token = this.jwtService.sign(accessPayload, {
-      secret: this.authConfig.jwt.accessSecret,
-      expiresIn: accessExpiresIn,
-    });
-    const refresh_token = this.jwtService.sign(refreshPayload, {
-      secret: this.authConfig.jwt.refreshSecret,
-      expiresIn: refreshExpiresIn,
-    });
-    const token_hash = await bcrypt.hash(refresh_token, BCRYPT_ROUNDS);
-    await this.prismaService.db.refreshToken.create({
-      data: {
-        jti,
-        token_hash,
-        user_id: user.id,
-        profile_id: profileId,
-        organization_id: organizationId,
-        active_branch_id: activeBranchId ?? null,
-        expires_at: new Date(Date.now() + refreshExpiresIn * 1000),
-      },
-    });
-
-    return {
-      type: 'tokens',
-      access_token,
-      refresh_token,
-      token_type: 'Bearer',
-      expires_in: accessExpiresIn,
-    };
-  }
-
-  private async assertProfileBelongsToUser(
-    userId: string,
-    profileId: string,
-    organizationId: string,
-  ) {
-    const profile = await this.prismaService.db.profile.findFirst({
-      where: {
-        id: profileId,
-        user_id: userId,
-        organization_id: organizationId,
-        is_deleted: false,
-        is_active: true,
-      },
-      select: { id: true },
-    });
-    if (!profile) throw new ForbiddenException('Invalid profile context');
   }
 
   async getMe(userId: string, profileId: string) {
@@ -984,50 +838,6 @@ export class AuthService {
     };
   }
 
-  private issuePasswordResetToken(
-    userId: string,
-    target: string,
-    verified: boolean,
-  ): ResetTokenResponseDto {
-    const jti = randomUUID();
-    const payload: PasswordResetTokenPayload = {
-      userId,
-      target,
-      jti,
-      type: 'password_reset',
-      verified,
-    };
-    const expiresIn = this.parseDurationToSeconds(
-      this.authConfig.jwt.registrationExpiration,
-    );
-    const reset_token = this.jwtService.sign(payload, {
-      secret: this.authConfig.jwt.resetSecret,
-      expiresIn,
-    });
-    return { reset_token, expires_in: expiresIn };
-  }
-
-  private decodePasswordResetToken(
-    token: string,
-    expectedVerified: boolean,
-  ): { userId: string; target: string; jti: string } {
-    let payload: PasswordResetTokenPayload;
-    try {
-      payload = this.jwtService.verify<PasswordResetTokenPayload>(token, {
-        secret: this.authConfig.jwt.resetSecret,
-      });
-    } catch {
-      throw new UnauthorizedException('Invalid or expired reset token');
-    }
-    if (
-      payload.type !== 'password_reset' ||
-      payload.verified !== expectedVerified
-    ) {
-      throw new UnauthorizedException('Invalid reset token type or state');
-    }
-    return { userId: payload.userId, target: payload.target, jti: payload.jti };
-  }
-
   async forgotPassword(dto: ForgotPasswordDto): Promise<ResetTokenResponseDto> {
     const user = await this.prismaService.db.user.findFirst({
       where: {
@@ -1048,13 +858,17 @@ export class AuthService {
       purpose: 'PASSWORD_RESET',
     });
 
-    return this.issuePasswordResetToken(user.id, user.email, false);
+    return this.tokensService.issuePasswordResetToken(
+      user.id,
+      user.email,
+      false,
+    );
   }
 
   async resendPasswordResetCode(
     dto: ResendResetCodeDto,
   ): Promise<ResetTokenResponseDto> {
-    const { userId, target } = this.decodePasswordResetToken(
+    const { userId, target } = this.tokensService.decodePasswordResetToken(
       dto.reset_token,
       false,
     );
@@ -1100,13 +914,13 @@ export class AuthService {
       isResend: true,
     });
 
-    return this.issuePasswordResetToken(userId, target, false);
+    return this.tokensService.issuePasswordResetToken(userId, target, false);
   }
 
   async verifyResetCode(
     dto: VerifyResetCodeDto,
   ): Promise<ResetTokenResponseDto> {
-    const { userId, target } = this.decodePasswordResetToken(
+    const { userId, target } = this.tokensService.decodePasswordResetToken(
       dto.reset_token,
       false,
     );
@@ -1118,11 +932,14 @@ export class AuthService {
       code: dto.code,
     });
 
-    return this.issuePasswordResetToken(userId, target, true);
+    return this.tokensService.issuePasswordResetToken(userId, target, true);
   }
 
   async resetPassword(dto: ResetPasswordDto): Promise<void> {
-    const { userId } = this.decodePasswordResetToken(dto.reset_token, true);
+    const { userId } = this.tokensService.decodePasswordResetToken(
+      dto.reset_token,
+      true,
+    );
 
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
@@ -1136,18 +953,5 @@ export class AuthService {
         data: { is_revoked: true },
       }),
     ]);
-  }
-
-  private parseDurationToSeconds(duration: string): number {
-    const match = /^(\d+)([smhd])$/.exec(duration);
-    if (!match) return 900;
-    const value = parseInt(match[1], 10);
-    const multipliers: Record<string, number> = {
-      s: 1,
-      m: 60,
-      h: 3600,
-      d: 86400,
-    };
-    return value * (multipliers[match[2]] ?? 1);
   }
 }

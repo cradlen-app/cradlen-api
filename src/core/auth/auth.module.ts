@@ -8,6 +8,7 @@ import { JwtStrategy } from './strategies/jwt.strategy.js';
 import { EmailModule } from '@infrastructure/email/email.module.js';
 import { RegistrationCleanupService } from './registration-cleanup.service.js';
 import { AuthorizationModule } from '@core/auth/authorization/authorization.module.js';
+import { TokensService } from './services/tokens.service.js';
 
 @Module({
   imports: [
@@ -18,6 +19,11 @@ import { AuthorizationModule } from '@core/auth/authorization/authorization.modu
     ScheduleModule.forRoot(),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, RegistrationCleanupService],
+  providers: [
+    AuthService,
+    TokensService,
+    JwtStrategy,
+    RegistrationCleanupService,
+  ],
 })
 export class AuthModule {}
