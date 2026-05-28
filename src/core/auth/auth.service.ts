@@ -33,6 +33,7 @@ import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import { TokensService } from './services/tokens.service.js';
 import { VerificationCodesService } from './services/verification-codes.service.js';
+import { PasswordResetService } from './services/password-reset.service.js';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -69,6 +70,7 @@ export class AuthService {
     private readonly authorizationService: AuthorizationService,
     private readonly tokensService: TokensService,
     private readonly verificationCodesService: VerificationCodesService,
+    private readonly passwordResetService: PasswordResetService,
   ) {
     const config = this.configService.get<AuthConfig>('auth');
     if (!config) throw new Error('Auth configuration not loaded');
@@ -698,91 +700,21 @@ export class AuthService {
     };
   }
 
-  async forgotPassword(dto: ForgotPasswordDto): Promise<ResetTokenResponseDto> {
-    const user = await this.prismaService.db.user.findFirst({
-      where: {
-        email: dto.email,
-        is_deleted: false,
-        is_active: true,
-        verified_at: { not: null },
-      },
-    });
-
-    if (!user?.email) {
-      return { reset_token: '', expires_in: 0 };
-    }
-
-    await this.verificationCodesService.send({
-      userId: user.id,
-      target: user.email,
-      purpose: 'PASSWORD_RESET',
-    });
-
-    return this.tokensService.issuePasswordResetToken(
-      user.id,
-      user.email,
-      false,
-    );
+  forgotPassword(dto: ForgotPasswordDto): Promise<ResetTokenResponseDto> {
+    return this.passwordResetService.start(dto);
   }
 
-  async resendPasswordResetCode(
+  resendPasswordResetCode(
     dto: ResendResetCodeDto,
   ): Promise<ResetTokenResponseDto> {
-    const { userId, target } = this.tokensService.decodePasswordResetToken(
-      dto.reset_token,
-      false,
-    );
-
-    await this.verificationCodesService.assertCanResend({
-      userId,
-      purpose: 'PASSWORD_RESET',
-    });
-
-    await this.verificationCodesService.send({
-      userId,
-      target,
-      purpose: 'PASSWORD_RESET',
-      isResend: true,
-    });
-
-    return this.tokensService.issuePasswordResetToken(userId, target, false);
+    return this.passwordResetService.resend(dto);
   }
 
-  async verifyResetCode(
-    dto: VerifyResetCodeDto,
-  ): Promise<ResetTokenResponseDto> {
-    const { userId, target } = this.tokensService.decodePasswordResetToken(
-      dto.reset_token,
-      false,
-    );
-
-    await this.verificationCodesService.consume({
-      userId,
-      target,
-      purpose: 'PASSWORD_RESET',
-      code: dto.code,
-    });
-
-    return this.tokensService.issuePasswordResetToken(userId, target, true);
+  verifyResetCode(dto: VerifyResetCodeDto): Promise<ResetTokenResponseDto> {
+    return this.passwordResetService.verify(dto);
   }
 
-  async resetPassword(dto: ResetPasswordDto): Promise<void> {
-    const { userId } = this.tokensService.decodePasswordResetToken(
-      dto.reset_token,
-      true,
-    );
-
-    const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
-
-    await this.prismaService.db.$transaction([
-      this.prismaService.db.user.update({
-        where: { id: userId },
-        data: { password_hashed: passwordHash },
-      }),
-      this.prismaService.db.refreshToken.updateMany({
-        where: { user_id: userId, is_revoked: false },
-        data: { is_revoked: true },
-      }),
-    ]);
+  resetPassword(dto: ResetPasswordDto): Promise<void> {
+    return this.passwordResetService.reset(dto);
   }
 }
