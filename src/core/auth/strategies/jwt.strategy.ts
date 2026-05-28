@@ -22,9 +22,22 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     });
   }
 
-  async validate(payload: JwtAccessPayload) {
+  async validate(payload: JwtAccessPayload & { aud?: string | string[] }) {
     if (payload.type !== 'access') {
       throw new UnauthorizedException('Invalid token type');
+    }
+
+    // aud grace-period check. Tokens issued before TokensService started
+    // attaching `aud: 'cradlen-api'` are still accepted; new tokens MUST
+    // carry the expected audience. Once the grace window has passed in
+    // production, replace this allow-undefined branch with a hard
+    // assertion that aud === 'cradlen-api'.
+    const aud = payload.aud;
+    if (aud !== undefined) {
+      const audList = Array.isArray(aud) ? aud : [aud];
+      if (!audList.includes('cradlen-api')) {
+        throw new UnauthorizedException('Invalid token audience');
+      }
     }
 
     // AuthorizationService.getProfileContext does the combined
