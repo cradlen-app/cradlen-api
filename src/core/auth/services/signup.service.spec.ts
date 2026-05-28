@@ -388,6 +388,48 @@ describe('SignupService', () => {
     expect(organizationCreate).not.toHaveBeenCalled();
   });
 
+  it('reactivation path runs user.update + verification-code persistence in one transaction (S-11)', async () => {
+    const txUserUpdate = jest.fn().mockResolvedValue({});
+    const txVerificationUpdateMany = jest.fn().mockResolvedValue({ count: 0 });
+    const txVerificationCreate = jest.fn().mockResolvedValue({});
+    const $transaction = jest.fn(
+      async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          user: { update: txUserUpdate },
+          verificationCode: {
+            updateMany: txVerificationUpdateMany,
+            create: txVerificationCreate,
+          },
+        }),
+    );
+    const { signupService, mocks } = createAuthTestEnv({ $transaction });
+    mocks.userFindFirst.mockResolvedValue({
+      id: 'soft-deleted-user',
+      email: 'sara@example.com',
+      is_deleted: true,
+      registration_status: 'ACTIVE',
+    });
+
+    await signupService.start({
+      first_name: 'Sara',
+      last_name: 'Ali',
+      email: 'sara@example.com',
+      password: 'Password1!',
+      confirm_password: 'Password1!',
+    });
+
+    expect($transaction).toHaveBeenCalledTimes(1);
+    // user.update + verificationCode writes all flowed through the same tx.
+    expect(txUserUpdate).toHaveBeenCalledTimes(1);
+    expect(txVerificationCreate).toHaveBeenCalledTimes(1);
+    // The dedicated non-tx prisma path was NOT used for the verification
+    // writes — that's the bug being closed.
+    expect(mocks.verificationCreate).not.toHaveBeenCalled();
+    // Email was still dispatched (inside the tx, but that's an
+    // acceptable trade-off documented in the service).
+    expect(mocks.sendVerificationEmail).toHaveBeenCalledTimes(1);
+  });
+
   describe('verify', () => {
     const userId = '11111111-1111-4111-8111-111111111111';
 

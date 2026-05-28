@@ -27,15 +27,15 @@ import {
 const BCRYPT_ROUNDS = 12;
 
 /**
- * JWT `aud` claim attached to every token this service issues.
- * Deployments running an older build sign tokens without `aud`; this
+ * JWT `aud` and `iss` claims attached to every token this service issues.
+ * Deployments running an older build sign tokens without these; this
  * service still accepts those during the grace window so a rolling
  * deploy never invalidates active sessions. After the grace window has
- * passed in production, drop the `aud === undefined` branch in
- * verifyWithGrace and the matching one in JwtStrategy.validate to
- * close the spec gap.
+ * passed in production, drop the `undefined` branches in verifyWithGrace
+ * and the matching ones in JwtStrategy.validate to close the spec gap.
  */
 const JWT_AUDIENCE = 'cradlen-api';
+const JWT_ISSUER = 'cradlen-api';
 
 export interface IssueTokenPairArgs {
   user: Pick<User, 'id'>;
@@ -77,6 +77,7 @@ export class TokensService {
     const signup_token = this.jwtService.sign(payload, {
       secret: this.authConfig.jwt.accessSecret,
       audience: JWT_AUDIENCE,
+      issuer: JWT_ISSUER,
       expiresIn: expires_in,
     });
     return { signup_token, expires_in };
@@ -131,6 +132,7 @@ export class TokensService {
     const reset_token = this.jwtService.sign(payload, {
       secret: this.authConfig.jwt.resetSecret,
       audience: JWT_AUDIENCE,
+      issuer: JWT_ISSUER,
       expiresIn,
     });
     return { reset_token, expires_in: expiresIn };
@@ -183,12 +185,15 @@ export class TokensService {
     } catch {
       throw new UnauthorizedException(opts.errorMessage);
     }
-    const aud = (payload as { aud?: string | string[] }).aud;
-    if (aud !== undefined) {
-      const audList = Array.isArray(aud) ? aud : [aud];
+    const claims = payload as { aud?: string | string[]; iss?: string };
+    if (claims.aud !== undefined) {
+      const audList = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
       if (!audList.includes(JWT_AUDIENCE)) {
         throw new UnauthorizedException(opts.errorMessage);
       }
+    }
+    if (claims.iss !== undefined && claims.iss !== JWT_ISSUER) {
+      throw new UnauthorizedException(opts.errorMessage);
     }
     return payload;
   }
@@ -224,11 +229,13 @@ export class TokensService {
     const access_token = this.jwtService.sign(accessPayload, {
       secret: this.authConfig.jwt.accessSecret,
       audience: JWT_AUDIENCE,
+      issuer: JWT_ISSUER,
       expiresIn: accessExpiresIn,
     });
     const refresh_token = this.jwtService.sign(refreshPayload, {
       secret: this.authConfig.jwt.refreshSecret,
       audience: JWT_AUDIENCE,
+      issuer: JWT_ISSUER,
       expiresIn: refreshExpiresIn,
     });
     const token_hash = await bcrypt.hash(refresh_token, BCRYPT_ROUNDS);
