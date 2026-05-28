@@ -373,6 +373,7 @@ model User {
   refreshTokens        RefreshToken[]
   verificationCodes    VerificationCode[]
   passwordResetTokens  PasswordResetToken[]
+  authAuditLogs        AuthAuditLog[]
   sentInvitations      Invitation[]       @relation("InvitedBy")
   notifications        Notification[]
 
@@ -563,6 +564,26 @@ model RefreshToken {
 
   @@index([user_id, is_revoked])
   @@map("refresh_tokens")
+}
+
+// Audit trail for AUTH_EVENTS. Written by AuthAuditListener on every
+// signup.completed / login.succeeded / login.failed /
+// password_reset.completed / refresh.rotated event. Independent of
+// rest of the request flow: a write failure must NOT bubble up and
+// fail the user-facing action.
+model AuthAuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  event_name String
+  user_id    String?  @db.Uuid
+  email      String?
+  payload    Json
+  at         DateTime
+  created_at DateTime @default(now())
+  user       User?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@index([user_id, created_at])
+  @@index([event_name, created_at])
+  @@map("auth_audit_log")
 }
 
 // Tracks reset tokens AFTER the verify step issues a verified token.
