@@ -17,12 +17,17 @@ import type { ResendOtpDto } from '../dto/resend-otp.dto.js';
 import type { SignupCompleteDto } from '../dto/signup-complete.dto.js';
 import type { SignupStartDto } from '../dto/signup-start.dto.js';
 import type { SignupVerifyDto } from '../dto/signup-verify.dto.js';
+import { EventBus } from '@infrastructure/messaging/event-bus.js';
 import { TokensService } from './tokens.service.js';
 import { VerificationCodesService } from './verification-codes.service.js';
 import {
   SessionsService,
   type ProfileSelectionResponse,
 } from './sessions.service.js';
+import {
+  AUTH_EVENTS,
+  type AuthSignupCompletedPayload,
+} from '../events/auth.events.js';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -36,6 +41,7 @@ export class SignupService {
     private readonly tokensService: TokensService,
     private readonly verificationCodesService: VerificationCodesService,
     private readonly sessionsService: SessionsService,
+    private readonly eventBus: EventBus,
   ) {
     const config = this.configService.get<AuthConfig>('auth');
     if (!config) throw new Error('Auth configuration not loaded');
@@ -189,7 +195,7 @@ export class SignupService {
     const trialEndsAt = new Date();
     trialEndsAt.setDate(trialEndsAt.getDate() + this.authConfig.freeTrialDays);
 
-    await this.runOnboardingTransaction({
+    const { organizationId, profileId } = await this.runOnboardingTransaction({
       userId,
       dto,
       jobFunctions,
@@ -198,6 +204,17 @@ export class SignupService {
       freePlanId: freePlan.id,
       trialEndsAt,
     });
+
+    if (user.email) {
+      const payload: AuthSignupCompletedPayload = {
+        user_id: userId,
+        organization_id: organizationId,
+        profile_id: profileId,
+        email: user.email,
+        completed_at: new Date(),
+      };
+      this.eventBus.publish(AUTH_EVENTS.signup.completed, payload);
+    }
 
     return this.sessionsService.buildProfileSelectionResponse(userId);
   }
@@ -314,7 +331,7 @@ export class SignupService {
     ownerRoleId: string;
     freePlanId: string;
     trialEndsAt: Date;
-  }): Promise<void> {
+  }): Promise<{ organizationId: string; profileId: string }> {
     const {
       userId,
       dto,
@@ -325,7 +342,7 @@ export class SignupService {
       trialEndsAt,
     } = args;
 
-    await this.prismaService.db.$transaction(async (tx) => {
+    return this.prismaService.db.$transaction(async (tx) => {
       // Atomically claim onboarding. If another concurrent request already
       // claimed it, updateMany returns count=0 and we abort before creating
       // any tenant records — prevents duplicate organization/profile rows.
@@ -361,7 +378,7 @@ export class SignupService {
           is_main: true,
         },
       });
-      await tx.profile.create({
+      const profile = await tx.profile.create({
         data: {
           user_id: userId,
           organization_id: organization.id,
@@ -387,6 +404,7 @@ export class SignupService {
           trial_ends_at: trialEndsAt,
         },
       });
+      return { organizationId: organization.id, profileId: profile.id };
     });
   }
 }

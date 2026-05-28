@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
+import { EventBus } from '@infrastructure/messaging/event-bus.js';
 import type { ForgotPasswordDto } from '../dto/forgot-password.dto.js';
 import type { ResendResetCodeDto } from '../dto/resend-reset-code.dto.js';
 import type { VerifyResetCodeDto } from '../dto/verify-reset-code.dto.js';
@@ -8,6 +9,10 @@ import type { ResetPasswordDto } from '../dto/reset-password.dto.js';
 import type { ResetTokenResponseDto } from '../dto/reset-token-response.dto.js';
 import { TokensService } from './tokens.service.js';
 import { VerificationCodesService } from './verification-codes.service.js';
+import {
+  AUTH_EVENTS,
+  type AuthPasswordResetCompletedPayload,
+} from '../events/auth.events.js';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -17,6 +22,7 @@ export class PasswordResetService {
     private readonly prismaService: PrismaService,
     private readonly tokensService: TokensService,
     private readonly verificationCodesService: VerificationCodesService,
+    private readonly eventBus: EventBus,
   ) {}
 
   async start(dto: ForgotPasswordDto): Promise<ResetTokenResponseDto> {
@@ -84,7 +90,7 @@ export class PasswordResetService {
   }
 
   async reset(dto: ResetPasswordDto): Promise<void> {
-    const { userId } = this.tokensService.decodePasswordResetToken(
+    const { userId, target } = this.tokensService.decodePasswordResetToken(
       dto.reset_token,
       true,
     );
@@ -101,5 +107,12 @@ export class PasswordResetService {
         data: { is_revoked: true },
       }),
     ]);
+
+    const payload: AuthPasswordResetCompletedPayload = {
+      user_id: userId,
+      target,
+      completed_at: new Date(),
+    };
+    this.eventBus.publish(AUTH_EVENTS.passwordReset.completed, payload);
   }
 }

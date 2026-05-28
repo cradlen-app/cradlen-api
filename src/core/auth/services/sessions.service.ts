@@ -8,6 +8,7 @@ import {
 import * as bcrypt from 'bcryptjs';
 import type { User } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
+import { EventBus } from '@infrastructure/messaging/event-bus.js';
 import type { AuthTokensDto } from '../dto/auth-tokens.dto.js';
 import type { LoginDto } from '../dto/login.dto.js';
 import type { RefreshDto } from '../dto/refresh.dto.js';
@@ -16,6 +17,11 @@ import type { SwitchBranchDto } from '../dto/switch-branch.dto.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import { TokensService } from './tokens.service.js';
+import {
+  AUTH_EVENTS,
+  type AuthLoginFailedPayload,
+  type AuthLoginSucceededPayload,
+} from '../events/auth.events.js';
 
 export interface SelectableProfile {
   profile_id: string;
@@ -46,6 +52,7 @@ export class SessionsService {
     private readonly prismaService: PrismaService,
     private readonly authorizationService: AuthorizationService,
     private readonly tokensService: TokensService,
+    private readonly eventBus: EventBus,
   ) {}
 
   async login(
@@ -54,15 +61,37 @@ export class SessionsService {
     const user = await this.prismaService.db.user.findFirst({
       where: { email: dto.email, is_deleted: false },
     });
-    if (!user?.password_hashed)
+    if (!user?.password_hashed) {
+      this.publishLoginFailure(dto.email, 'not_found');
       throw new UnauthorizedException('Invalid credentials');
+    }
     const passwordMatches = await bcrypt.compare(
       dto.password,
       user.password_hashed,
     );
-    if (!passwordMatches)
+    if (!passwordMatches) {
+      this.publishLoginFailure(dto.email, 'invalid_credentials');
       throw new UnauthorizedException('Invalid credentials');
+    }
+    const succeededPayload: AuthLoginSucceededPayload = {
+      user_id: user.id,
+      email: dto.email,
+      at: new Date(),
+    };
+    this.eventBus.publish(AUTH_EVENTS.login.succeeded, succeededPayload);
     return this.buildLoginResponse(user);
+  }
+
+  private publishLoginFailure(
+    email: string,
+    reason: AuthLoginFailedPayload['reason'],
+  ): void {
+    const payload: AuthLoginFailedPayload = {
+      email,
+      reason,
+      at: new Date(),
+    };
+    this.eventBus.publish(AUTH_EVENTS.login.failed, payload);
   }
 
   async selectProfile(dto: SelectProfileDto): Promise<AuthTokensDto> {
