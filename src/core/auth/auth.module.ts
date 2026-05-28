@@ -12,6 +12,7 @@ import { TokensService } from './services/tokens.service.js';
 import { VerificationCodesService } from './services/verification-codes.service.js';
 import { PasswordResetService } from './services/password-reset.service.js';
 import { SignupService } from './services/signup.service.js';
+import { SessionsService } from './services/sessions.service.js';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { SignupService } from './services/signup.service.js';
     VerificationCodesService,
     PasswordResetService,
     SignupService,
+    SessionsService,
     JwtStrategy,
     RegistrationCleanupService,
   ],
