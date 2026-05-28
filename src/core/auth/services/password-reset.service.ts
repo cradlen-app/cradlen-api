@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes, randomUUID } from 'crypto';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
@@ -95,6 +95,11 @@ export class PasswordResetService {
       false,
     );
 
+    // consume() runs first so synthetic-userId tokens (forgot-password on
+    // an unknown email) fail with INVALID_CODE before we write a
+    // PasswordResetToken row that would FK-violate. The real-but-wrong-code
+    // and synthetic-token paths therefore return the same error and reach
+    // the same point in the flow.
     await this.verificationCodesService.consume({
       userId,
       target,
@@ -102,27 +107,58 @@ export class PasswordResetService {
       code: dto.code,
     });
 
-    return this.tokensService.issuePasswordResetToken(userId, target, true);
+    const issued = this.tokensService.issuePasswordResetToken(
+      userId,
+      target,
+      true,
+    );
+    // Track the verified jti so reset() can detect re-use.
+    const verifiedPayload = this.tokensService.decodePasswordResetToken(
+      issued.reset_token,
+      true,
+    );
+    await this.prismaService.db.passwordResetToken.create({
+      data: {
+        jti: verifiedPayload.jti,
+        user_id: userId,
+        target,
+        expires_at: new Date(Date.now() + issued.expires_in * 1000),
+      },
+    });
+
+    return issued;
   }
 
   async reset(dto: ResetPasswordDto): Promise<void> {
-    const { userId, target } = this.tokensService.decodePasswordResetToken(
+    const { userId, target, jti } = this.tokensService.decodePasswordResetToken(
       dto.reset_token,
       true,
     );
 
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
-    await this.prismaService.db.$transaction([
-      this.prismaService.db.user.update({
+    // Single transaction: atomically (a) mark the reset jti consumed,
+    // (b) update the password, (c) revoke every active refresh token.
+    // The updateMany count check on consumed_at = null defends against
+    // a concurrent second reset attempt with the same token — the loser
+    // sees count = 0 and rolls back without touching the password.
+    await this.prismaService.db.$transaction(async (tx) => {
+      const claimed = await tx.passwordResetToken.updateMany({
+        where: { jti, consumed_at: null },
+        data: { consumed_at: new Date() },
+      });
+      if (claimed.count !== 1) {
+        throw new UnauthorizedException('Reset token already used or expired');
+      }
+      await tx.user.update({
         where: { id: userId },
         data: { password_hashed: passwordHash },
-      }),
-      this.prismaService.db.refreshToken.updateMany({
+      });
+      await tx.refreshToken.updateMany({
         where: { user_id: userId, is_revoked: false },
         data: { is_revoked: true },
-      }),
-    ]);
+      });
+    });
 
     const payload: AuthPasswordResetCompletedPayload = {
       user_id: userId,

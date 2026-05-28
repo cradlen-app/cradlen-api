@@ -80,4 +80,28 @@ export class RegistrationCleanupService {
       );
     }
   }
+
+  /**
+   * Hard-deletes PasswordResetToken rows that are either past expiry or
+   * have been consumed by a successful reset. Same daily cadence as the
+   * refresh-token GC.
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_3AM)
+  async cleanupExpiredPasswordResetTokens(): Promise<void> {
+    try {
+      const now = new Date();
+      const { count } =
+        await this.prismaService.db.passwordResetToken.deleteMany({
+          where: {
+            OR: [{ expires_at: { lt: now } }, { consumed_at: { not: null } }],
+          },
+        });
+      this.logger.log(`Cleaned ${count} stale password-reset tokens`);
+    } catch (error) {
+      this.logger.error(
+        'Failed to clean stale password-reset tokens',
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
+  }
 }

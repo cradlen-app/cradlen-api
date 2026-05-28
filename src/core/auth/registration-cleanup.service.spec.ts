@@ -63,3 +63,35 @@ describe('RegistrationCleanupService.cleanupExpiredRefreshTokens', () => {
     ).resolves.toBeUndefined();
   });
 });
+
+describe('RegistrationCleanupService.cleanupExpiredPasswordResetTokens', () => {
+  it('deletes expired and consumed rows', async () => {
+    const deleteMany = jest.fn().mockResolvedValue({ count: 3 });
+    const { service } = buildService({
+      passwordResetToken: { deleteMany },
+    });
+
+    await service.cleanupExpiredPasswordResetTokens();
+
+    expect(deleteMany).toHaveBeenCalledTimes(1);
+    const call = deleteMany.mock.calls[0][0];
+    expect(call.where.OR).toHaveLength(2);
+    expect(call.where.OR[0]).toMatchObject({
+      expires_at: { lt: expect.any(Date) },
+    });
+    expect(call.where.OR[1]).toMatchObject({
+      consumed_at: { not: null },
+    });
+  });
+
+  it('swallows errors and resolves so the cron survives a bad run', async () => {
+    const deleteMany = jest.fn().mockRejectedValue(new Error('db down'));
+    const { service } = buildService({
+      passwordResetToken: { deleteMany },
+    });
+
+    await expect(
+      service.cleanupExpiredPasswordResetTokens(),
+    ).resolves.toBeUndefined();
+  });
+});
