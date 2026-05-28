@@ -1007,7 +1007,9 @@ model Medication {
   created_at              DateTime                    @default(now())
   updated_at              DateTime                    @updatedAt
 
-  @@unique([organization_id, code])
+  // Partial unique index `medications_organization_id_code_live_unique`
+  // added via raw SQL in the `medications_code_partial_unique` migration —
+  // enforces unique `code` per organization on live (is_deleted=false) rows.
   @@index([organization_id, is_deleted])
   @@map("medications")
 }
