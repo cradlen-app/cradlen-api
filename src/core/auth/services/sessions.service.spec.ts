@@ -129,6 +129,7 @@ describe('SessionsService', () => {
     mocks.branchFindMany.mockResolvedValue([
       {
         id: '44444444-4444-4444-8444-444444444444',
+        organization_id: '33333333-3333-4333-8333-333333333333',
         name: 'Main',
         is_main: true,
       },
@@ -565,17 +566,131 @@ describe('SessionsService', () => {
     });
   });
 
+  describe('login profile selection (batched getSelectableProfiles)', () => {
+    it('batches branch lookups across cross-org profiles into a constant number of queries', async () => {
+      const { sessionsService, mocks, prismaService } = createAuthTestEnv();
+      mocks.userFindFirst.mockResolvedValue({
+        id: 'user-1',
+        email: 'sara@example.com',
+        password_hashed: await bcrypt.hash('Password1!', 12),
+        is_active: true,
+        registration_status: 'ACTIVE',
+        onboarding_completed: true,
+      });
+      mocks.profileFindMany.mockResolvedValue([
+        // OWNER at clinic A
+        {
+          id: 'profile-owner-a',
+          organization_id: 'org-A',
+          organization: { id: 'org-A', name: 'Clinic A' },
+          roles: [{ role: { code: 'OWNER', name: 'OWNER' } }],
+        },
+        // OWNER at clinic B
+        {
+          id: 'profile-owner-b',
+          organization_id: 'org-B',
+          organization: { id: 'org-B', name: 'Clinic B' },
+          roles: [{ role: { code: 'OWNER', name: 'OWNER' } }],
+        },
+        // EXTERNAL member at clinic C
+        {
+          id: 'profile-member-c',
+          organization_id: 'org-C',
+          organization: { id: 'org-C', name: 'Clinic C' },
+          roles: [{ role: { code: 'EXTERNAL', name: 'EXTERNAL' } }],
+        },
+      ]);
+
+      // First branch.findMany call returns the OWNER orgs' branches.
+      // Second branch.findMany call (after profileBranch lookup) returns
+      // the member's specific branches.
+      mocks.branchFindMany
+        .mockResolvedValueOnce([
+          {
+            id: 'branch-a',
+            organization_id: 'org-A',
+            name: 'A Main',
+            is_main: true,
+          },
+          {
+            id: 'branch-b',
+            organization_id: 'org-B',
+            name: 'B Main',
+            is_main: true,
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: 'branch-c',
+            organization_id: 'org-C',
+            name: 'C Site',
+            is_main: false,
+          },
+        ]);
+
+      const profileBranchFindMany = jest
+        .fn()
+        .mockResolvedValue([
+          { profile_id: 'profile-member-c', branch_id: 'branch-c' },
+        ]);
+      (
+        prismaService.db as unknown as {
+          profileBranch: { findMany: jest.Mock };
+        }
+      ).profileBranch = { findMany: profileBranchFindMany };
+
+      const result = await sessionsService.login({
+        email: 'sara@example.com',
+        password: 'Password1!',
+      });
+
+      // Constant query budget regardless of profile count:
+      //   1 profile.findMany
+      //   1 branch.findMany for the OWNER orgs (covers org-A + org-B)
+      //   1 profileBranch.findMany for the member profile
+      //   1 branch.findMany for the member's branch ids
+      expect(mocks.profileFindMany).toHaveBeenCalledTimes(1);
+      expect(mocks.branchFindMany).toHaveBeenCalledTimes(2);
+      expect(profileBranchFindMany).toHaveBeenCalledTimes(1);
+      // getEffectiveBranchIds is no longer used — classification happens
+      // from the roles already loaded with the profile.
+      expect(mocks.getEffectiveBranchIds).not.toHaveBeenCalled();
+
+      expect(result).toMatchObject({
+        type: 'profile_selection',
+        profiles: [
+          expect.objectContaining({
+            profile_id: 'profile-owner-a',
+            branches: [
+              expect.objectContaining({ branch_id: 'branch-a', is_main: true }),
+            ],
+          }),
+          expect.objectContaining({
+            profile_id: 'profile-owner-b',
+            branches: [
+              expect.objectContaining({ branch_id: 'branch-b', is_main: true }),
+            ],
+          }),
+          expect.objectContaining({
+            profile_id: 'profile-member-c',
+            branches: [
+              expect.objectContaining({
+                branch_id: 'branch-c',
+                is_main: false,
+              }),
+            ],
+          }),
+        ],
+      });
+    });
+  });
+
   describe('getMe', () => {
-    it('aggregates branches per profile when the user has multiple profiles', async () => {
+    it('returns all org branches in a single query when the user is OWNER', async () => {
       const { sessionsService, mocks } = createAuthTestEnv();
       const userId = 'user-1';
       const profileId = 'profile-1';
-      const otherProfileId = 'profile-2';
       const now = new Date();
-      // getMe filters profiles by { id: profileId }, so only one profile
-      // row is included in user.profiles. The aggregator must still cope
-      // when that one profile has its own branch set distinct from any
-      // other profile of the same user.
       mocks.userFindFirst.mockResolvedValue({
         id: userId,
         first_name: 'Sara',
@@ -602,13 +717,10 @@ describe('SessionsService', () => {
           },
         ],
       });
-      mocks.getEffectiveBranchIds.mockResolvedValue([
-        'branch-a-1',
-        'branch-a-2',
-      ]);
       mocks.branchFindMany.mockResolvedValue([
         {
           id: 'branch-a-1',
+          organization_id: 'org-1',
           address: '1 Main',
           city: 'Cairo',
           governorate: 'Cairo',
@@ -617,6 +729,7 @@ describe('SessionsService', () => {
         },
         {
           id: 'branch-a-2',
+          organization_id: 'org-1',
           address: '2 Side',
           city: 'Giza',
           governorate: 'Giza',
@@ -629,14 +742,19 @@ describe('SessionsService', () => {
 
       expect(result.profiles).toHaveLength(1);
       expect(result.profiles[0].branches).toHaveLength(2);
-      // No request to a stale or unrelated profile id.
-      expect(mocks.getEffectiveBranchIds).toHaveBeenCalledWith(
-        profileId,
-        'org-1',
-      );
-      expect(mocks.getEffectiveBranchIds).not.toHaveBeenCalledWith(
-        otherProfileId,
-        expect.anything(),
+      // OWNER short-circuit avoids the round-trip through
+      // AuthorizationService.getEffectiveBranchIds and the per-profile
+      // hasAnyRole probe it triggers.
+      expect(mocks.getEffectiveBranchIds).not.toHaveBeenCalled();
+      // One branch.findMany covers the OWNER case end-to-end.
+      expect(mocks.branchFindMany).toHaveBeenCalledTimes(1);
+      expect(mocks.branchFindMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            organization_id: 'org-1',
+            is_deleted: false,
+          }),
+        }),
       );
     });
   });
