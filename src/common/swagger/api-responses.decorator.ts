@@ -48,6 +48,26 @@ export function ApiStandardResponse<T>(dataDto: Type<T>) {
   );
 }
 
+/** Like ApiStandardResponse but `data` is an array (non-paginated list). */
+export function ApiStandardArrayResponse<T>(dataDto: Type<T>) {
+  return applyDecorators(
+    ApiExtraModels(ErrorResponseDto, dataDto),
+    ApiResponse({
+      status: 200,
+      schema: {
+        properties: {
+          data: {
+            type: 'array',
+            items: { $ref: getSchemaPath(dataDto) },
+          },
+          meta: { type: 'object', example: {} },
+        },
+      },
+    }),
+    ...commonErrorResponses(),
+  );
+}
+
 export function ApiPaginatedResponse<T>(dataDto: Type<T>) {
   return applyDecorators(
     ApiExtraModels(ErrorResponseDto, PaginationMetaDto, dataDto),

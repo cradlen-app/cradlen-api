@@ -2,7 +2,6 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
-  GoneException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -10,7 +9,6 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { EventBus } from '@infrastructure/messaging/event-bus.js';
 import * as bcrypt from 'bcryptjs';
-import { randomUUID } from 'crypto';
 import { InvitationStatus, Prisma } from '@prisma/client';
 import { ERROR_CODES } from '@common/constant/error-codes.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
@@ -19,9 +17,14 @@ import type { AuthConfig } from '@config/auth.config.js';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { EmailService } from '@infrastructure/email/email.service.js';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service.js';
-import type { BranchScheduleDto } from '../staff/dto/staff.dto.js';
 import { persistSchedules } from '../staff/schedule.helpers.js';
-import { minutesToHhmm } from '../staff/shift-time.helpers.js';
+import {
+  assertBranchesInOrganization,
+  assertNonOwnerRoles,
+  assertScheduleBranches,
+  assertShiftTimes,
+  resolveJobFunctionsAndSpecialties,
+} from '../staff/staff.assertions.js';
 import type {
   AcceptInvitationDto,
   BulkCreateInvitationsDto,
@@ -31,6 +34,23 @@ import type {
 } from './dto/invitation.dto.js';
 import { InvitationAcceptedEvent } from '@core/notifications/events/invitation-accepted.event.js';
 import { InvitationDeclinedEvent } from '@core/notifications/events/invitation-declined.event.js';
+import {
+  INVITATION_FULL_INCLUDE,
+  INVITATION_PREVIEW_INCLUDE,
+  type InvitationFull,
+} from './invitations.includes.js';
+import {
+  toInvitationPreviewResponse,
+  toInvitationResponse,
+} from './invitations.mapper.js';
+import {
+  buildInvitationAcceptUrl,
+  generateInvitationToken,
+} from './invitations.tokens.js';
+import {
+  assertInvitationRedeemable,
+  assertNotSelfInvite,
+} from './invitations.assertions.js';
 
 @Injectable()
 export class InvitationsService {
@@ -56,10 +76,17 @@ export class InvitationsService {
     currentUserId: string,
     profileId: string,
     organizationId: string,
+    branchId: string,
     dto: CreateInvitationDto,
   ) {
     const uniqueBranchIds = [...new Set(dto.branch_ids)];
     const uniqueRoleIds = [...new Set(dto.role_ids)];
+
+    if (!uniqueBranchIds.includes(branchId)) {
+      throw new BadRequestException(
+        'branch_ids must include the path branchId',
+      );
+    }
 
     await this.authorizationService.assertCanManageStaffOnBranches(
       profileId,
@@ -72,21 +99,11 @@ export class InvitationsService {
       uniqueRoleIds,
     );
     await this.subscriptionsService.assertStaffLimit(organizationId);
-
-    const invitingUser = await this.prismaService.db.user.findUnique({
-      where: { id: currentUserId },
-      select: { email: true },
-    });
-
-    if (invitingUser?.email?.toLowerCase() === dto.email.toLowerCase()) {
-      throw new BadRequestException('You cannot invite yourself');
-    }
+    await assertNotSelfInvite(this.prismaService, currentUserId, [dto.email]);
 
     const prepared = await this.prepareInvitationData(organizationId, dto);
 
-    let invitation: Awaited<
-      ReturnType<InvitationsService['findInvitationShape']>
-    >;
+    let invitation: InvitationFull;
     try {
       invitation = await this.prismaService.db.invitation.create({
         data: this.buildInvitationCreateData(
@@ -95,7 +112,7 @@ export class InvitationsService {
           dto,
           prepared,
         ),
-        include: this.includeInvitation(),
+        include: INVITATION_FULL_INCLUDE,
       });
     } catch (err: unknown) {
       if (
@@ -109,23 +126,41 @@ export class InvitationsService {
       throw err;
     }
 
-    const inviteUrl = `${this.appConfig.appUrl}/invitations/accept?invitation=${invitation.id}&token=${prepared.rawToken}`;
+    const inviteUrl = buildInvitationAcceptUrl(
+      this.appConfig,
+      invitation.id,
+      prepared.rawToken,
+    );
     await this.mailService.sendStaffInvitationEmail(dto.email, inviteUrl);
-    return this.toResponse(invitation);
+    return toInvitationResponse(invitation);
   }
 
   async bulkCreateInvitations(
     currentUserId: string,
     profileId: string,
     organizationId: string,
+    branchId: string,
     dto: BulkCreateInvitationsDto,
   ) {
+    // Cheap, fail-fast checks first: self-invite and the path/branch invariant.
+    await assertNotSelfInvite(
+      this.prismaService,
+      currentUserId,
+      dto.invitations.map((i) => i.email),
+    );
+
     // Per-row branch/role checks: every invitation in the batch must be
-    // within the caller's scope. Done up-front so the whole batch fails
-    // fast rather than partially before the transaction opens.
+    // within the caller's scope and include the path branchId in branch_ids.
+    // Done up-front so the whole batch fails fast rather than partially
+    // before the transaction opens.
     for (const item of dto.invitations) {
       const branchIds = [...new Set(item.branch_ids)];
       const roleIds = [...new Set(item.role_ids)];
+      if (!branchIds.includes(branchId)) {
+        throw new BadRequestException(
+          'Every invitation must include the path branchId in branch_ids',
+        );
+      }
       await this.authorizationService.assertCanManageStaffOnBranches(
         profileId,
         organizationId,
@@ -136,17 +171,6 @@ export class InvitationsService {
         organizationId,
         roleIds,
       );
-    }
-
-    const invitingUser = await this.prismaService.db.user.findUnique({
-      where: { id: currentUserId },
-      select: { email: true },
-    });
-    const inviterEmail = invitingUser?.email?.toLowerCase() ?? null;
-    for (const item of dto.invitations) {
-      if (inviterEmail && item.email.toLowerCase() === inviterEmail) {
-        throw new BadRequestException('You cannot invite yourself');
-      }
     }
 
     // Subscription limit gate. The accept-flow re-checks the limit per acceptance,
@@ -195,7 +219,11 @@ export class InvitationsService {
     const emailResults = await Promise.all(
       dto.invitations.map(async (item, idx) => {
         const id = createdIds[idx];
-        const inviteUrl = `${this.appConfig.appUrl}/invitations/accept?invitation=${id}&token=${prepared[idx].rawToken}`;
+        const inviteUrl = buildInvitationAcceptUrl(
+          this.appConfig,
+          id,
+          prepared[idx].rawToken,
+        );
         try {
           await this.mailService.sendStaffInvitationEmail(
             item.email,
@@ -224,41 +252,23 @@ export class InvitationsService {
     const specialtyCodes = [...new Set(dto.specialty_codes ?? [])];
 
     await Promise.all([
-      this.assertBranchesInOrganization(organizationId, uniqueBranchIds),
-      this.assertRolesExist(uniqueRoleIds),
+      assertBranchesInOrganization(
+        this.prismaService,
+        organizationId,
+        uniqueBranchIds,
+      ),
+      assertNonOwnerRoles(this.prismaService, uniqueRoleIds),
     ]);
 
-    const [jobFunctions, specialties] = await Promise.all([
-      jobFunctionCodes.length
-        ? this.prismaService.db.jobFunction.findMany({
-            where: { code: { in: jobFunctionCodes } },
-          })
-        : Promise.resolve([]),
-      specialtyCodes.length
-        ? this.prismaService.db.specialty.findMany({
-            where: { code: { in: specialtyCodes }, is_deleted: false },
-          })
-        : Promise.resolve([]),
-    ]);
-    if (jobFunctions.length !== jobFunctionCodes.length) {
-      const found = new Set(jobFunctions.map((jf) => jf.code));
-      const missing = jobFunctionCodes.filter((c) => !found.has(c));
-      throw new BadRequestException(
-        `Unknown job_function_codes: ${missing.join(', ')}`,
+    const { jobFunctions, specialties } =
+      await resolveJobFunctionsAndSpecialties(
+        this.prismaService,
+        jobFunctionCodes,
+        specialtyCodes,
       );
-    }
-    if (specialties.length !== specialtyCodes.length) {
-      const found = new Set(specialties.map((s) => s.code));
-      const missing = specialtyCodes.filter((c) => !found.has(c));
-      throw new BadRequestException(
-        `Unknown specialty_codes: ${missing.join(', ')}`,
-      );
-    }
 
-    const rawToken = randomUUID();
-    const tokenHash = await bcrypt.hash(rawToken, 10);
-    const expiresAt = new Date(
-      Date.now() + this.authConfig.invitationExpireHours * 60 * 60 * 1000,
+    const { rawToken, tokenHash, expiresAt } = generateInvitationToken(
+      this.authConfig,
     );
 
     return {
@@ -316,194 +326,194 @@ export class InvitationsService {
   async listInvitations(
     profileId: string,
     organizationId: string,
-    branchId?: string,
+    branchId: string,
   ) {
-    await this.authorizationService.assertCanViewStaff(
+    await this.authorizationService.assertCanManageStaffOnBranches(
       profileId,
       organizationId,
+      [branchId],
     );
-    const where: Prisma.InvitationWhereInput = {
-      organization_id: organizationId,
-      is_deleted: false,
-    };
-
-    const isOwner = await this.authorizationService.isOwner(
-      profileId,
-      organizationId,
-    );
-    if (!isOwner) {
-      const callerBranches =
-        await this.authorizationService.getEffectiveBranchIds(
-          profileId,
-          organizationId,
-        );
-      if (!callerBranches.length) return [];
-      if (branchId && !callerBranches.includes(branchId)) {
-        throw new ForbiddenException('Branch outside your management scope');
-      }
-      where.branches = {
-        some: { branch_id: { in: branchId ? [branchId] : callerBranches } },
-      };
-    } else if (branchId) {
-      where.branches = { some: { branch_id: branchId } };
-    }
     const invitations = await this.prismaService.db.invitation.findMany({
-      where,
-      include: this.includeInvitation(),
+      where: {
+        organization_id: organizationId,
+        is_deleted: false,
+        branches: { some: { branch_id: branchId } },
+      },
+      include: INVITATION_FULL_INCLUDE,
       orderBy: { created_at: 'desc' },
     });
-    return invitations.map((item) => this.toResponse(item));
+    return invitations.map((item) => toInvitationResponse(item));
   }
 
   async acceptInvitation(dto: AcceptInvitationDto) {
+    const invitation = await this.validateAcceptance(dto);
+    await this.verifyExistingUserCredentials(invitation.email, dto.password);
+    const passwordHash = await bcrypt.hash(dto.password, 12);
+
+    const result = await this.prismaService.db.$transaction((tx) =>
+      this.claimAndProvision(tx, invitation, dto, passwordHash),
+    );
+
+    this.emitAccepted(invitation);
+    return result;
+  }
+
+  private async validateAcceptance(
+    dto: AcceptInvitationDto,
+  ): Promise<InvitationFull> {
     const invitation = await this.prismaService.db.invitation.findFirst({
       where: { id: dto.invitation_id, is_deleted: false },
-      include: this.includeInvitation(),
+      include: INVITATION_FULL_INCLUDE,
     });
     if (!invitation) throw new UnauthorizedException('Invalid invitation');
 
-    const tokenMatches = await bcrypt.compare(dto.token, invitation.token_hash);
-    if (!tokenMatches)
-      throw new UnauthorizedException('Invalid invitation token');
-    if (invitation.status === InvitationStatus.ACCEPTED) {
-      throw new ConflictException('Invitation already accepted');
-    }
-    if (invitation.status !== InvitationStatus.PENDING) {
-      throw new UnauthorizedException('Invitation is not active');
-    }
-    if (invitation.expires_at < new Date())
-      throw new GoneException('Invitation expired');
+    await assertInvitationRedeemable(invitation, dto.token);
 
     if (dto.schedule?.length) {
-      const invitationBranchIds = invitation.branches.map((b) => b.branch_id);
-      const invalidIds = dto.schedule
-        .map((s) => s.branch_id)
-        .filter((id) => !invitationBranchIds.includes(id));
-      if (invalidIds.length) {
-        throw new BadRequestException(
-          `Schedule branch_ids not assigned in this invitation: ${invalidIds.join(', ')}`,
-        );
-      }
-      this.assertShiftTimes(dto.schedule);
+      assertScheduleBranches(
+        dto.schedule,
+        invitation.branches.map((b) => b.branch_id),
+      );
+      assertShiftTimes(dto.schedule);
     }
+    return invitation;
+  }
 
+  private async verifyExistingUserCredentials(
+    email: string,
+    rawPassword: string,
+  ): Promise<void> {
     const existingUser = await this.prismaService.db.user.findFirst({
+      where: { email, is_deleted: false },
+      select: { password_hashed: true },
+    });
+    if (!existingUser?.password_hashed) return;
+    const matches = await bcrypt.compare(
+      rawPassword,
+      existingUser.password_hashed,
+    );
+    if (!matches) throw new UnauthorizedException('Invalid credentials');
+  }
+
+  private async claimAndProvision(
+    tx: Prisma.TransactionClient,
+    invitation: InvitationFull,
+    dto: AcceptInvitationDto,
+    passwordHash: string,
+  ): Promise<{
+    user_id: string;
+    profile_id: string;
+    organization_id: string;
+  }> {
+    const claimed = await tx.invitation.updateMany({
+      where: {
+        id: invitation.id,
+        status: InvitationStatus.PENDING,
+        accepted_at: null,
+        expires_at: { gt: new Date() },
+      },
+      data: { status: InvitationStatus.ACCEPTED, accepted_at: new Date() },
+    });
+    if (claimed.count !== 1)
+      throw new ConflictException('Invitation already accepted');
+
+    await this.assertSubscriptionStaffLimit(tx, invitation.organization_id);
+
+    let user = await tx.user.findFirst({
       where: { email: invitation.email, is_deleted: false },
     });
-    if (existingUser?.password_hashed) {
-      const matches = await bcrypt.compare(
-        dto.password,
-        existingUser.password_hashed,
-      );
-      if (!matches) throw new UnauthorizedException('Invalid credentials');
+    if (!user) {
+      user = await tx.user.create({
+        data: {
+          first_name: dto.first_name ?? invitation.first_name,
+          last_name: dto.last_name ?? invitation.last_name,
+          email: invitation.email,
+          phone_number: invitation.phone_number,
+          password_hashed: passwordHash,
+          registration_status: 'ACTIVE',
+          onboarding_completed: true,
+          verified_at: new Date(),
+        },
+      });
     }
-    const passwordHash = await bcrypt.hash(dto.password, 12);
 
-    const result = await this.prismaService.db.$transaction(async (tx) => {
-      const claimed = await tx.invitation.updateMany({
-        where: {
-          id: invitation.id,
-          status: InvitationStatus.PENDING,
-          accepted_at: null,
-          expires_at: { gt: new Date() },
-        },
-        data: { status: InvitationStatus.ACCEPTED, accepted_at: new Date() },
-      });
-      if (claimed.count !== 1)
-        throw new ConflictException('Invitation already accepted');
-
-      const [sub, activeStaff, pendingInvitations] = await Promise.all([
-        tx.subscription.findFirst({
-          where: {
-            organization_id: invitation.organization_id,
-            is_deleted: false,
-          },
-          include: { subscription_plan: true },
-          orderBy: { created_at: 'desc' },
-        }),
-        tx.profile.count({
-          where: {
-            organization_id: invitation.organization_id,
-            is_deleted: false,
-            is_active: true,
-          },
-        }),
-        tx.invitation.count({
-          where: {
-            organization_id: invitation.organization_id,
-            is_deleted: false,
-            status: InvitationStatus.PENDING,
-          },
-        }),
-      ]);
-      if (!sub) throw new NotFoundException('No active subscription found');
-      const staffTotal = activeStaff + pendingInvitations;
-      if (staffTotal >= sub.subscription_plan.max_staff) {
-        throw new ForbiddenException({
-          code: ERROR_CODES.SUBSCRIPTION_LIMIT_REACHED,
-          message: `Staff limit reached (${sub.subscription_plan.max_staff}). Upgrade your plan.`,
-          details: {
-            resource: 'staff',
-            limit: sub.subscription_plan.max_staff,
-            current: staffTotal,
-          },
-        });
-      }
-
-      let user = await tx.user.findFirst({
-        where: { email: invitation.email, is_deleted: false },
-      });
-      if (!user) {
-        user = await tx.user.create({
-          data: {
-            first_name: dto.first_name ?? invitation.first_name,
-            last_name: dto.last_name ?? invitation.last_name,
-            email: invitation.email,
-            phone_number: invitation.phone_number,
-            password_hashed: passwordHash,
-            registration_status: 'ACTIVE',
-            onboarding_completed: true,
-            verified_at: new Date(),
-          },
-        });
-      }
-
-      const profile = await tx.profile.upsert({
-        where: {
-          user_id_organization_id: {
-            user_id: user.id,
-            organization_id: invitation.organization_id,
-          },
-        },
-        update: {
-          is_active: true,
-          is_deleted: false,
-          deleted_at: null,
-          executive_title: invitation.executive_title,
-          engagement_type: invitation.engagement_type,
-        },
-        create: {
+    const profile = await tx.profile.upsert({
+      where: {
+        user_id_organization_id: {
           user_id: user.id,
           organization_id: invitation.organization_id,
-          executive_title: invitation.executive_title,
-          engagement_type: invitation.engagement_type,
         },
-      });
-
-      await this.assignProfileAccess(tx, profile.id, invitation);
-
-      if (dto.schedule?.length) {
-        await persistSchedules(tx, profile.id, dto.schedule);
-      }
-
-      return {
+      },
+      update: {
+        is_active: true,
+        is_deleted: false,
+        deleted_at: null,
+        executive_title: invitation.executive_title,
+        engagement_type: invitation.engagement_type,
+      },
+      create: {
         user_id: user.id,
-        profile_id: profile.id,
         organization_id: invitation.organization_id,
-      };
+        executive_title: invitation.executive_title,
+        engagement_type: invitation.engagement_type,
+      },
     });
 
-    const event = Object.assign(new InvitationAcceptedEvent(), {
+    await this.assignProfileAccess(tx, profile.id, invitation);
+
+    if (dto.schedule?.length) {
+      await persistSchedules(tx, profile.id, dto.schedule);
+    }
+
+    return {
+      user_id: user.id,
+      profile_id: profile.id,
+      organization_id: invitation.organization_id,
+    };
+  }
+
+  private async assertSubscriptionStaffLimit(
+    tx: Prisma.TransactionClient,
+    organizationId: string,
+  ): Promise<void> {
+    const [sub, activeStaff, pendingInvitations] = await Promise.all([
+      tx.subscription.findFirst({
+        where: { organization_id: organizationId, is_deleted: false },
+        include: { subscription_plan: true },
+        orderBy: { created_at: 'desc' },
+      }),
+      tx.profile.count({
+        where: {
+          organization_id: organizationId,
+          is_deleted: false,
+          is_active: true,
+        },
+      }),
+      tx.invitation.count({
+        where: {
+          organization_id: organizationId,
+          is_deleted: false,
+          status: InvitationStatus.PENDING,
+        },
+      }),
+    ]);
+    if (!sub) throw new NotFoundException('No active subscription found');
+    const staffTotal = activeStaff + pendingInvitations;
+    if (staffTotal >= sub.subscription_plan.max_staff) {
+      throw new ForbiddenException({
+        code: ERROR_CODES.SUBSCRIPTION_LIMIT_REACHED,
+        message: `Staff limit reached (${sub.subscription_plan.max_staff}). Upgrade your plan.`,
+        details: {
+          resource: 'staff',
+          limit: sub.subscription_plan.max_staff,
+          current: staffTotal,
+        },
+      });
+    }
+  }
+
+  private emitAccepted(invitation: InvitationFull): void {
+    const event = new InvitationAcceptedEvent({
       invitationId: invitation.id,
       inviterId: invitation.invited_by_id,
       inviteeName: `${invitation.first_name} ${invitation.last_name}`,
@@ -511,30 +521,29 @@ export class InvitationsService {
       branchId: invitation.branches[0]?.branch_id ?? null,
     });
     this.eventBus.publish('invitation.accepted', event);
-
-    return result;
   }
 
   async getInvitation(
     profileId: string,
     organizationId: string,
+    branchId: string,
     invitationId: string,
   ) {
-    await this.authorizationService.assertCanViewStaff(
+    await this.authorizationService.assertCanManageStaffOnBranches(
       profileId,
       organizationId,
+      [branchId],
     );
     const invitation = await this.prismaService.db.invitation.findFirst({
       where: {
         id: invitationId,
         organization_id: organizationId,
         is_deleted: false,
+        branches: { some: { branch_id: branchId } },
       },
-      include: this.includeInvitation(),
+      include: INVITATION_FULL_INCLUDE,
     });
     if (!invitation) throw new NotFoundException('Invitation not found');
-
-    await this.assertInvitationInScope(profileId, organizationId, invitation);
 
     let workingSchedule = null;
     if (invitation.status === InvitationStatus.ACCEPTED) {
@@ -557,35 +566,35 @@ export class InvitationsService {
       }
     }
 
-    return this.toResponse(invitation, workingSchedule);
+    return toInvitationResponse(invitation, workingSchedule);
   }
 
   async resendInvitation(
     profileId: string,
     organizationId: string,
+    branchId: string,
     invitationId: string,
   ) {
-    await this.authorizationService.assertCanManageStaff(
+    await this.authorizationService.assertCanManageStaffOnBranches(
       profileId,
       organizationId,
+      [branchId],
     );
     const invitation = await this.prismaService.db.invitation.findFirst({
       where: {
         id: invitationId,
         organization_id: organizationId,
         is_deleted: false,
+        branches: { some: { branch_id: branchId } },
       },
       include: { branches: { select: { branch_id: true } } },
     });
     if (!invitation) throw new NotFoundException('Invitation not found');
-    await this.assertInvitationInScope(profileId, organizationId, invitation);
     if (invitation.status !== InvitationStatus.PENDING)
       throw new BadRequestException('Only pending invitations can be resent');
 
-    const rawToken = randomUUID();
-    const tokenHash = await bcrypt.hash(rawToken, 10);
-    const expiresAt = new Date(
-      Date.now() + this.authConfig.invitationExpireHours * 60 * 60 * 1000,
+    const { rawToken, tokenHash, expiresAt } = generateInvitationToken(
+      this.authConfig,
     );
 
     await this.prismaService.db.invitation.update({
@@ -593,7 +602,11 @@ export class InvitationsService {
       data: { token_hash: tokenHash, expires_at: expiresAt },
     });
 
-    const inviteUrl = `${this.appConfig.appUrl}/invitations/accept?invitation=${invitation.id}&token=${rawToken}`;
+    const inviteUrl = buildInvitationAcceptUrl(
+      this.appConfig,
+      invitation.id,
+      rawToken,
+    );
     await this.mailService.sendStaffInvitationEmail(
       invitation.email,
       inviteUrl,
@@ -603,22 +616,24 @@ export class InvitationsService {
   async cancelInvitation(
     profileId: string,
     organizationId: string,
+    branchId: string,
     invitationId: string,
   ) {
-    await this.authorizationService.assertCanManageStaff(
+    await this.authorizationService.assertCanManageStaffOnBranches(
       profileId,
       organizationId,
+      [branchId],
     );
     const invitation = await this.prismaService.db.invitation.findFirst({
       where: {
         id: invitationId,
         organization_id: organizationId,
         is_deleted: false,
+        branches: { some: { branch_id: branchId } },
       },
-      include: this.includeInvitation(),
+      include: INVITATION_FULL_INCLUDE,
     });
     if (!invitation) throw new NotFoundException('Invitation not found');
-    await this.assertInvitationInScope(profileId, organizationId, invitation);
     const updated = await this.prismaService.db.invitation.update({
       where: { id: invitationId },
       data: {
@@ -628,167 +643,61 @@ export class InvitationsService {
           status: InvitationStatus.CANCELLED,
         }),
       },
-      include: this.includeInvitation(),
+      include: INVITATION_FULL_INCLUDE,
     });
-    return this.toResponse(updated);
-  }
-
-  private async assertInvitationInScope(
-    profileId: string,
-    organizationId: string,
-    invitation: { branches: { branch_id: string }[] },
-  ): Promise<void> {
-    if (await this.authorizationService.isOwner(profileId, organizationId)) {
-      return;
-    }
-    const branchIds = invitation.branches.map((b) => b.branch_id);
-    await this.authorizationService.assertCanManageStaffOnBranches(
-      profileId,
-      organizationId,
-      branchIds,
-    );
-  }
-
-  private assertShiftTimes(schedule: BranchScheduleDto[]) {
-    for (const branch of schedule) {
-      for (const day of branch.days) {
-        for (const shift of day.shifts) {
-          if (shift.end_time <= shift.start_time) {
-            throw new BadRequestException(
-              `Shift end_time must be after start_time (${shift.start_time} – ${shift.end_time})`,
-            );
-          }
-        }
-      }
-    }
-  }
-
-  private async assertBranchesInOrganization(
-    organizationId: string,
-    branchIds: string[],
-  ) {
-    const count = await this.prismaService.db.branch.count({
-      where: {
-        id: { in: branchIds },
-        organization_id: organizationId,
-        is_deleted: false,
-      },
-    });
-    if (count !== branchIds.length) {
-      throw new NotFoundException('One or more branches were not found');
-    }
-  }
-
-  private async assertRolesExist(roleIds: string[]) {
-    const count = await this.prismaService.db.role.count({
-      where: { id: { in: roleIds } },
-    });
-    if (count !== roleIds.length) {
-      throw new NotFoundException('One or more roles were not found');
-    }
+    return toInvitationResponse(updated);
   }
 
   private async assignProfileAccess(
     tx: Prisma.TransactionClient,
     profileId: string,
-    invitation: Awaited<ReturnType<InvitationsService['findInvitationShape']>>,
+    invitation: InvitationFull,
   ) {
     await Promise.all([
-      ...invitation.roles.map((item) =>
-        tx.profileRole.upsert({
-          where: {
-            profile_id_role_id: {
-              profile_id: profileId,
-              role_id: item.role_id,
-            },
-          },
-          update: {},
-          create: { profile_id: profileId, role_id: item.role_id },
-        }),
-      ),
-      ...invitation.branches.map((item) =>
-        tx.profileBranch.upsert({
-          where: {
-            profile_id_branch_id: {
-              profile_id: profileId,
-              branch_id: item.branch_id,
-            },
-          },
-          update: {},
-          create: {
-            profile_id: profileId,
-            branch_id: item.branch_id,
-            organization_id: invitation.organization_id,
-          },
-        }),
-      ),
-      ...invitation.job_functions.map((item) =>
-        tx.profileJobFunction.upsert({
-          where: {
-            profile_id_job_function_id: {
+      tx.profileRole.createMany({
+        data: invitation.roles.map((item) => ({
+          profile_id: profileId,
+          role_id: item.role_id,
+        })),
+        skipDuplicates: true,
+      }),
+      tx.profileBranch.createMany({
+        data: invitation.branches.map((item) => ({
+          profile_id: profileId,
+          branch_id: item.branch_id,
+          organization_id: invitation.organization_id,
+        })),
+        skipDuplicates: true,
+      }),
+      invitation.job_functions.length
+        ? tx.profileJobFunction.createMany({
+            data: invitation.job_functions.map((item) => ({
               profile_id: profileId,
               job_function_id: item.job_function_id,
-            },
-          },
-          update: {},
-          create: {
-            profile_id: profileId,
-            job_function_id: item.job_function_id,
-          },
-        }),
-      ),
-      ...invitation.specialty_links.map((item) =>
-        tx.profileSpecialty.upsert({
-          where: {
-            profile_id_specialty_id: {
+            })),
+            skipDuplicates: true,
+          })
+        : Promise.resolve(),
+      invitation.specialty_links.length
+        ? tx.profileSpecialty.createMany({
+            data: invitation.specialty_links.map((item) => ({
               profile_id: profileId,
               specialty_id: item.specialty_id,
-            },
-          },
-          update: {},
-          create: {
-            profile_id: profileId,
-            specialty_id: item.specialty_id,
-          },
-        }),
-      ),
+            })),
+            skipDuplicates: true,
+          })
+        : Promise.resolve(),
     ]);
-  }
-
-  private includeInvitation() {
-    return {
-      roles: { include: { role: true } },
-      branches: { include: { branch: true } },
-      job_functions: { include: { job_function: true } },
-      specialty_links: { include: { specialty: true } },
-      invited_by: {
-        select: { id: true, first_name: true, last_name: true, email: true },
-      },
-    } satisfies Prisma.InvitationInclude;
-  }
-
-  private includePreview() {
-    return {
-      roles: { include: { role: true } },
-      branches: { include: { branch: true } },
-      job_functions: { include: { job_function: true } },
-      specialty_links: { include: { specialty: true } },
-      invited_by: {
-        select: { first_name: true, last_name: true },
-      },
-      organization: {
-        select: { id: true, name: true },
-      },
-    } satisfies Prisma.InvitationInclude;
   }
 
   async declineInvitation(dto: DeclineInvitationDto) {
     const invitation = await this.prismaService.db.invitation.findFirst({
-      where: { id: dto.invitation, is_deleted: false },
+      where: { id: dto.invitation_id, is_deleted: false },
       select: {
         id: true,
         status: true,
         token_hash: true,
+        expires_at: true,
         invited_by_id: true,
         first_name: true,
         last_name: true,
@@ -799,159 +708,38 @@ export class InvitationsService {
 
     if (!invitation) throw new UnauthorizedException('Invalid invitation');
 
-    const tokenMatches = await bcrypt.compare(dto.token, invitation.token_hash);
-    if (!tokenMatches)
-      throw new UnauthorizedException('Invalid invitation token');
-
-    if (invitation.status !== InvitationStatus.PENDING) {
-      throw new ConflictException('Invitation is not pending');
-    }
+    await assertInvitationRedeemable(invitation, dto.token);
 
     await this.prismaService.db.invitation.update({
       where: { id: invitation.id },
       data: { status: InvitationStatus.CANCELLED },
     });
 
-    const event = Object.assign(new InvitationDeclinedEvent(), {
-      invitationId: invitation.id,
-      inviterId: invitation.invited_by_id,
-      inviteeName: `${invitation.first_name} ${invitation.last_name}`,
-      organizationId: invitation.organization_id,
-      branchId: invitation.branches[0]?.branch_id ?? null,
-    });
-    this.eventBus.publish('invitation.declined', event);
+    this.eventBus.publish(
+      'invitation.declined',
+      new InvitationDeclinedEvent({
+        invitationId: invitation.id,
+        inviterId: invitation.invited_by_id,
+        inviteeName: `${invitation.first_name} ${invitation.last_name}`,
+        organizationId: invitation.organization_id,
+        branchId: invitation.branches[0]?.branch_id ?? null,
+      }),
+    );
 
     return { message: 'Invitation declined' };
   }
 
   async previewInvitation(dto: PreviewInvitationQueryDto) {
     const invitation = await this.prismaService.db.invitation.findFirst({
-      where: { id: dto.invitation, is_deleted: false },
-      include: this.includePreview(),
+      where: { id: dto.invitation_id, is_deleted: false },
+      include: INVITATION_PREVIEW_INCLUDE,
     });
 
     if (!invitation) throw new UnauthorizedException('Invalid invitation');
 
-    const tokenMatches = await bcrypt.compare(dto.token, invitation.token_hash);
-    if (!tokenMatches)
-      throw new UnauthorizedException('Invalid invitation token');
+    await assertInvitationRedeemable(invitation, dto.token);
 
-    if (invitation.status === InvitationStatus.ACCEPTED)
-      throw new ConflictException('Invitation already accepted');
-
-    if (invitation.status !== InvitationStatus.PENDING)
-      throw new UnauthorizedException('Invitation is not active');
-
-    if (invitation.expires_at < new Date())
-      throw new GoneException('Invitation expired');
-
-    return {
-      id: invitation.id,
-      status: invitation.status,
-      expires_at: invitation.expires_at,
-      email: invitation.email,
-      first_name: invitation.first_name,
-      last_name: invitation.last_name,
-      executive_title: invitation.executive_title,
-      engagement_type: invitation.engagement_type,
-      organization: {
-        id: invitation.organization.id,
-        name: invitation.organization.name,
-      },
-      invited_by: {
-        first_name: invitation.invited_by.first_name,
-        last_name: invitation.invited_by.last_name,
-      },
-      roles: invitation.roles.map((r) => ({
-        id: r.role.id,
-        name: r.role.name,
-      })),
-      branches: invitation.branches.map((b) => ({
-        id: b.branch.id,
-        name: b.branch.name,
-        city: b.branch.city,
-        governorate: b.branch.governorate,
-      })),
-      job_functions: invitation.job_functions.map((j) => ({
-        id: j.job_function.id,
-        code: j.job_function.code,
-        name: j.job_function.name,
-      })),
-      specialties: invitation.specialty_links.map((s) => ({
-        id: s.specialty.id,
-        code: s.specialty.code,
-        name: s.specialty.name,
-      })),
-    };
-  }
-
-  private findInvitationShape() {
-    return this.prismaService.db.invitation.findFirstOrThrow({
-      include: this.includeInvitation(),
-    });
-  }
-
-  private toResponse(
-    invitation: Prisma.InvitationGetPayload<{
-      include: ReturnType<InvitationsService['includeInvitation']>;
-    }>,
-    workingSchedule?: Awaited<
-      ReturnType<InvitationsService['fetchWorkingSchedule']>
-    > | null,
-  ) {
-    return {
-      id: invitation.id,
-      organization_id: invitation.organization_id,
-      email: invitation.email,
-      first_name: invitation.first_name,
-      last_name: invitation.last_name,
-      phone_number: invitation.phone_number,
-      executive_title: invitation.executive_title,
-      engagement_type: invitation.engagement_type,
-      status: invitation.status,
-      invited_at: invitation.created_at,
-      expires_at: invitation.expires_at,
-      accepted_at: invitation.accepted_at,
-      invited_by: {
-        id: invitation.invited_by.id,
-        first_name: invitation.invited_by.first_name,
-        last_name: invitation.invited_by.last_name,
-        email: invitation.invited_by.email,
-      },
-      roles: invitation.roles.map((item) => ({
-        id: item.role.id,
-        name: item.role.name,
-      })),
-      branches: invitation.branches.map((item) => ({
-        id: item.branch.id,
-        name: item.branch.name,
-        city: item.branch.city,
-        governorate: item.branch.governorate,
-      })),
-      job_functions: invitation.job_functions.map((item) => ({
-        id: item.job_function.id,
-        code: item.job_function.code,
-        name: item.job_function.name,
-      })),
-      specialties: invitation.specialty_links.map((item) => ({
-        id: item.specialty.id,
-        code: item.specialty.code,
-        name: item.specialty.name,
-      })),
-      ...(workingSchedule !== undefined && {
-        working_schedule:
-          workingSchedule?.map((ws) => ({
-            branch: ws.branch,
-            days: ws.days.map((d) => ({
-              day_of_week: d.day_of_week,
-              shifts: d.shifts.map((s) => ({
-                start_time: minutesToHhmm(s.start_minute),
-                end_time: minutesToHhmm(s.end_minute),
-              })),
-            })),
-          })) ?? null,
-      }),
-    };
+    return toInvitationPreviewResponse(invitation);
   }
 
   private fetchWorkingSchedule(profileId: string) {
