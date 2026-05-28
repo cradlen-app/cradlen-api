@@ -2,11 +2,13 @@ import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import { randomInt } from 'crypto';
-import type { VerificationPurpose } from '@prisma/client';
+import type { Prisma, VerificationPurpose } from '@prisma/client';
 import { ERROR_CODES } from '@common/constant/error-codes.js';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { EmailService } from '@infrastructure/email/email.service.js';
 import type { AuthConfig } from '@config/auth.config.js';
+
+type PrismaTx = Prisma.TransactionClient;
 
 export type VerificationPurposeInput = 'SIGNUP' | 'LOGIN' | 'PASSWORD_RESET';
 
@@ -43,11 +45,22 @@ export class VerificationCodesService {
     this.authConfig = config;
   }
 
-  async send(input: SendCodeInput): Promise<void> {
+  /**
+   * Persists the verification code (consume-old + create-new) and emails
+   * the cleartext code to the target.
+   *
+   * If `tx` is supplied, the two writes use the caller's transaction so a
+   * parent mutation (e.g. signup reactivation) commits atomically with
+   * the code row. The email send happens AFTER the transaction returns,
+   * intentionally — Resend's HTTP roundtrip should not hold a Postgres
+   * connection open.
+   */
+  async send(input: SendCodeInput, tx?: PrismaTx): Promise<void> {
     const { otpTtlMinutes, otpMaxAttempts, otpBcryptRounds } =
       this.authConfig.verificationCodes;
+    const db = tx ?? this.prismaService.db;
 
-    await this.prismaService.db.verificationCode.updateMany({
+    await db.verificationCode.updateMany({
       where: {
         user_id: input.userId,
         purpose: input.purpose as VerificationPurpose,
@@ -59,7 +72,7 @@ export class VerificationCodesService {
     const code = randomInt(100000, 1000000).toString();
     const code_hash = await bcrypt.hash(code, otpBcryptRounds);
     const expires_at = new Date(Date.now() + otpTtlMinutes * 60 * 1000);
-    await this.prismaService.db.verificationCode.create({
+    await db.verificationCode.create({
       data: {
         user_id: input.userId,
         target: input.target,

@@ -214,4 +214,34 @@ describe('TokensService aud claim (S-08)', () => {
       UnauthorizedException,
     );
   });
+
+  it('emits iss="cradlen-api" on every newly issued token (S-10)', () => {
+    const { service } = buildService();
+    const { signup_token } = service.issueSignupToken('user-1', 'signup');
+    const { reset_token } = service.issuePasswordResetToken(
+      'user-1',
+      'sara@example.com',
+      false,
+    );
+
+    expect(decodeJwt(signup_token).iss).toBe('cradlen-api');
+    expect(decodeJwt(reset_token).iss).toBe('cradlen-api');
+  });
+
+  it('rejects a token whose iss claim points at someone else (S-10)', () => {
+    const { service } = buildService();
+    const stranger = new JwtService().sign(
+      { userId: 'user-1', type: 'signup' },
+      {
+        secret: 'access-secret',
+        audience: 'cradlen-api',
+        issuer: 'someone-else',
+        expiresIn: '15m',
+      },
+    );
+
+    expect(() => service.decodeSignupToken(stranger, 'signup')).toThrow(
+      UnauthorizedException,
+    );
+  });
 });
