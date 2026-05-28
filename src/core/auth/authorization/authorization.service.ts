@@ -1,4 +1,8 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 
 const ORGANIZATION_MANAGER_ROLES = ['OWNER'];
@@ -19,6 +23,9 @@ export class AuthorizationService {
     organizationId: string,
     activeBranchId?: string,
   ) {
+    // Single query covers profile + user-alive + org-active + roles.
+    // Replaces the prior 3-query path (user.findFirst in the caller,
+    // profile.findFirst, hasAnyRole inside getEffectiveBranchIds).
     const profile = await this.prismaService.db.profile.findFirst({
       where: {
         id: profileId,
@@ -26,6 +33,7 @@ export class AuthorizationService {
         organization_id: organizationId,
         is_active: true,
         is_deleted: false,
+        user: { is_deleted: false, is_active: true },
         organization: { status: 'ACTIVE', is_deleted: false },
       },
       include: {
@@ -34,13 +42,30 @@ export class AuthorizationService {
     });
 
     if (!profile) {
-      throw new ForbiddenException('Invalid profile context');
+      // Same status as the prior 'User not found or inactive' from the
+      // JWT strategy; the merged query can't distinguish "user gone" vs
+      // "profile gone" without a second round-trip, and from the
+      // client's perspective both mean "re-authenticate".
+      throw new UnauthorizedException('Invalid auth context');
     }
 
-    const branchIds = await this.getEffectiveBranchIds(
-      profileId,
-      organizationId,
-    );
+    const isOwner = profile.roles.some((pr) => pr.role.name === 'OWNER');
+    const branchIds = isOwner
+      ? (
+          await this.prismaService.db.branch.findMany({
+            where: { organization_id: organizationId, is_deleted: false },
+            select: { id: true },
+          })
+        ).map((b) => b.id)
+      : (
+          await this.prismaService.db.profileBranch.findMany({
+            where: {
+              profile_id: profileId,
+              organization_id: organizationId,
+            },
+            select: { branch_id: true },
+          })
+        ).map((l) => l.branch_id);
 
     return {
       userId,
