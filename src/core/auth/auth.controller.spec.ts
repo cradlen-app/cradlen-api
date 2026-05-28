@@ -1,39 +1,44 @@
 import { AuthController } from './auth.controller.js';
-import type { AuthService } from './auth.service.js';
+import type { SignupService } from './services/signup.service.js';
+import type { SessionsService } from './services/sessions.service.js';
+import type { PasswordResetService } from './services/password-reset.service.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 
 describe('AuthController', () => {
   let controller: AuthController;
-  let authService: jest.Mocked<
+  let signupService: jest.Mocked<
     Pick<
-      AuthService,
-      | 'signupStart'
-      | 'signupVerify'
-      | 'signupComplete'
-      | 'resendOtp'
-      | 'getRegistrationStatus'
-      | 'login'
-      | 'selectProfile'
-      | 'refresh'
-      | 'logout'
-      | 'getMe'
+      SignupService,
+      'start' | 'verify' | 'complete' | 'resendOtp' | 'getRegistrationStatus'
     >
   >;
+  let sessionsService: jest.Mocked<
+    Pick<SessionsService, 'login' | 'refresh' | 'logout' | 'getMe'>
+  >;
+  let passwordResetService: jest.Mocked<Pick<PasswordResetService, 'start'>>;
 
   beforeEach(() => {
-    authService = {
-      signupStart: jest.fn(),
-      signupVerify: jest.fn(),
-      signupComplete: jest.fn(),
+    signupService = {
+      start: jest.fn(),
+      verify: jest.fn(),
+      complete: jest.fn(),
       resendOtp: jest.fn(),
       getRegistrationStatus: jest.fn(),
+    };
+    sessionsService = {
       login: jest.fn(),
-      selectProfile: jest.fn(),
       refresh: jest.fn(),
       logout: jest.fn(),
       getMe: jest.fn(),
     };
-    controller = new AuthController(authService as unknown as AuthService);
+    passwordResetService = {
+      start: jest.fn(),
+    };
+    controller = new AuthController(
+      signupService as unknown as SignupService,
+      sessionsService as unknown as SessionsService,
+      passwordResetService as unknown as PasswordResetService,
+    );
   });
 
   it('delegates signup start', async () => {
@@ -44,7 +49,7 @@ describe('AuthController', () => {
       password: 'Password1!',
       confirm_password: 'Password1!',
     };
-    authService.signupStart.mockResolvedValue({
+    signupService.start.mockResolvedValue({
       signup_token: 'token',
       expires_in: 1800,
     });
@@ -53,7 +58,7 @@ describe('AuthController', () => {
       signup_token: 'token',
       expires_in: 1800,
     });
-    expect(authService.signupStart).toHaveBeenCalledWith(dto);
+    expect(signupService.start).toHaveBeenCalledWith(dto);
   });
 
   it('delegates signup completion', async () => {
@@ -69,13 +74,13 @@ describe('AuthController', () => {
       selection_token: 'selection-token',
       profiles: [],
     };
-    authService.signupComplete.mockResolvedValue(response);
+    signupService.complete.mockResolvedValue(response);
 
     await expect(controller.signupComplete(dto)).resolves.toEqual(response);
-    expect(authService.signupComplete).toHaveBeenCalledWith(dto);
+    expect(signupService.complete).toHaveBeenCalledWith(dto);
   });
 
-  it('passes refresh dto through to the service', async () => {
+  it('passes refresh dto through to the sessions service', async () => {
     const dto = { refresh_token: 'raw-refresh-token' };
     const tokens = {
       type: 'tokens' as const,
@@ -84,24 +89,24 @@ describe('AuthController', () => {
       token_type: 'Bearer' as const,
       expires_in: 900,
     };
-    authService.refresh.mockResolvedValue(tokens);
+    sessionsService.refresh.mockResolvedValue(tokens);
 
     await expect(controller.refresh(dto)).resolves.toEqual(tokens);
-    expect(authService.refresh).toHaveBeenCalledWith(dto);
+    expect(sessionsService.refresh).toHaveBeenCalledWith(dto);
   });
 
   it('delegates signup resend', async () => {
     const dto = { email: 'sara@example.com' };
-    authService.resendOtp.mockResolvedValue({ success: true });
+    signupService.resendOtp.mockResolvedValue({ success: true });
 
     await expect(controller.resendOtp(dto)).resolves.toEqual({
       success: true,
     });
-    expect(authService.resendOtp).toHaveBeenCalledWith(dto);
+    expect(signupService.resendOtp).toHaveBeenCalledWith(dto);
   });
 
   it('delegates registration status with query and authorization header', async () => {
-    authService.getRegistrationStatus.mockResolvedValue({
+    signupService.getRegistrationStatus.mockResolvedValue({
       step: 'DONE',
       email: 'sara@example.com',
     });
@@ -112,16 +117,16 @@ describe('AuthController', () => {
         'Bearer token',
       ),
     ).resolves.toEqual({ step: 'DONE', email: 'sara@example.com' });
-    expect(authService.getRegistrationStatus).toHaveBeenCalledWith({
+    expect(signupService.getRegistrationStatus).toHaveBeenCalledWith({
       email: 'sara@example.com',
       authorization: 'Bearer token',
     });
   });
 
   it('revokes logout token', async () => {
-    authService.logout.mockResolvedValue(undefined);
+    sessionsService.logout.mockResolvedValue(undefined);
     await controller.logout({ refresh_token: 'refresh' });
-    expect(authService.logout).toHaveBeenCalledWith('refresh');
+    expect(sessionsService.logout).toHaveBeenCalledWith('refresh');
   });
 
   it('delegates getMe with userId and profileId from auth context', async () => {
@@ -142,9 +147,12 @@ describe('AuthController', () => {
       created_at: new Date(),
       profiles: [],
     };
-    authService.getMe.mockResolvedValue(meResponse);
+    sessionsService.getMe.mockResolvedValue(meResponse);
 
     await expect(controller.getMe(user)).resolves.toEqual(meResponse);
-    expect(authService.getMe).toHaveBeenCalledWith('user-uuid', 'profile-uuid');
+    expect(sessionsService.getMe).toHaveBeenCalledWith(
+      'user-uuid',
+      'profile-uuid',
+    );
   });
 });
