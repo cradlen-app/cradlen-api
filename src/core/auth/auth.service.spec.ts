@@ -8,6 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { AuthService } from './auth.service.js';
 import { TokensService } from './services/tokens.service.js';
+import { VerificationCodesService } from './services/verification-codes.service.js';
 import type { PrismaService } from '@infrastructure/database/prisma.service.js';
 import type { EmailService } from '@infrastructure/email/email.service.js';
 import type { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
@@ -64,9 +65,17 @@ function createService(prismaOverrides: Record<string, unknown> = {}) {
       jwt: {
         accessSecret: 'access-secret',
         refreshSecret: 'refresh-secret',
+        resetSecret: 'reset-secret',
         accessExpiration: '15m',
         refreshExpiration: '7d',
         registrationExpiration: '30m',
+      },
+      verificationCodes: {
+        otpTtlMinutes: 15,
+        otpMaxAttempts: 5,
+        otpBcryptRounds: 10,
+        resendCooldownSeconds: 60,
+        resendMaxPerHour: 5,
       },
       freeTrialDays: 14,
       invitationExpireHours: 72,
@@ -87,13 +96,19 @@ function createService(prismaOverrides: Record<string, unknown> = {}) {
     configService as never,
   );
 
+  const verificationCodesService = new VerificationCodesService(
+    prismaService,
+    configService as never,
+    mailService,
+  );
+
   return {
     service: new AuthService(
       prismaService,
       configService as never,
-      mailService,
       authorizationService,
       tokensService,
+      verificationCodesService,
     ),
     prismaService,
     mailService,
@@ -114,6 +129,7 @@ function createService(prismaOverrides: Record<string, unknown> = {}) {
     },
     jwtService,
     tokensService,
+    verificationCodesService,
   };
 }
 

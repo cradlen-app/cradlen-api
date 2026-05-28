@@ -9,6 +9,7 @@ import { EmailModule } from '@infrastructure/email/email.module.js';
 import { RegistrationCleanupService } from './registration-cleanup.service.js';
 import { AuthorizationModule } from '@core/auth/authorization/authorization.module.js';
 import { TokensService } from './services/tokens.service.js';
+import { VerificationCodesService } from './services/verification-codes.service.js';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { TokensService } from './services/tokens.service.js';
   providers: [
     AuthService,
     TokensService,
+    VerificationCodesService,
     JwtStrategy,
     RegistrationCleanupService,
   ],

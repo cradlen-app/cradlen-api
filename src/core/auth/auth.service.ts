@@ -2,8 +2,6 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
-  HttpException,
-  HttpStatus,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -12,10 +10,8 @@ import {
 import { ERROR_CODES } from '@common/constant/error-codes.js';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
-import { randomInt } from 'crypto';
-import type { User, VerificationPurpose } from '@prisma/client';
+import type { User } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
-import { EmailService } from '@infrastructure/email/email.service.js';
 import type { AuthConfig } from '@config/auth.config.js';
 import type { AuthTokensDto } from './dto/auth-tokens.dto.js';
 import type { LoginDto } from './dto/login.dto.js';
@@ -36,13 +32,9 @@ import type { SwitchBranchDto } from './dto/switch-branch.dto.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import { TokensService } from './services/tokens.service.js';
+import { VerificationCodesService } from './services/verification-codes.service.js';
 
 const BCRYPT_ROUNDS = 12;
-const OTP_TTL_MINUTES = 15;
-const OTP_MAX_ATTEMPTS = 5;
-const SIGNUP_RESEND_COOLDOWN_SECONDS = 60;
-const SIGNUP_RESEND_MAX_PER_HOUR = 5;
-type VerificationPurposeInput = 'SIGNUP' | 'LOGIN' | 'PASSWORD_RESET';
 
 export interface SelectableProfile {
   profile_id: string;
@@ -74,9 +66,9 @@ export class AuthService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly configService: ConfigService,
-    private readonly mailService: EmailService,
     private readonly authorizationService: AuthorizationService,
     private readonly tokensService: TokensService,
+    private readonly verificationCodesService: VerificationCodesService,
   ) {
     const config = this.configService.get<AuthConfig>('auth');
     if (!config) throw new Error('Auth configuration not loaded');
@@ -113,7 +105,7 @@ export class AuthService {
             phone_number: dto.phone_number ?? null,
           },
         });
-        await this.sendVerificationCode({
+        await this.verificationCodesService.send({
           userId: existing.id,
           target: dto.email,
           purpose: 'SIGNUP',
@@ -161,7 +153,7 @@ export class AuthService {
       },
     });
 
-    await this.sendVerificationCode({
+    await this.verificationCodesService.send({
       userId: user.id,
       target: dto.email,
       purpose: 'SIGNUP',
@@ -183,7 +175,7 @@ export class AuthService {
       throw new ConflictException('Email already verified');
     }
 
-    await this.consumeVerificationCode({
+    await this.verificationCodesService.consume({
       userId,
       target: user.email,
       purpose: 'SIGNUP',
@@ -341,45 +333,12 @@ export class AuthService {
       throw new ConflictException('Registration is not pending');
     }
 
-    const latestResend = await this.prismaService.db.verificationCode.findFirst(
-      {
-        where: {
-          user_id: user.id,
-          purpose: 'SIGNUP',
-          is_resend: true,
-        },
-        orderBy: { created_at: 'desc' },
-      },
-    );
-    if (
-      latestResend &&
-      latestResend.created_at.getTime() >
-        Date.now() - SIGNUP_RESEND_COOLDOWN_SECONDS * 1000
-    ) {
-      throw new HttpException(
-        'Please wait before requesting another code',
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
+    await this.verificationCodesService.assertCanResend({
+      userId: user.id,
+      purpose: 'SIGNUP',
+    });
 
-    const resendWindowStart = new Date(Date.now() - 60 * 60 * 1000);
-    const recentResendCount =
-      await this.prismaService.db.verificationCode.count({
-        where: {
-          user_id: user.id,
-          purpose: 'SIGNUP',
-          is_resend: true,
-          created_at: { gte: resendWindowStart },
-        },
-      });
-    if (recentResendCount >= SIGNUP_RESEND_MAX_PER_HOUR) {
-      throw new HttpException(
-        'Too many resend requests',
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-
-    await this.sendVerificationCode({
+    await this.verificationCodesService.send({
       userId: user.id,
       target: dto.email,
       purpose: 'SIGNUP',
@@ -632,104 +591,6 @@ export class AuthService {
     throw new BadRequestException('branch_id is required');
   }
 
-  private async sendVerificationCode(input: {
-    userId: string;
-    target: string;
-    purpose: VerificationPurposeInput;
-    isResend?: boolean;
-  }) {
-    await this.prismaService.db.verificationCode.updateMany({
-      where: {
-        user_id: input.userId,
-        purpose: input.purpose as VerificationPurpose,
-        consumed_at: null,
-      },
-      data: { consumed_at: new Date() },
-    });
-
-    const code = randomInt(100000, 1000000).toString();
-    const code_hash = await bcrypt.hash(code, 10);
-    const expires_at = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
-    await this.prismaService.db.verificationCode.create({
-      data: {
-        user_id: input.userId,
-        target: input.target,
-        channel: 'EMAIL',
-        purpose: input.purpose as VerificationPurpose,
-        code_hash,
-        expires_at,
-        max_attempts: OTP_MAX_ATTEMPTS,
-        is_resend: input.isResend ?? false,
-      },
-    });
-
-    await this.mailService.sendVerificationEmail(input.target, code);
-  }
-
-  private async consumeVerificationCode(input: {
-    userId: string;
-    target: string;
-    purpose: VerificationPurposeInput;
-    code: string;
-  }) {
-    const record = await this.prismaService.db.verificationCode.findFirst({
-      where: {
-        user_id: input.userId,
-        target: input.target,
-        purpose: input.purpose as VerificationPurpose,
-        consumed_at: null,
-      },
-      orderBy: { created_at: 'desc' },
-    });
-    if (!record) {
-      throw new HttpException(
-        {
-          code: ERROR_CODES.INVALID_CODE,
-          message: 'Verification code not found or already used',
-        },
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-    if (record.expires_at < new Date()) {
-      throw new HttpException(
-        {
-          code: ERROR_CODES.CODE_EXPIRED,
-          message: 'Verification code has expired',
-        },
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-    if (record.attempts >= record.max_attempts) {
-      throw new HttpException(
-        {
-          code: ERROR_CODES.MAX_ATTEMPTS_EXCEEDED,
-          message: 'Maximum verification attempts reached',
-        },
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-
-    const matches = await bcrypt.compare(input.code, record.code_hash);
-    if (!matches) {
-      await this.prismaService.db.verificationCode.update({
-        where: { id: record.id },
-        data: { attempts: { increment: 1 } },
-      });
-      throw new HttpException(
-        {
-          code: ERROR_CODES.INVALID_CODE,
-          message: 'Incorrect verification code',
-        },
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-
-    await this.prismaService.db.verificationCode.update({
-      where: { id: record.id },
-      data: { consumed_at: new Date() },
-    });
-  }
-
   private async findRole(name: string) {
     const role = await this.prismaService.db.role.findUnique({
       where: { name },
@@ -851,7 +712,7 @@ export class AuthService {
       return { reset_token: '', expires_in: 0 };
     }
 
-    await this.sendVerificationCode({
+    await this.verificationCodesService.send({
       userId: user.id,
       target: user.email,
       purpose: 'PASSWORD_RESET',
@@ -872,41 +733,12 @@ export class AuthService {
       false,
     );
 
-    const latestResend = await this.prismaService.db.verificationCode.findFirst(
-      {
-        where: { user_id: userId, purpose: 'PASSWORD_RESET', is_resend: true },
-        orderBy: { created_at: 'desc' },
-      },
-    );
-    if (
-      latestResend &&
-      latestResend.created_at.getTime() >
-        Date.now() - SIGNUP_RESEND_COOLDOWN_SECONDS * 1000
-    ) {
-      throw new HttpException(
-        'Please wait before requesting another code',
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
+    await this.verificationCodesService.assertCanResend({
+      userId,
+      purpose: 'PASSWORD_RESET',
+    });
 
-    const resendWindowStart = new Date(Date.now() - 60 * 60 * 1000);
-    const recentResendCount =
-      await this.prismaService.db.verificationCode.count({
-        where: {
-          user_id: userId,
-          purpose: 'PASSWORD_RESET',
-          is_resend: true,
-          created_at: { gte: resendWindowStart },
-        },
-      });
-    if (recentResendCount >= SIGNUP_RESEND_MAX_PER_HOUR) {
-      throw new HttpException(
-        'Too many resend requests',
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-
-    await this.sendVerificationCode({
+    await this.verificationCodesService.send({
       userId,
       target,
       purpose: 'PASSWORD_RESET',
@@ -924,7 +756,7 @@ export class AuthService {
       false,
     );
 
-    await this.consumeVerificationCode({
+    await this.verificationCodesService.consume({
       userId,
       target,
       purpose: 'PASSWORD_RESET',
