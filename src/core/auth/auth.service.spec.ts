@@ -7,6 +7,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { AuthService } from './auth.service.js';
+import { TokensService } from './services/tokens.service.js';
 import type { PrismaService } from '@infrastructure/database/prisma.service.js';
 import type { EmailService } from '@infrastructure/email/email.service.js';
 import type { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
@@ -80,13 +81,19 @@ function createService(prismaOverrides: Record<string, unknown> = {}) {
     getEffectiveBranchIds,
   } as unknown as AuthorizationService;
 
+  const tokensService = new TokensService(
+    prismaService,
+    jwtService,
+    configService as never,
+  );
+
   return {
     service: new AuthService(
       prismaService,
-      jwtService,
       configService as never,
       mailService,
       authorizationService,
+      tokensService,
     ),
     prismaService,
     mailService,
@@ -106,6 +113,7 @@ function createService(prismaOverrides: Record<string, unknown> = {}) {
       getEffectiveBranchIds,
     },
     jwtService,
+    tokensService,
   };
 }
 
