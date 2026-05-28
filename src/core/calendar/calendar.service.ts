@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -13,6 +14,7 @@ import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { EventBus } from '@infrastructure/messaging/event-bus.js';
 import { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import { paginated } from '@common/utils/pagination.utils.js';
+import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import { CreateCalendarEventDto } from './dto/create-calendar-event.dto.js';
 import { UpdateCalendarEventDto } from './dto/update-calendar-event.dto.js';
 import { ListCalendarEventsQueryDto } from './dto/list-calendar-events.query.dto.js';
@@ -21,13 +23,7 @@ import {
   CALENDAR_EVENTS,
   CalendarEventChangedPayload,
 } from './calendar.events.js';
-
-const DEFAULT_VISIBILITY: Record<CalendarEventType, CalendarVisibility> = {
-  DAY_OFF: CalendarVisibility.ORGANIZATION,
-  PROCEDURE: CalendarVisibility.ORGANIZATION,
-  MEETING: CalendarVisibility.PRIVATE,
-  GENERIC: CalendarVisibility.PRIVATE,
-};
+import { DEFAULT_VISIBILITY } from './calendar.policy.js';
 
 const EVENT_INCLUDE = {
   procedure: { select: { id: true, name: true } },
@@ -49,11 +45,53 @@ type CalendarEventWithRelations = Prisma.CalendarEventGetPayload<{
   include: typeof EVENT_INCLUDE;
 }>;
 
+function toResponse(row: CalendarEventWithRelations): CalendarEventResponseDto {
+  return {
+    id: row.id,
+    profile_id: row.profile_id,
+    organization_id: row.organization_id,
+    branch_id: row.branch_id,
+    event_type: row.event_type,
+    visibility: row.visibility,
+    title: row.title,
+    description: row.description,
+    start_at: row.start_at,
+    end_at: row.end_at,
+    all_day: row.all_day,
+    procedure_id: row.procedure_id,
+    patient_id: row.patient_id,
+    procedure_name: row.procedure?.name ?? null,
+    patient_full_name: row.patient?.full_name ?? null,
+    assistants: (row.assistants ?? []).map((a) => {
+      const fullName =
+        `${a.profile?.user?.first_name ?? ''} ${a.profile?.user?.last_name ?? ''}`.trim();
+      return {
+        profile_id: a.profile_id,
+        full_name: fullName.length > 0 ? fullName : null,
+      };
+    }),
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+function pickDefined<T extends object, K extends keyof T>(
+  source: T,
+  keys: readonly K[],
+): Pick<T, K> {
+  const out = {} as Pick<T, K>;
+  for (const key of keys) {
+    if (source[key] !== undefined) out[key] = source[key];
+  }
+  return out;
+}
+
 @Injectable()
 export class CalendarService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly eventBus: EventBus,
+    private readonly authorizationService: AuthorizationService,
   ) {}
 
   async create(
@@ -72,6 +110,10 @@ export class CalendarService {
       branch_id: dto.branch_id,
       assistant_profile_ids: dto.assistant_profile_ids,
     });
+
+    if (dto.event_type === CalendarEventType.PROCEDURE) {
+      await this.assertNoProcedureOverlap(user, startAt, endAt);
+    }
 
     const created = await this.prismaService.db.calendarEvent.create({
       data: {
@@ -102,7 +144,7 @@ export class CalendarService {
     });
 
     this.publish(CALENDAR_EVENTS.event.created, created);
-    return this.toResponse(created);
+    return toResponse(created);
   }
 
   async list(user: AuthContext, query: ListCalendarEventsQueryDto) {
@@ -142,7 +184,7 @@ export class CalendarService {
     ]);
 
     return paginated(
-      items.map((row) => this.toResponse(row)),
+      items.map((row) => toResponse(row)),
       { page, limit, total },
     );
   }
@@ -161,7 +203,7 @@ export class CalendarService {
       include: EVENT_INCLUDE,
     });
     if (!event) throw new NotFoundException('Calendar event not found');
-    return this.toResponse(event);
+    return toResponse(event);
   }
 
   async update(
@@ -200,6 +242,19 @@ export class CalendarService {
       });
     }
 
+    const windowChanged =
+      dto.start_at !== undefined || dto.end_at !== undefined;
+    const typeChangedToProcedure =
+      dto.event_type !== undefined &&
+      existing.event_type !== CalendarEventType.PROCEDURE &&
+      nextType === CalendarEventType.PROCEDURE;
+    if (
+      nextType === CalendarEventType.PROCEDURE &&
+      (windowChanged || typeChangedToProcedure)
+    ) {
+      await this.assertNoProcedureOverlap(user, nextStart, nextEnd, id);
+    }
+
     const updated = await this.prismaService.db.$transaction(async (tx) => {
       if (dto.assistant_profile_ids !== undefined) {
         await tx.calendarEventAssistant.deleteMany({
@@ -230,19 +285,15 @@ export class CalendarService {
       return tx.calendarEvent.update({
         where: { id },
         data: {
-          ...(dto.event_type !== undefined
-            ? { event_type: dto.event_type }
-            : {}),
-          ...(dto.visibility !== undefined
-            ? { visibility: dto.visibility }
-            : {}),
-          ...(dto.title !== undefined ? { title: dto.title } : {}),
-          ...(dto.description !== undefined
-            ? { description: dto.description }
-            : {}),
+          ...pickDefined(dto, [
+            'event_type',
+            'visibility',
+            'title',
+            'description',
+            'all_day',
+          ]),
           ...(dto.start_at !== undefined ? { start_at: nextStart } : {}),
           ...(dto.end_at !== undefined ? { end_at: nextEnd } : {}),
-          ...(dto.all_day !== undefined ? { all_day: dto.all_day } : {}),
           ...(dto.branch_id !== undefined
             ? { branch_id: dto.branch_id ?? null }
             : {}),
@@ -258,13 +309,17 @@ export class CalendarService {
     });
 
     this.publish(CALENDAR_EVENTS.event.updated, updated);
-    return this.toResponse(updated);
+    return toResponse(updated);
   }
 
   async remove(user: AuthContext, id: string): Promise<void> {
-    const existing = await this.loadOwned(user, id);
     const deleted = await this.prismaService.db.calendarEvent.update({
-      where: { id: existing.id },
+      where: {
+        id,
+        is_deleted: false,
+        profile_id: user.profileId,
+        organization_id: user.organizationId,
+      },
       data: { is_deleted: true, deleted_at: new Date() },
       include: EVENT_INCLUDE,
     });
@@ -296,120 +351,167 @@ export class CalendarService {
     },
   ): Promise<void> {
     if (eventType === CalendarEventType.PROCEDURE) {
-      if (!fields.procedure_id) {
-        throw new BadRequestException({
-          message: 'procedure_id is required for PROCEDURE events',
-          details: { fields: { procedure_id: ['is required'] } },
-        });
-      }
-      const proc = await this.prismaService.db.procedure.findFirst({
-        where: { id: fields.procedure_id, is_deleted: false },
-        select: { id: true },
-      });
-      if (!proc) {
-        throw new BadRequestException({
-          message: 'procedure_id does not reference an active procedure',
-          details: { fields: { procedure_id: ['not found'] } },
-        });
-      }
-      if (fields.patient_id) {
-        const patient = await this.prismaService.db.patient.findFirst({
-          where: { id: fields.patient_id, is_deleted: false },
-          select: {
-            id: true,
-            journeys: {
-              where: { organization_id: user.organizationId },
-              select: { id: true },
-              take: 1,
-            },
-          },
-        });
-        if (!patient || patient.journeys.length === 0) {
-          throw new BadRequestException({
-            message: 'patient_id is not accessible to this organization',
-            details: { fields: { patient_id: ['not found'] } },
-          });
-        }
-      }
+      await this.assertProcedureFields(user, fields);
+      await this.assertAssistants(user, fields.assistant_profile_ids);
     } else {
-      if (fields.procedure_id) {
-        throw new BadRequestException({
-          message: 'procedure_id is only valid for PROCEDURE events',
-          details: {
-            fields: { procedure_id: ['not allowed for this event type'] },
-          },
-        });
-      }
-      if (fields.patient_id) {
-        throw new BadRequestException({
-          message: 'patient_id is only valid for PROCEDURE events',
-          details: {
-            fields: { patient_id: ['not allowed for this event type'] },
-          },
-        });
-      }
-      if (
-        fields.assistant_profile_ids &&
-        fields.assistant_profile_ids.length > 0
-      ) {
-        throw new BadRequestException({
-          message: 'assistant_profile_ids is only valid for PROCEDURE events',
-          details: {
-            fields: {
-              assistant_profile_ids: ['not allowed for this event type'],
-            },
-          },
-        });
-      }
+      this.assertNonProcedureFields(fields);
     }
+    await this.assertBranch(user, fields.branch_id);
+  }
 
+  private async assertProcedureFields(
+    user: AuthContext,
+    fields: { procedure_id?: string; patient_id?: string },
+  ): Promise<void> {
+    if (!fields.procedure_id) {
+      throw new BadRequestException({
+        message: 'procedure_id is required for PROCEDURE events',
+        details: { fields: { procedure_id: ['is required'] } },
+      });
+    }
+    const proc = await this.prismaService.db.procedure.findFirst({
+      where: { id: fields.procedure_id, is_deleted: false },
+      select: { id: true },
+    });
+    if (!proc) {
+      throw new BadRequestException({
+        message: 'procedure_id does not reference an active procedure',
+        details: { fields: { procedure_id: ['not found'] } },
+      });
+    }
+    if (!fields.patient_id) return;
+
+    const patient = await this.prismaService.db.patient.findFirst({
+      where: { id: fields.patient_id, is_deleted: false },
+      select: {
+        id: true,
+        journeys: {
+          where: {
+            organization_id: user.organizationId,
+            is_deleted: false,
+          },
+          select: { id: true },
+          take: 1,
+        },
+      },
+    });
+    if (!patient || patient.journeys.length === 0) {
+      throw new BadRequestException({
+        message: 'patient_id is not accessible to this organization',
+        details: { fields: { patient_id: ['not found'] } },
+      });
+    }
+  }
+
+  private assertNonProcedureFields(fields: {
+    procedure_id?: string;
+    patient_id?: string;
+    assistant_profile_ids?: string[];
+  }): void {
+    if (fields.procedure_id) {
+      throw new BadRequestException({
+        message: 'procedure_id is only valid for PROCEDURE events',
+        details: {
+          fields: { procedure_id: ['not allowed for this event type'] },
+        },
+      });
+    }
+    if (fields.patient_id) {
+      throw new BadRequestException({
+        message: 'patient_id is only valid for PROCEDURE events',
+        details: {
+          fields: { patient_id: ['not allowed for this event type'] },
+        },
+      });
+    }
     if (
-      eventType === CalendarEventType.PROCEDURE &&
       fields.assistant_profile_ids &&
       fields.assistant_profile_ids.length > 0
     ) {
-      const ids = Array.from(new Set(fields.assistant_profile_ids));
-      if (ids.includes(user.profileId)) {
-        throw new BadRequestException({
-          message: 'You cannot list yourself as an assistant',
-          details: {
-            fields: {
-              assistant_profile_ids: ['cannot include the event owner'],
-            },
+      throw new BadRequestException({
+        message: 'assistant_profile_ids is only valid for PROCEDURE events',
+        details: {
+          fields: {
+            assistant_profile_ids: ['not allowed for this event type'],
           },
-        });
-      }
-      const profiles = await this.prismaService.db.profile.findMany({
-        where: {
-          id: { in: ids },
-          organization_id: user.organizationId,
-          is_deleted: false,
         },
-        select: { id: true },
       });
-      if (profiles.length !== ids.length) {
-        throw new BadRequestException({
-          message: 'One or more assistant profiles are not accessible',
-          details: { fields: { assistant_profile_ids: ['not found'] } },
-        });
-      }
     }
+  }
 
-    if (fields.branch_id) {
-      const branch = await this.prismaService.db.branch.findFirst({
-        where: {
-          id: fields.branch_id,
-          organization_id: user.organizationId,
-          is_deleted: false,
+  private async assertAssistants(
+    user: AuthContext,
+    ids: string[] | undefined,
+  ): Promise<void> {
+    if (!ids || ids.length === 0) return;
+
+    if (ids.includes(user.profileId)) {
+      throw new BadRequestException({
+        message: 'You cannot list yourself as an assistant',
+        details: {
+          fields: {
+            assistant_profile_ids: ['cannot include the event owner'],
+          },
         },
-        select: { id: true },
       });
-      if (!branch) {
-        throw new BadRequestException({
-          message: 'branch_id does not belong to this organization',
-          details: { fields: { branch_id: ['not found'] } },
-        });
-      }
+    }
+    const profiles = await this.prismaService.db.profile.findMany({
+      where: {
+        id: { in: ids },
+        organization_id: user.organizationId,
+        is_deleted: false,
+      },
+      select: { id: true },
+    });
+    if (profiles.length !== ids.length) {
+      throw new BadRequestException({
+        message: 'One or more assistant profiles are not accessible',
+        details: { fields: { assistant_profile_ids: ['not found'] } },
+      });
+    }
+  }
+
+  private async assertBranch(
+    user: AuthContext,
+    branchId: string | undefined,
+  ): Promise<void> {
+    if (!branchId) return;
+    await this.authorizationService.assertCanAccessBranch(
+      user.profileId,
+      user.organizationId,
+      branchId,
+    );
+  }
+
+  private async assertNoProcedureOverlap(
+    user: AuthContext,
+    startAt: Date,
+    endAt: Date,
+    excludeId?: string,
+  ): Promise<void> {
+    const conflict = await this.prismaService.db.calendarEvent.findFirst({
+      where: {
+        is_deleted: false,
+        profile_id: user.profileId,
+        organization_id: user.organizationId,
+        event_type: CalendarEventType.PROCEDURE,
+        start_at: { lt: endAt },
+        end_at: { gt: startAt },
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+      select: { id: true, start_at: true, end_at: true },
+    });
+    if (conflict) {
+      throw new ConflictException({
+        message: 'Procedure overlaps an existing procedure on this calendar',
+        details: {
+          conflict: {
+            id: conflict.id,
+            start_at: conflict.start_at,
+            end_at: conflict.end_at,
+          },
+        },
+      });
     }
   }
 
@@ -433,7 +535,12 @@ export class CalendarService {
     id: string,
   ): Promise<CalendarEvent> {
     const existing = await this.prismaService.db.calendarEvent.findFirst({
-      where: { id, is_deleted: false, profile_id: user.profileId },
+      where: {
+        id,
+        is_deleted: false,
+        profile_id: user.profileId,
+        organization_id: user.organizationId,
+      },
     });
     if (!existing) throw new NotFoundException('Calendar event not found');
     return existing;
@@ -451,35 +558,5 @@ export class CalendarService {
       end_at: row.end_at,
     };
     this.eventBus.publish(eventName, payload);
-  }
-
-  private toResponse(
-    row: CalendarEventWithRelations,
-  ): CalendarEventResponseDto {
-    return {
-      id: row.id,
-      profile_id: row.profile_id,
-      organization_id: row.organization_id,
-      branch_id: row.branch_id,
-      event_type: row.event_type,
-      visibility: row.visibility,
-      title: row.title,
-      description: row.description,
-      start_at: row.start_at,
-      end_at: row.end_at,
-      all_day: row.all_day,
-      procedure_id: row.procedure_id,
-      patient_id: row.patient_id,
-      procedure_name: row.procedure?.name ?? null,
-      patient_full_name: row.patient?.full_name ?? null,
-      assistants: (row.assistants ?? []).map((a) => ({
-        profile_id: a.profile_id,
-        full_name:
-          `${a.profile?.user?.first_name ?? ''} ${a.profile?.user?.last_name ?? ''}`.trim() ||
-          a.profile_id,
-      })),
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-    };
   }
 }
