@@ -120,7 +120,7 @@ The system is multi-tenant by **Organization**. The same physical person (`User`
 
 Three independent axes; don't conflate:
 
-- **Role** (`Role` table) — authority tier. Seeded: `OWNER` (manages org), `STAFF` (works inside org), `EXTERNAL` (cross-org consultant). Drives `AuthorizationService` checks.
+- **Role** (`Role` table) — authority tier. Seeded: `OWNER` (manages org and grants any role), `BRANCH_MANAGER` (manages staff and acts as OWNER within their assigned branches), `STAFF` (works inside org), `EXTERNAL` (cross-org consultant). Drives `AuthorizationService` checks. Only `OWNER` may grant `OWNER` or `BRANCH_MANAGER` via invitations — `AuthorizationService.assertNoPrivilegedRoleAssignment` blocks anyone else.
 - **JobFunction** (`JobFunction` table) — what the person does. Seeded clinical: `OBGYN`, `ANESTHESIOLOGIST`, `PEDIATRICIAN`, `OTHER_DOCTOR`, `NURSE`, `ASSISTANT`. Operational: `RECEPTIONIST`, `ACCOUNTANT`. Add new functions as seeds, not as Roles. Drives staff filtering and function-aware service-layer checks (e.g. financial endpoints check for `ACCOUNTANT`).
 - **executive_title** (enum on Profile) — `CEO | COO | CFO | CMO`. Display/governance only — does NOT grant permissions.
 - **engagement_type** (enum on Profile, default `FULL_TIME`) — `FULL_TIME | PART_TIME | ON_DEMAND | EXTERNAL_CONSULTANT`.
