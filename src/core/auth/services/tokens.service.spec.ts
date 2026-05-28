@@ -158,3 +158,60 @@ describe('TokensService.issueTokenPair atomic rotation', () => {
     expect(refreshTokenCreate).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('TokensService aud claim (S-08)', () => {
+  function decodeJwt(token: string): Record<string, unknown> {
+    const segments = token.split('.');
+    expect(segments).toHaveLength(3);
+    return JSON.parse(Buffer.from(segments[1], 'base64url').toString());
+  }
+
+  it('emits aud="cradlen-api" on every newly issued token', async () => {
+    const { service } = buildService();
+    const { signup_token } = service.issueSignupToken('user-1', 'signup');
+    const { reset_token } = service.issuePasswordResetToken(
+      'user-1',
+      'sara@example.com',
+      false,
+    );
+    const tokens = await service.issueTokenPair({
+      user: { id: 'user-1' },
+      profileId: 'profile-uuid',
+      organizationId: 'org-1',
+    });
+
+    expect(decodeJwt(signup_token).aud).toBe('cradlen-api');
+    expect(decodeJwt(reset_token).aud).toBe('cradlen-api');
+    expect(decodeJwt(tokens.access_token).aud).toBe('cradlen-api');
+    expect(decodeJwt(tokens.refresh_token).aud).toBe('cradlen-api');
+  });
+
+  it('accepts legacy tokens that were signed without an aud claim (grace)', () => {
+    const { service } = buildService();
+    // Sign a token with the production access secret but no audience
+    // option — this is what a process running the previous build would
+    // emit during a rolling deploy.
+    const legacy = new JwtService().sign(
+      { userId: 'user-1', type: 'signup' },
+      { secret: 'access-secret', expiresIn: '15m' },
+    );
+
+    expect(service.decodeSignupToken(legacy, 'signup')).toBe('user-1');
+  });
+
+  it('rejects a token whose aud claim points at someone else', () => {
+    const { service } = buildService();
+    const stranger = new JwtService().sign(
+      { userId: 'user-1', type: 'signup' },
+      {
+        secret: 'access-secret',
+        audience: 'someone-else',
+        expiresIn: '15m',
+      },
+    );
+
+    expect(() => service.decodeSignupToken(stranger, 'signup')).toThrow(
+      UnauthorizedException,
+    );
+  });
+});
