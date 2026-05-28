@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
+import { randomBytes, randomUUID } from 'crypto';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { EventBus } from '@infrastructure/messaging/event-bus.js';
 import type { ForgotPasswordDto } from '../dto/forgot-password.dto.js';
@@ -36,7 +37,22 @@ export class PasswordResetService {
     });
 
     if (!user?.email) {
-      return { reset_token: '', expires_in: 0 };
+      // No legitimate target. Return a well-formed reset token bound to a
+      // throwaway userId so the response shape, length, and presence of a
+      // token are indistinguishable from the real path. Subsequent
+      // verify-reset-code attempts against this token return INVALID_CODE
+      // just as they would for a wrong code against a real account, so the
+      // symmetry holds through the rest of the flow. The bcrypt pad below
+      // burns the same wall-clock cost as the real OTP hash so coarse
+      // timing analysis cannot distinguish either path. Resend latency
+      // and the verify-reset-code timing gap are noted as a residual
+      // (downstream verify path can still be padded later).
+      await bcrypt.hash(randomBytes(16).toString('hex'), 10);
+      return this.tokensService.issuePasswordResetToken(
+        randomUUID(),
+        dto.email,
+        false,
+      );
     }
 
     await this.verificationCodesService.send({
