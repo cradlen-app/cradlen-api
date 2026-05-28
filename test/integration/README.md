@@ -41,18 +41,11 @@ request/response pipeline, transactional behavior, and concurrency.
 | File | Closes |
 |---|---|
 | `auth/signup-full-flow.int-spec.ts` | Canonical happy-path: signup → verify → complete → login → select → refresh → me. |
+| `auth/signup-race.int-spec.ts` | Two parallel `/v1/auth/signup/complete` calls with the same signup_token: exactly one 201 + one 409, exactly one organization / profile / subscription row. Proves the onboarding-claim `updateMany` count check under real Postgres semantics. |
 | `auth/refresh-race.int-spec.ts` | S-02 — parallel refreshes for the same token; the loser 401s, only one new row is created, and a rotated token cannot be replayed. |
 | `auth/password-reset-reuse.int-spec.ts` | S-04 — the verified reset token is single-use; a re-use attempt 401s and the password is unchanged. Also pins S-01: forgot-password on an unknown email returns the same shape and writes no rows. |
+| `auth/authorization-matrix.int-spec.ts` | `AuthorizationService.assertCan*` against the seeded OWNER / BRANCH_MANAGER / STAFF / EXTERNAL roles. Verifies the combined profile/user/org query (A-04) and the role-name predicates against real Postgres, not mocked Prisma. |
 
-## Notes for future work
-
-- `test/auth/onboarding.e2e-spec.ts` predates the auth-refactor and is
-  stale (uses the removed `roles` field on `/v1/auth/signup/complete`
-  and asserts profile fields like `is_clinical` / `specialty` /
-  `job_title` that moved to `JobFunction` and `ProfileSpecialty`).
-  Bring that file current as a separate cleanup.
-- The review report's T-01 also calls for `signup-race.int-spec.ts`
-  (parallel `signup/complete` for the same token) and an
-  `authorization-matrix.int-spec.ts` exercising `assertCan*` against
-  real seeded roles. Add when the value vs. CI-time trade-off makes
-  sense.
+`test/auth/onboarding.e2e-spec.ts` was brought current with the
+post-refactor API in the same hardening branch as the integration
+suite landing.
