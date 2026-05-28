@@ -1,10 +1,22 @@
 import { ConflictException, HttpException } from '@nestjs/common';
+import * as bcrypt from 'bcryptjs';
+import { ERROR_CODES } from '@common/constant/error-codes.js';
 import { createAuthTestEnv } from './test-env.js';
 
 describe('SignupService', () => {
   async function expectTooManyRequests(action: Promise<unknown>) {
     await expect(action).rejects.toBeInstanceOf(HttpException);
     await expect(action).rejects.toMatchObject({ status: 429 });
+  }
+
+  function signSignupToken(
+    jwtService: { sign: (p: object, o: object) => string },
+    userId: string,
+  ) {
+    return jwtService.sign(
+      { userId, type: 'signup' },
+      { secret: 'access-secret' },
+    );
   }
 
   it('resends signup OTP when signup start is retried for a pending user', async () => {
@@ -374,5 +386,218 @@ describe('SignupService', () => {
 
     // The transaction is entered but no organization is created.
     expect(organizationCreate).not.toHaveBeenCalled();
+  });
+
+  describe('verify', () => {
+    const userId = '11111111-1111-4111-8111-111111111111';
+
+    it('marks user verified, consumes the code, and returns a fresh signup token', async () => {
+      const { signupService, mocks, prismaService, jwtService } =
+        createAuthTestEnv();
+      mocks.userFindFirst.mockResolvedValue({
+        id: userId,
+        email: 'sara@example.com',
+        registration_status: 'PENDING',
+      });
+      const code_hash = await bcrypt.hash('123456', 10);
+      mocks.verificationFindFirst.mockResolvedValue({
+        id: 'verification-row',
+        code_hash,
+        expires_at: new Date(Date.now() + 60_000),
+        attempts: 0,
+        max_attempts: 5,
+      });
+      const verificationUpdate = jest.fn().mockResolvedValue({});
+      prismaService.db.verificationCode.update = verificationUpdate;
+      mocks.userUpdate.mockResolvedValue({});
+
+      const result = await signupService.verify({
+        signup_token: signSignupToken(jwtService, userId),
+        code: '123456',
+      });
+
+      expect(result.signup_token).toEqual(expect.any(String));
+      expect(mocks.userUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: userId },
+          data: expect.objectContaining({
+            verified_at: expect.any(Date),
+            registration_status: 'ACTIVE',
+            is_active: true,
+          }),
+        }),
+      );
+      // consumed_at, not increment — the matching path closes the row.
+      expect(verificationUpdate).toHaveBeenCalledWith({
+        where: { id: 'verification-row' },
+        data: { consumed_at: expect.any(Date) },
+      });
+    });
+
+    it('rejects with CODE_EXPIRED when the verification row is past expires_at', async () => {
+      const { signupService, mocks, jwtService } = createAuthTestEnv();
+      mocks.userFindFirst.mockResolvedValue({
+        id: userId,
+        email: 'sara@example.com',
+        registration_status: 'PENDING',
+      });
+      const code_hash = await bcrypt.hash('123456', 10);
+      mocks.verificationFindFirst.mockResolvedValue({
+        id: 'verification-row',
+        code_hash,
+        expires_at: new Date(Date.now() - 1000),
+        attempts: 0,
+        max_attempts: 5,
+      });
+
+      await expect(
+        signupService.verify({
+          signup_token: signSignupToken(jwtService, userId),
+          code: '123456',
+        }),
+      ).rejects.toMatchObject({
+        response: { code: ERROR_CODES.CODE_EXPIRED },
+      });
+      expect(mocks.userUpdate).not.toHaveBeenCalled();
+    });
+
+    it('rejects with INVALID_CODE on wrong code and does not mark the user verified', async () => {
+      const { signupService, mocks, prismaService, jwtService } =
+        createAuthTestEnv();
+      mocks.userFindFirst.mockResolvedValue({
+        id: userId,
+        email: 'sara@example.com',
+        registration_status: 'PENDING',
+      });
+      const code_hash = await bcrypt.hash('123456', 10);
+      mocks.verificationFindFirst.mockResolvedValue({
+        id: 'verification-row',
+        code_hash,
+        expires_at: new Date(Date.now() + 60_000),
+        attempts: 0,
+        max_attempts: 5,
+      });
+      const verificationUpdate = jest.fn().mockResolvedValue({});
+      prismaService.db.verificationCode.update = verificationUpdate;
+
+      await expect(
+        signupService.verify({
+          signup_token: signSignupToken(jwtService, userId),
+          code: '999999',
+        }),
+      ).rejects.toMatchObject({
+        response: { code: ERROR_CODES.INVALID_CODE },
+      });
+      expect(mocks.userUpdate).not.toHaveBeenCalled();
+      // Only the atomic attempts increment ran — no consumed_at, no user.update.
+      expect(verificationUpdate).toHaveBeenCalledWith({
+        where: { id: 'verification-row' },
+        data: { attempts: { increment: 1 } },
+      });
+    });
+
+    it('rejects with ConflictException when the user is already verified', async () => {
+      const { signupService, mocks, jwtService } = createAuthTestEnv();
+      mocks.userFindFirst.mockResolvedValue({
+        id: userId,
+        email: 'sara@example.com',
+        registration_status: 'ACTIVE',
+      });
+
+      await expect(
+        signupService.verify({
+          signup_token: signSignupToken(jwtService, userId),
+          code: '123456',
+        }),
+      ).rejects.toThrow(ConflictException);
+      expect(mocks.verificationFindFirst).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('complete edge cases', () => {
+    const userId = 'user-id';
+    const baseDto = {
+      organization_name: 'Clinic',
+      specialties: [] as string[],
+      branch_name: 'Main',
+      branch_address: '1 St',
+      branch_city: 'Cairo',
+      branch_governorate: 'Cairo',
+    };
+    const baseOverrides = () => ({
+      user: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: userId,
+          registration_status: 'ACTIVE',
+          verified_at: new Date(),
+          onboarding_completed: false,
+          is_active: true,
+        }),
+        updateMany: jest.fn(),
+      },
+      role: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id: 'role-id', name: 'OWNER' }),
+      },
+      subscriptionPlan: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'plan-id' }),
+      },
+    });
+
+    it('rejects with BadRequestException listing the unknown job_function_codes', async () => {
+      const { signupService, jwtService } = createAuthTestEnv({
+        ...baseOverrides(),
+        jobFunction: {
+          findMany: jest.fn().mockResolvedValue([{ code: 'OBGYN' }]),
+        },
+        specialty: { findMany: jest.fn().mockResolvedValue([]) },
+      });
+
+      await expect(
+        signupService.complete({
+          ...baseDto,
+          signup_token: signSignupToken(jwtService, userId),
+          job_function_codes: ['OBGYN', 'BOGUS_FN'],
+        }),
+      ).rejects.toMatchObject({
+        message: expect.stringContaining('BOGUS_FN'),
+      });
+    });
+
+    it('resolves specialties by code OR case-insensitive name in a single query', async () => {
+      const specialtyFindMany = jest.fn().mockResolvedValue([]);
+      const { signupService, jwtService } = createAuthTestEnv({
+        ...baseOverrides(),
+        jobFunction: { findMany: jest.fn().mockResolvedValue([]) },
+        specialty: { findMany: specialtyFindMany },
+      });
+
+      // We expect the resolution query to run; the transaction itself will
+      // throw because $transaction is the default jest.fn() mock — that is
+      // fine, this test only asserts the specialty lookup shape.
+      await signupService
+        .complete({
+          ...baseDto,
+          signup_token: signSignupToken(jwtService, userId),
+          specialties: ['OBGYN', 'general medicine'],
+        })
+        .catch(() => undefined);
+
+      expect(specialtyFindMany).toHaveBeenCalledWith({
+        where: {
+          OR: [
+            { code: { in: ['OBGYN', 'general medicine'] } },
+            {
+              name: {
+                in: ['OBGYN', 'general medicine'],
+                mode: 'insensitive',
+              },
+            },
+          ],
+          is_deleted: false,
+        },
+      });
+    });
   });
 });
