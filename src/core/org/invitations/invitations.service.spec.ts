@@ -20,6 +20,7 @@ describe('InvitationsService.acceptInvitation', () => {
   let db: any;
   let txClient: jest.Mock;
   let eventBus: { publish: jest.Mock };
+  let subscriptions: { assertStaffLimit: jest.Mock };
   const RAW_TOKEN = 'good-token';
   let tokenHash: string;
 
@@ -93,6 +94,7 @@ describe('InvitationsService.acceptInvitation', () => {
     };
     txClient = db.$transaction;
     eventBus = { publish: jest.fn() };
+    subscriptions = { assertStaffLimit: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -103,7 +105,7 @@ describe('InvitationsService.acceptInvitation', () => {
           useValue: {},
         },
         { provide: EmailService, useValue: {} },
-        { provide: SubscriptionsService, useValue: {} },
+        { provide: SubscriptionsService, useValue: subscriptions },
         { provide: EventBus, useValue: eventBus },
         {
           provide: ConfigService,
@@ -125,11 +127,6 @@ describe('InvitationsService.acceptInvitation', () => {
     db.invitation.findFirst.mockResolvedValueOnce(invitation);
     db.user.findFirst.mockResolvedValue(null); // out-of-tx pre-check + in-tx lookup
     db.invitation.updateMany.mockResolvedValueOnce({ count: 1 });
-    db.subscription.findFirst.mockResolvedValueOnce({
-      subscription_plan: { max_staff: 50 },
-    });
-    db.profile.count.mockResolvedValueOnce(3);
-    db.invitation.count.mockResolvedValueOnce(2);
     db.user.create.mockResolvedValueOnce({ id: 'user-2' });
     db.profile.upsert.mockResolvedValueOnce({ id: 'profile-2' });
 
@@ -189,11 +186,9 @@ describe('InvitationsService.acceptInvitation', () => {
     db.invitation.findFirst.mockResolvedValueOnce(buildInvitation());
     db.user.findFirst.mockResolvedValue(null);
     db.invitation.updateMany.mockResolvedValueOnce({ count: 1 });
-    db.subscription.findFirst.mockResolvedValueOnce({
-      subscription_plan: { max_staff: 5 },
-    });
-    db.profile.count.mockResolvedValueOnce(4);
-    db.invitation.count.mockResolvedValueOnce(1);
+    subscriptions.assertStaffLimit.mockRejectedValueOnce(
+      new ForbiddenException('Staff limit reached'),
+    );
 
     await expect(
       service.acceptInvitation({
