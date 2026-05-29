@@ -484,114 +484,9 @@ export class VisitsService {
         patient.marital_status = resolvedMaritalStatus;
       }
 
-      // SPOUSE link. Three paths:
-      //   1. `spouse_guardian_id` provided           → existing Guardian picked from autocomplete.
-      //   2. `spouse_national_id` provided           → upsert Guardian by national_id.
-      //   3. `spouse_full_name` only (no national_id) → update existing linked spouse or create new Guardian.
-      let spouseGuardianId: string | null = null;
-      if (resolvedMaritalStatus === 'MARRIED' && dto.spouse_guardian_id) {
-        const picked = await tx.guardian.findFirst({
-          where: { id: dto.spouse_guardian_id, is_deleted: false },
-        });
-        if (!picked) {
-          throw new NotFoundException(
-            `Guardian ${dto.spouse_guardian_id} not found`,
-          );
-        }
-        spouseGuardianId = picked.id;
-      } else if (
-        resolvedMaritalStatus === 'MARRIED' &&
-        dto.spouse_full_name &&
-        dto.spouse_national_id
-      ) {
-        const spouse = await tx.guardian.upsert({
-          where: { national_id: dto.spouse_national_id },
-          create: {
-            national_id: dto.spouse_national_id,
-            full_name: dto.spouse_full_name,
-            phone_number: dto.spouse_phone_number ?? null,
-          },
-          update: {
-            full_name: dto.spouse_full_name,
-            ...(dto.spouse_phone_number !== undefined && {
-              phone_number: dto.spouse_phone_number,
-            }),
-          },
-        });
-        spouseGuardianId = spouse.id;
-      } else if (resolvedMaritalStatus === 'MARRIED' && dto.spouse_full_name) {
-        const existingSpouseLink = await tx.patientGuardian.findFirst({
-          where: {
-            patient_id: patient.id,
-            relation_to_patient: 'SPOUSE',
-            is_primary: true,
-            is_deleted: false,
-          },
-        });
-        if (existingSpouseLink) {
-          await tx.guardian.update({
-            where: { id: existingSpouseLink.guardian_id },
-            data: {
-              full_name: dto.spouse_full_name,
-              ...(dto.spouse_phone_number !== undefined && {
-                phone_number: dto.spouse_phone_number,
-              }),
-            },
-          });
-          spouseGuardianId = existingSpouseLink.guardian_id;
-        } else {
-          const spouse = await tx.guardian.create({
-            data: {
-              full_name: dto.spouse_full_name,
-              phone_number: dto.spouse_phone_number ?? null,
-            },
-          });
-          spouseGuardianId = spouse.id;
-        }
-      }
-
-      if (spouseGuardianId) {
-        // Demote any existing primary SPOUSE link to a different guardian
-        // before promoting this one. A partial unique index enforces this at
-        // the DB level (see `patient_guardians_one_primary_per_relation_unique`
-        // in F4 migration) — this updateMany keeps the in-tx state consistent.
-        await tx.patientGuardian.updateMany({
-          where: {
-            patient_id: patient.id,
-            relation_to_patient: 'SPOUSE',
-            is_primary: true,
-            is_deleted: false,
-            NOT: { guardian_id: spouseGuardianId },
-          },
-          data: { is_primary: false },
-        });
-
-        const existingLink = await tx.patientGuardian.findUnique({
-          where: {
-            patient_id_guardian_id: {
-              patient_id: patient.id,
-              guardian_id: spouseGuardianId,
-            },
-          },
-        });
-        if (!existingLink) {
-          await tx.patientGuardian.create({
-            data: {
-              patient_id: patient.id,
-              guardian_id: spouseGuardianId,
-              relation_to_patient: 'SPOUSE',
-              is_primary: true,
-            },
-          });
-        } else if (
-          existingLink.relation_to_patient !== 'SPOUSE' ||
-          !existingLink.is_primary
-        ) {
-          await tx.patientGuardian.update({
-            where: { id: existingLink.id },
-            data: { relation_to_patient: 'SPOUSE', is_primary: true },
-          });
-        }
+      // SPOUSE link (three input paths) — shared with the update flow.
+      if (resolvedMaritalStatus === 'MARRIED') {
+        await this.applySpouseLink(tx, patient.id, dto);
       }
 
       let journey = await tx.patientJourney.findFirst({
@@ -1296,10 +1191,22 @@ export class VisitsService {
     return updatedVisit;
   }
 
+  /**
+   * Resolves the spouse Guardian for a patient (three input paths: picked id,
+   * upsert-by-national-id, or name-only) and makes it the single primary SPOUSE
+   * link — demoting any other primary SPOUSE link first to respect the partial
+   * unique index. Shared by bookVisit and update; only called when the patient
+   * is MARRIED.
+   */
   private async applySpouseLink(
     tx: Prisma.TransactionClient,
     patientId: string,
-    dto: UpdateVisitDto,
+    dto: {
+      spouse_guardian_id?: string;
+      spouse_national_id?: string;
+      spouse_full_name?: string;
+      spouse_phone_number?: string;
+    },
   ) {
     let spouseGuardianId: string | null = null;
     if (dto.spouse_guardian_id) {
@@ -1360,6 +1267,20 @@ export class VisitsService {
     }
 
     if (spouseGuardianId) {
+      // Demote any existing primary SPOUSE link to a different guardian before
+      // promoting this one — the partial unique index
+      // `patient_guardians_one_primary_per_relation_unique` allows only one.
+      await tx.patientGuardian.updateMany({
+        where: {
+          patient_id: patientId,
+          relation_to_patient: 'SPOUSE',
+          is_primary: true,
+          is_deleted: false,
+          NOT: { guardian_id: spouseGuardianId },
+        },
+        data: { is_primary: false },
+      });
+
       const existingLink = await tx.patientGuardian.findUnique({
         where: {
           patient_id_guardian_id: {
