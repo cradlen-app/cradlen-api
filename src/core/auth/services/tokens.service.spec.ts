@@ -38,17 +38,15 @@ function buildService(txOverrides: Partial<TxMocks> = {}) {
   } as unknown as PrismaService;
 
   const jwtService = new JwtService();
-  const configService = {
-    get: jest.fn().mockReturnValue({
-      jwt: {
-        accessSecret: 'access-secret',
-        refreshSecret: 'refresh-secret',
-        resetSecret: 'reset-secret',
-        accessExpiration: '15m',
-        refreshExpiration: '7d',
-        registrationExpiration: '30m',
-      },
-    }),
+  const authConfig = {
+    jwt: {
+      accessSecret: 'access-secret',
+      refreshSecret: 'refresh-secret',
+      resetSecret: 'reset-secret',
+      accessExpiration: '15m',
+      refreshExpiration: '7d',
+      registrationExpiration: '30m',
+    },
   };
 
   const publish = jest.fn();
@@ -57,7 +55,7 @@ function buildService(txOverrides: Partial<TxMocks> = {}) {
   const service = new TokensService(
     prismaService,
     jwtService,
-    configService as never,
+    authConfig as never,
     eventBus,
   );
 

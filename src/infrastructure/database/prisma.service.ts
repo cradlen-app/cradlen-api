@@ -1,18 +1,23 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import {
+  Inject,
+  Injectable,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
+import { ConfigType } from '@nestjs/config';
 import { PrismaNeon } from '@prisma/adapter-neon';
 import { PrismaClient } from '@prisma/client';
-import type { DatabaseConfig } from '@config/database.config.js';
+import databaseConfig from '@config/database.config.js';
 
 @Injectable()
 export class PrismaService implements OnModuleInit, OnModuleDestroy {
   private readonly prisma: PrismaClient;
 
-  constructor(configService: ConfigService) {
-    const dbConfig = configService.get<DatabaseConfig>('database');
-    if (!dbConfig) throw new Error('Database configuration not loaded');
-    const { url } = dbConfig;
-    const adapter = new PrismaNeon({ connectionString: url });
+  constructor(
+    @Inject(databaseConfig.KEY)
+    dbConfig: ConfigType<typeof databaseConfig>,
+  ) {
+    const adapter = new PrismaNeon({ connectionString: dbConfig.url });
     this.prisma = new PrismaClient({ adapter });
   }
 
