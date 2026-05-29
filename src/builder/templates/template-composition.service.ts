@@ -40,9 +40,15 @@ export class TemplateCompositionService {
       return { ...override, order: shellSec.order };
     });
 
+    // Append after the highest shell order, not after the section *count* —
+    // shell orders are not guaranteed contiguous, and appending at `count`
+    // would interleave before sparsely-ordered shell sections once the
+    // renderer sorts by `order`.
+    const appendBase =
+      shell.sections.reduce((max, s) => Math.max(max, s.order), -1) + 1;
     const appended = extension.sections
       .filter((s) => !usedExtCodes.has(s.code))
-      .map((s, i) => ({ ...s, order: shell.sections.length + i }));
+      .map((s, i) => ({ ...s, order: appendBase + i }));
 
     return {
       ...shell,

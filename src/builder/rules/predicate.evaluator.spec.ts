@@ -52,6 +52,31 @@ describe('predicate.evaluator', () => {
     });
   });
 
+  describe('contains', () => {
+    it('matches when the array value includes the item', () => {
+      expect(
+        evaluate(
+          { contains: { categories: 'PAIN' } },
+          { categories: ['PAIN', 'BLEEDING'] },
+        ),
+      ).toBe(true);
+    });
+    it('fails when the array value does not include the item', () => {
+      expect(
+        evaluate(
+          { contains: { categories: 'PAIN' } },
+          { categories: ['BLEEDING'] },
+        ),
+      ).toBe(false);
+    });
+    it('fails (does not throw) when the value is not an array', () => {
+      expect(
+        evaluate({ contains: { categories: 'PAIN' } }, { categories: 'PAIN' }),
+      ).toBe(false);
+      expect(evaluate({ contains: { categories: 'PAIN' } }, {})).toBe(false);
+    });
+  });
+
   describe('and / or', () => {
     it('and: all sub-conditions must hold', () => {
       expect(

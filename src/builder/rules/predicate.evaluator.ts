@@ -9,6 +9,8 @@ import { PredicateCondition } from './predicates.js';
  *   - `eq`:  every key must equal exactly.
  *   - `in`:  every key's value must appear in the list for that key.
  *   - `ne`:  every key must NOT equal.
+ *   - `contains`: every key's value must be an array that includes the given
+ *                 item (non-array values are false, never an error).
  *   - `and`: all sub-conditions true.
  *   - `or`:  at least one sub-condition true.
  *

@@ -3,6 +3,7 @@ import { TemplatesService } from '../templates/templates.service.js';
 import { TemplateRendererService } from '../renderer/template-renderer.service.js';
 import { TemplateExecutionContext } from '../runtime/template-execution.context.js';
 import { Predicate } from '../rules/predicates.js';
+import { evaluate } from '../rules/predicate.evaluator.js';
 import { FieldDescriptor } from '../sections/section.descriptor.js';
 
 export interface ValidationError {
@@ -80,47 +81,61 @@ export class TemplateValidator {
     sparse: boolean,
     out: ValidationError[],
   ): void {
-    const predicates: Predicate[] = field.config?.logic?.predicates ?? [];
     const value = ctx.values[field.code];
     const isPresent = !(value === undefined || value === null || value === '');
 
-    if (!sparse && field.required && !isPresent) {
-      out.push({
-        fieldCode: field.code,
-        code: 'REQUIRED',
-        message: `${field.code} is required`,
-      });
-      return;
-    }
-
-    for (const pred of predicates) {
-      if (
-        !sparse &&
-        pred.effect === 'required' &&
-        ctx.hasEffect(field, 'required') &&
-        !isPresent
-      ) {
+    // REQUIRED — column-level flag OR a triggered `required` predicate. Skipped
+    // under sparse (PATCH) semantics. At most one REQUIRED error per field.
+    if (!sparse && !isPresent) {
+      if (field.required) {
         out.push({
           fieldCode: field.code,
           code: 'REQUIRED',
-          message: pred.message ?? `${field.code} is required by template rule`,
+          message: `${field.code} is required`,
         });
         return;
       }
-      if (
-        pred.effect === 'forbidden' &&
-        ctx.hasEffect(field, 'forbidden') &&
-        isPresent
-      ) {
+      const triggered = this.firstTriggered(ctx, field, 'required');
+      if (triggered) {
+        out.push({
+          fieldCode: field.code,
+          code: 'REQUIRED',
+          message:
+            triggered.message ?? `${field.code} is required by template rule`,
+        });
+        return;
+      }
+    }
+
+    // FORBIDDEN — fires regardless of sparse, so a PATCH can't slip in
+    // cross-discriminator data. At most one FORBIDDEN error per field.
+    if (isPresent) {
+      const triggered = this.firstTriggered(ctx, field, 'forbidden');
+      if (triggered) {
         out.push({
           fieldCode: field.code,
           code: 'FORBIDDEN',
           message:
-            pred.message ??
+            triggered.message ??
             `${field.code} must not be present under current selection`,
         });
-        return;
       }
     }
+  }
+
+  /**
+   * Returns the first predicate of the given effect whose condition evaluates
+   * true against the current payload, or `undefined` if none trigger. Used so
+   * the surfaced message belongs to the rule that actually fired.
+   */
+  private firstTriggered(
+    ctx: TemplateExecutionContext,
+    field: FieldDescriptor,
+    effect: Predicate['effect'],
+  ): Predicate | undefined {
+    const predicates: Predicate[] = field.config?.logic?.predicates ?? [];
+    return predicates.find(
+      (p) => p.effect === effect && evaluate(p.when, ctx.values),
+    );
   }
 }
