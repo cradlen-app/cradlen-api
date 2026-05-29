@@ -28,6 +28,12 @@ import { AuthorizationService } from '@core/auth/authorization/authorization.ser
 import { buildRevision } from '@common/utils/revisions.helper.js';
 import { CLINICAL_EVENTS } from '@core/clinical/events/clinical-events.js';
 import { VitalsTrendPointDto } from './dto/vitals-trend-point.dto.js';
+import {
+  visitHistoryInclude,
+  vitalsTrendSelect,
+  toVisitHistorySummary,
+  toVitalsTrendPoint,
+} from './visits.mapper.js';
 
 const TERMINAL_STATES: VisitStatus[] = ['COMPLETED', 'CANCELLED', 'NO_SHOW'];
 
@@ -744,45 +750,12 @@ export class VisitsService {
         orderBy: { completed_at: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
-        include: {
-          encounter: {
-            select: { provisional_diagnosis: true },
-          },
-          prescription: {
-            include: {
-              items: {
-                where: { is_deleted: false },
-                orderBy: { order: 'asc' },
-                include: {
-                  medication: { select: { name: true } },
-                },
-              },
-            },
-          },
-          investigations: {
-            where: { is_deleted: false },
-            include: {
-              lab_test: { select: { name: true } },
-            },
-          },
-        },
+        include: visitHistoryInclude,
       }),
       this.prismaService.db.visit.count({ where }),
     ]);
 
-    const summaries = visits.map((v) => ({
-      id: v.id,
-      appointment_type: v.appointment_type,
-      completed_at: v.completed_at!,
-      diagnosis: v.encounter?.provisional_diagnosis ?? null,
-      medications: (v.prescription?.items ?? []).map((item) => ({
-        name: item.medication?.name ?? item.custom_drug_name ?? '',
-        dose: item.dose,
-      })),
-      investigations: (v.investigations ?? [])
-        .map((inv) => inv.lab_test?.name ?? inv.custom_test_name ?? '')
-        .filter(Boolean),
-    }));
+    const summaries = visits.map(toVisitHistorySummary);
 
     return paginated(summaries, { page, limit, total });
   }
@@ -802,30 +775,10 @@ export class VisitsService {
         },
       },
       orderBy: { completed_at: 'asc' },
-      select: {
-        id: true,
-        completed_at: true,
-        vitals: {
-          where: { is_deleted: false },
-          select: {
-            systolic_bp: true,
-            diastolic_bp: true,
-            weight_kg: true,
-            bmi: true,
-          },
-        },
-      },
+      select: vitalsTrendSelect,
     });
 
-    return visits.map((v) => ({
-      visit_id: v.id,
-      completed_at: v.completed_at!,
-      systolic_bp: v.vitals?.systolic_bp ?? null,
-      diastolic_bp: v.vitals?.diastolic_bp ?? null,
-      weight_kg:
-        v.vitals?.weight_kg != null ? Number(v.vitals.weight_kg) : null,
-      bmi: v.vitals?.bmi != null ? Number(v.vitals.bmi) : null,
-    }));
+    return visits.map(toVitalsTrendPoint);
   }
 
   async findAllForBranch(
