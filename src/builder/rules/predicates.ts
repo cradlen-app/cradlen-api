@@ -6,6 +6,9 @@
  * read the same predicates and run them through the same evaluator
  * (`predicate.evaluator.ts`), so there is no place for a `visible_when` +
  * `required_when` + `@ValidateIf` drift trap.
+ *
+ * Operators: `eq` / `ne` / `in` / `contains` / `and` / `or`. See
+ * `predicate.evaluator.ts` for exact per-operator semantics.
  */
 
 export type PredicateCondition =

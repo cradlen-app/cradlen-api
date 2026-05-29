@@ -132,6 +132,22 @@ describe('TemplateCompositionService', () => {
     expect(b.fields.map((f) => f.code)).toEqual(['x']);
   });
 
+  it('appends after the highest shell order even when shell orders are sparse', () => {
+    const shell = mkTemplate('s', 'book_visit', [
+      mkSection('search', 10),
+      mkSection('visit_metadata', 20),
+    ]);
+    const ext = mkTemplate('e', 'obgyn_ext', [mkSection('obgyn_intake', 0)]);
+    const out = svc.compose(shell, ext);
+    // Sorting by order (as the renderer does) must keep the appended section last.
+    const ordered = [...out.sections]
+      .sort((a, b) => a.order - b.order)
+      .map((sct) => sct.code);
+    expect(ordered).toEqual(['search', 'visit_metadata', 'obgyn_intake']);
+    const appended = out.sections.find((sct) => sct.code === 'obgyn_intake')!;
+    expect(appended.order).toBe(21);
+  });
+
   it('reports composition metadata so the renderer can echo it', () => {
     const shell = mkTemplate('s', 'book_visit', [mkSection('a', 0)]);
     const ext = mkTemplate('e', 'obgyn_ext', [mkSection('a', 0)]);

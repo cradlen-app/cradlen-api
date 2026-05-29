@@ -8,6 +8,9 @@ import {
   FormTemplateSummaryDto,
 } from './dto/form-template.dto.js';
 
+// Intentionally NOT @Public(): although form templates are catalogue-like
+// (and the project convention leans @Public() for global lookups), template
+// reads stay gated behind a Bearer token by design.
 @ApiTags('form-templates')
 @Controller({ path: 'form-templates', version: '1' })
 export class TemplatesController {
