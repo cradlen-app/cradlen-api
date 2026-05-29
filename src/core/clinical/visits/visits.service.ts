@@ -16,10 +16,12 @@ import { SetFollowUpDto } from './dto/set-follow-up.dto';
 import { VisitIntakeFieldsDto } from './dto/visit-intake.dto';
 import { EventBus } from '@infrastructure/messaging/event-bus';
 import { paginated } from '@common/utils/pagination.utils';
+import { dayBounds, todayBounds } from '@common/utils/date-range.utils.js';
+import { assertStatusTransition } from '@common/utils/state-transition.js';
+import { assertBookVisitPayloadValid } from '../shared/book-visit-validation.js';
 import {
   TemplateValidator,
   ValidatePayloadOptions,
-  ValidationError,
 } from '@builder/validator/template.validator.js';
 import { TemplatesService } from '@builder/templates/templates.service.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
@@ -67,16 +69,13 @@ export class VisitsService {
     branchId: string,
     scheduledAt: Date,
   ): Promise<number> {
-    const dayStart = new Date(scheduledAt);
-    dayStart.setHours(0, 0, 0, 0);
-    const dayEnd = new Date(scheduledAt);
-    dayEnd.setHours(23, 59, 59, 999);
+    const { start, end } = dayBounds(scheduledAt);
 
     const last = await tx.visit.findFirst({
       where: {
         assigned_doctor_id: assignedDoctorId,
         branch_id: branchId,
-        scheduled_at: { gte: dayStart, lte: dayEnd },
+        scheduled_at: { gte: start, lte: end },
       },
       orderBy: { queue_number: 'desc' },
       select: { queue_number: true },
@@ -198,36 +197,18 @@ export class VisitsService {
    * are enforced too. A missing extension is not fatal — the server falls
    * back to shell-only validation rather than 404-ing on the booking.
    */
-  private async assertTemplateValid(
+  private assertTemplateValid(
     payload: Record<string, unknown>,
     options: ValidatePayloadOptions,
   ) {
-    let result;
-    try {
-      result = await this.templateValidator.validatePayload(
-        'book_visit',
-        payload,
-        options,
-      );
-    } catch (err) {
-      if (err instanceof NotFoundException && options.extensionKey) {
-        result = await this.templateValidator.validatePayload(
-          'book_visit',
-          payload,
-          { ...options, extensionKey: null },
-        );
-      } else {
-        throw err;
-      }
-    }
-    if (!result.ok) throw this.buildTemplateValidationError(result.errors);
-  }
-
-  private buildTemplateValidationError(
-    errors: ValidationError[],
-  ): BadRequestException {
-    const messages = errors.map((e) => `${e.fieldCode} ${e.message}`);
-    return new BadRequestException({ message: messages });
+    return assertBookVisitPayloadValid(
+      this.templateValidator,
+      payload,
+      options,
+      {
+        extensionFallback: true,
+      },
+    );
   }
 
   /**
@@ -871,7 +852,7 @@ export class VisitsService {
 
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
-    const { start, end } = this.todayBounds();
+    const { start, end } = todayBounds();
     const where = {
       branch_id: branchId,
       status,
@@ -918,14 +899,6 @@ export class VisitsService {
     ]);
 
     return paginated(visits, { page, limit, total });
-  }
-
-  private todayBounds() {
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    const end = new Date();
-    end.setHours(23, 59, 59, 999);
-    return { start, end };
   }
 
   private listInclude = {
@@ -975,7 +948,7 @@ export class VisitsService {
     await this.assertBranchAccess(branchId, user);
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
-    const { start, end } = this.todayBounds();
+    const { start, end } = todayBounds();
     const where: Prisma.VisitWhereInput = {
       branch_id: branchId,
       is_deleted: false,
@@ -1008,7 +981,7 @@ export class VisitsService {
     await this.assertBranchAccess(branchId, user);
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
-    const { start, end } = this.todayBounds();
+    const { start, end } = todayBounds();
     const where: Prisma.VisitWhereInput = {
       branch_id: branchId,
       is_deleted: false,
@@ -1035,7 +1008,7 @@ export class VisitsService {
   ) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
-    const { start, end } = this.todayBounds();
+    const { start, end } = todayBounds();
     const where: Prisma.VisitWhereInput = {
       assigned_doctor_id: user.profileId,
       is_deleted: false,
@@ -1061,7 +1034,7 @@ export class VisitsService {
   }
 
   async findMyCurrent(user: AuthContext) {
-    const { start, end } = this.todayBounds();
+    const { start, end } = todayBounds();
     const visit = await this.prismaService.db.visit.findFirst({
       where: {
         assigned_doctor_id: user.profileId,
@@ -1212,12 +1185,12 @@ export class VisitsService {
 
   async updateStatus(id: string, dto: UpdateVisitStatusDto, user: AuthContext) {
     const visit = await this.findOne(id, user);
-    const allowedNext = VALID_TRANSITIONS[visit.status];
-    if (!allowedNext.includes(dto.status)) {
-      throw new BadRequestException(
-        `Cannot transition from ${visit.status} to ${dto.status}`,
-      );
-    }
+    assertStatusTransition(
+      VALID_TRANSITIONS,
+      visit.status,
+      dto.status,
+      (current, next) => `Cannot transition from ${current} to ${next}`,
+    );
     if (dto.status === 'COMPLETED') {
       const encounter = await this.prismaService.db.visitEncounter.findUnique({
         where: { visit_id: id },

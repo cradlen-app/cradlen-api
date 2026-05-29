@@ -12,11 +12,11 @@ import { paginated } from '@common/utils/pagination.utils';
 import { BookMedicalRepVisitDto } from './dto/book-medical-rep-visit.dto';
 import { UpdateMedicalRepVisitDto } from './dto/update-medical-rep-visit.dto';
 import { UpdateMedicalRepVisitStatusDto } from './dto/update-medical-rep-visit-status.dto';
-import {
-  TemplateValidator,
-  ValidationError,
-} from '@builder/validator/template.validator.js';
+import { TemplateValidator } from '@builder/validator/template.validator.js';
 import { TemplatesService } from '@builder/templates/templates.service.js';
+import { dayBounds, todayBounds } from '@common/utils/date-range.utils.js';
+import { assertStatusTransition } from '@common/utils/state-transition.js';
+import { assertBookVisitPayloadValid } from '../shared/book-visit-validation.js';
 
 const IDENTITY_FIELDS = [
   'rep_full_name',
@@ -52,15 +52,6 @@ const MED_REP_STATUS_TIMESTAMPS: Partial<
   COMPLETED: 'completed_at',
 };
 
-function todayBounds(): { start: Date; end: Date } {
-  const now = new Date();
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(now);
-  end.setHours(23, 59, 59, 999);
-  return { start, end };
-}
-
 export type MedicalRepSummary = {
   id: string;
   full_name: string;
@@ -87,21 +78,13 @@ export class MedicalRepService {
     private readonly templatesService: TemplatesService,
   ) {}
 
-  private async assertTemplateValid(
+  private assertTemplateValid(
     payload: Record<string, unknown>,
     sparse: boolean,
   ) {
-    const result = await this.templateValidator.validatePayload(
-      'book_visit',
-      payload,
-      { sparse },
-    );
-    if (!result.ok) {
-      const messages = result.errors.map(
-        (e: ValidationError) => `${e.fieldCode} ${e.message}`,
-      );
-      throw new BadRequestException({ message: messages });
-    }
+    return assertBookVisitPayloadValid(this.templateValidator, payload, {
+      sparse,
+    });
   }
 
   async searchReps(
@@ -548,12 +531,13 @@ export class MedicalRepService {
     user: AuthContext,
   ) {
     const visit = await this.loadVisitForUser(id, user);
-    const allowedNext = MED_REP_TRANSITIONS[visit.status];
-    if (!allowedNext.includes(dto.status)) {
-      throw new BadRequestException(
-        `Cannot transition medical-rep visit from ${visit.status} to ${dto.status}`,
-      );
-    }
+    assertStatusTransition(
+      MED_REP_TRANSITIONS,
+      visit.status,
+      dto.status,
+      (current, next) =>
+        `Cannot transition medical-rep visit from ${current} to ${next}`,
+    );
     const timestampField = MED_REP_STATUS_TIMESTAMPS[dto.status];
     const now = new Date();
 
@@ -689,15 +673,12 @@ export class MedicalRepService {
     branchId: string,
     date: Date,
   ): Promise<number> {
-    const dayStart = new Date(date);
-    dayStart.setHours(0, 0, 0, 0);
-    const dayEnd = new Date(date);
-    dayEnd.setHours(23, 59, 59, 999);
+    const { start, end } = dayBounds(date);
     const last = await tx.medicalRepVisit.findFirst({
       where: {
         assigned_doctor_id: assignedDoctorId,
         branch_id: branchId,
-        checked_in_at: { gte: dayStart, lte: dayEnd },
+        checked_in_at: { gte: start, lte: end },
         is_deleted: false,
       },
       orderBy: { queue_number: 'desc' },
