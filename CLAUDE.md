@@ -62,7 +62,7 @@ src/
 ├── core/                     # Domain layer
 │   ├── auth/                 # auth (3-step signup, login, OTP, password reset) + authorization/ (role/branch checks)
 │   ├── org/                  # organizations, branches, profiles, staff, invitations, roles, job-functions, specialties, subscriptions
-│   ├── patient/patients/     # Patient records (cross-org via PatientJourney); PatientEnrollmentCleanupService purges stale draft enrollments hourly
+│   ├── patient/patients/     # Patient records (cross-org via PatientJourney); OverdueVisitSweepService marks past-due, never-checked-in visits NO_SHOW nightly
 │   ├── calendar/             # Per-profile calendar events; publishes CALENDAR_EVENTS (created/updated/deleted) — see calendar.events.ts
 │   ├── clinical/             # clinical/ (encounter/vitals/prescriptions/investigations), visits/ (+ encounter-mutation guard), care-paths/, journeys/, journey-templates/, patient-history/, lab-tests/, medications/, chief-complaints/, medical-rep/, events/ (domain-events catalog)
 │   ├── notifications/        # In-app notifications + listener that maps invitation events → notifications
@@ -184,7 +184,7 @@ The signup-complete payload accepts: `organization_name`, `specialties: string[]
 
 JWT tokens carry `{ userId, profileId, organizationId, type }`. Refresh tokens use JTI rotation (each refresh revokes the old token; bcrypt-hashed `token_hash` stored).
 
-**OTP:** 15-minute TTL, max 5 attempts. Resend cooldown 60s, max 5 resends/hour. `RegistrationCleanupService` purges PENDING users older than 24h hourly. `PatientEnrollmentCleanupService` (`src/core/patient/patients/`) runs a similar cron to purge stale draft patient enrollments.
+**OTP:** 15-minute TTL, max 5 attempts. Resend cooldown 60s, max 5 resends/hour. `RegistrationCleanupService` purges PENDING users older than 24h hourly. `OverdueVisitSweepService` (`src/core/patient/patients/`) runs a nightly cron (02:00) that marks past-due, never-checked-in `SCHEDULED` visits as `NO_SHOW`.
 
 **Password reset:** `POST /auth/forgot-password` → `POST /auth/verify-reset-code` → `POST /auth/reset-password`.
 

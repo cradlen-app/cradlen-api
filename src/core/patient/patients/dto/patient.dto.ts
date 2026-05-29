@@ -26,8 +26,16 @@ export class EpisodeSummaryDto {
   order!: number;
 }
 
+/**
+ * Shape returned by `GET /patients`. The journey detail is discriminated by the
+ * caller: clinical viewers (OWNER or any clinical job function) receive the full
+ * `active_journey`; everyone else receives the trimmed `active_episodes` list.
+ */
 export class PatientLookupDto extends PatientDto {
-  active_episodes!: EpisodeSummaryDto[];
+  /** Trimmed episode list — present for non-clinical viewers. */
+  active_episodes?: EpisodeSummaryDto[];
+  /** Full active journey (with episodes) — present for clinical viewers. */
+  active_journey?: Record<string, unknown> | null;
   /**
    * Code of the patient's most recently started ACTIVE journey's care path,
    * or undefined when the patient has no active care path. Used by the
