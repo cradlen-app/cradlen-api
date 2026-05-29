@@ -1,12 +1,38 @@
 import {
   BadRequestException,
+  ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { MedicalRepVisitStatus, Prisma, VisitStatus } from '@prisma/client';
+import { ERROR_CODES } from '@common/constant/error-codes.js';
+import { paginated } from '@common/utils/pagination.utils.js';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
+import { EventBus } from '@infrastructure/messaging/event-bus.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
+import { OrganizationsService } from '../organizations/organizations.service.js';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service.js';
-import type { CreateBranchDto, UpdateBranchDto } from './dto/branch.dto.js';
+import { BRANCH_EVENTS, type BranchChangedPayload } from './branches.events.js';
+import { toBranchResponse, toBranchResponseList } from './branches.mapper.js';
+import type {
+  CreateBranchDto,
+  ListBranchesQueryDto,
+  UpdateBranchDto,
+} from './dto/branch.dto.js';
+
+/** Non-terminal visit statuses that block branch deletion. */
+const ACTIVE_VISIT_STATUSES: VisitStatus[] = [
+  VisitStatus.SCHEDULED,
+  VisitStatus.CHECKED_IN,
+  VisitStatus.IN_PROGRESS,
+];
+
+const ACTIVE_REP_VISIT_STATUSES: MedicalRepVisitStatus[] = [
+  MedicalRepVisitStatus.SCHEDULED,
+  MedicalRepVisitStatus.CHECKED_IN,
+  MedicalRepVisitStatus.IN_PROGRESS,
+];
 
 @Injectable()
 export class BranchesService {
@@ -14,17 +40,55 @@ export class BranchesService {
     private readonly prismaService: PrismaService,
     private readonly authorizationService: AuthorizationService,
     private readonly subscriptionsService: SubscriptionsService,
+    private readonly organizationsService: OrganizationsService,
+    private readonly eventBus: EventBus,
   ) {}
 
-  async listBranches(profileId: string, organizationId: string) {
-    await this.authorizationService.assertCanManageOrganization(
+  async listBranches(
+    profileId: string,
+    organizationId: string,
+    query: ListBranchesQueryDto,
+  ) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+
+    // Authority mirrors the per-branch routes: OWNER sees every branch;
+    // branch-scoped managers see only the branches they manage.
+    const isOwner = await this.authorizationService.isOwner(
       profileId,
       organizationId,
     );
-    return this.prismaService.db.branch.findMany({
-      where: { organization_id: organizationId, is_deleted: false },
-      orderBy: [{ is_main: 'desc' }, { created_at: 'asc' }],
-    });
+    const where: Prisma.BranchWhereInput = {
+      organization_id: organizationId,
+      is_deleted: false,
+    };
+    if (!isOwner) {
+      if (
+        !(await this.authorizationService.canManageStaff(
+          profileId,
+          organizationId,
+        ))
+      ) {
+        throw new ForbiddenException('Branch management access denied');
+      }
+      const branchIds = await this.authorizationService.getEffectiveBranchIds(
+        profileId,
+        organizationId,
+      );
+      where.id = { in: branchIds };
+    }
+
+    const [items, total] = await this.prismaService.db.$transaction([
+      this.prismaService.db.branch.findMany({
+        where,
+        orderBy: [{ is_main: 'desc' }, { created_at: 'asc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prismaService.db.branch.count({ where }),
+    ]);
+
+    return paginated(toBranchResponseList(items), { page, limit, total });
   }
 
   async createBranch(
@@ -36,17 +100,12 @@ export class BranchesService {
       profileId,
       organizationId,
     );
-    await this.subscriptionsService.assertBranchLimit(organizationId);
-    return this.prismaService.db.$transaction(async (tx) => {
+    const branch = await this.prismaService.db.$transaction(async (tx) => {
+      // Re-check the plan limit inside the transaction so concurrent
+      // creates can't both slip past a stale count.
+      await this.subscriptionsService.assertBranchLimit(organizationId, tx);
       if (dto.is_main) {
-        await tx.branch.updateMany({
-          where: {
-            organization_id: organizationId,
-            is_deleted: false,
-            is_main: true,
-          },
-          data: { is_main: false },
-        });
+        await this.demoteOtherMains(tx, organizationId);
       }
       return tx.branch.create({
         data: {
@@ -60,6 +119,24 @@ export class BranchesService {
         },
       });
     });
+
+    this.eventBus.publish<BranchChangedPayload>(BRANCH_EVENTS.created, {
+      id: branch.id,
+      organization_id: organizationId,
+      is_main: branch.is_main,
+    });
+    return toBranchResponse(branch);
+  }
+
+  async getBranch(profileId: string, organizationId: string, branchId: string) {
+    await this.authorizationService.assertCanManageBranch(
+      profileId,
+      organizationId,
+      branchId,
+    );
+    return toBranchResponse(
+      await this.getBranchOrThrow(organizationId, branchId),
+    );
   }
 
   async updateBranch(
@@ -73,61 +150,21 @@ export class BranchesService {
       organizationId,
       branchId,
     );
-    const branch = await this.prismaService.db.branch.findFirst({
-      where: {
-        id: branchId,
-        organization_id: organizationId,
-        is_deleted: false,
-      },
-    });
-    if (!branch) throw new NotFoundException('Branch not found');
+    const branch = await this.getBranchOrThrow(organizationId, branchId);
     if (branch.is_main && dto.is_main === false) {
       throw new BadRequestException('At least one branch must remain main');
     }
 
-    return this.prismaService.db.$transaction(async (tx) => {
+    const updated = await this.prismaService.db.$transaction(async (tx) => {
       if (dto.is_main) {
-        await tx.branch.updateMany({
-          where: {
-            organization_id: organizationId,
-            id: { not: branchId },
-            is_deleted: false,
-            is_main: true,
-          },
-          data: { is_main: false },
-        });
+        await this.demoteOtherMains(tx, organizationId, branchId);
       }
       return tx.branch.update({
         where: { id: branchId },
-        data: {
-          ...(dto.name !== undefined && { name: dto.name }),
-          ...(dto.address !== undefined && { address: dto.address }),
-          ...(dto.city !== undefined && { city: dto.city }),
-          ...(dto.governorate !== undefined && {
-            governorate: dto.governorate,
-          }),
-          ...(dto.country !== undefined && { country: dto.country }),
-          ...(dto.is_main !== undefined && { is_main: dto.is_main }),
-        },
+        data: this.buildUpdateData(dto),
       });
     });
-  }
-
-  async getBranch(profileId: string, organizationId: string, branchId: string) {
-    await this.authorizationService.assertCanManageBranch(
-      profileId,
-      organizationId,
-      branchId,
-    );
-    const branch = await this.prismaService.db.branch.findFirst({
-      where: {
-        id: branchId,
-        organization_id: organizationId,
-        is_deleted: false,
-      },
-    });
-    if (!branch) throw new NotFoundException('Branch not found');
-    return branch;
+    return toBranchResponse(updated);
   }
 
   async deleteBranch(
@@ -140,47 +177,49 @@ export class BranchesService {
       organizationId,
       branchId,
     );
-    const branch = await this.prismaService.db.branch.findFirst({
-      where: {
-        id: branchId,
-        organization_id: organizationId,
-        is_deleted: false,
-      },
-    });
-    if (!branch) throw new NotFoundException('Branch not found');
+    const branch = await this.getBranchOrThrow(organizationId, branchId);
 
     const remainingCount = await this.prismaService.db.branch.count({
       where: { organization_id: organizationId, is_deleted: false },
     });
 
-    const now = new Date();
-
+    // Last branch — tear down the whole organization via the canonical path
+    // so user-orphan cleanup + refresh-token revocation stay consistent.
     if (remainingCount === 1) {
-      // Last branch — cascade delete the entire organization
-      await this.prismaService.db.$transaction(async (tx) => {
-        await tx.branch.update({
-          where: { id: branchId },
-          data: { is_deleted: true, deleted_at: now },
-        });
-        await tx.profile.updateMany({
-          where: { organization_id: organizationId, is_deleted: false },
-          data: { is_deleted: true, deleted_at: now },
-        });
-        await tx.organization.update({
-          where: { id: organizationId },
-          data: { is_deleted: true, deleted_at: now },
-        });
+      await this.organizationsService.deleteOrganization(
+        profileId,
+        organizationId,
+      );
+      this.eventBus.publish<BranchChangedPayload>(BRANCH_EVENTS.deleted, {
+        id: branchId,
+        organization_id: organizationId,
+        is_main: branch.is_main,
+        organization_deleted: true,
       });
       return;
     }
 
-    if (branch.is_main) {
-      // Main branch with siblings — promote the oldest remaining branch
-      await this.prismaService.db.$transaction(async (tx) => {
-        await tx.branch.update({
-          where: { id: branchId },
-          data: { is_deleted: true, deleted_at: now },
-        });
+    // Refuse to orphan clinical records: a branch with open visits can't go.
+    await this.assertNoActiveVisits(branchId);
+
+    const now = new Date();
+    await this.prismaService.db.$transaction(async (tx) => {
+      await tx.branch.update({
+        where: { id: branchId },
+        data: { is_deleted: true, deleted_at: now },
+      });
+      // Detach dependent rows that the soft-delete won't cascade to.
+      await tx.profileBranch.deleteMany({
+        where: { branch_id: branchId, organization_id: organizationId },
+      });
+      await tx.workingSchedule.deleteMany({ where: { branch_id: branchId } });
+      await tx.calendarEvent.updateMany({
+        where: { branch_id: branchId },
+        data: { branch_id: null },
+      });
+
+      if (branch.is_main) {
+        // Promote the oldest remaining branch to keep exactly one main.
         const oldest = await tx.branch.findFirst({
           where: {
             organization_id: organizationId,
@@ -195,14 +234,80 @@ export class BranchesService {
             data: { is_main: true },
           });
         }
-      });
-      return;
-    }
-
-    // Regular branch — soft-delete only
-    await this.prismaService.db.branch.update({
-      where: { id: branchId },
-      data: { is_deleted: true, deleted_at: now },
+      }
     });
+
+    this.eventBus.publish<BranchChangedPayload>(BRANCH_EVENTS.deleted, {
+      id: branchId,
+      organization_id: organizationId,
+      is_main: branch.is_main,
+    });
+  }
+
+  private async getBranchOrThrow(organizationId: string, branchId: string) {
+    const branch = await this.prismaService.db.branch.findFirst({
+      where: {
+        id: branchId,
+        organization_id: organizationId,
+        is_deleted: false,
+      },
+    });
+    if (!branch) throw new NotFoundException('Branch not found');
+    return branch;
+  }
+
+  private async demoteOtherMains(
+    tx: Prisma.TransactionClient,
+    organizationId: string,
+    exceptId?: string,
+  ) {
+    await tx.branch.updateMany({
+      where: {
+        organization_id: organizationId,
+        is_deleted: false,
+        is_main: true,
+        ...(exceptId ? { id: { not: exceptId } } : {}),
+      },
+      data: { is_main: false },
+    });
+  }
+
+  private async assertNoActiveVisits(branchId: string) {
+    const [visits, repVisits] = await Promise.all([
+      this.prismaService.db.visit.count({
+        where: {
+          branch_id: branchId,
+          is_deleted: false,
+          status: { in: ACTIVE_VISIT_STATUSES },
+        },
+      }),
+      this.prismaService.db.medicalRepVisit.count({
+        where: {
+          branch_id: branchId,
+          is_deleted: false,
+          status: { in: ACTIVE_REP_VISIT_STATUSES },
+        },
+      }),
+    ]);
+    const active = visits + repVisits;
+    if (active > 0) {
+      throw new ConflictException({
+        code: ERROR_CODES.CONFLICT,
+        message: `Cannot delete a branch with ${active} open visit(s). Complete or cancel them first.`,
+        details: { resource: 'visits', active },
+      });
+    }
+  }
+
+  private buildUpdateData(dto: UpdateBranchDto): Prisma.BranchUpdateInput {
+    return {
+      ...(dto.name !== undefined && { name: dto.name }),
+      ...(dto.address !== undefined && { address: dto.address }),
+      ...(dto.city !== undefined && { city: dto.city }),
+      ...(dto.governorate !== undefined && { governorate: dto.governorate }),
+      ...(dto.country !== undefined && { country: dto.country }),
+      ...(dto.is_main !== undefined && { is_main: dto.is_main }),
+      ...(dto.status !== undefined && { status: dto.status }),
+    };
   }
 }
