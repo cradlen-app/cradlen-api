@@ -1,8 +1,10 @@
 import {
+  applyDecorators,
   createParamDecorator,
   ExecutionContext,
   PreconditionFailedException,
 } from '@nestjs/common';
+import { ApiHeader } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { ERROR_CODES } from '../constant/error-codes.js';
 
@@ -61,4 +63,22 @@ export function assertVersionMatches(
       },
     });
   }
+}
+
+/**
+ * Swagger counterpart of {@link IfMatchVersion} — documents the required
+ * `If-Match` optimistic-concurrency header on a PATCH/POST endpoint. Pass a
+ * custom `description` when the token maps to a non-default version field
+ * (e.g. `Visit.examination_version`); otherwise the generic wording applies.
+ */
+export function ApiIfMatchHeader(description?: string) {
+  return applyDecorators(
+    ApiHeader({
+      name: 'If-Match',
+      required: true,
+      description:
+        description ??
+        'Optimistic concurrency token. Echo the row\'s current `version` as `"version:N"`.',
+    }),
+  );
 }
