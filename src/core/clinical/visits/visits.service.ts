@@ -392,156 +392,33 @@ export class VisitsService {
       });
     }
 
-    // Resolve the CarePath (and its linked JourneyTemplate) for this booking.
-    // Always resolved via CarePath so journey.care_path_id is never null —
-    // enabling consistent querying and analytics across all care paths.
-    // When no care_path_code is sent, default to the specialty's GENERAL_GYN path.
-    const carePathCode = dto.care_path_code ?? 'OBGYN_GENERAL';
-    const carePathInclude = {
-      journey_template: {
-        include: {
-          episodes: {
-            where: { is_deleted: false },
-            orderBy: { order: 'asc' as const },
-          },
-        },
-      },
-    } as const;
-
-    const resolvedCarePath = await this.prismaService.db.carePath.findFirst({
-      where: {
-        code: carePathCode,
-        is_deleted: false,
-        specialty: { code: dto.specialty_code, is_deleted: false },
-        OR: [
-          { organization_id: null },
-          { organization_id: user.organizationId },
-        ],
-      },
-      include: carePathInclude,
-    });
-    if (!resolvedCarePath) {
-      throw new NotFoundException(
-        `Care path "${carePathCode}" not found for specialty "${dto.specialty_code}"`,
+    const { carePathId, template, firstEpisodeTemplate } =
+      await this.resolveCarePathTemplate(
+        dto.specialty_code,
+        dto.care_path_code ?? 'OBGYN_GENERAL',
+        user.organizationId,
       );
-    }
-    const carePathId: string = resolvedCarePath.id;
-    const template: Prisma.JourneyTemplateGetPayload<{
-      include: { episodes: true };
-    }> | null = resolvedCarePath.journey_template;
-    if (!template || !template.episodes.length) {
-      throw new NotFoundException(
-        'No journey template resolved for this booking',
-      );
-    }
-    const firstEpisodeTemplate = template.episodes[0];
 
     const result = await this.prismaService.db.$transaction(async (tx) => {
-      let patient;
-      let patientWasJustCreated = false;
-      if (dto.patient_id) {
-        patient = await tx.patient.findUnique({
-          where: { id: dto.patient_id, is_deleted: false },
-        });
-        if (!patient)
-          throw new NotFoundException(`Patient ${dto.patient_id} not found`);
-      } else {
-        const existing = await tx.patient.findUnique({
-          where: { national_id: dto.national_id! },
-        });
-        if (existing && !existing.is_deleted) {
-          throw new ConflictException(
-            'A patient with this national_id already exists',
-          );
-        }
-        patient = await tx.patient.create({
-          data: {
-            full_name: dto.full_name!,
-            national_id: dto.national_id!,
-            date_of_birth: new Date(dto.date_of_birth!),
-            phone_number: dto.phone_number!,
-            address: dto.address!,
-            ...(resolvedMaritalStatus
-              ? { marital_status: resolvedMaritalStatus }
-              : {}),
-          },
-        });
-        patientWasJustCreated = true;
-      }
-
-      // For looked-up patients, the caller may be re-affirming or changing
-      // marital state — sync if it differs. For just-created patients, the
-      // create already set marital_status, so skip.
-      if (
-        !patientWasJustCreated &&
-        resolvedMaritalStatus &&
-        patient.marital_status !== resolvedMaritalStatus
-      ) {
-        await tx.patient.update({
-          where: { id: patient.id },
-          data: { marital_status: resolvedMaritalStatus },
-        });
-        patient.marital_status = resolvedMaritalStatus;
-      }
+      const patient = await this.resolveOrCreatePatient(
+        tx,
+        dto,
+        resolvedMaritalStatus,
+      );
 
       // SPOUSE link (three input paths) — shared with the update flow.
       if (resolvedMaritalStatus === 'MARRIED') {
         await this.applySpouseLink(tx, patient.id, dto);
       }
 
-      let journey = await tx.patientJourney.findFirst({
-        where: {
-          patient_id: patient.id,
-          organization_id: user.organizationId,
-          journey_template_id: template.id,
-          care_path_id: carePathId,
-          status: 'ACTIVE',
-          is_deleted: false,
-        },
+      const { episode, journey } = await this.resolveJourneyAndEpisode(tx, {
+        patientId: patient.id,
+        organizationId: user.organizationId,
+        template,
+        carePathId,
+        firstEpisodeTemplate,
+        createdById: user.profileId,
       });
-
-      let episode;
-      if (journey) {
-        episode = await tx.patientEpisode.findFirst({
-          where: {
-            journey_id: journey.id,
-            episode_template_id: firstEpisodeTemplate.id,
-            is_deleted: false,
-          },
-        });
-        if (!episode)
-          throw new NotFoundException('General Consultation episode not found');
-      } else {
-        journey = await tx.patientJourney.create({
-          data: {
-            patient_id: patient.id,
-            organization_id: user.organizationId,
-            journey_template_id: template.id,
-            care_path_id: carePathId,
-            created_by_id: user.profileId,
-            status: 'ACTIVE',
-          },
-        });
-        await tx.patientEpisode.createMany({
-          data: template.episodes.map((ep, index) => ({
-            journey_id: journey!.id,
-            episode_template_id: ep.id,
-            name: ep.name,
-            order: ep.order,
-            status: index === 0 ? ('ACTIVE' as const) : ('PENDING' as const),
-            started_at: index === 0 ? new Date() : null,
-          })),
-        });
-        episode = await tx.patientEpisode.findFirst({
-          where: {
-            journey_id: journey.id,
-            episode_template_id: firstEpisodeTemplate.id,
-            is_deleted: false,
-          },
-        });
-        if (!episode)
-          throw new NotFoundException('General Consultation episode not found');
-      }
 
       const scheduledAt = new Date(dto.scheduled_at);
       const queueNumber = await this.getNextQueueNumberForSchedule(
@@ -596,6 +473,180 @@ export class VisitsService {
       payload: result,
     });
     return result;
+  }
+
+  /**
+   * Resolves the CarePath (and its linked JourneyTemplate) for a booking.
+   * Always resolved via CarePath so journey.care_path_id is never null —
+   * enabling consistent querying and analytics across all care paths.
+   */
+  private async resolveCarePathTemplate(
+    specialtyCode: string,
+    carePathCode: string,
+    organizationId: string,
+  ) {
+    const resolvedCarePath = await this.prismaService.db.carePath.findFirst({
+      where: {
+        code: carePathCode,
+        is_deleted: false,
+        specialty: { code: specialtyCode, is_deleted: false },
+        OR: [{ organization_id: null }, { organization_id: organizationId }],
+      },
+      include: {
+        journey_template: {
+          include: {
+            episodes: {
+              where: { is_deleted: false },
+              orderBy: { order: 'asc' },
+            },
+          },
+        },
+      },
+    });
+    if (!resolvedCarePath) {
+      throw new NotFoundException(
+        `Care path "${carePathCode}" not found for specialty "${specialtyCode}"`,
+      );
+    }
+    const template = resolvedCarePath.journey_template;
+    if (!template || !template.episodes.length) {
+      throw new NotFoundException(
+        'No journey template resolved for this booking',
+      );
+    }
+    return {
+      carePathId: resolvedCarePath.id,
+      template,
+      firstEpisodeTemplate: template.episodes[0],
+    };
+  }
+
+  /**
+   * Loads the patient (by id) or creates a new one (by national_id), then syncs
+   * marital_status for looked-up patients when it changed.
+   */
+  private async resolveOrCreatePatient(
+    tx: Prisma.TransactionClient,
+    dto: BookVisitDto,
+    resolvedMaritalStatus: MaritalStatus | undefined,
+  ) {
+    let patient;
+    let patientWasJustCreated = false;
+    if (dto.patient_id) {
+      patient = await tx.patient.findUnique({
+        where: { id: dto.patient_id, is_deleted: false },
+      });
+      if (!patient)
+        throw new NotFoundException(`Patient ${dto.patient_id} not found`);
+    } else {
+      const existing = await tx.patient.findUnique({
+        where: { national_id: dto.national_id! },
+      });
+      if (existing && !existing.is_deleted) {
+        throw new ConflictException(
+          'A patient with this national_id already exists',
+        );
+      }
+      patient = await tx.patient.create({
+        data: {
+          full_name: dto.full_name!,
+          national_id: dto.national_id!,
+          date_of_birth: new Date(dto.date_of_birth!),
+          phone_number: dto.phone_number!,
+          address: dto.address!,
+          ...(resolvedMaritalStatus
+            ? { marital_status: resolvedMaritalStatus }
+            : {}),
+        },
+      });
+      patientWasJustCreated = true;
+    }
+
+    if (
+      !patientWasJustCreated &&
+      resolvedMaritalStatus &&
+      patient.marital_status !== resolvedMaritalStatus
+    ) {
+      await tx.patient.update({
+        where: { id: patient.id },
+        data: { marital_status: resolvedMaritalStatus },
+      });
+      patient.marital_status = resolvedMaritalStatus;
+    }
+    return patient;
+  }
+
+  /**
+   * Finds the active journey for (patient, template, care path) or creates the
+   * journey + its episodes, then returns the journey and its first episode.
+   */
+  private async resolveJourneyAndEpisode(
+    tx: Prisma.TransactionClient,
+    params: {
+      patientId: string;
+      organizationId: string;
+      template: Prisma.JourneyTemplateGetPayload<{
+        include: { episodes: true };
+      }>;
+      carePathId: string;
+      firstEpisodeTemplate: { id: string };
+      createdById: string;
+    },
+  ) {
+    const {
+      patientId,
+      organizationId,
+      template,
+      carePathId,
+      firstEpisodeTemplate,
+      createdById,
+    } = params;
+
+    let journey = await tx.patientJourney.findFirst({
+      where: {
+        patient_id: patientId,
+        organization_id: organizationId,
+        journey_template_id: template.id,
+        care_path_id: carePathId,
+        status: 'ACTIVE',
+        is_deleted: false,
+      },
+    });
+
+    if (!journey) {
+      journey = await tx.patientJourney.create({
+        data: {
+          patient_id: patientId,
+          organization_id: organizationId,
+          journey_template_id: template.id,
+          care_path_id: carePathId,
+          created_by_id: createdById,
+          status: 'ACTIVE',
+        },
+      });
+      await tx.patientEpisode.createMany({
+        data: template.episodes.map((ep, index) => ({
+          journey_id: journey!.id,
+          episode_template_id: ep.id,
+          name: ep.name,
+          order: ep.order,
+          status: index === 0 ? ('ACTIVE' as const) : ('PENDING' as const),
+          started_at: index === 0 ? new Date() : null,
+        })),
+      });
+    }
+
+    const episode = await tx.patientEpisode.findFirst({
+      where: {
+        journey_id: journey.id,
+        episode_template_id: firstEpisodeTemplate.id,
+        is_deleted: false,
+      },
+    });
+    if (!episode) {
+      throw new NotFoundException('General Consultation episode not found');
+    }
+    return { journey, episode };
   }
 
   async findAllForEpisode(
