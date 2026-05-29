@@ -1,12 +1,12 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { HttpException, HttpStatus, Inject, Injectable } from '@nestjs/common';
+import { ConfigType } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import { randomInt } from 'crypto';
 import type { Prisma, VerificationPurpose } from '@prisma/client';
 import { ERROR_CODES } from '@common/constant/error-codes.js';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { EmailService } from '@infrastructure/email/email.service.js';
-import type { AuthConfig } from '@config/auth.config.js';
+import authConfig, { type AuthConfig } from '@config/auth.config.js';
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -37,11 +37,10 @@ export class VerificationCodesService {
 
   constructor(
     private readonly prismaService: PrismaService,
-    private readonly configService: ConfigService,
+    @Inject(authConfig.KEY)
+    config: ConfigType<typeof authConfig>,
     private readonly mailService: EmailService,
   ) {
-    const config = this.configService.get<AuthConfig>('auth');
-    if (!config) throw new Error('Auth configuration not loaded');
     this.authConfig = config;
   }
 

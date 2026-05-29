@@ -9,16 +9,11 @@ function buildStrategy() {
     getProfileContext,
   } as unknown as AuthorizationService;
 
-  const configService = {
-    get: jest.fn().mockReturnValue({
-      jwt: { accessSecret: 'access-secret' },
-    }),
+  const authConfig = {
+    jwt: { accessSecret: 'access-secret' },
   };
 
-  const strategy = new JwtStrategy(
-    configService as never,
-    authorizationService,
-  );
+  const strategy = new JwtStrategy(authConfig as never, authorizationService);
 
   return { strategy, getProfileContext };
 }
