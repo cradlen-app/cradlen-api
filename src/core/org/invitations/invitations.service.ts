@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -10,7 +9,6 @@ import { ConfigService } from '@nestjs/config';
 import { EventBus } from '@infrastructure/messaging/event-bus.js';
 import * as bcrypt from 'bcryptjs';
 import { InvitationStatus, Prisma } from '@prisma/client';
-import { ERROR_CODES } from '@common/constant/error-codes.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import type { AppConfig } from '@config/app.config.js';
 import type { AuthConfig } from '@config/auth.config.js';
@@ -417,7 +415,10 @@ export class InvitationsService {
     if (claimed.count !== 1)
       throw new ConflictException('Invitation already accepted');
 
-    await this.assertSubscriptionStaffLimit(tx, invitation.organization_id);
+    await this.subscriptionsService.assertStaffLimit(
+      invitation.organization_id,
+      tx,
+    );
 
     let user = await tx.user.findFirst({
       where: { email: invitation.email, is_deleted: false },
@@ -470,46 +471,6 @@ export class InvitationsService {
       profile_id: profile.id,
       organization_id: invitation.organization_id,
     };
-  }
-
-  private async assertSubscriptionStaffLimit(
-    tx: Prisma.TransactionClient,
-    organizationId: string,
-  ): Promise<void> {
-    const [sub, activeStaff, pendingInvitations] = await Promise.all([
-      tx.subscription.findFirst({
-        where: { organization_id: organizationId, is_deleted: false },
-        include: { subscription_plan: true },
-        orderBy: { created_at: 'desc' },
-      }),
-      tx.profile.count({
-        where: {
-          organization_id: organizationId,
-          is_deleted: false,
-          is_active: true,
-        },
-      }),
-      tx.invitation.count({
-        where: {
-          organization_id: organizationId,
-          is_deleted: false,
-          status: InvitationStatus.PENDING,
-        },
-      }),
-    ]);
-    if (!sub) throw new NotFoundException('No active subscription found');
-    const staffTotal = activeStaff + pendingInvitations;
-    if (staffTotal >= sub.subscription_plan.max_staff) {
-      throw new ForbiddenException({
-        code: ERROR_CODES.SUBSCRIPTION_LIMIT_REACHED,
-        message: `Staff limit reached (${sub.subscription_plan.max_staff}). Upgrade your plan.`,
-        details: {
-          resource: 'staff',
-          limit: sub.subscription_plan.max_staff,
-          current: staffTotal,
-        },
-      });
-    }
   }
 
   private emitAccepted(invitation: InvitationFull): void {
