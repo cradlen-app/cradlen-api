@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
+import { coerceStringRecord } from '@common/utils/json.utils';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { ObgynPatientAccessService } from '../patient-access.service';
 import { ObgynHistorySummaryDto } from './dto/obgyn-history-summary.dto';
@@ -66,11 +67,7 @@ export class HistorySummaryService {
       };
     }
 
-    const raw = history.section_timestamps;
-    const sectionTimestamps: Record<string, string> | null =
-      raw !== null && typeof raw === 'object' && !Array.isArray(raw)
-        ? (raw as Record<string, string>)
-        : null;
+    const sectionTimestamps = coerceStringRecord(history.section_timestamps);
 
     return {
       history_exists: true,

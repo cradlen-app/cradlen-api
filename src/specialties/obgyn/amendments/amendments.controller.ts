@@ -1,7 +1,11 @@
 import { Body, Controller, Param, ParseUUIDPipe, Post } from '@nestjs/common';
-import { ApiHeader, ApiTags } from '@nestjs/swagger';
+import { ApiTags } from '@nestjs/swagger';
 import { ApiStandardResponse } from '@common/swagger';
-import { CurrentUser, IfMatchVersion } from '@common/decorators';
+import {
+  ApiIfMatchHeader,
+  CurrentUser,
+  IfMatchVersion,
+} from '@common/decorators';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { AmendmentsService } from './amendments.service';
 import { AmendmentResultDto, CreateAmendmentDto } from './dto/amendment.dto';
@@ -22,17 +26,14 @@ export class AmendmentsController {
    *
    * Behavior:
    * - Applies `changes` to the named `target` (+ `section` for fan-out tables).
-   * - Bumps the row's `version` and records the amendment metadata in the
-   *   response. (PR4 will additionally persist a snapshot of the prior row
-   *   to a `*_revisions` shadow table.)
+   * - Persists a snapshot of the prior row to the target's `*_revisions`
+   *   shadow table, bumps the row's `version`, and records the amendment
+   *   metadata in the response (all in one transaction).
    */
   @Post()
-  @ApiHeader({
-    name: 'If-Match',
-    required: true,
-    description:
-      'Optimistic concurrency token. Echo the target row\'s current `version` as `"version:N"`.',
-  })
+  @ApiIfMatchHeader(
+    'Optimistic concurrency token. Echo the target row\'s current `version` as `"version:N"`.',
+  )
   @ApiStandardResponse(AmendmentResultDto)
   create(
     @Param('visitId', ParseUUIDPipe) visitId: string,

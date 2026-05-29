@@ -6,9 +6,13 @@ import {
   ParseUUIDPipe,
   Patch,
 } from '@nestjs/common';
-import { ApiHeader, ApiTags } from '@nestjs/swagger';
+import { ApiTags } from '@nestjs/swagger';
 import { ApiStandardResponse } from '@common/swagger';
-import { CurrentUser, IfMatchVersion } from '@common/decorators';
+import {
+  ApiIfMatchHeader,
+  CurrentUser,
+  IfMatchVersion,
+} from '@common/decorators';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { ObgynHistoryService } from './obgyn-history.service';
 import {
@@ -43,12 +47,7 @@ export class ObgynHistoryController {
    *   actually changed.
    */
   @Patch()
-  @ApiHeader({
-    name: 'If-Match',
-    required: true,
-    description:
-      'Optimistic concurrency token. Echo the row\'s current `version` as `"version:N"`.',
-  })
+  @ApiIfMatchHeader()
   @ApiStandardResponse(PatientObgynHistoryDto)
   patch(
     @Param('id', ParseUUIDPipe) id: string,
