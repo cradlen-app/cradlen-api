@@ -34,13 +34,19 @@ export class CarePathsController {
 
   @Get(':id')
   @ApiStandardResponse(CarePathDto)
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.findOne(id);
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.service.findOne(id, user.organizationId);
   }
 
   @Get(':id/episodes')
   @ApiStandardResponse(CarePathEpisodeDto)
-  findEpisodes(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.findEpisodes(id);
+  findEpisodes(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.service.findEpisodes(id, user.organizationId);
   }
 }

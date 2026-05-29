@@ -556,23 +556,29 @@ export class MedicalRepService {
     }
     const timestampField = MED_REP_STATUS_TIMESTAMPS[dto.status];
     const now = new Date();
-    const queueNumber =
-      dto.status === 'CHECKED_IN'
-        ? await this.getNextRepQueueNumber(
-            visit.assigned_doctor_id,
-            visit.branch_id,
-            now,
-          )
-        : undefined;
 
-    const updated = await this.prismaService.db.medicalRepVisit.update({
-      where: { id },
-      data: {
-        status: dto.status,
-        ...(timestampField ? { [timestampField]: now } : {}),
-        ...(queueNumber !== undefined ? { queue_number: queueNumber } : {}),
-      },
-      include: MED_REP_VISIT_INCLUDE,
+    // Compute the queue number inside the same transaction that writes it, so
+    // two concurrent check-ins can't read the same max and collide.
+    const updated = await this.prismaService.db.$transaction(async (tx) => {
+      const queueNumber =
+        dto.status === 'CHECKED_IN'
+          ? await this.getNextRepQueueNumber(
+              tx,
+              visit.assigned_doctor_id,
+              visit.branch_id,
+              now,
+            )
+          : undefined;
+
+      return tx.medicalRepVisit.update({
+        where: { id },
+        data: {
+          status: dto.status,
+          ...(timestampField ? { [timestampField]: now } : {}),
+          ...(queueNumber !== undefined ? { queue_number: queueNumber } : {}),
+        },
+        include: MED_REP_VISIT_INCLUDE,
+      });
     });
     this.eventBus.publish('medical_rep_visit.status_updated', {
       organizationId: user.organizationId,
@@ -678,6 +684,7 @@ export class MedicalRepService {
   }
 
   private async getNextRepQueueNumber(
+    tx: Prisma.TransactionClient,
     assignedDoctorId: string,
     branchId: string,
     date: Date,
@@ -686,7 +693,7 @@ export class MedicalRepService {
     dayStart.setHours(0, 0, 0, 0);
     const dayEnd = new Date(date);
     dayEnd.setHours(23, 59, 59, 999);
-    const last = await this.prismaService.db.medicalRepVisit.findFirst({
+    const last = await tx.medicalRepVisit.findFirst({
       where: {
         assigned_doctor_id: assignedDoctorId,
         branch_id: branchId,
