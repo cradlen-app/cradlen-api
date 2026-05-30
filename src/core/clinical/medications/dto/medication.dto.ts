@@ -1,38 +1,36 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
 export class MedicationDto {
-  id!: string;
-  organization_id!: string | null;
-  code!: string;
-  name!: string;
-  generic_name!: string | null;
-  form!: string | null;
-  strength!: string | null;
-  category!: string | null;
-  company!: string | null;
-  notes!: string | null;
-  default_dose_amount!: number | null;
-  default_dose_unit!: string | null;
-  default_dose_frequency!: string | null;
-  default_dose_route!: string | null;
-  added_by_id!: string | null;
-  is_deleted!: boolean;
-  created_at!: Date;
-  updated_at!: Date;
+  @ApiProperty() id!: string;
+  @ApiPropertyOptional({ nullable: true }) organization_id!: string | null;
+  @ApiProperty() code!: string;
+  @ApiProperty() name!: string;
+  @ApiPropertyOptional({ nullable: true }) generic_name!: string | null;
+  @ApiPropertyOptional({ nullable: true }) form!: string | null;
+  @ApiPropertyOptional({ nullable: true }) strength!: string | null;
+  @ApiPropertyOptional({ nullable: true }) category!: string | null;
+  @ApiPropertyOptional({ nullable: true }) company!: string | null;
+  @ApiPropertyOptional({ nullable: true }) notes!: string | null;
+  @ApiPropertyOptional({ nullable: true }) default_dose_amount!: number | null;
+  @ApiPropertyOptional({ nullable: true }) default_dose_unit!: string | null;
+  @ApiPropertyOptional({ nullable: true }) default_dose_frequency!:
+    | string
+    | null;
+  @ApiPropertyOptional({ nullable: true }) default_dose_route!: string | null;
+  @ApiPropertyOptional({ nullable: true }) added_by_id!: string | null;
+  @ApiProperty() is_deleted!: boolean;
+  @ApiProperty({ type: String, format: 'date-time' }) created_at!: Date;
+  @ApiProperty({ type: String, format: 'date-time' }) updated_at!: Date;
 }
 
 export class MedicationPrescriberDto {
-  profile_id!: string;
-  full_name!: string;
-  count!: number;
-}
-
-export class MedicalRepLinkDto {
-  id!: string;
-  full_name!: string;
-  company_name!: string;
+  @ApiProperty() profile_id!: string;
+  @ApiProperty() full_name!: string;
+  @ApiProperty() count!: number;
 }
 
 export class MedicationWithStatsDto extends MedicationDto {
-  total_prescriptions!: number;
+  @ApiProperty() total_prescriptions!: number;
+  @ApiProperty({ type: [MedicationPrescriberDto] })
   top_prescribers!: MedicationPrescriberDto[];
-  medical_reps!: MedicalRepLinkDto[];
 }

@@ -19,6 +19,7 @@ export async function persistSchedules(
 
   const existing = await tx.workingSchedule.findMany({
     where: { profile_id: profileId, branch_id: { in: branchIds } },
+    select: { id: true, branch_id: true },
   });
 
   const existingBranchIds = new Set(existing.map((ws) => ws.branch_id));

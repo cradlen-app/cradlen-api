@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 
 @Injectable()
@@ -13,31 +13,33 @@ export class SpecialtiesService {
     });
   }
 
-  findAll() {
+  findAll(organizationId: string) {
     return this.prismaService.db.specialty.findMany({
-      where: { is_deleted: false },
-      include: {
+      where: {
+        is_deleted: false,
+        org_links: { some: { organization_id: organizationId } },
+      },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        description: true,
         templates: {
           where: { is_deleted: false },
-          include: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            description: true,
             episodes: {
               where: { is_deleted: false },
               orderBy: { order: 'asc' },
+              select: { id: true, name: true, order: true },
             },
           },
         },
       },
-    });
-  }
-
-  async findJourneyTemplates(id: string) {
-    const specialty = await this.prismaService.db.specialty.findFirst({
-      where: { id, is_deleted: false },
-    });
-    if (!specialty) throw new NotFoundException(`Specialty ${id} not found`);
-    return this.prismaService.db.journeyTemplate.findMany({
-      where: { specialty_id: id, is_deleted: false },
-      include: { episodes: { orderBy: { order: 'asc' } } },
     });
   }
 }

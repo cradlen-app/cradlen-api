@@ -23,6 +23,7 @@ import { ProfilesService } from './profiles.service.js';
 export class ProfilesController {
   constructor(private readonly profilesService: ProfilesService) {}
 
+  // Public: the signup wizard renders these enums before the user has a token.
   @Public()
   @Get('lookups')
   @ApiOperation({
@@ -41,7 +42,11 @@ export class ProfilesController {
   }
 
   @Patch(':profileId')
-  @ApiOperation({ summary: 'Update profile information' })
+  @ApiOperation({
+    summary: 'Update profile information',
+    description:
+      'Updates the caller-owned profile. first_name, last_name, and phone_number live on the underlying User and therefore apply to every organization this user belongs to. Privileged fields (roles, job functions, specialties, executive_title, engagement_type) are managed via /organizations/:orgId/staff and invitations, not here.',
+  })
   @ApiStandardResponse(ProfileDetailResponseDto)
   updateProfile(
     @CurrentUser() user: AuthContext,

@@ -94,6 +94,8 @@ Table users {
   profiles profiles [not null]
   refreshTokens refresh_tokens [not null]
   verificationCodes verification_codes [not null]
+  passwordResetTokens password_reset_tokens [not null]
+  authAuditLogs auth_audit_log [not null]
   sentInvitations invitations [not null]
   notifications notifications [not null]
 }
@@ -261,6 +263,28 @@ Table refresh_tokens {
   expires_at DateTime [not null]
   is_revoked Boolean [not null, default: false]
   revoked_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  user users [not null]
+}
+
+Table auth_audit_log {
+  id String [pk]
+  event_name String [not null]
+  user_id String
+  email String
+  payload Json [not null]
+  at DateTime [not null]
+  created_at DateTime [default: `now()`, not null]
+  user users
+}
+
+Table password_reset_tokens {
+  id String [pk]
+  jti String [unique, not null]
+  user_id String [not null]
+  target String [not null]
+  expires_at DateTime [not null]
+  consumed_at DateTime
   created_at DateTime [default: `now()`, not null]
   user users [not null]
 }
@@ -650,10 +674,6 @@ Table medications {
   deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
-
-  indexes {
-    (organization_id, code) [unique]
-  }
 }
 
 Table lab_tests {
@@ -2032,6 +2052,10 @@ Ref: subscriptions.organization_id > organizations.id [delete: Cascade]
 Ref: subscriptions.subscription_plan_id > subscription_plans.id
 
 Ref: refresh_tokens.user_id > users.id [delete: Cascade]
+
+Ref: auth_audit_log.user_id > users.id [delete: Set Null]
+
+Ref: password_reset_tokens.user_id > users.id [delete: Cascade]
 
 Ref: verification_codes.user_id > users.id [delete: Cascade]
 

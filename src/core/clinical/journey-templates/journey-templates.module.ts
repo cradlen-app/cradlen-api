@@ -5,5 +5,6 @@ import { JourneyTemplatesService } from './journey-templates.service';
 @Module({
   controllers: [JourneyTemplatesController],
   providers: [JourneyTemplatesService],
+  exports: [JourneyTemplatesService],
 })
 export class JourneyTemplatesModule {}
