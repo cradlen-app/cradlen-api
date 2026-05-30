@@ -28,11 +28,11 @@ export class CalendarEventResponseDto {
       type: 'object',
       properties: {
         profile_id: { type: 'string' },
-        full_name: { type: 'string' },
+        full_name: { type: 'string', nullable: true },
       },
     },
   })
-  assistants!: Array<{ profile_id: string; full_name: string }>;
+  assistants!: Array<{ profile_id: string; full_name: string | null }>;
 
   @ApiProperty() created_at!: Date;
   @ApiProperty() updated_at!: Date;

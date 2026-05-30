@@ -44,6 +44,8 @@ export class CalendarController {
   @ApiOperation({
     summary:
       'List calendar events visible to the caller (own + branch-visible org events)',
+    description:
+      'Returns the union of the caller’s own events (any visibility) and events from other profiles in the same organization that have visibility=ORGANIZATION and a branch the caller can access (or no branch). Other profiles’ PRIVATE events are never returned, even when profile_id filters narrow to that profile.',
   })
   @ApiPaginatedResponse(CalendarEventResponseDto)
   list(
@@ -51,6 +53,21 @@ export class CalendarController {
     @Query() query: ListCalendarEventsQueryDto,
   ) {
     return this.service.list(user, query);
+  }
+
+  @Get('profiles/:profileId')
+  @ApiOperation({
+    summary: "View another profile's calendar in this organization",
+    description:
+      "Returns the target profile's events that the caller is allowed to see. Visibility rules apply: the target's PRIVATE events are excluded; ORGANIZATION events are returned only when the branch is one the caller can access (or has no branch). The target profile must belong to the caller's organization.",
+  })
+  @ApiPaginatedResponse(CalendarEventResponseDto)
+  listByProfile(
+    @CurrentUser() user: AuthContext,
+    @Param('profileId', ParseUUIDPipe) profileId: string,
+    @Query() query: ListCalendarEventsQueryDto,
+  ) {
+    return this.service.list(user, { ...query, profile_id: profileId });
   }
 
   @Get(':id')
