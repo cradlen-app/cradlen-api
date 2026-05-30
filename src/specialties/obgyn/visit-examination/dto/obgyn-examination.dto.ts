@@ -73,7 +73,7 @@ export class MedicationItemRowDto {
  *
  *  - VisitEncounter      (chief complaint + provisional diagnosis)
  *  - VisitVitals         (vitals, BMI recomputed server-side)
- *  - VisitObgynEncounter (menstrual/abdominal/pelvic/breast JSON sections)
+ *  - VisitObgynEncounter (all 10 body-system findings JSON sections)
  *  - VisitInvestigation  (id-keyed row diff)
  *  - Prescription + PrescriptionItem (singleton + id-keyed row diff)
  *  - Visit               (follow_up_date + examination_version bump)
@@ -103,11 +103,17 @@ export class UpdateObgynExaminationDto {
   @Type(() => VitalsDto)
   vitals?: VitalsDto;
 
-  // VisitObgynEncounter JSON sections
+  // VisitObgynEncounter JSON sections (all 10 body-system findings)
+  @IsOptional() @IsObject() general_findings?: Record<string, unknown>;
+  @IsOptional() @IsObject() cardiovascular_findings?: Record<string, unknown>;
+  @IsOptional() @IsObject() respiratory_findings?: Record<string, unknown>;
   @IsOptional() @IsObject() menstrual_findings?: Record<string, unknown>;
   @IsOptional() @IsObject() abdominal_findings?: Record<string, unknown>;
   @IsOptional() @IsObject() pelvic_findings?: Record<string, unknown>;
   @IsOptional() @IsObject() breast_findings?: Record<string, unknown>;
+  @IsOptional() @IsObject() extremities_findings?: Record<string, unknown>;
+  @IsOptional() @IsObject() neurological_findings?: Record<string, unknown>;
+  @IsOptional() @IsObject() skin_findings?: Record<string, unknown>;
 
   // VisitInvestigation rows (id-keyed diff)
   @IsOptional()
@@ -137,13 +143,20 @@ export class VisitExaminationEnvelopeDto {
   clinical_reasoning!: string | null;
   case_path!: string | null;
   vitals!: unknown;
+  general_findings!: unknown;
+  cardiovascular_findings!: unknown;
+  respiratory_findings!: unknown;
   menstrual_findings!: unknown;
   abdominal_findings!: unknown;
   pelvic_findings!: unknown;
   breast_findings!: unknown;
+  extremities_findings!: unknown;
+  neurological_findings!: unknown;
+  skin_findings!: unknown;
   investigations!: unknown[];
   medications!: unknown[];
   follow_up_date!: string | null;
   examination_version!: number;
+  obgyn_encounter_version!: number;
   @Type(() => Date) updated_at!: Date;
 }

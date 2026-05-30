@@ -19,7 +19,7 @@ import type { SignupCompleteDto } from '../dto/signup-complete.dto.js';
 import type { SignupStartDto } from '../dto/signup-start.dto.js';
 import type { SignupVerifyDto } from '../dto/signup-verify.dto.js';
 import { EventBus } from '@infrastructure/messaging/event-bus.js';
-import { SpecialtiesService } from '@core/org/specialties/specialties.public.js';
+import { SpecialtyCatalogService } from '@core/org/specialty-catalog/specialty-catalog.public.js';
 import { TokensService } from './tokens.service.js';
 import { VerificationCodesService } from './verification-codes.service.js';
 import {
@@ -44,7 +44,7 @@ export class SignupService {
     private readonly tokensService: TokensService,
     private readonly verificationCodesService: VerificationCodesService,
     private readonly sessionsService: SessionsService,
-    private readonly specialtiesService: SpecialtiesService,
+    private readonly specialtiesService: SpecialtyCatalogService,
     private readonly eventBus: EventBus,
   ) {
     this.authConfig = config;

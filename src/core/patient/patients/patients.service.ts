@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
-import { PatientAccessService } from '@core/clinical/patient-history/patient-access.service.js';
+import { PatientAccessService } from '@core/patient/patient-access/patient-access.public.js';
 import { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import { CreatePatientDto } from './dto/create-patient.dto.js';
 import { UpdatePatientDto } from './dto/update-patient.dto.js';

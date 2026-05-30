@@ -2,7 +2,7 @@ import type { Prisma } from '@prisma/client';
 import {
   toSpecialtySummary,
   type SpecialtySummary,
-} from '../specialties/specialties.public.js';
+} from '../specialty-catalog/specialty-catalog.public.js';
 
 export const ORGANIZATION_WITH_SPECIALTIES_INCLUDE = {
   specialty_links: { include: { specialty: true } },
