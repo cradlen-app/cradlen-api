@@ -1,6 +1,7 @@
 export interface InvitationAcceptedEventInit {
   invitationId: string;
-  inviterId: string;
+  /** Profile of the inviter within the invitation's organization. */
+  recipientProfileId: string;
   inviteeName: string;
   organizationId: string;
   branchId: string | null;
@@ -8,14 +9,14 @@ export interface InvitationAcceptedEventInit {
 
 export class InvitationAcceptedEvent implements InvitationAcceptedEventInit {
   readonly invitationId: string;
-  readonly inviterId: string;
+  readonly recipientProfileId: string;
   readonly inviteeName: string;
   readonly organizationId: string;
   readonly branchId: string | null;
 
   constructor(init: InvitationAcceptedEventInit) {
     this.invitationId = init.invitationId;
-    this.inviterId = init.inviterId;
+    this.recipientProfileId = init.recipientProfileId;
     this.inviteeName = init.inviteeName;
     this.organizationId = init.organizationId;
     this.branchId = init.branchId;

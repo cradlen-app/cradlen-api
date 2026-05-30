@@ -34,7 +34,7 @@ export class NotificationsController {
     @Query() query: ListNotificationsQueryDto,
   ) {
     return this.notificationsService.list(
-      user.userId,
+      user.profileId,
       query.page,
       query.limit,
       query.category,
@@ -45,7 +45,7 @@ export class NotificationsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiVoidResponse()
   markAllRead(@CurrentUser() user: AuthContext) {
-    return this.notificationsService.markAllRead(user.userId);
+    return this.notificationsService.markAllRead(user.profileId);
   }
 
   @Patch(':id/read')
@@ -54,6 +54,6 @@ export class NotificationsController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthContext,
   ) {
-    return this.notificationsService.markRead(id, user.userId);
+    return this.notificationsService.markRead(id, user.profileId);
   }
 }
