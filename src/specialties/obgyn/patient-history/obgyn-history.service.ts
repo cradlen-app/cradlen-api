@@ -10,7 +10,7 @@ import {
 } from '@core/clinical/events/events.public';
 import { splitDiff } from '@common/utils/id-keyed-diff';
 import { coerceStringRecord } from '@common/utils/json.utils';
-import { ObgynPatientAccessService } from '../patient-access.service';
+import { PatientAccessService } from '@core/patient/patient-access/patient-access.public';
 import { buildRevision } from '../revisions.helper';
 import {
   AllergyRowDto,
@@ -45,7 +45,7 @@ const STILLBIRTH_VIABLE_WEEKS = 20;
 export class ObgynHistoryService {
   constructor(
     private readonly prismaService: PrismaService,
-    private readonly access: ObgynPatientAccessService,
+    private readonly access: PatientAccessService,
     private readonly eventBus: EventBus,
   ) {}
 

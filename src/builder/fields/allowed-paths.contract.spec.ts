@@ -22,8 +22,8 @@ import { ALLOWED_PATHS } from './allowed-paths';
 import { BookVisitDto } from '../../core/clinical/visits/dto/book-visit.dto';
 import { BookMedicalRepVisitDto } from '../../core/clinical/medical-rep/dto/book-medical-rep-visit.dto';
 import { VisitIntakeFieldsDto } from '../../core/clinical/visits/dto/visit-intake.dto';
-import { UpsertVitalsDto } from '../../core/clinical/clinical/dto/vitals.dto';
-import { ChiefComplaintMetaDto } from '../../core/clinical/clinical/dto/encounter.dto';
+import { UpsertVitalsDto } from '../../core/clinical/visits/dto/vitals.dto';
+import { ChiefComplaintMetaDto } from '../../core/clinical/visits/dto/chief-complaint-meta.dto';
 
 type ClassRef = new (...args: any[]) => unknown;
 
