@@ -52,7 +52,10 @@ describe('ProviderServicesService', () => {
   describe('authorizeService', () => {
     it('creates a provider service authorization', async () => {
       mockDb.providerService.findFirst.mockResolvedValue(null);
-      const created = { id: 'ps-1', service: { id: 'svc-1', name: 'Consultation' } };
+      const created = {
+        id: 'ps-1',
+        service: { id: 'svc-1', name: 'Consultation' },
+      };
       mockDb.providerService.create.mockResolvedValue(created);
 
       const result = await service.authorizeService(
@@ -62,7 +65,10 @@ describe('ProviderServicesService', () => {
         USER,
       );
 
-      expect(mockAuth.assertCanManageStaff).toHaveBeenCalledWith(USER.profileId, ORG);
+      expect(mockAuth.assertCanManageStaff).toHaveBeenCalledWith(
+        USER.profileId,
+        ORG,
+      );
       expect(result).toEqual(created);
     });
 
@@ -111,12 +117,17 @@ describe('ProviderServicesService', () => {
         USER,
       );
 
-      expect(mockAuth.assertCanManageStaff).toHaveBeenCalledWith(USER.profileId, ORG);
+      expect(mockAuth.assertCanManageStaff).toHaveBeenCalledWith(
+        USER.profileId,
+        ORG,
+      );
       expect(result).toEqual(created);
     });
 
     it('throws ConflictException when override already exists', async () => {
-      mockDb.providerPriceOverride.findFirst.mockResolvedValue({ id: 'existing' });
+      mockDb.providerPriceOverride.findFirst.mockResolvedValue({
+        id: 'existing',
+      });
 
       await expect(
         service.createPriceOverride(
@@ -131,11 +142,24 @@ describe('ProviderServicesService', () => {
 
   describe('updatePriceOverride', () => {
     it('updates the override', async () => {
-      const override = { id: 'ppo-1', organization_id: ORG, profile_id: PROFILE };
+      const override = {
+        id: 'ppo-1',
+        organization_id: ORG,
+        profile_id: PROFILE,
+      };
       mockDb.providerPriceOverride.findFirst.mockResolvedValue(override);
-      mockDb.providerPriceOverride.update.mockResolvedValue({ ...override, price: 250 });
+      mockDb.providerPriceOverride.update.mockResolvedValue({
+        ...override,
+        price: 250,
+      });
 
-      const result = await service.updatePriceOverride(ORG, PROFILE, 'ppo-1', { price: 250 }, USER);
+      const result = await service.updatePriceOverride(
+        ORG,
+        PROFILE,
+        'ppo-1',
+        { price: 250 },
+        USER,
+      );
 
       expect(result.price).toBe(250);
     });
@@ -144,7 +168,13 @@ describe('ProviderServicesService', () => {
       mockDb.providerPriceOverride.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.updatePriceOverride(ORG, PROFILE, 'missing', { price: 100 }, USER),
+        service.updatePriceOverride(
+          ORG,
+          PROFILE,
+          'missing',
+          { price: 100 },
+          USER,
+        ),
       ).rejects.toThrow(NotFoundException);
     });
   });

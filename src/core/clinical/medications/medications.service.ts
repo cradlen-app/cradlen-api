@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Medication, Prisma } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
@@ -13,10 +13,12 @@ import { paginated } from '@common/utils/pagination.utils';
 import { CreateMedicationDto } from './dto/create-medication.dto';
 import { UpdateMedicationDto } from './dto/update-medication.dto';
 import { ListMedicationsQueryDto } from './dto/list-medications-query.dto';
-import {
-  MedicationPrescriberDto,
-  MedicalRepLinkDto,
-} from './dto/medication.dto';
+import { MedicationPrescriberDto } from './dto/medication.dto';
+
+type MedicationStats = {
+  total_prescriptions: number;
+  top_prescribers: MedicationPrescriberDto[];
+};
 
 @Injectable()
 export class MedicationsService {
@@ -28,22 +30,6 @@ export class MedicationsService {
   async findAll(query: ListMedicationsQueryDto, user: AuthContext) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 50;
-
-    if (query.medical_rep_id) {
-      const rep = await this.prismaService.db.medicalRep.findFirst({
-        where: {
-          id: query.medical_rep_id,
-          organization_id: user.organizationId,
-          is_deleted: false,
-        },
-        select: { id: true },
-      });
-      if (!rep) {
-        throw new BadRequestException(
-          `Medical rep ${query.medical_rep_id} is not available to this organization`,
-        );
-      }
-    }
 
     const where: Prisma.MedicationWhereInput = {
       is_deleted: false,
@@ -81,17 +67,15 @@ export class MedicationsService {
             ]
           : []),
       ],
-      ...(query.medical_rep_id && {
-        medical_rep_links: {
-          some: { medical_rep_id: query.medical_rep_id },
-        },
-      }),
     };
 
     const [items, total] = await this.prismaService.db.$transaction([
       this.prismaService.db.medication.findMany({
         where,
-        orderBy: [{ organization_id: 'asc' }, { name: 'asc' }],
+        orderBy: [
+          { organization_id: { sort: 'asc', nulls: 'first' } },
+          { name: 'asc' },
+        ],
         skip: (page - 1) * limit,
         take: limit,
       }),
@@ -99,14 +83,15 @@ export class MedicationsService {
     ]);
     if (items.length === 0) return paginated([], { page, limit, total });
 
-    const medicationIds = items.map((m) => m.id);
-    const stats = await this.gatherStats(medicationIds, user.organizationId);
+    const stats = await this.gatherStats(
+      items.map((m) => m.id),
+      user.organizationId,
+    );
 
     const enriched = items.map((m) => ({
       ...m,
       total_prescriptions: stats.get(m.id)?.total_prescriptions ?? 0,
       top_prescribers: stats.get(m.id)?.top_prescribers ?? [],
-      medical_reps: stats.get(m.id)?.medical_reps ?? [],
     }));
 
     return paginated(enriched, { page, limit, total });
@@ -114,61 +99,40 @@ export class MedicationsService {
 
   async create(dto: CreateMedicationDto, user: AuthContext) {
     const existing = await this.prismaService.db.medication.findFirst({
-      where: { organization_id: user.organizationId, code: dto.code },
+      where: {
+        organization_id: user.organizationId,
+        code: dto.code,
+        is_deleted: false,
+      },
     });
     if (existing) {
       throw new ConflictException(
         `Medication with code "${dto.code}" already exists in this organization`,
       );
     }
-    if (dto.medical_rep_id) {
-      await this.assertRepExists(dto.medical_rep_id, user.organizationId);
-    }
 
-    return this.prismaService.db.$transaction(async (tx) => {
-      const medication = await tx.medication.create({
-        data: {
-          organization_id: user.organizationId,
-          code: dto.code,
-          name: dto.name,
-          generic_name: dto.generic_name ?? null,
-          form: dto.form ?? null,
-          strength: dto.strength ?? null,
-          category: dto.category ?? null,
-          company: dto.company ?? null,
-          notes: dto.notes ?? null,
-          default_dose_amount: dto.default_dose_amount ?? null,
-          default_dose_unit: dto.default_dose_unit ?? null,
-          default_dose_frequency: dto.default_dose_frequency ?? null,
-          default_dose_route: dto.default_dose_route ?? null,
-          added_by_id: user.profileId,
-        },
-      });
-
-      if (dto.medical_rep_id) {
-        await tx.medicalRepMedication.create({
-          data: {
-            medical_rep_id: dto.medical_rep_id,
-            medication_id: medication.id,
-          },
-        });
-      }
-
-      return medication;
+    return this.prismaService.db.medication.create({
+      data: {
+        organization_id: user.organizationId,
+        code: dto.code,
+        name: dto.name,
+        generic_name: dto.generic_name ?? null,
+        form: dto.form ?? null,
+        strength: dto.strength ?? null,
+        category: dto.category ?? null,
+        company: dto.company ?? null,
+        notes: dto.notes ?? null,
+        default_dose_amount: dto.default_dose_amount ?? null,
+        default_dose_unit: dto.default_dose_unit ?? null,
+        default_dose_frequency: dto.default_dose_frequency ?? null,
+        default_dose_route: dto.default_dose_route ?? null,
+        added_by_id: user.profileId,
+      },
     });
   }
 
   async update(id: string, dto: UpdateMedicationDto, user: AuthContext) {
-    const med = await this.prismaService.db.medication.findUnique({
-      where: { id, is_deleted: false },
-    });
-    if (!med) throw new NotFoundException(`Medication ${id} not found`);
-    if (med.organization_id === null) {
-      throw new BadRequestException('Global medications cannot be modified');
-    }
-    if (med.organization_id !== user.organizationId) {
-      throw new NotFoundException(`Medication ${id} not found`);
-    }
+    const med = await this.assertOrgScoped(id, user);
     const isOwner = await this.authorizationService.isOwner(
       user.profileId,
       user.organizationId,
@@ -178,62 +142,17 @@ export class MedicationsService {
         'Only the OWNER or the original creator can edit this medication',
       );
     }
-    if ('medical_rep_id' in dto && dto.medical_rep_id) {
-      await this.assertRepExists(dto.medical_rep_id, user.organizationId);
-    }
-
-    return this.prismaService.db.$transaction(async (tx) => {
-      if ('medical_rep_id' in dto) {
-        await tx.medicalRepMedication.deleteMany({
-          where: { medication_id: id },
-        });
-        if (dto.medical_rep_id) {
-          await tx.medicalRepMedication.create({
-            data: { medical_rep_id: dto.medical_rep_id, medication_id: id },
-          });
-        }
-      }
-
-      return tx.medication.update({
-        where: { id },
-        data: {
-          ...(dto.name !== undefined && { name: dto.name }),
-          ...(dto.generic_name !== undefined && {
-            generic_name: dto.generic_name,
-          }),
-          ...(dto.form !== undefined && { form: dto.form }),
-          ...(dto.strength !== undefined && { strength: dto.strength }),
-          ...(dto.category !== undefined && { category: dto.category }),
-          ...(dto.company !== undefined && { company: dto.company }),
-          ...(dto.notes !== undefined && { notes: dto.notes }),
-          ...(dto.default_dose_amount !== undefined && {
-            default_dose_amount: dto.default_dose_amount,
-          }),
-          ...(dto.default_dose_unit !== undefined && {
-            default_dose_unit: dto.default_dose_unit,
-          }),
-          ...(dto.default_dose_frequency !== undefined && {
-            default_dose_frequency: dto.default_dose_frequency,
-          }),
-          ...(dto.default_dose_route !== undefined && {
-            default_dose_route: dto.default_dose_route,
-          }),
-        },
-      });
+    // ValidationPipe runs with whitelist + forbidNonWhitelisted, so `dto`
+    // only contains declared keys. Prisma treats `undefined` as "skip" and
+    // `null` as "clear", which matches the DTO's intent — pass through.
+    return this.prismaService.db.medication.update({
+      where: { id },
+      data: dto,
     });
   }
 
   async remove(id: string, user: AuthContext) {
-    const med = await this.prismaService.db.medication.findUnique({
-      where: { id, is_deleted: false },
-    });
-    if (!med) throw new NotFoundException(`Medication ${id} not found`);
-    if (med.organization_id === null) {
-      throw new BadRequestException('Global medications cannot be deleted');
-    }
-    if (med.organization_id !== user.organizationId) {
-      throw new NotFoundException(`Medication ${id} not found`);
-    }
+    await this.assertOrgScoped(id, user);
     await this.authorizationService.assertOwnerOnly(
       user.profileId,
       user.organizationId,
@@ -244,36 +163,35 @@ export class MedicationsService {
     });
   }
 
-  private async assertRepExists(
-    repId: string,
-    organizationId: string,
-  ): Promise<void> {
-    const rep = await this.prismaService.db.medicalRep.findFirst({
-      where: { id: repId, organization_id: organizationId, is_deleted: false },
-      select: { id: true },
+  /**
+   * Loads a medication and verifies the caller may mutate it: rejects global
+   * rows with 400, hides cross-org rows behind 404. Returns the live row.
+   */
+  private async assertOrgScoped(
+    id: string,
+    user: AuthContext,
+  ): Promise<Medication> {
+    const med = await this.prismaService.db.medication.findUnique({
+      where: { id, is_deleted: false },
     });
-    if (!rep) {
+    if (!med) throw new NotFoundException(`Medication ${id} not found`);
+    if (med.organization_id === null) {
       throw new BadRequestException(
-        `Medical rep ${repId} is not available to this organization`,
+        'Global medications cannot be modified or deleted',
       );
     }
+    if (med.organization_id !== user.organizationId) {
+      throw new NotFoundException(`Medication ${id} not found`);
+    }
+    return med;
   }
 
   private async gatherStats(
     medicationIds: string[],
     organizationId: string,
-  ): Promise<
-    Map<
-      string,
-      {
-        total_prescriptions: number;
-        top_prescribers: MedicationPrescriberDto[];
-        medical_reps: MedicalRepLinkDto[];
-      }
-    >
-  > {
-    const [prescriptionItems, repLinks] = await Promise.all([
-      this.prismaService.db.prescriptionItem.findMany({
+  ): Promise<Map<string, MedicationStats>> {
+    const prescriptionItems =
+      await this.prismaService.db.prescriptionItem.findMany({
         where: {
           medication_id: { in: medicationIds },
           is_deleted: false,
@@ -295,20 +213,7 @@ export class MedicationsService {
             },
           },
         },
-      }),
-      this.prismaService.db.medicalRepMedication.findMany({
-        where: {
-          medication_id: { in: medicationIds },
-          medical_rep: { is_deleted: false },
-        },
-        select: {
-          medication_id: true,
-          medical_rep: {
-            select: { id: true, full_name: true, company_name: true },
-          },
-        },
-      }),
-    ]);
+      });
 
     const prescribersByMed = new Map<
       string,
@@ -317,7 +222,8 @@ export class MedicationsService {
     const totalByMed = new Map<string, number>();
 
     for (const item of prescriptionItems) {
-      const medId = item.medication_id!;
+      if (!item.medication_id) continue;
+      const medId = item.medication_id;
       const profileId = item.prescription.prescribed_by_id;
       const { first_name, last_name } = item.prescription.prescribed_by.user;
 
@@ -335,22 +241,7 @@ export class MedicationsService {
       pm.get(profileId)!.count++;
     }
 
-    const repsByMed = new Map<string, MedicalRepLinkDto[]>();
-    for (const link of repLinks) {
-      if (!repsByMed.has(link.medication_id))
-        repsByMed.set(link.medication_id, []);
-      repsByMed.get(link.medication_id)!.push(link.medical_rep);
-    }
-
-    const result = new Map<
-      string,
-      {
-        total_prescriptions: number;
-        top_prescribers: MedicationPrescriberDto[];
-        medical_reps: MedicalRepLinkDto[];
-      }
-    >();
-
+    const result = new Map<string, MedicationStats>();
     for (const medId of medicationIds) {
       const prescriberMap = prescribersByMed.get(medId);
       const top_prescribers = prescriberMap
@@ -358,11 +249,9 @@ export class MedicationsService {
             .sort((a, b) => b.count - a.count)
             .slice(0, 5)
         : [];
-
       result.set(medId, {
         total_prescriptions: totalByMed.get(medId) ?? 0,
         top_prescribers,
-        medical_reps: repsByMed.get(medId) ?? [],
       });
     }
 

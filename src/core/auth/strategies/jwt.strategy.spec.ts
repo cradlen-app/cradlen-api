@@ -68,4 +68,48 @@ describe('JwtStrategy.validate', () => {
     ).rejects.toThrow(UnauthorizedException);
     expect(getProfileContext).not.toHaveBeenCalled();
   });
+
+  it('accepts a payload that has no aud claim (legacy / grace) — S-08', async () => {
+    const { strategy, getProfileContext } = buildStrategy();
+    getProfileContext.mockResolvedValue({});
+
+    await strategy.validate({
+      userId: 'user-1',
+      profileId: 'profile-1',
+      organizationId: 'org-1',
+      type: 'access',
+    });
+
+    expect(getProfileContext).toHaveBeenCalled();
+  });
+
+  it('accepts a payload with aud="cradlen-api" — S-08', async () => {
+    const { strategy, getProfileContext } = buildStrategy();
+    getProfileContext.mockResolvedValue({});
+
+    await strategy.validate({
+      userId: 'user-1',
+      profileId: 'profile-1',
+      organizationId: 'org-1',
+      type: 'access',
+      aud: 'cradlen-api',
+    } as JwtAccessPayload & { aud: string });
+
+    expect(getProfileContext).toHaveBeenCalled();
+  });
+
+  it('rejects a payload whose aud claim is wrong — S-08', async () => {
+    const { strategy, getProfileContext } = buildStrategy();
+
+    await expect(
+      strategy.validate({
+        userId: 'user-1',
+        profileId: 'profile-1',
+        organizationId: 'org-1',
+        type: 'access',
+        aud: 'someone-else',
+      } as JwtAccessPayload & { aud: string }),
+    ).rejects.toThrow(UnauthorizedException);
+    expect(getProfileContext).not.toHaveBeenCalled();
+  });
 });

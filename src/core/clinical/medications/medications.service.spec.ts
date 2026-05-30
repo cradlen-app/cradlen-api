@@ -34,12 +34,6 @@ describe('MedicationsService', () => {
       count: jest.Mock;
     };
     prescriptionItem: { findMany: jest.Mock };
-    medicalRepMedication: {
-      findMany: jest.Mock;
-      create: jest.Mock;
-      deleteMany: jest.Mock;
-    };
-    medicalRep: { findFirst: jest.Mock; findMany: jest.Mock };
     $transaction: jest.Mock;
   };
   let auth: { isOwner: jest.Mock; assertOwnerOnly: jest.Mock };
@@ -55,15 +49,6 @@ describe('MedicationsService', () => {
         count: jest.fn().mockResolvedValue(0),
       },
       prescriptionItem: { findMany: jest.fn().mockResolvedValue([]) },
-      medicalRepMedication: {
-        findMany: jest.fn().mockResolvedValue([]),
-        create: jest.fn().mockResolvedValue({}),
-        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
-      },
-      medicalRep: {
-        findFirst: jest.fn().mockResolvedValue(null),
-        findMany: jest.fn().mockResolvedValue([]),
-      },
       $transaction: jest
         .fn()
         .mockImplementation((fnOrArr: unknown) =>
@@ -162,6 +147,14 @@ describe('MedicationsService', () => {
       expect(data.default_dose_route).toBe('oral');
     });
 
+    it('ignores soft-deleted rows when checking duplicate code', async () => {
+      db.medication.findFirst.mockResolvedValue(null);
+      db.medication.create.mockImplementation(({ data }) => data);
+      await service.create({ code: 'REUSED', name: 'Drug' }, mockUser);
+      const findFirstCall = db.medication.findFirst.mock.calls[0][0];
+      expect(findFirstCall.where.is_deleted).toBe(false);
+    });
+
     it('stores null for omitted new fields', async () => {
       db.medication.findFirst.mockResolvedValue(null);
       db.medication.create.mockImplementation(({ data }) => data);
@@ -174,37 +167,6 @@ describe('MedicationsService', () => {
       expect(data.default_dose_unit).toBeNull();
       expect(data.default_dose_frequency).toBeNull();
       expect(data.default_dose_route).toBeNull();
-    });
-
-    it('links a medical rep when medical_rep_id is provided', async () => {
-      db.medicalRep.findFirst.mockResolvedValue({ id: 'rep-1' });
-      db.medication.findFirst.mockResolvedValue(null);
-      db.medication.create.mockResolvedValue({ id: 'med-new' });
-      await service.create(
-        { code: 'MED1', name: 'Drug', medical_rep_id: 'rep-1' },
-        mockUser,
-      );
-      expect(db.medicalRepMedication.create).toHaveBeenCalledWith({
-        data: { medical_rep_id: 'rep-1', medication_id: 'med-new' },
-      });
-    });
-
-    it('throws 400 when medical_rep_id does not belong to the org', async () => {
-      db.medicalRep.findFirst.mockResolvedValue(null);
-      db.medication.findFirst.mockResolvedValue(null);
-      await expect(
-        service.create(
-          { code: 'MED1', name: 'Drug', medical_rep_id: 'rep-unknown' },
-          mockUser,
-        ),
-      ).rejects.toThrow(BadRequestException);
-    });
-
-    it('skips rep linking when medical_rep_id is omitted', async () => {
-      db.medication.findFirst.mockResolvedValue(null);
-      db.medication.create.mockResolvedValue({ id: 'med-new' });
-      await service.create({ code: 'MED1', name: 'Drug' }, mockUser);
-      expect(db.medicalRepMedication.create).not.toHaveBeenCalled();
     });
   });
 
@@ -256,6 +218,23 @@ describe('MedicationsService', () => {
       ).resolves.toEqual({ id: 'med-uuid', name: 'edited' });
     });
 
+    it('passes explicit null through to clear nullable fields', async () => {
+      db.medication.findUnique.mockResolvedValue({
+        id: 'med-uuid',
+        organization_id: callerOrg,
+        added_by_id: 'profile-A',
+      });
+      db.medication.update.mockResolvedValue({ id: 'med-uuid' });
+      await service.update(
+        'med-uuid',
+        { generic_name: null, default_dose_amount: null },
+        mockUser,
+      );
+      const updateData = db.medication.update.mock.calls[0][0].data;
+      expect(updateData.generic_name).toBeNull();
+      expect(updateData.default_dose_amount).toBeNull();
+    });
+
     it('patches new fields selectively when provided', async () => {
       db.medication.findUnique.mockResolvedValue({
         id: 'med-uuid',
@@ -274,49 +253,6 @@ describe('MedicationsService', () => {
       expect(updateData).not.toHaveProperty('company');
       expect(updateData).not.toHaveProperty('notes');
     });
-
-    it('replaces the rep link when medical_rep_id is provided on update', async () => {
-      db.medication.findUnique.mockResolvedValue({
-        id: 'med-uuid',
-        organization_id: callerOrg,
-        added_by_id: 'profile-A',
-      });
-      db.medicalRep.findFirst.mockResolvedValue({ id: 'rep-1' });
-      db.medication.update.mockResolvedValue({ id: 'med-uuid' });
-      await service.update('med-uuid', { medical_rep_id: 'rep-1' }, mockUser);
-      expect(db.medicalRepMedication.deleteMany).toHaveBeenCalledWith({
-        where: { medication_id: 'med-uuid' },
-      });
-      expect(db.medicalRepMedication.create).toHaveBeenCalledWith({
-        data: { medical_rep_id: 'rep-1', medication_id: 'med-uuid' },
-      });
-    });
-
-    it('clears the rep link when medical_rep_id is null on update', async () => {
-      db.medication.findUnique.mockResolvedValue({
-        id: 'med-uuid',
-        organization_id: callerOrg,
-        added_by_id: 'profile-A',
-      });
-      db.medication.update.mockResolvedValue({ id: 'med-uuid' });
-      await service.update('med-uuid', { medical_rep_id: null }, mockUser);
-      expect(db.medicalRepMedication.deleteMany).toHaveBeenCalledWith({
-        where: { medication_id: 'med-uuid' },
-      });
-      expect(db.medicalRepMedication.create).not.toHaveBeenCalled();
-    });
-
-    it('leaves rep link unchanged when medical_rep_id is absent on update', async () => {
-      db.medication.findUnique.mockResolvedValue({
-        id: 'med-uuid',
-        organization_id: callerOrg,
-        added_by_id: 'profile-A',
-      });
-      db.medication.update.mockResolvedValue({ id: 'med-uuid' });
-      await service.update('med-uuid', { name: 'New Name' }, mockUser);
-      expect(db.medicalRepMedication.deleteMany).not.toHaveBeenCalled();
-      expect(db.medicalRepMedication.create).not.toHaveBeenCalled();
-    });
   });
 
   describe('findAll stats enrichment', () => {
@@ -334,17 +270,15 @@ describe('MedicationsService', () => {
       updated_at: new Date(),
     };
 
-    it('returns total_prescriptions: 0 and empty arrays when no data', async () => {
+    it('returns total_prescriptions: 0 and empty top_prescribers when no data', async () => {
       db.$transaction.mockResolvedValue([[med1], 1]);
       db.prescriptionItem.findMany.mockResolvedValue([]);
-      db.medicalRepMedication.findMany.mockResolvedValue([]);
 
       const result = await service.findAll({}, mockUser);
       const item = result.items[0] as MedicationWithStatsDto;
 
       expect(item.total_prescriptions).toBe(0);
       expect(item.top_prescribers).toEqual([]);
-      expect(item.medical_reps).toEqual([]);
     });
 
     it('counts prescription items per prescriber and sums total', async () => {
@@ -376,7 +310,6 @@ describe('MedicationsService', () => {
           },
         },
       ]);
-      db.medicalRepMedication.findMany.mockResolvedValue([]);
 
       const result = await service.findAll({}, mockUser);
       const item = result.items[0] as MedicationWithStatsDto;
@@ -397,7 +330,6 @@ describe('MedicationsService', () => {
 
     it('caps top_prescribers at 5 sorted by count descending', async () => {
       db.$transaction.mockResolvedValue([[med1], 1]);
-      // 6 distinct prescribers with decreasing counts (6, 5, 4, 3, 2, 1)
       db.prescriptionItem.findMany.mockResolvedValue(
         Array.from({ length: 6 }, (_, i) =>
           Array(6 - i).fill({
@@ -411,7 +343,6 @@ describe('MedicationsService', () => {
           }),
         ).flat(),
       );
-      db.medicalRepMedication.findMany.mockResolvedValue([]);
 
       const result = await service.findAll({}, mockUser);
       const item = result.items[0] as MedicationWithStatsDto;
@@ -422,39 +353,6 @@ describe('MedicationsService', () => {
       );
     });
 
-    it('attaches medical_reps from MedicalRepMedication', async () => {
-      db.$transaction.mockResolvedValue([[med1], 1]);
-      db.prescriptionItem.findMany.mockResolvedValue([]);
-      db.medicalRepMedication.findMany.mockResolvedValue([
-        {
-          medication_id: 'med-1',
-          medical_rep: {
-            id: 'rep-1',
-            full_name: 'Rep One',
-            company_name: 'Pharma A',
-          },
-        },
-        {
-          medication_id: 'med-1',
-          medical_rep: {
-            id: 'rep-2',
-            full_name: 'Rep Two',
-            company_name: 'Pharma B',
-          },
-        },
-      ]);
-
-      const result = await service.findAll({}, mockUser);
-      const item = result.items[0] as MedicationWithStatsDto;
-
-      expect(item.medical_reps).toHaveLength(2);
-      expect(item.medical_reps[0]).toEqual({
-        id: 'rep-1',
-        full_name: 'Rep One',
-        company_name: 'Pharma A',
-      });
-    });
-
     it('returns empty page without making stats queries when no medications found', async () => {
       db.$transaction.mockResolvedValue([[], 0]);
 
@@ -462,13 +360,24 @@ describe('MedicationsService', () => {
 
       expect(result.items).toEqual([]);
       expect(db.prescriptionItem.findMany).not.toHaveBeenCalled();
-      expect(db.medicalRepMedication.findMany).not.toHaveBeenCalled();
+    });
+
+    it('orders global rows first then by name', async () => {
+      db.$transaction.mockResolvedValue([[med1], 1]);
+      db.prescriptionItem.findMany.mockResolvedValue([]);
+
+      await service.findAll({}, mockUser);
+
+      const findManyCall = db.medication.findMany.mock.calls[0][0];
+      expect(findManyCall.orderBy).toEqual([
+        { organization_id: { sort: 'asc', nulls: 'first' } },
+        { name: 'asc' },
+      ]);
     });
 
     it('does not drop org-scope filter when search term is provided', async () => {
       db.$transaction.mockResolvedValue([[med1], 1]);
       db.prescriptionItem.findMany.mockResolvedValue([]);
-      db.medicalRepMedication.findMany.mockResolvedValue([]);
 
       await service.findAll({ search: 'drug' }, mockUser);
 

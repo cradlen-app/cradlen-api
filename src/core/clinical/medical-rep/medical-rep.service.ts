@@ -61,6 +61,12 @@ function todayBounds(): { start: Date; end: Date } {
   return { start, end };
 }
 
+export type MedicalRepSummary = {
+  id: string;
+  full_name: string;
+  company_name: string;
+};
+
 const MED_REP_VISIT_INCLUDE = {
   medical_rep: true,
   medications: true,
@@ -575,6 +581,100 @@ export class MedicalRepService {
       payload: updated,
     });
     return updated;
+  }
+
+  async listMedicationsForRep(repId: string, user: AuthContext) {
+    await this.assertRepInOrg(repId, user.organizationId);
+    const links = await this.prismaService.db.medicalRepMedication.findMany({
+      where: { medical_rep_id: repId, medication: { is_deleted: false } },
+      select: {
+        medication: { select: { id: true, code: true, name: true } },
+      },
+      orderBy: { medication: { name: 'asc' } },
+    });
+    return links.map((l) => ({
+      medication_id: l.medication.id,
+      code: l.medication.code,
+      name: l.medication.name,
+    }));
+  }
+
+  async replaceMedicationsForRep(
+    repId: string,
+    medicationIds: string[],
+    user: AuthContext,
+  ) {
+    await this.assertRepInOrg(repId, user.organizationId);
+    if (medicationIds.length) {
+      await this.assertMedicationsExist(
+        this.prismaService.db,
+        medicationIds,
+        user.organizationId,
+      );
+    }
+    await this.prismaService.db.$transaction(async (tx) => {
+      await tx.medicalRepMedication.deleteMany({
+        where: { medical_rep_id: repId },
+      });
+      if (medicationIds.length) {
+        await tx.medicalRepMedication.createMany({
+          data: medicationIds.map((mid) => ({
+            medical_rep_id: repId,
+            medication_id: mid,
+          })),
+        });
+      }
+    });
+    return this.listMedicationsForRep(repId, user);
+  }
+
+  async unlinkMedicationFromRep(
+    repId: string,
+    medicationId: string,
+    user: AuthContext,
+  ) {
+    await this.assertRepInOrg(repId, user.organizationId);
+    await this.prismaService.db.medicalRepMedication.deleteMany({
+      where: { medical_rep_id: repId, medication_id: medicationId },
+    });
+  }
+
+  /**
+   * Public surface for cross-module callers (e.g. medications listing) that
+   * need a med-id → reps map without depending on the link table directly.
+   */
+  async findRepsByMedicationIds(
+    medicationIds: string[],
+    organizationId: string,
+  ) {
+    if (!medicationIds.length) return new Map<string, MedicalRepSummary[]>();
+    const links = await this.prismaService.db.medicalRepMedication.findMany({
+      where: {
+        medication_id: { in: medicationIds },
+        medical_rep: { organization_id: organizationId, is_deleted: false },
+      },
+      select: {
+        medication_id: true,
+        medical_rep: {
+          select: { id: true, full_name: true, company_name: true },
+        },
+      },
+    });
+    const result = new Map<string, MedicalRepSummary[]>();
+    for (const link of links) {
+      const bucket = result.get(link.medication_id) ?? [];
+      bucket.push(link.medical_rep);
+      result.set(link.medication_id, bucket);
+    }
+    return result;
+  }
+
+  private async assertRepInOrg(repId: string, organizationId: string) {
+    const rep = await this.prismaService.db.medicalRep.findFirst({
+      where: { id: repId, organization_id: organizationId, is_deleted: false },
+      select: { id: true },
+    });
+    if (!rep) throw new NotFoundException(`Medical rep ${repId} not found`);
   }
 
   private async getNextRepQueueNumber(
