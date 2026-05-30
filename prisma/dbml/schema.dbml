@@ -1299,6 +1299,7 @@ Table form_templates {
   published_at DateTime
   is_active Boolean [not null, default: false]
   activated_at DateTime
+  is_display_only Boolean [not null, default: false]
   specialty_id String
   specialty specialties
   parent_template_id String

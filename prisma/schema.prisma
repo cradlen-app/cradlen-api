@@ -1832,6 +1832,9 @@ model FormTemplate {
   published_at       DateTime?
   is_active          Boolean            @default(false)
   activated_at       DateTime?
+  // Display-only templates render read-only in the frontend (no input controls)
+  // and must never be a write target. Used by the OB/GYN patient-history surface.
+  is_display_only    Boolean            @default(false)
   specialty_id       String?            @db.Uuid
   specialty          Specialty?         @relation(fields: [specialty_id], references: [id], onDelete: SetNull)
   parent_template_id String?            @db.Uuid

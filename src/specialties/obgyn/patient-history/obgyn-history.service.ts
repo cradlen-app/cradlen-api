@@ -60,7 +60,13 @@ export class ObgynHistoryService {
   }
 
   /**
-   * Bulk PATCH — accept the entire OB/GYN history surface in one request.
+   * Bulk write — accept the entire OB/GYN history surface in one call.
+   *
+   * NOTE: This is no longer exposed over HTTP. The patient-history surface is
+   * read-only (GET = the "specialty full history" view). This method is kept
+   * as the canonical internal writer — the OB/GYN examination flow will call
+   * into it to persist patient-level history captured during an encounter
+   * (see plan: history capture relocates to the examination template).
    *
    * Singleton JSON columns + all five child collections (pregnancies,
    * contraceptives, non_gyn_surgeries, medications, allergies) are diffed
