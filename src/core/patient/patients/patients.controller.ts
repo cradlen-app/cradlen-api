@@ -9,15 +9,19 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { PatientsService } from './patients.service';
-import { CreatePatientDto } from './dto/create-patient.dto';
-import { UpdatePatientDto } from './dto/update-patient.dto';
-import { ListPatientsQueryDto } from './dto/list-patients-query.dto';
-import { ListBranchPatientsQueryDto } from './dto/list-branch-patients-query.dto';
-import { PatientDto, BranchPatientDto } from './dto/patient.dto';
+import { PatientsService } from './patients.service.js';
+import { CreatePatientDto } from './dto/create-patient.dto.js';
+import { UpdatePatientDto } from './dto/update-patient.dto.js';
+import { ListPatientsQueryDto } from './dto/list-patients-query.dto.js';
+import { ListBranchPatientsQueryDto } from './dto/list-branch-patients-query.dto.js';
+import {
+  PatientDto,
+  PatientLookupDto,
+  BranchPatientDto,
+} from './dto/patient.dto.js';
 import { ApiStandardResponse, ApiPaginatedResponse } from '@common/swagger';
-import { CurrentUser } from '@common/decorators/current-user.decorator';
-import { AuthContext } from '@common/interfaces/auth-context.interface';
+import { CurrentUser } from '@common/decorators/current-user.decorator.js';
+import { AuthContext } from '@common/interfaces/auth-context.interface.js';
 
 @ApiTags('Patients')
 @Controller()
@@ -31,7 +35,7 @@ export class PatientsController {
   }
 
   @Get('/patients')
-  @ApiPaginatedResponse(PatientDto)
+  @ApiPaginatedResponse(PatientLookupDto)
   findAll(
     @Query() query: ListPatientsQueryDto,
     @CurrentUser() user: AuthContext,
@@ -41,8 +45,11 @@ export class PatientsController {
 
   @Get('/patients/:id')
   @ApiStandardResponse(PatientDto)
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.patientsService.findOne(id);
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.patientsService.findOne(id, user);
   }
 
   @Patch('/patients/:id')
@@ -50,8 +57,9 @@ export class PatientsController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdatePatientDto,
+    @CurrentUser() user: AuthContext,
   ) {
-    return this.patientsService.update(id, dto);
+    return this.patientsService.update(id, dto, user);
   }
 
   @Get('/branches/:branchId/patients')

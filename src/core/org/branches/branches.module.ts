@@ -1,12 +1,18 @@
 import { Module } from '@nestjs/common';
 import { AuthorizationModule } from '@core/auth/authorization/authorization.module.js';
 import { DatabaseModule } from '@infrastructure/database/database.module.js';
+import { OrganizationsModule } from '../organizations/organizations.module.js';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module.js';
 import { BranchesController } from './branches.controller.js';
 import { BranchesService } from './branches.service.js';
 
 @Module({
-  imports: [DatabaseModule, AuthorizationModule, SubscriptionsModule],
+  imports: [
+    DatabaseModule,
+    AuthorizationModule,
+    SubscriptionsModule,
+    OrganizationsModule,
+  ],
   controllers: [BranchesController],
   providers: [BranchesService],
 })

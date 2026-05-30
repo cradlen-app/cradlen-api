@@ -17,6 +17,12 @@ import {
 } from '@core/clinical/events/events.public';
 import { buildRevision } from '../revisions.helper';
 import {
+  PREGNANCY_VISIT_COLUMNS,
+  PREGNANCY_VISIT_SECTION_SET,
+  PREGNANCY_VISIT_SECTIONS,
+  type PregnancyVisitSection,
+} from '../pregnancy/pregnancy-visit-columns';
+import {
   AmendmentResultDto,
   AmendmentTarget,
   CreateAmendmentDto,
@@ -40,66 +46,18 @@ const OBGYN_ENCOUNTER_SECTIONS: ReadonlySet<string> = new Set([
   'skin_findings',
 ]);
 
-const PREGNANCY_VISIT_SECTIONS = [
-  'cervix',
-  'warning-symptoms',
-  'fundal',
-  'amniotic-placenta',
-  'fetal-lie',
-  'biometrics',
-] as const;
-
-type PregnancyVisitSection = (typeof PREGNANCY_VISIT_SECTIONS)[number];
-
-const PREGNANCY_VISIT_SECTION_SET: ReadonlySet<string> = new Set(
-  PREGNANCY_VISIT_SECTIONS,
-);
-
-const PREGNANCY_VISIT_COLUMNS: Record<
-  PregnancyVisitSection,
-  readonly string[]
-> = {
-  cervix: [
-    'cervix_length_mm',
-    'cervix_dilatation_cm',
-    'cervix_effacement_pct',
-    'cervix_position',
-    'membranes',
-  ],
-  'warning-symptoms': ['warning_symptoms'],
-  fundal: ['fundal_height_cm', 'fundal_corresponds_ga'],
-  'amniotic-placenta': [
-    'amniotic_fluid',
-    'placenta_location',
-    'placenta_grade',
-  ],
-  'fetal-lie': ['fetal_lie', 'presentation', 'engagement'],
-  biometrics: [
-    'fetal_heart_rate_bpm',
-    'fetal_rhythm',
-    'fetal_movements',
-    'bpd_mm',
-    'hc_mm',
-    'ac_mm',
-    'fl_mm',
-    'efw_g',
-    'growth_percentile',
-    'growth_impression',
-  ],
-};
-
 /**
  * Amendment service — the structurally distinct path for editing a closed
  * encounter. Unlike the normal PATCH endpoints (guarded by
- * EncounterMutationGuard), amendments REQUIRE the visit to be COMPLETED,
- * REQUIRE a `reason`, and (PR4) will append a revision shadow row capturing
- * the prior snapshot.
+ * EncounterMutationGuard), amendments REQUIRE the visit to be COMPLETED or
+ * CANCELLED, REQUIRE a `reason` (min 8 chars), and REQUIRE an `If-Match`
+ * version precondition.
  *
- * In PR3 the revision-shadow write is stubbed — the service applies the
- * change and bumps `version`, but the prior snapshot is not yet persisted
- * to a `*_revisions` table. The amendment metadata (reason, who, when,
- * version delta) is returned in the response and emitted via Pino logs so
- * it's auditable in log aggregation even before PR4 lands.
+ * Each amendment runs in one transaction: it appends a revision shadow row
+ * capturing the prior snapshot (tagged with `dto.reason`) to the target's
+ * `*_revisions` table, applies the change, and bumps `version`. The
+ * amendment metadata (reason, who, when, version delta) is returned in the
+ * response and emitted as an `encounter.amended` domain event.
  */
 @Injectable()
 export class AmendmentsService {

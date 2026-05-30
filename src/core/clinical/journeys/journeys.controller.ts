@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -26,7 +27,7 @@ export class JourneysController {
   @Post('patients/:patientId/journeys')
   @ApiStandardResponse(JourneyDto)
   create(
-    @Param('patientId') patientId: string,
+    @Param('patientId', ParseUUIDPipe) patientId: string,
     @Body() dto: CreateJourneyDto,
     @CurrentUser() user: AuthContext,
   ) {
@@ -36,7 +37,7 @@ export class JourneysController {
   @Get('patients/:patientId/journeys')
   @ApiPaginatedResponse(JourneyDto)
   findAllForPatient(
-    @Param('patientId') patientId: string,
+    @Param('patientId', ParseUUIDPipe) patientId: string,
     @Query() query: ListJourneysQueryDto,
     @CurrentUser() user: AuthContext,
   ) {
@@ -45,14 +46,17 @@ export class JourneysController {
 
   @Get('journeys/:id')
   @ApiStandardResponse(JourneyDto)
-  findOne(@Param('id') id: string, @CurrentUser() user: AuthContext) {
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthContext,
+  ) {
     return this.journeysService.findOne(id, user);
   }
 
   @Patch('journeys/:id/status')
   @ApiStandardResponse(JourneyDto)
   updateStatus(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateJourneyStatusDto,
     @CurrentUser() user: AuthContext,
   ) {
@@ -62,8 +66,8 @@ export class JourneysController {
   @Patch('journeys/:id/episodes/:episodeId/status')
   @ApiStandardResponse(JourneyDto)
   updateEpisodeStatus(
-    @Param('id') id: string,
-    @Param('episodeId') episodeId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('episodeId', ParseUUIDPipe) episodeId: string,
     @Body() dto: UpdateEpisodeStatusDto,
     @CurrentUser() user: AuthContext,
   ) {

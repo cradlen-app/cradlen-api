@@ -9,6 +9,7 @@ import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { PatientAccessService } from './patient-access.service';
 import {
   CreateNoteDto,
+  NoteDto,
   RedactedNoteCountDto,
   UpdateNoteDto,
 } from './dto/note.dto';
@@ -70,12 +71,15 @@ export class NotesService {
       count: g._count._all,
     }));
 
-    return { visible, redacted_by_org: redacted };
+    return {
+      visible: visible.map((n) => this.toDto(n)),
+      redacted_by_org: redacted,
+    };
   }
 
   async create(patientId: string, dto: CreateNoteDto, user: AuthContext) {
     await this.patientAccess.assertPatientInOrg(patientId, user);
-    return this.prismaService.db.patientHistoryNote.create({
+    const note = await this.prismaService.db.patientHistoryNote.create({
       data: {
         patient_id: patientId,
         organization_id: user.organizationId,
@@ -85,6 +89,7 @@ export class NotesService {
         visibility: dto.visibility ?? NoteVisibility.PRIVATE_TO_ORG,
       },
     });
+    return this.toDto(note);
   }
 
   async update(id: string, dto: UpdateNoteDto, user: AuthContext) {
@@ -92,13 +97,14 @@ export class NotesService {
     if (note.author_id !== user.profileId) {
       throw new ForbiddenException('Only the note author can edit it');
     }
-    return this.prismaService.db.patientHistoryNote.update({
+    const updated = await this.prismaService.db.patientHistoryNote.update({
       where: { id: note.id },
       data: {
         ...(dto.content !== undefined && { content: dto.content }),
         ...(dto.visibility !== undefined && { visibility: dto.visibility }),
       },
     });
+    return this.toDto(updated);
   }
 
   async remove(id: string, user: AuthContext) {
@@ -125,5 +131,31 @@ export class NotesService {
     }
     await this.patientAccess.assertPatientInOrg(note.patient_id, user);
     return note;
+  }
+
+  // Explicit mapping keeps the row's internal columns (is_deleted, deleted_at)
+  // out of the API response.
+  private toDto(note: {
+    id: string;
+    patient_id: string;
+    organization_id: string;
+    author_id: string;
+    section_code: string | null;
+    content: string;
+    visibility: NoteVisibility;
+    created_at: Date;
+    updated_at: Date;
+  }): NoteDto {
+    return {
+      id: note.id,
+      patient_id: note.patient_id,
+      organization_id: note.organization_id,
+      author_id: note.author_id,
+      section_code: note.section_code ?? '',
+      content: note.content,
+      visibility: note.visibility,
+      created_at: note.created_at,
+      updated_at: note.updated_at,
+    };
   }
 }

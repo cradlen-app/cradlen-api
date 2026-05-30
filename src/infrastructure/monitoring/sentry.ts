@@ -14,13 +14,18 @@ try {
   // profiling native binary not available in this environment
 }
 
+const isProduction = process.env.NODE_ENV === 'production';
+
 Sentry.init({
   dsn: process.env.SENTRY_DSN,
   environment: process.env.NODE_ENV ?? 'development',
   enableLogs: true,
-  sendDefaultPii: true,
-  tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.2 : 1.0,
-  profileSessionSampleRate: 1.0,
+  // PHI/credentials must never leave the app. The Pino logger redacts its own
+  // streams; sendDefaultPii would bypass that by attaching raw request bodies,
+  // headers, and user data to events. Keep it off in every environment.
+  sendDefaultPii: false,
+  tracesSampleRate: isProduction ? 0.2 : 1.0,
+  profileSessionSampleRate: isProduction ? 0.1 : 1.0,
   profileLifecycle: 'trace',
   integrations,
 });

@@ -36,15 +36,25 @@ export class CreateCalendarEventDto {
   @MaxLength(2000)
   description?: string;
 
-  @ApiProperty({ description: 'ISO 8601 datetime' })
+  @ApiProperty({
+    description:
+      'Event start, ISO 8601 with timezone offset (server stores UTC). Must be strictly before end_at — also when all_day=true (use midnight→midnight+1d).',
+  })
   @IsISO8601()
   start_at!: string;
 
-  @ApiProperty({ description: 'ISO 8601 datetime' })
+  @ApiProperty({
+    description:
+      'Event end, ISO 8601 with timezone offset (server stores UTC). Must be strictly after start_at.',
+  })
   @IsISO8601()
   end_at!: string;
 
-  @ApiPropertyOptional({ default: false })
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'Marks the event as all-day. Does not relax the start_at < end_at rule — clients should still send a non-empty window.',
+  })
   @IsOptional()
   @IsBoolean()
   all_day?: boolean;

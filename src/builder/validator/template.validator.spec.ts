@@ -149,6 +149,69 @@ describe('TemplateValidator', () => {
     }
   });
 
+  it('attributes the REQUIRED message to the predicate that actually triggered', async () => {
+    const row = makeRow();
+    // Two required predicates on the doctor field: the first does NOT match the
+    // payload, the second does. The surfaced message must be the second's.
+    row.sections[0].fields[1].config.logic.predicates = [
+      {
+        effect: 'required',
+        when: { eq: { visitor_type: 'MEDICAL_REP' } },
+        message: 'wrong — rep branch',
+      },
+      {
+        effect: 'required',
+        when: { eq: { visitor_type: 'PATIENT' } },
+        message: 'right — patient branch',
+      },
+    ] satisfies Predicate[];
+    const templates = {
+      findActiveByCode: jest.fn().mockResolvedValue(row),
+    } as unknown as TemplatesService;
+    const v = new TemplateValidator(templates, renderer);
+
+    const result = await v.validatePayload('obgyn_book_visit', {
+      visitor_type: 'PATIENT',
+      // assigned_doctor_id absent → required predicate triggers
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors).toEqual([
+        expect.objectContaining({
+          fieldCode: 'assigned_doctor_patient',
+          code: 'REQUIRED',
+          message: 'right — patient branch',
+        }),
+      ]);
+    }
+  });
+
+  it('emits at most one FORBIDDEN error when multiple forbidden predicates match', async () => {
+    const row = makeRow();
+    row.sections[0].fields[2].config.logic.predicates = [
+      { effect: 'forbidden', when: { eq: { visitor_type: 'PATIENT' } } },
+      { effect: 'forbidden', when: { ne: { visitor_type: 'MEDICAL_REP' } } },
+    ] satisfies Predicate[];
+    const templates = {
+      findActiveByCode: jest.fn().mockResolvedValue(row),
+    } as unknown as TemplatesService;
+    const v = new TemplateValidator(templates, renderer);
+
+    const result = await v.validatePayload('obgyn_book_visit', {
+      visitor_type: 'PATIENT',
+      assigned_doctor_id: 'doc-uuid',
+      full_name: 'leaked-rep-name',
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      const forbidden = result.errors.filter(
+        (e) => e.fieldCode === 'rep_full_name',
+      );
+      expect(forbidden).toHaveLength(1);
+      expect(forbidden[0].code).toBe('FORBIDDEN');
+    }
+  });
+
   it('column-level `required: true` is enforced independently of predicates', async () => {
     const v = makeValidator();
     const result = await v.validatePayload('obgyn_book_visit', {

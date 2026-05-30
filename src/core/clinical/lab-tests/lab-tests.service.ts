@@ -1,9 +1,7 @@
 import {
-  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
-  NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service';
@@ -13,6 +11,11 @@ import { paginated } from '@common/utils/pagination.utils';
 import { CreateLabTestDto } from './dto/create-lab-test.dto';
 import { UpdateLabTestDto } from './dto/update-lab-test.dto';
 import { ListLabTestsQueryDto } from './dto/list-lab-tests-query.dto';
+import {
+  orgScopedReadFilter,
+  assertOrgMutable,
+  assertOrgReferenceable,
+} from '../shared/org-scoped-catalog.js';
 
 @Injectable()
 export class LabTestsService {
@@ -27,12 +30,7 @@ export class LabTestsService {
     const where: Prisma.LabTestWhereInput = {
       is_deleted: false,
       AND: [
-        {
-          OR: [
-            { organization_id: null },
-            { organization_id: user.organizationId },
-          ],
-        },
+        orgScopedReadFilter(user.organizationId),
         ...(query.category ? [{ category: query.category }] : []),
         ...(query.specialty_id ? [{ specialty_id: query.specialty_id }] : []),
         ...(query.search
@@ -92,16 +90,7 @@ export class LabTestsService {
   }
 
   async update(id: string, dto: UpdateLabTestDto, user: AuthContext) {
-    const test = await this.prismaService.db.labTest.findUnique({
-      where: { id, is_deleted: false },
-    });
-    if (!test) throw new NotFoundException(`Lab test ${id} not found`);
-    if (test.organization_id === null) {
-      throw new BadRequestException('Global lab tests cannot be modified');
-    }
-    if (test.organization_id !== user.organizationId) {
-      throw new NotFoundException(`Lab test ${id} not found`);
-    }
+    const test = await this.assertOrgScoped(id, user, 'modified');
     const isOwner = await this.authorizationService.isOwner(
       user.profileId,
       user.organizationId,
@@ -124,16 +113,7 @@ export class LabTestsService {
   }
 
   async remove(id: string, user: AuthContext) {
-    const test = await this.prismaService.db.labTest.findUnique({
-      where: { id, is_deleted: false },
-    });
-    if (!test) throw new NotFoundException(`Lab test ${id} not found`);
-    if (test.organization_id === null) {
-      throw new BadRequestException('Global lab tests cannot be deleted');
-    }
-    if (test.organization_id !== user.organizationId) {
-      throw new NotFoundException(`Lab test ${id} not found`);
-    }
+    await this.assertOrgScoped(id, user, 'deleted');
     await this.authorizationService.assertOwnerOnly(
       user.profileId,
       user.organizationId,
@@ -144,19 +124,34 @@ export class LabTestsService {
     });
   }
 
+  /**
+   * Loads a lab test and verifies the caller may mutate it: rejects global rows
+   * with 400, hides cross-org rows behind 404. Returns the live row.
+   */
+  private async assertOrgScoped(
+    id: string,
+    user: AuthContext,
+    verb: 'modified' | 'deleted',
+  ) {
+    const test = await this.prismaService.db.labTest.findUnique({
+      where: { id, is_deleted: false },
+    });
+    assertOrgMutable(test, user.organizationId, {
+      notFound: `Lab test ${id} not found`,
+      globalForbidden: `Global lab tests cannot be ${verb}`,
+    });
+    return test;
+  }
+
   async assertReferenceable(labTestId: string, user: AuthContext) {
     const test = await this.prismaService.db.labTest.findUnique({
       where: { id: labTestId, is_deleted: false },
       select: { organization_id: true },
     });
-    if (
-      !test ||
-      (test.organization_id !== null &&
-        test.organization_id !== user.organizationId)
-    ) {
-      throw new BadRequestException(
-        `Lab test ${labTestId} is not available to this organization`,
-      );
-    }
+    assertOrgReferenceable(
+      test,
+      user.organizationId,
+      `Lab test ${labTestId} is not available to this organization`,
+    );
   }
 }

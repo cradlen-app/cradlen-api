@@ -5,6 +5,8 @@
  * Consumers subscribe via `@OnEvent('<name>')` from `@nestjs/event-emitter`.
  */
 
+import { CalendarEventType, CalendarVisibility } from '@prisma/client';
+
 export const CALENDAR_EVENTS = {
   event: {
     created: 'calendar.event.created',
@@ -17,8 +19,8 @@ export interface CalendarEventChangedPayload {
   id: string;
   profile_id: string;
   organization_id: string;
-  event_type: string;
-  visibility: string;
+  event_type: CalendarEventType;
+  visibility: CalendarVisibility;
   branch_id: string | null;
   start_at: Date;
   end_at: Date;

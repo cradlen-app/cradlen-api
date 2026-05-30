@@ -355,25 +355,26 @@ model Branch {
 }
 
 model User {
-  id                   String             @id @default(uuid()) @db.Uuid
+  id                   String               @id @default(uuid()) @db.Uuid
   first_name           String
   last_name            String
-  email                String?            @unique
+  email                String?              @unique
   phone_number         String?
   password_hashed      String?
-  is_active            Boolean            @default(true)
-  is_deleted           Boolean            @default(false)
+  is_active            Boolean              @default(true)
+  is_deleted           Boolean              @default(false)
   deleted_at           DateTime?
   verified_at          DateTime?
-  registration_status  RegistrationStatus @default(PENDING)
-  onboarding_completed Boolean            @default(false)
-  created_at           DateTime           @default(now())
-  updated_at           DateTime           @updatedAt
+  registration_status  RegistrationStatus   @default(PENDING)
+  onboarding_completed Boolean              @default(false)
+  created_at           DateTime             @default(now())
+  updated_at           DateTime             @updatedAt
   profiles             Profile[]
   refreshTokens        RefreshToken[]
   verificationCodes    VerificationCode[]
-  sentInvitations      Invitation[]       @relation("InvitedBy")
-  notifications        Notification[]
+  passwordResetTokens  PasswordResetToken[]
+  authAuditLogs        AuthAuditLog[]
+  sentInvitations      Invitation[]         @relation("InvitedBy")
 
   @@index([registration_status, onboarding_completed])
   @@map("users")
@@ -418,81 +419,82 @@ model ProfileJobFunction {
 }
 
 model Profile {
-  id                              String                           @id @default(uuid()) @db.Uuid
-  user_id                         String                           @db.Uuid
-  organization_id                 String                           @db.Uuid
-  executive_title                 ExecutiveTitle?
-  engagement_type                 EngagementType                   @default(FULL_TIME)
-  is_active                       Boolean                          @default(true)
-  is_deleted                      Boolean                          @default(false)
-  deleted_at                      DateTime?
-  created_at                      DateTime                         @default(now())
-  updated_at                      DateTime                         @updatedAt
-  user                            User                             @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  organization                    Organization                     @relation(fields: [organization_id], references: [id], onDelete: Cascade)
-  roles                           ProfileRole[]
-  branches                        ProfileBranch[]
-  workingSchedules                WorkingSchedule[]
-  job_functions                   ProfileJobFunction[]
-  specialty_links                 ProfileSpecialty[]
-  created_journeys                PatientJourney[]
-  doctor_visits                   Visit[]                          @relation("DoctorVisits")
-  created_visits                  Visit[]                          @relation("CreatedVisits")
-  medications_added               Medication[]                     @relation("MedicationAddedBy")
-  lab_tests_added                 LabTest[]                        @relation("LabTestAddedBy")
-  vitals_recorded                 VisitVitals[]                    @relation("VitalsRecordedBy")
-  investigations_ordered          VisitInvestigation[]             @relation("InvestigationOrderedBy")
-  investigations_resulted         VisitInvestigation[]             @relation("InvestigationResultedBy")
-  investigations_reviewed         VisitInvestigation[]             @relation("InvestigationReviewedBy")
-  prescriptions_authored          Prescription[]                   @relation("PrescriptionPrescribedBy")
-  history_notes_authored          PatientHistoryNote[]             @relation("HistoryNoteAuthor")
-  authored_field_flags            PatientFieldFlag[]               @relation("FieldFlagAuthor")
-  history_allergies_added         PatientAllergy[]                 @relation("AllergyCreatedBy")
-  history_pregnancies_added       PatientPregnancyHistory[]        @relation("PregnancyCreatedBy")
-  history_contraceptives_added    PatientContraceptiveHistory[]    @relation("ContraceptiveCreatedBy")
-  history_surgeries_added         PatientNonGynSurgery[]           @relation("NonGynSurgeryCreatedBy")
-  history_medications_added       PatientMedication[]              @relation("PatientMedicationCreatedBy")
+  id                               String                           @id @default(uuid()) @db.Uuid
+  user_id                          String                           @db.Uuid
+  organization_id                  String                           @db.Uuid
+  executive_title                  ExecutiveTitle?
+  engagement_type                  EngagementType                   @default(FULL_TIME)
+  is_active                        Boolean                          @default(true)
+  is_deleted                       Boolean                          @default(false)
+  deleted_at                       DateTime?
+  created_at                       DateTime                         @default(now())
+  updated_at                       DateTime                         @updatedAt
+  user                             User                             @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  organization                     Organization                     @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  roles                            ProfileRole[]
+  branches                         ProfileBranch[]
+  workingSchedules                 WorkingSchedule[]
+  job_functions                    ProfileJobFunction[]
+  specialty_links                  ProfileSpecialty[]
+  created_journeys                 PatientJourney[]
+  doctor_visits                    Visit[]                          @relation("DoctorVisits")
+  created_visits                   Visit[]                          @relation("CreatedVisits")
+  medications_added                Medication[]                     @relation("MedicationAddedBy")
+  lab_tests_added                  LabTest[]                        @relation("LabTestAddedBy")
+  vitals_recorded                  VisitVitals[]                    @relation("VitalsRecordedBy")
+  investigations_ordered           VisitInvestigation[]             @relation("InvestigationOrderedBy")
+  investigations_resulted          VisitInvestigation[]             @relation("InvestigationResultedBy")
+  investigations_reviewed          VisitInvestigation[]             @relation("InvestigationReviewedBy")
+  prescriptions_authored           Prescription[]                   @relation("PrescriptionPrescribedBy")
+  history_notes_authored           PatientHistoryNote[]             @relation("HistoryNoteAuthor")
+  authored_field_flags             PatientFieldFlag[]               @relation("FieldFlagAuthor")
+  history_allergies_added          PatientAllergy[]                 @relation("AllergyCreatedBy")
+  history_pregnancies_added        PatientPregnancyHistory[]        @relation("PregnancyCreatedBy")
+  history_contraceptives_added     PatientContraceptiveHistory[]    @relation("ContraceptiveCreatedBy")
+  history_surgeries_added          PatientNonGynSurgery[]           @relation("NonGynSurgeryCreatedBy")
+  history_medications_added        PatientMedication[]              @relation("PatientMedicationCreatedBy")
   // Updated-by back-relations for clinical mutable rows that have a revision
   // shadow table (PR4). History sub-tables that are list-style records are
   // not versioned individually — their audit lives on the PatientObgynHistory
   // snapshot row.
-  patient_obgyn_history_updates   PatientObgynHistory[]            @relation("PatientObgynHistoryUpdatedBy")
-  visit_obgyn_encounter_updates   VisitObgynEncounter[]            @relation("VisitObgynEncounterUpdatedBy")
-  pregnancy_journey_updates       PregnancyJourneyRecord[]         @relation("PregnancyJourneyRecordUpdatedBy")
-  pregnancy_episode_updates       PregnancyEpisodeRecord[]         @relation("PregnancyEpisodeRecordUpdatedBy")
-  visit_pregnancy_updates         VisitPregnancyRecord[]           @relation("VisitPregnancyRecordUpdatedBy")
-  visit_encounter_updates         VisitEncounter[]                 @relation("VisitEncounterUpdatedBy")
-  prescription_updates            Prescription[]                   @relation("PrescriptionUpdatedBy")
-  prescription_item_updates       PrescriptionItem[]               @relation("PrescriptionItemUpdatedBy")
-  investigation_updates           VisitInvestigation[]             @relation("VisitInvestigationUpdatedBy")
+  patient_obgyn_history_updates    PatientObgynHistory[]            @relation("PatientObgynHistoryUpdatedBy")
+  visit_obgyn_encounter_updates    VisitObgynEncounter[]            @relation("VisitObgynEncounterUpdatedBy")
+  pregnancy_journey_updates        PregnancyJourneyRecord[]         @relation("PregnancyJourneyRecordUpdatedBy")
+  pregnancy_episode_updates        PregnancyEpisodeRecord[]         @relation("PregnancyEpisodeRecordUpdatedBy")
+  visit_pregnancy_updates          VisitPregnancyRecord[]           @relation("VisitPregnancyRecordUpdatedBy")
+  visit_encounter_updates          VisitEncounter[]                 @relation("VisitEncounterUpdatedBy")
+  prescription_updates             Prescription[]                   @relation("PrescriptionUpdatedBy")
+  prescription_item_updates        PrescriptionItem[]               @relation("PrescriptionItemUpdatedBy")
+  investigation_updates            VisitInvestigation[]             @relation("VisitInvestigationUpdatedBy")
   // PR4: revision shadow tables — author back-relations
-  patient_obgyn_history_revisions PatientObgynHistoryRevision[]    @relation("PatientObgynHistoryRevisedBy")
-  visit_encounter_revisions       VisitEncounterRevision[]         @relation("VisitEncounterRevisedBy")
-  visit_obgyn_encounter_revisions VisitObgynEncounterRevision[]    @relation("VisitObgynEncounterRevisedBy")
-  prescription_revisions          PrescriptionRevision[]           @relation("PrescriptionRevisedBy")
-  prescription_item_revisions     PrescriptionItemRevision[]       @relation("PrescriptionItemRevisedBy")
-  pregnancy_journey_revisions     PregnancyJourneyRecordRevision[] @relation("PregnancyJourneyRecordRevisedBy")
-  pregnancy_episode_revisions     PregnancyEpisodeRecordRevision[] @relation("PregnancyEpisodeRecordRevisedBy")
-  visit_pregnancy_revisions       VisitPregnancyRecordRevision[]   @relation("VisitPregnancyRecordRevisedBy")
+  patient_obgyn_history_revisions  PatientObgynHistoryRevision[]    @relation("PatientObgynHistoryRevisedBy")
+  visit_encounter_revisions        VisitEncounterRevision[]         @relation("VisitEncounterRevisedBy")
+  visit_obgyn_encounter_revisions  VisitObgynEncounterRevision[]    @relation("VisitObgynEncounterRevisedBy")
+  prescription_revisions           PrescriptionRevision[]           @relation("PrescriptionRevisedBy")
+  prescription_item_revisions      PrescriptionItemRevision[]       @relation("PrescriptionItemRevisedBy")
+  pregnancy_journey_revisions      PregnancyJourneyRecordRevision[] @relation("PregnancyJourneyRecordRevisedBy")
+  pregnancy_episode_revisions      PregnancyEpisodeRecordRevision[] @relation("PregnancyEpisodeRecordRevisedBy")
+  visit_pregnancy_revisions        VisitPregnancyRecordRevision[]   @relation("VisitPregnancyRecordRevisedBy")
   // Builder / medical-rep back-relations
-  form_templates_created          FormTemplate[]                   @relation("FormTemplateCreatedBy")
-  form_templates_updated          FormTemplate[]                   @relation("FormTemplateUpdatedBy")
-  medical_rep_visits_doctor       MedicalRepVisit[]                @relation("MedRepVisitDoctor")
-  medical_rep_visits_created      MedicalRepVisit[]                @relation("MedRepVisitCreatedBy")
-  calendar_events                 CalendarEvent[]                  @relation("CalendarEventProfile")
-  calendar_event_assists          CalendarEventAssistant[]         @relation("CalendarEventAssistantProfile")
+  form_templates_created           FormTemplate[]                   @relation("FormTemplateCreatedBy")
+  form_templates_updated           FormTemplate[]                   @relation("FormTemplateUpdatedBy")
+  medical_rep_visits_doctor        MedicalRepVisit[]                @relation("MedRepVisitDoctor")
+  medical_rep_visits_created       MedicalRepVisit[]                @relation("MedRepVisitCreatedBy")
+  calendar_events                  CalendarEvent[]                  @relation("CalendarEventProfile")
+  calendar_event_assists           CalendarEventAssistant[]         @relation("CalendarEventAssistantProfile")
+  notifications                    Notification[]
   // Financial back-relations
-  services_created                Service[]                        @relation("ServiceCreatedBy")
-  price_lists_created             PriceList[]                      @relation("PriceListCreatedBy")
-  price_list_items_created        PriceListItem[]                  @relation("PriceListItemCreatedBy")
-  provider_services               ProviderService[]                @relation("ProfileProviderServices")
-  provider_services_created       ProviderService[]                @relation("ProviderServiceCreatedBy")
-  provider_price_overrides        ProviderPriceOverride[]          @relation("ProfilePriceOverrides")
-  provider_price_overrides_created ProviderPriceOverride[]         @relation("ProviderPriceOverrideCreatedBy")
-  invoices_created                Invoice[]                        @relation("InvoiceCreatedBy")
-  invoices_as_doctor              Invoice[]                        @relation("InvoiceDoctor")
-  payments_recorded               Payment[]                        @relation("PaymentRecordedBy")
-  refunds_issued                  Refund[]                         @relation("RefundedBy")
+  services_created                 Service[]                        @relation("ServiceCreatedBy")
+  price_lists_created              PriceList[]                      @relation("PriceListCreatedBy")
+  price_list_items_created         PriceListItem[]                  @relation("PriceListItemCreatedBy")
+  provider_services                ProviderService[]                @relation("ProfileProviderServices")
+  provider_services_created        ProviderService[]                @relation("ProviderServiceCreatedBy")
+  provider_price_overrides         ProviderPriceOverride[]          @relation("ProfilePriceOverrides")
+  provider_price_overrides_created ProviderPriceOverride[]          @relation("ProviderPriceOverrideCreatedBy")
+  invoices_created                 Invoice[]                        @relation("InvoiceCreatedBy")
+  invoices_as_doctor               Invoice[]                        @relation("InvoiceDoctor")
+  payments_recorded                Payment[]                        @relation("PaymentRecordedBy")
+  refunds_issued                   Refund[]                         @relation("RefundedBy")
 
   @@unique([user_id, organization_id])
   @@index([organization_id, is_deleted])
@@ -562,6 +564,46 @@ model RefreshToken {
 
   @@index([user_id, is_revoked])
   @@map("refresh_tokens")
+}
+
+// Audit trail for AUTH_EVENTS. Written by AuthAuditListener on every
+// signup.completed / login.succeeded / login.failed /
+// password_reset.completed / refresh.rotated event. Independent of
+// rest of the request flow: a write failure must NOT bubble up and
+// fail the user-facing action.
+model AuthAuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  event_name String
+  user_id    String?  @db.Uuid
+  email      String?
+  payload    Json
+  at         DateTime
+  created_at DateTime @default(now())
+  user       User?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@index([user_id, created_at])
+  @@index([event_name, created_at])
+  @@map("auth_audit_log")
+}
+
+// Tracks reset tokens AFTER the verify step issues a verified token.
+// PasswordResetService.verify writes one row; reset() looks the row up by
+// jti and rejects re-use via consumed_at. Forgot-password.start does NOT
+// write a row — synthesized tokens for unknown emails have no underlying
+// user and the verify step short-circuits with INVALID_CODE before this
+// table is touched, so symmetry with the real-but-wrong-code path holds.
+model PasswordResetToken {
+  id          String    @id @default(uuid()) @db.Uuid
+  jti         String    @unique @db.Uuid
+  user_id     String    @db.Uuid
+  target      String
+  expires_at  DateTime
+  consumed_at DateTime?
+  created_at  DateTime  @default(now())
+  user        User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@map("password_reset_tokens")
 }
 
 model VerificationCode {
@@ -647,7 +689,10 @@ model InvitationBranch {
 
 model Notification {
   id          String    @id @default(uuid()) @db.Uuid
-  user_id     String    @db.Uuid
+  // Notifications are scoped to a Profile (org membership), not a User. A person
+  // with profiles in several orgs gets a distinct inbox per org — `navigate_to`
+  // links resolve within that org's context.
+  profile_id  String    @db.Uuid
   // Stable machine key drawn from the catalog at
   // @core/notifications/notification-codes.ts. `category` is the display label.
   code        String
@@ -662,11 +707,11 @@ model Notification {
   deleted_at  DateTime?
   created_at  DateTime  @default(now())
   updated_at  DateTime  @updatedAt
-  user        User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  profile     Profile   @relation(fields: [profile_id], references: [id], onDelete: Cascade)
 
-  @@index([user_id, is_read, is_deleted])
-  @@index([user_id, category, is_deleted])
-  @@index([user_id, code, is_deleted])
+  @@index([profile_id, is_read, is_deleted])
+  @@index([profile_id, category, is_deleted])
+  @@index([profile_id, code, is_deleted])
   @@map("notifications")
 }
 
@@ -1007,7 +1052,9 @@ model Medication {
   created_at              DateTime                    @default(now())
   updated_at              DateTime                    @updatedAt
 
-  @@unique([organization_id, code])
+  // Partial unique index `medications_organization_id_code_live_unique`
+  // added via raw SQL in the `medications_code_partial_unique` migration —
+  // enforces unique `code` per organization on live (is_deleted=false) rows.
   @@index([organization_id, is_deleted])
   @@map("medications")
 }
@@ -2265,17 +2312,17 @@ model Payment {
 }
 
 model Refund {
-  id             String    @id @default(uuid()) @db.Uuid
-  payment_id     String    @db.Uuid
-  amount         Decimal   @db.Decimal(10, 2)
+  id             String       @id @default(uuid()) @db.Uuid
+  payment_id     String       @db.Uuid
+  amount         Decimal      @db.Decimal(10, 2)
   reason         String
   status         RefundStatus @default(COMPLETED)
-  refunded_by_id String    @db.Uuid
-  refunded_at    DateTime  @default(now())
-  is_deleted     Boolean   @default(false)
+  refunded_by_id String       @db.Uuid
+  refunded_at    DateTime     @default(now())
+  is_deleted     Boolean      @default(false)
   deleted_at     DateTime?
-  created_at     DateTime  @default(now())
-  updated_at     DateTime  @updatedAt
+  created_at     DateTime     @default(now())
+  updated_at     DateTime     @updatedAt
 
   payment     Payment @relation(fields: [payment_id], references: [id])
   refunded_by Profile @relation("RefundedBy", fields: [refunded_by_id], references: [id])

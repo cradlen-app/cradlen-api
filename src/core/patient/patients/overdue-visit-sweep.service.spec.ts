@@ -1,10 +1,10 @@
 import { Test } from '@nestjs/testing';
-import { PatientEnrollmentCleanupService } from './patient-enrollment-cleanup.service.js';
-import { PrismaService } from '@infrastructure/database/prisma.service';
-import { VisitsService } from '@core/clinical/visits/visits.service';
+import { OverdueVisitSweepService } from './overdue-visit-sweep.service.js';
+import { PrismaService } from '@infrastructure/database/prisma.service.js';
+import { VisitsService } from '@core/clinical/visits/visits.service.js';
 
-describe('PatientEnrollmentCleanupService', () => {
-  let service: PatientEnrollmentCleanupService;
+describe('OverdueVisitSweepService', () => {
+  let service: OverdueVisitSweepService;
   let db: { visit: { findMany: jest.Mock } };
   let visitsServiceMock: { updateStatus: jest.Mock };
 
@@ -16,13 +16,13 @@ describe('PatientEnrollmentCleanupService', () => {
 
     const module = await Test.createTestingModule({
       providers: [
-        PatientEnrollmentCleanupService,
+        OverdueVisitSweepService,
         { provide: PrismaService, useValue: { db } },
         { provide: VisitsService, useValue: visitsServiceMock },
       ],
     }).compile();
 
-    service = module.get(PatientEnrollmentCleanupService);
+    service = module.get(OverdueVisitSweepService);
   });
 
   it('calls updateStatus with NO_SHOW for each overdue visit using per-visit org context', async () => {

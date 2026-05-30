@@ -1,5 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsOptional, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
+import { BranchStatus } from '@prisma/client';
 
 export class CreateBranchDto {
   @ApiProperty()
@@ -29,11 +39,33 @@ export class CreateBranchDto {
   is_main?: boolean;
 }
 
+export class ListBranchesQueryDto {
+  @ApiPropertyOptional({ default: 1, minimum: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @ApiPropertyOptional({ default: 20, minimum: 1, maximum: 100 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+}
+
 export class UpdateBranchDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   name?: string;
+
+  @ApiPropertyOptional({ enum: BranchStatus })
+  @IsOptional()
+  @IsEnum(BranchStatus)
+  status?: BranchStatus;
 
   @ApiPropertyOptional()
   @IsOptional()

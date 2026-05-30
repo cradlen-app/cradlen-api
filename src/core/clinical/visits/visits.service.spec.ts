@@ -98,8 +98,16 @@ describe('VisitsService', () => {
       findFirst: jest.Mock;
       createMany: jest.Mock;
     };
-    patient: { findUnique: jest.Mock; create: jest.Mock };
+    patient: { findUnique: jest.Mock; create: jest.Mock; update: jest.Mock };
     patientJourney: { findFirst: jest.Mock; create: jest.Mock };
+    guardian: { findFirst: jest.Mock; upsert: jest.Mock; create: jest.Mock };
+    patientGuardian: {
+      findFirst: jest.Mock;
+      findUnique: jest.Mock;
+      create: jest.Mock;
+      update: jest.Mock;
+      updateMany: jest.Mock;
+    };
     carePath: { findFirst: jest.Mock };
     visit: {
       create: jest.Mock;
@@ -117,6 +125,7 @@ describe('VisitsService', () => {
     patientOrgEnrollment: {
       findFirst: jest.Mock;
       create: jest.Mock;
+      createMany: jest.Mock;
       updateMany: jest.Mock;
     };
     $transaction: jest.Mock;
@@ -130,8 +139,16 @@ describe('VisitsService', () => {
         findFirst: jest.fn(),
         createMany: jest.fn(),
       },
-      patient: { findUnique: jest.fn(), create: jest.fn() },
+      patient: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
       patientJourney: { findFirst: jest.fn(), create: jest.fn() },
+      guardian: { findFirst: jest.fn(), upsert: jest.fn(), create: jest.fn() },
+      patientGuardian: {
+        findFirst: jest.fn(),
+        findUnique: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+        updateMany: jest.fn(),
+      },
       carePath: { findFirst: jest.fn() },
       visit: {
         create: jest.fn(),
@@ -149,6 +166,7 @@ describe('VisitsService', () => {
       patientOrgEnrollment: {
         findFirst: jest.fn(),
         create: jest.fn(),
+        createMany: jest.fn(),
         updateMany: jest.fn(),
       },
       $transaction: jest.fn(),
@@ -254,6 +272,56 @@ describe('VisitsService', () => {
       await expect(
         service.update('visit-uuid', { chief_complaint: 'changed' }, mockUser),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('demotes any other primary spouse link before promoting the new one (applySpouseLink)', async () => {
+      db.visit.findUnique.mockResolvedValue({
+        ...mockVisit,
+        status: 'SCHEDULED',
+        episode: {
+          journey: {
+            organization_id: 'org-uuid',
+            patient: { id: 'patient-uuid' },
+          },
+        },
+      });
+      db.$transaction.mockImplementation(
+        async (cb: (tx: typeof db) => Promise<unknown>) => cb(db),
+      );
+      db.guardian.upsert.mockResolvedValue({ id: 'spouse-guardian-uuid' });
+      db.patientGuardian.updateMany.mockResolvedValue({ count: 1 });
+      db.patientGuardian.findUnique.mockResolvedValue(null);
+      db.visit.update.mockResolvedValue(mockVisit);
+
+      await service.update(
+        'visit-uuid',
+        {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          marital_status: 'MARRIED' as any,
+          spouse_full_name: 'John Doe',
+          spouse_national_id: '99999',
+        },
+        mockUser,
+      );
+
+      expect(db.patientGuardian.updateMany).toHaveBeenCalledWith({
+        where: {
+          patient_id: 'patient-uuid',
+          relation_to_patient: 'SPOUSE',
+          is_primary: true,
+          is_deleted: false,
+          NOT: { guardian_id: 'spouse-guardian-uuid' },
+        },
+        data: { is_primary: false },
+      });
+      expect(db.patientGuardian.create).toHaveBeenCalledWith({
+        data: {
+          patient_id: 'patient-uuid',
+          guardian_id: 'spouse-guardian-uuid',
+          relation_to_patient: 'SPOUSE',
+          is_primary: true,
+        },
+      });
     });
   });
 
@@ -724,9 +792,8 @@ describe('VisitsService', () => {
       db.profile = {
         findFirst: jest.fn().mockResolvedValue({ id: 'doctor-uuid' }),
       };
-      // enrollment create returns a resolved Promise by default so the
-      // try/catch path succeeds silently in the pre-existing tests.
-      db.patientOrgEnrollment.create.mockResolvedValue({ id: 'enroll-uuid' });
+      // enrollment is created in-transaction via createMany + skipDuplicates.
+      db.patientOrgEnrollment.createMany.mockResolvedValue({ count: 1 });
     });
 
     it('throws BadRequestException when patient_id absent and required patient fields missing', async () => {
@@ -898,35 +965,27 @@ describe('VisitsService', () => {
       );
     });
 
-    it('creates a PENDING enrollment when no enrollment exists', async () => {
-      db.patientOrgEnrollment.create.mockResolvedValue({ id: 'enroll-uuid' });
+    it('creates a PENDING enrollment in-transaction, idempotently', async () => {
+      db.patientOrgEnrollment.createMany.mockResolvedValue({ count: 1 });
 
       await service.bookVisit(bookDto, mockUser);
 
-      expect(db.patientOrgEnrollment.create).toHaveBeenCalledWith({
-        data: {
-          patient_id: mockPatient.id,
-          organization_id: mockJourney.organization_id,
-          status: 'PENDING',
-        },
+      // createMany + skipDuplicates compiles to INSERT … ON CONFLICT DO NOTHING,
+      // so a concurrent booking that already enrolled the patient is skipped at
+      // the DB without aborting this transaction.
+      expect(db.patientOrgEnrollment.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            patient_id: mockPatient.id,
+            organization_id: mockUser.organizationId,
+            status: 'PENDING',
+          },
+        ],
+        skipDuplicates: true,
       });
     });
 
-    it('silently handles P2002 when concurrent booking creates enrollment first', async () => {
-      const p2002 = new Prisma.PrismaClientKnownRequestError(
-        'Unique constraint failed',
-        {
-          code: 'P2002',
-          clientVersion: '7.0.0',
-          meta: { target: ['patient_id', 'organization_id'] },
-        },
-      );
-      db.patientOrgEnrollment.create.mockRejectedValue(p2002);
-
-      await expect(service.bookVisit(bookDto, mockUser)).resolves.not.toThrow();
-    });
-
-    it('re-throws non-P2002 errors from enrollment creation', async () => {
+    it('rolls the booking back when enrollment insertion errors', async () => {
       const dbError = new Prisma.PrismaClientKnownRequestError(
         'Connection error',
         {
@@ -935,7 +994,7 @@ describe('VisitsService', () => {
           meta: {},
         },
       );
-      db.patientOrgEnrollment.create.mockRejectedValue(dbError);
+      db.patientOrgEnrollment.createMany.mockRejectedValue(dbError);
 
       await expect(service.bookVisit(bookDto, mockUser)).rejects.toThrow();
     });
@@ -1068,6 +1127,7 @@ describe('VisitsService', () => {
           vitals: null,
         },
       ];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       db.visit.findMany.mockResolvedValue(mockVisits as any);
 
       const result = await service.findPatientVitalsTrend('patient-1', 'org-1');

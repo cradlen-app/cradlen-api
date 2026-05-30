@@ -1,30 +1,26 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { Public } from '@common/decorators/public.decorator.js';
+import { ApiStandardResponse } from '@common/swagger/index.js';
+import {
+  ProcedureLookupDto,
+  ProceduresLookupQueryDto,
+} from './dto/procedure.dto.js';
 import { ProceduresService } from './procedures.service.js';
 
-class ProceduresLookupQueryDto {
-  @IsOptional()
-  @IsUUID()
-  specialty_id?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(120)
-  search?: string;
-}
-
 @ApiTags('Procedures')
-@Controller({ path: 'procedures', version: '1' })
+@Controller('procedures')
 export class ProceduresController {
   constructor(private readonly proceduresService: ProceduresService) {}
 
+  @Public()
   @Get()
   @ApiOperation({
     summary: 'Lookup procedures (active, filterable by specialty/search)',
   })
-  lookup(@Query() query: ProceduresLookupQueryDto) {
-    return this.proceduresService.lookup({
+  @ApiStandardResponse(ProcedureLookupDto)
+  findLookup(@Query() query: ProceduresLookupQueryDto) {
+    return this.proceduresService.findLookup({
       specialtyId: query.specialty_id,
       search: query.search,
     });

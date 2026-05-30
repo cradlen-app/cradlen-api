@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 
 const PENDING_USER_TTL_HOURS = 24;
+const REFRESH_TOKEN_GRACE_DAYS = 30;
 const CLEANUP_BATCH_SIZE = 500;
 
 @Injectable()
@@ -43,6 +44,62 @@ export class RegistrationCleanupService {
     } catch (error) {
       this.logger.error(
         'Failed to clean stale pending registrations',
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
+  }
+
+  /**
+   * Hard-deletes RefreshToken rows that no client could legitimately
+   * present any more: either expired by JWT clock, or revoked, with a
+   * grace window so very recent rotations remain inspectable while
+   * debugging an incident.
+   *
+   * Runs daily because the table grows ~one row per login + one per
+   * refresh; the data is otherwise unbounded.
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_3AM)
+  async cleanupExpiredRefreshTokens(): Promise<void> {
+    try {
+      const cutoff = new Date(
+        Date.now() - REFRESH_TOKEN_GRACE_DAYS * 24 * 60 * 60 * 1000,
+      );
+      const { count } = await this.prismaService.db.refreshToken.deleteMany({
+        where: {
+          OR: [
+            { expires_at: { lt: cutoff } },
+            { is_revoked: true, revoked_at: { lt: cutoff } },
+          ],
+        },
+      });
+      this.logger.log(`Cleaned ${count} stale refresh tokens`);
+    } catch (error) {
+      this.logger.error(
+        'Failed to clean stale refresh tokens',
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
+  }
+
+  /**
+   * Hard-deletes PasswordResetToken rows that are either past expiry or
+   * have been consumed by a successful reset. Same daily cadence as the
+   * refresh-token GC.
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_3AM)
+  async cleanupExpiredPasswordResetTokens(): Promise<void> {
+    try {
+      const now = new Date();
+      const { count } =
+        await this.prismaService.db.passwordResetToken.deleteMany({
+          where: {
+            OR: [{ expires_at: { lt: now } }, { consumed_at: { not: null } }],
+          },
+        });
+      this.logger.log(`Cleaned ${count} stale password-reset tokens`);
+    } catch (error) {
+      this.logger.error(
+        'Failed to clean stale password-reset tokens',
         error instanceof Error ? error.stack : String(error),
       );
     }

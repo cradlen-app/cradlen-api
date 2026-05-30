@@ -7,14 +7,15 @@ import {
   HttpStatus,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '@common/decorators/public.decorator.js';
 import { CurrentUser } from '@common/decorators/current-user.decorator.js';
+import { IdentifierThrottlerGuard } from '@common/guards/identifier-throttler.guard.js';
 import { ApiStandardResponse, ApiVoidResponse } from '@common/swagger/index.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
-import { AuthService } from './auth.service.js';
 import { MeResponseDto } from './dto/me-response.dto.js';
 import { AuthTokensDto } from './dto/auth-tokens.dto.js';
 import { LoginDto } from './dto/login.dto.js';
@@ -36,11 +37,18 @@ import { VerifyResetCodeDto } from './dto/verify-reset-code.dto.js';
 import { ResetPasswordDto } from './dto/reset-password.dto.js';
 import { ResetTokenResponseDto } from './dto/reset-token-response.dto.js';
 import { SwitchBranchDto } from './dto/switch-branch.dto.js';
+import { SignupService } from './services/signup.service.js';
+import { SessionsService } from './services/sessions.service.js';
+import { PasswordResetService } from './services/password-reset.service.js';
 
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly signupService: SignupService,
+    private readonly sessionsService: SessionsService,
+    private readonly passwordResetService: PasswordResetService,
+  ) {}
 
   @Get('me')
   @ApiBearerAuth()
@@ -49,27 +57,29 @@ export class AuthController {
   })
   @ApiStandardResponse(MeResponseDto)
   getMe(@CurrentUser() user: AuthContext) {
-    return this.authService.getMe(user.userId, user.profileId);
+    return this.sessionsService.getMe(user.userId, user.profileId);
   }
 
   @Post('signup/start')
   @Public()
+  @UseGuards(IdentifierThrottlerGuard)
   @Throttle({ default: { limit: 5, ttl: 600000 } })
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Start owner signup and send verification code' })
   @ApiStandardResponse(SignupTokenResponseDto)
   signupStart(@Body() dto: SignupStartDto) {
-    return this.authService.signupStart(dto);
+    return this.signupService.start(dto);
   }
 
   @Post('signup/verify')
   @Public()
+  @UseGuards(IdentifierThrottlerGuard)
   @Throttle({ default: { limit: 10, ttl: 600000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Verify signup code and activate identity' })
   @ApiStandardResponse(SignupTokenResponseDto)
   signupVerify(@Body() dto: SignupVerifyDto) {
-    return this.authService.signupVerify(dto);
+    return this.signupService.verify(dto);
   }
 
   @Post('signup/complete')
@@ -81,7 +91,7 @@ export class AuthController {
   })
   @ApiStandardResponse(ProfileSelectionResponseDto)
   signupComplete(@Body() dto: SignupCompleteDto) {
-    return this.authService.signupComplete(dto);
+    return this.signupService.complete(dto);
   }
 
   @Post('signup/resend')
@@ -91,7 +101,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Resend signup verification code' })
   @ApiStandardResponse(ResendOtpResponseDto)
   resendOtp(@Body() dto: ResendOtpDto) {
-    return this.authService.resendOtp(dto);
+    return this.signupService.resendOtp(dto);
   }
 
   @Get('registration/status')
@@ -103,7 +113,7 @@ export class AuthController {
     @Query() query: RegistrationStatusQueryDto,
     @Headers('authorization') authorization?: string,
   ) {
-    return this.authService.getRegistrationStatus({
+    return this.signupService.getRegistrationStatus({
       email: query.email,
       authorization,
     });
@@ -111,13 +121,14 @@ export class AuthController {
 
   @Post('login')
   @Public()
+  @UseGuards(IdentifierThrottlerGuard)
   @Throttle({ default: { limit: 10, ttl: 600000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Validate email/password and return selectable profiles',
   })
   login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+    return this.sessionsService.login(dto);
   }
 
   @Post('profiles/select')
@@ -126,7 +137,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Issue tenant-scoped tokens for selected profile' })
   @ApiStandardResponse(AuthTokensDto)
   selectProfile(@Body() dto: SelectProfileDto) {
-    return this.authService.selectProfile(dto);
+    return this.sessionsService.selectProfile(dto);
   }
 
   @Post('branches/switch')
@@ -138,29 +149,32 @@ export class AuthController {
     @CurrentUser() user: AuthContext,
     @Body() dto: SwitchBranchDto,
   ): Promise<AuthTokensDto> {
-    return this.authService.switchBranch(user, dto);
+    return this.sessionsService.switchBranch(user, dto);
   }
 
   @Post('refresh')
   @Public()
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Rotate contextual token pair' })
   @ApiStandardResponse(AuthTokensDto)
   refresh(@Body() dto: RefreshDto) {
-    return this.authService.refresh(dto);
+    return this.sessionsService.refresh(dto);
   }
 
   @Post('logout')
   @Public()
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Revoke refresh token' })
   @ApiVoidResponse()
-  async logout(@Body() dto: LogoutDto): Promise<void> {
-    await this.authService.logout(dto.refresh_token);
+  logout(@Body() dto: LogoutDto): Promise<void> {
+    return this.sessionsService.logout(dto.refresh_token);
   }
 
   @Post('forgot-password')
   @Public()
+  @UseGuards(IdentifierThrottlerGuard)
   @Throttle({ default: { limit: 5, ttl: 600000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Send password reset code to email' })
@@ -168,7 +182,7 @@ export class AuthController {
   forgotPassword(
     @Body() dto: ForgotPasswordDto,
   ): Promise<ResetTokenResponseDto> {
-    return this.authService.forgotPassword(dto);
+    return this.passwordResetService.start(dto);
   }
 
   @Post('forgot-password/resend')
@@ -183,7 +197,7 @@ export class AuthController {
   resendPasswordResetCode(
     @Body() dto: ResendResetCodeDto,
   ): Promise<ResetTokenResponseDto> {
-    return this.authService.resendPasswordResetCode(dto);
+    return this.passwordResetService.resend(dto);
   }
 
   @Post('verify-reset-code')
@@ -197,15 +211,16 @@ export class AuthController {
   verifyResetCode(
     @Body() dto: VerifyResetCodeDto,
   ): Promise<ResetTokenResponseDto> {
-    return this.authService.verifyResetCode(dto);
+    return this.passwordResetService.verify(dto);
   }
 
   @Post('reset-password')
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 600000 } })
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Set new password using verified reset token' })
   @ApiVoidResponse()
-  async resetPassword(@Body() dto: ResetPasswordDto): Promise<void> {
-    await this.authService.resetPassword(dto);
+  resetPassword(@Body() dto: ResetPasswordDto): Promise<void> {
+    return this.passwordResetService.reset(dto);
   }
 }

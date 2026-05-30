@@ -88,9 +88,16 @@ describe('PriceListsService', () => {
     it('creates a price list', async () => {
       mockDb.priceList.create.mockResolvedValue(LIST);
 
-      const result = await service.create(ORG, { name: 'Main List', currency: 'EGP' }, USER);
+      const result = await service.create(
+        ORG,
+        { name: 'Main List', currency: 'EGP' },
+        USER,
+      );
 
-      expect(mockAuth.assertCanManageOrganization).toHaveBeenCalledWith(USER.profileId, ORG);
+      expect(mockAuth.assertCanManageOrganization).toHaveBeenCalledWith(
+        USER.profileId,
+        ORG,
+      );
       expect(result).toEqual(LIST);
     });
 
@@ -105,9 +112,17 @@ describe('PriceListsService', () => {
     it('uses branch auth when branch_id is provided', async () => {
       mockDb.priceList.create.mockResolvedValue(LIST);
 
-      await service.create(ORG, { name: 'Branch List', branch_id: 'br-1' }, USER);
+      await service.create(
+        ORG,
+        { name: 'Branch List', branch_id: 'br-1' },
+        USER,
+      );
 
-      expect(mockAuth.assertCanManageBranch).toHaveBeenCalledWith(USER.profileId, ORG, 'br-1');
+      expect(mockAuth.assertCanManageBranch).toHaveBeenCalledWith(
+        USER.profileId,
+        ORG,
+        'br-1',
+      );
       expect(mockAuth.assertCanManageOrganization).not.toHaveBeenCalled();
     });
   });
@@ -117,7 +132,12 @@ describe('PriceListsService', () => {
       mockDb.priceList.findFirst.mockResolvedValue(LIST);
       mockDb.priceList.update.mockResolvedValue({ ...LIST, name: 'Updated' });
 
-      const result = await service.update(ORG, 'pl-1', { name: 'Updated' }, USER);
+      const result = await service.update(
+        ORG,
+        'pl-1',
+        { name: 'Updated' },
+        USER,
+      );
 
       expect(result.name).toBe('Updated');
     });
@@ -135,9 +155,9 @@ describe('PriceListsService', () => {
     it('throws NotFoundException when list not found', async () => {
       mockDb.priceList.findFirst.mockResolvedValue(null);
 
-      await expect(service.update(ORG, 'missing', { name: 'X' }, USER)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.update(ORG, 'missing', { name: 'X' }, USER),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -158,7 +178,9 @@ describe('PriceListsService', () => {
     it('throws NotFoundException when list not found', async () => {
       mockDb.priceList.findFirst.mockResolvedValue(null);
 
-      await expect(service.remove(ORG, 'missing', USER)).rejects.toThrow(NotFoundException);
+      await expect(service.remove(ORG, 'missing', USER)).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -168,7 +190,12 @@ describe('PriceListsService', () => {
       mockDb.priceListItem.findFirst.mockResolvedValue({ id: 'existing-item' });
 
       await expect(
-        service.addItem(ORG, 'pl-1', { service_id: 'svc-1', unit_price: 100 }, USER),
+        service.addItem(
+          ORG,
+          'pl-1',
+          { service_id: 'svc-1', unit_price: 100 },
+          USER,
+        ),
       ).rejects.toThrow(ConflictException);
     });
   });
@@ -178,9 +205,9 @@ describe('PriceListsService', () => {
       mockDb.priceList.findFirst.mockResolvedValue(LIST);
       mockDb.priceListItem.findFirst.mockResolvedValue(null);
 
-      await expect(service.removeItem(ORG, 'pl-1', 'missing-item', USER)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.removeItem(ORG, 'pl-1', 'missing-item', USER),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 });
