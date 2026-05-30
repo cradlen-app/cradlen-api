@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { isDeepStrictEqual } from 'node:util';
 import { MaritalStatus, Prisma, VisitStatus } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
@@ -153,10 +154,16 @@ export class VisitsService {
           } as Prisma.VisitEncounterUncheckedCreateInput,
         });
       } else {
+        // Deep, order-independent comparison — a JSON.stringify diff would flag
+        // chief_complaint_meta as changed merely because key order differs
+        // between the client payload and the stored JSON, writing a spurious
+        // revision + version bump.
         const changed = Object.keys(fields).filter(
           (k) =>
-            JSON.stringify((prior as Record<string, unknown>)[k]) !==
-            JSON.stringify((fields as Record<string, unknown>)[k]),
+            !isDeepStrictEqual(
+              (prior as Record<string, unknown>)[k],
+              (fields as Record<string, unknown>)[k],
+            ),
         );
         if (changed.length > 0) {
           await tx.visitEncounterRevision.create({
