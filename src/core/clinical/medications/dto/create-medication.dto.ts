@@ -2,7 +2,6 @@ import {
   IsNumber,
   IsOptional,
   IsString,
-  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -22,5 +21,4 @@ export class CreateMedicationDto {
   @IsString() @IsOptional() @MaxLength(32) default_dose_unit?: string;
   @IsString() @IsOptional() @MaxLength(64) default_dose_frequency?: string;
   @IsString() @IsOptional() @MaxLength(64) default_dose_route?: string;
-  @IsUUID('4') @IsOptional() medical_rep_id?: string;
 }

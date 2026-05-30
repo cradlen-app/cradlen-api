@@ -8,6 +8,7 @@ import {
 import * as bcrypt from 'bcryptjs';
 import type { User } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
+import { EventBus } from '@infrastructure/messaging/event-bus.js';
 import type { AuthTokensDto } from '../dto/auth-tokens.dto.js';
 import type { LoginDto } from '../dto/login.dto.js';
 import type { RefreshDto } from '../dto/refresh.dto.js';
@@ -16,6 +17,11 @@ import type { SwitchBranchDto } from '../dto/switch-branch.dto.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import { TokensService } from './tokens.service.js';
+import {
+  AUTH_EVENTS,
+  type AuthLoginFailedPayload,
+  type AuthLoginSucceededPayload,
+} from '../events/auth.events.js';
 
 export interface SelectableProfile {
   profile_id: string;
@@ -46,6 +52,7 @@ export class SessionsService {
     private readonly prismaService: PrismaService,
     private readonly authorizationService: AuthorizationService,
     private readonly tokensService: TokensService,
+    private readonly eventBus: EventBus,
   ) {}
 
   async login(
@@ -54,15 +61,37 @@ export class SessionsService {
     const user = await this.prismaService.db.user.findFirst({
       where: { email: dto.email, is_deleted: false },
     });
-    if (!user?.password_hashed)
+    if (!user?.password_hashed) {
+      this.publishLoginFailure(dto.email, 'not_found');
       throw new UnauthorizedException('Invalid credentials');
+    }
     const passwordMatches = await bcrypt.compare(
       dto.password,
       user.password_hashed,
     );
-    if (!passwordMatches)
+    if (!passwordMatches) {
+      this.publishLoginFailure(dto.email, 'invalid_credentials');
       throw new UnauthorizedException('Invalid credentials');
+    }
+    const succeededPayload: AuthLoginSucceededPayload = {
+      user_id: user.id,
+      email: dto.email,
+      at: new Date(),
+    };
+    this.eventBus.publish(AUTH_EVENTS.login.succeeded, succeededPayload);
     return this.buildLoginResponse(user);
+  }
+
+  private publishLoginFailure(
+    email: string,
+    reason: AuthLoginFailedPayload['reason'],
+  ): void {
+    const payload: AuthLoginFailedPayload = {
+      email,
+      reason,
+      at: new Date(),
+    };
+    this.eventBus.publish(AUTH_EVENTS.login.failed, payload);
   }
 
   async selectProfile(dto: SelectProfileDto): Promise<AuthTokensDto> {
@@ -185,20 +214,40 @@ export class SessionsService {
 
     if (!user) throw new NotFoundException('User not found');
 
+    // The `profiles: { where: { id: profileId } }` filter above limits this
+    // to at most one profile. Classify OWNER vs member in-memory using the
+    // roles we already pulled instead of round-tripping through
+    // AuthorizationService.getEffectiveBranchIds (which would issue an
+    // extra hasAnyRole query per profile).
     const profilesWithBranches = await Promise.all(
       user.profiles.map(async (profile) => {
-        const branchIds = await this.authorizationService.getEffectiveBranchIds(
-          profile.id,
-          profile.organization_id,
-        );
-        const branches = await this.prismaService.db.branch.findMany({
-          where: {
-            id: { in: branchIds },
-            organization_id: profile.organization_id,
-            is_deleted: false,
-          },
-          orderBy: { created_at: 'asc' },
-        });
+        const isOwner = profile.roles.some((pr) => pr.role.name === 'OWNER');
+        const branches = isOwner
+          ? await this.prismaService.db.branch.findMany({
+              where: {
+                organization_id: profile.organization_id,
+                is_deleted: false,
+              },
+              orderBy: { created_at: 'asc' },
+            })
+          : await (async () => {
+              const links = await this.prismaService.db.profileBranch.findMany({
+                where: {
+                  profile_id: profile.id,
+                  organization_id: profile.organization_id,
+                },
+                select: { branch_id: true },
+              });
+              if (links.length === 0) return [];
+              return this.prismaService.db.branch.findMany({
+                where: {
+                  id: { in: links.map((l) => l.branch_id) },
+                  organization_id: profile.organization_id,
+                  is_deleted: false,
+                },
+                orderBy: { created_at: 'asc' },
+              });
+            })();
         return { profile, branches };
       }),
     );
@@ -293,6 +342,8 @@ export class SessionsService {
   private async getSelectableProfiles(
     userId: string,
   ): Promise<SelectableProfile[]> {
+    // Single query for all of the user's active profiles in active orgs,
+    // including the roles needed to classify OWNER vs member in-memory.
     const profiles = await this.prismaService.db.profile.findMany({
       where: {
         user_id: userId,
@@ -307,34 +358,89 @@ export class SessionsService {
       orderBy: { created_at: 'asc' },
     });
 
-    return Promise.all(
-      profiles.map(async (profile) => {
-        const branchIds = await this.authorizationService.getEffectiveBranchIds(
-          profile.id,
-          profile.organization_id,
-        );
-        const branches = await this.prismaService.db.branch.findMany({
-          where: {
-            id: { in: branchIds },
-            organization_id: profile.organization_id,
-            status: 'ACTIVE',
-            is_deleted: false,
-          },
-          orderBy: { created_at: 'asc' },
-        });
-        return {
-          profile_id: profile.id,
-          organization_id: profile.organization.id,
-          organization_name: profile.organization.name,
-          roles: profile.roles.map((item) => item.role.code),
-          branches: branches.map((b) => ({
-            branch_id: b.id,
-            name: b.name,
-            is_main: b.is_main,
-          })),
-        };
-      }),
-    );
+    if (profiles.length === 0) return [];
+
+    const ownerProfileIds = new Set<string>();
+    const ownerOrgIds = new Set<string>();
+    const memberProfileIds: string[] = [];
+    for (const profile of profiles) {
+      const isOwner = profile.roles.some((pr) => pr.role.name === 'OWNER');
+      if (isOwner) {
+        ownerProfileIds.add(profile.id);
+        ownerOrgIds.add(profile.organization_id);
+      } else {
+        memberProfileIds.push(profile.id);
+      }
+    }
+
+    // OWNER: all active branches in their orgs (single query, covers any
+    // number of owned organizations).
+    const ownerBranches =
+      ownerOrgIds.size > 0
+        ? await this.prismaService.db.branch.findMany({
+            where: {
+              organization_id: { in: [...ownerOrgIds] },
+              status: 'ACTIVE',
+              is_deleted: false,
+            },
+            orderBy: { created_at: 'asc' },
+          })
+        : [];
+    const ownerBranchesByOrg = new Map<string, typeof ownerBranches>();
+    for (const branch of ownerBranches) {
+      const list = ownerBranchesByOrg.get(branch.organization_id) ?? [];
+      list.push(branch);
+      ownerBranchesByOrg.set(branch.organization_id, list);
+    }
+
+    // Member: assigned branches via ProfileBranch (single link query
+    // + single branch detail query, regardless of profile count).
+    const memberLinks =
+      memberProfileIds.length > 0
+        ? await this.prismaService.db.profileBranch.findMany({
+            where: { profile_id: { in: memberProfileIds } },
+            select: { branch_id: true, profile_id: true },
+          })
+        : [];
+    const memberBranchIds = [...new Set(memberLinks.map((l) => l.branch_id))];
+    const memberBranches =
+      memberBranchIds.length > 0
+        ? await this.prismaService.db.branch.findMany({
+            where: {
+              id: { in: memberBranchIds },
+              status: 'ACTIVE',
+              is_deleted: false,
+            },
+            orderBy: { created_at: 'asc' },
+          })
+        : [];
+    const memberBranchById = new Map(memberBranches.map((b) => [b.id, b]));
+    const memberBranchesByProfile = new Map<string, typeof memberBranches>();
+    for (const link of memberLinks) {
+      const branch = memberBranchById.get(link.branch_id);
+      if (!branch) continue;
+      const list = memberBranchesByProfile.get(link.profile_id) ?? [];
+      list.push(branch);
+      memberBranchesByProfile.set(link.profile_id, list);
+    }
+
+    return profiles.map((profile) => {
+      const isOwner = ownerProfileIds.has(profile.id);
+      const branches = isOwner
+        ? (ownerBranchesByOrg.get(profile.organization_id) ?? [])
+        : (memberBranchesByProfile.get(profile.id) ?? []);
+      return {
+        profile_id: profile.id,
+        organization_id: profile.organization.id,
+        organization_name: profile.organization.name,
+        roles: profile.roles.map((item) => item.role.code),
+        branches: branches.map((b) => ({
+          branch_id: b.id,
+          name: b.name,
+          is_main: b.is_main,
+        })),
+      };
+    });
   }
 
   private resolveSelectedBranchId(
