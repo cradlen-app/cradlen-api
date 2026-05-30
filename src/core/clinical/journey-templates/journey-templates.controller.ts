@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { ApiTags, ApiQuery } from '@nestjs/swagger';
 import { IsOptional, IsUUID } from 'class-validator';
 import { JourneyTemplatesService } from './journey-templates.service';
@@ -23,7 +23,7 @@ export class JourneyTemplatesController {
 
   @Get(':id')
   @ApiStandardResponse(JourneyTemplateDto)
-  findOne(@Param('id') id: string) {
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.findOne(id);
   }
 }
