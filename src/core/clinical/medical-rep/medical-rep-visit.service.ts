@@ -14,9 +14,10 @@ import { UpdateMedicalRepVisitDto } from './dto/update-medical-rep-visit.dto';
 import { UpdateMedicalRepVisitStatusDto } from './dto/update-medical-rep-visit-status.dto';
 import { TemplateValidator } from '@builder/validator/template.validator.js';
 import { TemplatesService } from '@builder/templates/templates.service.js';
-import { dayBounds, todayBounds } from '@common/utils/date-range.utils.js';
+import { todayBounds } from '@common/utils/date-range.utils.js';
 import { assertStatusTransition } from '@common/utils/state-transition.js';
 import { assertBookVisitPayloadValid } from '../shared/book-visit-validation.js';
+import { nextQueueNumber } from '../shared/queue-number.js';
 import { assertMedicationsExistInOrg } from './medical-rep.helpers.js';
 
 const IDENTITY_FIELDS = [
@@ -484,24 +485,24 @@ export class MedicalRepVisitService {
     });
   }
 
-  private async getNextRepQueueNumber(
+  private getNextRepQueueNumber(
     tx: Prisma.TransactionClient,
     assignedDoctorId: string,
     branchId: string,
     date: Date,
   ): Promise<number> {
-    const { start, end } = dayBounds(date);
-    const last = await tx.medicalRepVisit.findFirst({
-      where: {
-        assigned_doctor_id: assignedDoctorId,
-        branch_id: branchId,
-        checked_in_at: { gte: start, lte: end },
-        is_deleted: false,
-      },
-      orderBy: { queue_number: 'desc' },
-      select: { queue_number: true },
-    });
-    return (last?.queue_number ?? 0) + 1;
+    return nextQueueNumber(date, ({ start, end }) =>
+      tx.medicalRepVisit.findFirst({
+        where: {
+          assigned_doctor_id: assignedDoctorId,
+          branch_id: branchId,
+          checked_in_at: { gte: start, lte: end },
+          is_deleted: false,
+        },
+        orderBy: { queue_number: 'desc' },
+        select: { queue_number: true },
+      }),
+    );
   }
 
   private async loadVisitForUser(id: string, user: AuthContext) {

@@ -17,9 +17,10 @@ import { SetFollowUpDto } from './dto/set-follow-up.dto';
 import { VisitIntakeFieldsDto } from './dto/visit-intake.dto';
 import { EventBus } from '@infrastructure/messaging/event-bus';
 import { paginated } from '@common/utils/pagination.utils';
-import { dayBounds, todayBounds } from '@common/utils/date-range.utils.js';
+import { todayBounds } from '@common/utils/date-range.utils.js';
 import { assertStatusTransition } from '@common/utils/state-transition.js';
 import { assertBookVisitPayloadValid } from '../shared/book-visit-validation.js';
+import { nextQueueNumber } from '../shared/queue-number.js';
 import {
   TemplateValidator,
   ValidatePayloadOptions,
@@ -70,25 +71,23 @@ export class VisitsService {
    * count as occupying their slot. Cancelling leaves a gap (intentional;
    * stable numbers were a locked design decision).
    */
-  private async getNextQueueNumberForSchedule(
+  private getNextQueueNumberForSchedule(
     tx: Prisma.TransactionClient,
     assignedDoctorId: string,
     branchId: string,
     scheduledAt: Date,
   ): Promise<number> {
-    const { start, end } = dayBounds(scheduledAt);
-
-    const last = await tx.visit.findFirst({
-      where: {
-        assigned_doctor_id: assignedDoctorId,
-        branch_id: branchId,
-        scheduled_at: { gte: start, lte: end },
-      },
-      orderBy: { queue_number: 'desc' },
-      select: { queue_number: true },
-    });
-
-    return (last?.queue_number ?? 0) + 1;
+    return nextQueueNumber(scheduledAt, ({ start, end }) =>
+      tx.visit.findFirst({
+        where: {
+          assigned_doctor_id: assignedDoctorId,
+          branch_id: branchId,
+          scheduled_at: { gte: start, lte: end },
+        },
+        orderBy: { queue_number: 'desc' },
+        select: { queue_number: true },
+      }),
+    );
   }
 
   private isSameDay(a: Date, b: Date): boolean {
@@ -450,29 +449,23 @@ export class VisitsService {
       });
       await this.applyIntake(tx, visit.id, dto, user.profileId);
 
+      // Enroll the patient in the org, atomically with the booking. createMany
+      // + skipDuplicates compiles to INSERT … ON CONFLICT DO NOTHING, so a
+      // concurrent booking that already created the (live) enrollment is
+      // silently skipped without aborting this transaction.
+      await tx.patientOrgEnrollment.createMany({
+        data: [
+          {
+            patient_id: patient.id,
+            organization_id: user.organizationId,
+            status: 'PENDING',
+          },
+        ],
+        skipDuplicates: true,
+      });
+
       return { visit, episode: episode, journey, patient };
     });
-
-    try {
-      await this.prismaService.db.patientOrgEnrollment.create({
-        data: {
-          patient_id: result.patient.id,
-          organization_id: result.journey.organization_id,
-          status: 'PENDING',
-        },
-      });
-    } catch (error) {
-      if (
-        !(
-          error instanceof Prisma.PrismaClientKnownRequestError &&
-          error.code === 'P2002'
-        )
-      ) {
-        throw error;
-      }
-      // P2002 = unique constraint violation — concurrent booking already created
-      // the enrollment. Safe to ignore.
-    }
 
     this.eventBus.publish('visit.booked', {
       assignedDoctorId: dto.assigned_doctor_id,
