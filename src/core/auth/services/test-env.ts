@@ -11,7 +11,7 @@ import { VerificationCodesService } from './verification-codes.service.js';
 import { PasswordResetService } from './password-reset.service.js';
 import { SignupService } from './signup.service.js';
 import { SessionsService } from './sessions.service.js';
-import { SpecialtiesService } from '@core/org/specialties/specialties.public.js';
+import { SpecialtyCatalogService } from '@core/org/specialty-catalog/specialty-catalog.public.js';
 
 export function createAuthTestEnv(
   prismaOverrides: Record<string, unknown> = {},
@@ -124,7 +124,7 @@ export function createAuthTestEnv(
     eventBus,
   );
 
-  const specialtiesService = new SpecialtiesService(prismaService);
+  const specialtiesService = new SpecialtyCatalogService(prismaService);
 
   const signupService = new SignupService(
     prismaService,

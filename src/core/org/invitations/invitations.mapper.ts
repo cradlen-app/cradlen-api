@@ -1,5 +1,5 @@
 import type { Prisma } from '@prisma/client';
-import { toSpecialtySummary } from '../specialties/specialties.public.js';
+import { toSpecialtySummary } from '../specialty-catalog/specialty-catalog.public.js';
 import { minutesToHhmm } from '../staff/shift-time.helpers.js';
 import type {
   InvitationFull,

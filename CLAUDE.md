@@ -61,14 +61,15 @@ src/
 │   └── cache, queue, sms, storage/   # Stub READMEs — no consumer yet
 ├── core/                     # Domain layer
 │   ├── auth/                 # auth (3-step signup, login, OTP, password reset) + authorization/ (role/branch checks)
-│   ├── org/                  # organizations, branches, profiles, staff, invitations, roles, job-functions, specialties, subscriptions
-│   ├── patient/patients/     # Patient records (cross-org via PatientJourney); OverdueVisitSweepService marks past-due, never-checked-in visits NO_SHOW nightly
+│   ├── org/                  # organizations, branches, profiles, staff, invitations, roles, job-functions, specialty-catalog (the Specialty lookup — distinct from the src/specialties/ vertical layer), procedures, subscriptions
+│   ├── patient/              # patients/ (records, cross-org via PatientJourney; OverdueVisitSweepService marks past-due, never-checked-in visits NO_SHOW nightly), guardians/
 │   ├── calendar/             # Per-profile calendar events; publishes CALENDAR_EVENTS (created/updated/deleted) — see calendar.events.ts
-│   ├── clinical/             # clinical/ (encounter/vitals/prescriptions/investigations), visits/ (+ encounter-mutation guard), care-paths/, journeys/, journey-templates/, patient-history/, lab-tests/, medications/, chief-complaints/, medical-rep/, events/ (domain-events catalog)
+│   ├── clinical/             # visits/ (booking + intake write path; + encounter-mutation guard), care-paths/, medications/, chief-complaints/, medical-rep/, events/ (domain-events catalog). Visit clinical data is written via booking intake (visits.service.applyIntake) and the OB/GYN examination tab — there is no generic clinical CRUD module. (The journeys/, journey-templates/, and lab-tests/ read/CRUD API modules were removed as unused — their tables remain and the booking flow still resolves templates and creates journeys/episodes internally.)
+│   ├── financial/            # services/ (billable-service catalog), pricing/ (price lists, provider services/overrides, 3-tier price resolver), invoices/ (invoice + items + payments lifecycle)
 │   ├── notifications/        # In-app notifications + listener that maps invitation events → notifications
 │   └── health/               # DB connectivity probe
 ├── builder/                  # Form-builder DSL — fields, sections/, rules, runtime, renderer, validator, templates (workflows/ still empty)
-├── specialties/              # Vertical specialty modules — sibling layer to plugins. Currently obgyn/ (visit-encounter, visit-examination, patient-history, pregnancy, amendments, history-summary)
+├── specialties/              # Vertical specialty modules — sibling layer to plugins. Currently obgyn/ (visit-examination, patient-history, amendments, history-summary)
 └── plugins/                  # Scaffold only — extension layer for future verticals (telemedicine, billing, …)
 ```
 
@@ -121,7 +122,7 @@ The system is multi-tenant by **Organization**. The same physical person (`User`
 Three independent axes; don't conflate:
 
 - **Role** (`Role` table) — authority tier. Seeded: `OWNER` (manages org and grants any role), `BRANCH_MANAGER` (manages staff and acts as OWNER within their assigned branches), `STAFF` (works inside org), `EXTERNAL` (cross-org consultant). Drives `AuthorizationService` checks. Only `OWNER` may grant `OWNER` or `BRANCH_MANAGER` via invitations — `AuthorizationService.assertNoPrivilegedRoleAssignment` blocks anyone else.
-- **JobFunction** (`JobFunction` table) — what the person does. Seeded clinical: `OBGYN`, `ANESTHESIOLOGIST`, `PEDIATRICIAN`, `OTHER_DOCTOR`, `NURSE`, `ASSISTANT`. Operational: `RECEPTIONIST`, `ACCOUNTANT`. Add new functions as seeds, not as Roles. Drives staff filtering and function-aware service-layer checks (e.g. financial endpoints check for `ACCOUNTANT`).
+- **JobFunction** (`JobFunction` table) — what the person does. Seeded clinical: `OBGYN`, `ANESTHESIOLOGIST`, `PEDIATRICIAN`, `OTHER_DOCTOR`, `NURSE`, `ASSISTANT`. Operational: `RECEPTIONIST`, `ACCOUNTANT`. Add new functions as seeds, not as Roles. Drives staff filtering and function-aware service-layer checks. (As of now the financial endpoints gate on `assertCanManageOrganization`, not on `ACCOUNTANT` — prefer a JobFunction predicate when you do add finer-grained billing checks.)
 - **executive_title** (enum on Profile) — `CEO | COO | CFO | CMO`. Display/governance only — does NOT grant permissions.
 - **engagement_type** (enum on Profile, default `FULL_TIME`) — `FULL_TIME | PART_TIME | ON_DEMAND | EXTERNAL_CONSULTANT`.
 
@@ -199,8 +200,8 @@ JWT tokens carry `{ userId, profileId, organizationId, type }`. Refresh tokens u
 Two distinct but related structural concepts — do not conflate:
 
 - **`CarePath`** (`src/core/clinical/care-paths/`) — a clinical pathway defining an ordered set of `CarePathEpisode` steps for a specialty. Can be system-wide (`organization_id = null`) or org-specific. The `specialty_code` on a booking selects which care path the visit's journey follows. Read-only API at `GET /v1/care-paths`.
-- **`JourneyTemplate`** (`src/core/clinical/journey-templates/`) — a blueprint for creating `PatientJourney` + `PatientEpisode` rows. Has a `code` (unique per specialty) and `scope`. Read-only API at `GET /v1/journey-templates`. The booking flow resolves the template from `specialty_code` + `care_path_code` and creates the journey/episode structure automatically.
-- **`PatientJourney`** → **`PatientEpisode`** → **`Visit`** — the runtime instances created from templates. Managed by `JourneysService` (`src/core/clinical/journeys/`).
+- **`JourneyTemplate`** (table only — the `journey-templates/` read API was removed as unused) — a blueprint for creating `PatientJourney` + `PatientEpisode` rows. Has a `code` (unique per specialty) and `scope`. The booking flow resolves the template from `specialty_code` + `care_path_code` (via Prisma) and creates the journey/episode structure automatically.
+- **`PatientJourney`** → **`PatientEpisode`** → **`Visit`** — the runtime instances created from templates. Created and advanced within the booking flow (`visits.service`); the standalone `journeys/` API module was removed as unused (the tables remain).
 
 At booking time (`bookVisit`), the service: resolves `specialty_code` → `specialty_id` → picks the correct `CarePath` → finds the matching `JourneyTemplate` by code → creates `PatientJourney` + first `PatientEpisode` if not already active.
 
@@ -208,14 +209,10 @@ At booking time (`bookVisit`), the service: resolves `specialty_code` → `speci
 
 `src/specialties/obgyn/` exposes multiple controller groups, each mapping to a UI tab:
 
-- **`visit-encounter/`** — SOAP-style encounter: chief complaint, diagnosis, clinical reasoning, `case_path`. Versioned with `Visit.encounter_version`. `@LocksOnClosedVisit('id')`.
-- **`visit-examination/`** — unified examination tab aggregating five sub-records (encounter scalar fields, menstrual/abdominal/pelvic/breast findings, vitals, investigations, medications) in one GET/PATCH pair. Uses `Visit.examination_version` for optimistic concurrency. Single transaction → single revision row.
-- **`pregnancy/`** — pregnancy record for the visit. `@LocksOnClosedVisit('visitId')`.
-- **`patient-history/`** — patient-level (not visit-scoped) OB/GYN history singleton, plus subsections: allergies, contraceptives, non-gyn surgeries, patient-medications, notes, pregnancies, field-flags. All share `PatientAccessService.assertPatientInOrg`.
+- **`visit-examination/`** — the single open-visit encounter write path: one GET/PATCH pair aggregating encounter scalar fields (chief complaint, diagnosis, clinical reasoning, `case_path`), all 10 body-system findings sections (general/cardiovascular/respiratory/menstrual/abdominal/pelvic/breast/extremities/neurological/skin on `VisitObgynEncounter`), vitals, investigations, and medications. Uses `Visit.examination_version` for optimistic concurrency. Single transaction → single revision row. `@LocksOnClosedVisit('id')` (closed visits are edited only via `amendments/`).
+- **`patient-history/`** — patient-level (not visit-scoped) OB/GYN history singleton. Its `GET`/`PATCH /patients/:id/obgyn-history` is the single canonical read/write path: the envelope includes the five child collections (allergies, contraceptives, non-gyn surgeries, medications, pregnancies), and the bulk PATCH owns the singleton `version` token across all of them. Patient history is specialty-shaped, so there is **no** generic/core patient-history surface — each specialty owns its own. (Org-scoping access checks live in the shared `@core/patient/patient-access` module — `PatientAccessService` with `assertPatientInOrg` / `assertVisitInOrg` — imported by both `PatientsModule` and `ObgynModule`.)
 - **`history-summary/`** — read-only aggregation of the patient's OB/GYN history, allergies, and medications into a single envelope for the sidebar/summary panel.
-- **`amendments/`** — the only legal write path for closed visits.
-
-`PatientFieldFlag` (`field-flags.service.ts`) stores per-patient clinical flag annotations (e.g. "high risk") that are independent of any single visit.
+- **`amendments/`** — the only legal write path for closed visits. The `If-Match` precondition echoes the *target row's* own `version`: for `obgyn_encounter` read it from the examination GET's `obgyn_encounter_version` field.
 
 ### Clinical write-path: immutability, amendments, revisions
 
@@ -224,7 +221,7 @@ Closed-visit clinical data is treated as a legal record. Three complementary mec
 **1. Encounter-mutation guard.** Section-level `PATCH` endpoints on a visit's clinical surface are blocked once `visit.status` is `COMPLETED` or `CANCELLED`.
 
 - `EncounterMutationGuard` (`@core/clinical/visits/encounter-mutation.guard.ts`) — class-level `@UseGuards`.
-- `@LocksOnClosedVisit('paramName')` decorator (`@common/decorators/locks-on-closed-visit.decorator.ts`) — opt each PATCH in. Default param is `id`; the pregnancy controller uses `visitId`. GETs pass through.
+- `@LocksOnClosedVisit('paramName')` decorator (`@common/decorators/locks-on-closed-visit.decorator.ts`) — opt each PATCH in. Default param is `id`. GETs pass through.
 - Blocked requests return `409 ENCOUNTER_LOCKED` with the amendment endpoint hinted in `error.details`.
 - `VisitsModule` exports the guard; specialty modules import `VisitsModule` to resolve it.
 
@@ -232,18 +229,31 @@ Closed-visit clinical data is treated as a legal record. Three complementary mec
 
 - Authority: the visit's `assigned_doctor_id` OR an `OWNER` of the org.
 - Requires `reason` (min 8 chars) and an `If-Match` version precondition.
-- Targets: `obgyn_encounter`, `pregnancy_record` (visit-scoped). Patient-level (`patient_obgyn_history`) and journey/episode targets are validated but not yet routed.
+- Targets: `obgyn_encounter` (visit-scoped). Patient-level (`patient_obgyn_history`) is validated but not yet routed.
 - Response includes `{ target, section, version_from, version_to, amended_by_id, reason, amended_at }` for audit.
 
 **3. Revisions (audit shadow tables).** Every PATCH and amendment writes the prior row to a paired `*_revisions` table inside the same Prisma transaction as the live-row update.
 
-- Tables (additive, all `…_revisions`): `patient_obgyn_history`, `visit_obgyn_encounter`, `pregnancy_journey_record`, `pregnancy_episode_record`, `visit_pregnancy_record`.
+- Tables actively written (all `…_revisions`): `patient_obgyn_history`, `visit_obgyn_encounter`. (The `pregnancy_journey_record`, `pregnancy_episode_record`, `visit_pregnancy_record` revision tables remain in the schema but are unused while the pregnancy module is out.)
 - Shape: `(id, entity_id FK, version, snapshot Json, changed_fields Json, revised_by_id FK profile, revised_at, revision_reason?)`. `version` is the SNAPSHOT version — the live-row version BEFORE the change. Append-only.
 - Helper: `buildRevision(prior, changedFields, revisedById, reason?)` in `@specialties/obgyn/revisions.helper`. Callers own the Prisma transaction so live-row + revision are atomic. PATCH leaves `revision_reason` null; amendments pass `dto.reason`.
 
 **4. Bulk section PATCH per tab.** OB/GYN section PATCHes are collapsed into one bulk PATCH per tab (one transaction → one revision row covering all changed fields). When adding new specialty surfaces, follow that pattern rather than one-section-per-endpoint.
 
 **5. Clinical domain-events catalog.** Event names for downstream consumers (notifications, AI assistants, analytics, referrals) live in `@core/clinical/events/clinical-events.ts` and are re-exported via `events.public.ts`. Publish through `EventBus`; do not invent ad-hoc event strings.
+
+### Financial / billing (`src/core/financial/`)
+
+Org-scoped billing under `FinancialModule` (three sub-modules). All routes are `organizations/:orgId/...` and gate on `AuthorizationService.assertCanManageOrganization` / `assertCanAccessBranch`.
+
+- **`services/`** — the billable-service catalog (`Service`, `ServiceType` = `CONSULTATION | PROCEDURE | LAB_TEST | IMAGING | ADMINISTRATIVE | OTHER`), optionally linked to specialties via `ServiceSpecialty`. CRUD at `organizations/:orgId/financial/services`.
+- **`pricing/`** — three concepts:
+  - **Price lists** (`PriceList` → `PriceListItem`) — org-level or branch-level, with a `is_default` flag per scope. CRUD at `organizations/:orgId/financial/price-lists`.
+  - **Provider services / overrides** (`ProviderService`, `ProviderPriceOverride`) — authorize which services a provider may bill and set per-provider, time-bounded (`valid_from`/`valid_to`) price overrides. Routes under `organizations/:orgId/providers/:profileId/{services,price-overrides}`.
+  - **Price resolver** (`PricingResolverService`, `GET organizations/:orgId/financial/resolve-price`) — resolves the effective price by precedence: **provider override → branch default price list → org default price list** (else `null`). The chosen tier is reported as `PricingSource` (`PROVIDER_OVERRIDE | BRANCH_OVERRIDE | ORG_PRICE_LIST | CUSTOM`).
+- **`invoices/`** — `Invoice` → `InvoiceItem` + `Payment`. Lifecycle: `DRAFT → ISSUED → PARTIALLY_PAID → PAID` (plus `REFUNDED`, `VOID`); items are mutable only while `DRAFT`. Endpoints: create/list/get/patch, `:id/items` add + `:id/items/:itemId` remove, `:id/issue`, `:id/void`, `:id/payments` record + list. Invoice numbers come from `InvoiceNumberService.generate()` — an atomic upsert on `InvoiceSequence (organization_id, year)` producing `INV-<year>-<5-digit-seq>`. `InvoiceType` = `STANDARD | FOLLOWUP | PROFORMA | INSURANCE | REFUND`; insurance flows have an `InvoiceInsuranceClaim` shadow.
+
+Unit-priced amounts are Prisma `Decimal` — never coerce to JS `number` for arithmetic.
 
 ### Form-builder DSL (`src/builder/`)
 
@@ -276,7 +286,7 @@ DB-stored form templates the frontend renders against. Authored in code (`prisma
 ### Adding a new feature
 
 1. Decide its layer:
-   - Domain feature with its own endpoints → `src/core/<bucket>/<feature>/` (pick the right bucket: `auth | org | patient | calendar | clinical | notifications | health`).
+   - Domain feature with its own endpoints → `src/core/<bucket>/<feature>/` (pick the right bucket: `auth | org | patient | calendar | clinical | financial | notifications | health`).
    - Vendor SDK wrapper → `src/infrastructure/<feature>/`.
    - Vertical specialty (OB/GYN, pediatrics, dermatology, …) → `src/specialties/<specialty>/`. Imports `core/<x>/*.module.ts` to resolve guards/services; never imports another specialty.
    - Cross-cutting extension (telemedicine, billing, lab integration) → `src/plugins/<feature>/`.
@@ -304,13 +314,15 @@ Core entities:
 - **WorkingSchedule** → **WorkingDay** → **WorkingShift** — per (profile, branch).
 - **Patient** → many **PatientJourney** → many **PatientEpisode** → many **Visit**. `Patient.marital_status` (enum) gates spouse capture.
 - **Guardian** + **PatientGuardian** — guardian (national_id-keyed) linked to patient with `relation_to_patient: GuardianRelation` (SPOUSE / PARENT / CHILD / …). Spouses are upserted at booking time when `marital_status=MARRIED`.
-- **Visit** — now carries `specialty_code String?`, `form_template_id UUID?` (FK to the active template used at booking), `examination_version Int @default(1)` (optimistic lock for the unified examination tab), plus the pre-existing `encounter_version`. The `examination_version` token is used by `visit-examination/` PATCH; `encounter_version` is used by `visit-encounter/` PATCH.
+- **Visit** — now carries `specialty_code String?`, `form_template_id UUID?` (FK to the active template used at booking), and `examination_version Int @default(1)` (optimistic-lock token for the unified examination tab, bumped by `visit-examination/` PATCH).
 - **Visit.appointment_type** is `VISIT | FOLLOW_UP`. `MEDICAL_REP` visits live in a separate table — see below.
 - **CarePath** + **CarePathEpisode** — clinical pathway definitions (system or org-specific). Filtered by `specialty_code` + org scope at query time.
 - **JourneyTemplate** — visit/episode blueprint with `code` (unique per specialty) and `scope`. The booking flow resolves template → creates PatientJourney + PatientEpisode.
 - **CalendarEvent** — per-profile calendar entries with `event_type`, `visibility`, optional `branch_id`. Managed by `CalendarModule`; publishes `CALENDAR_EVENTS`.
-- **PatientFieldFlag** — per-patient clinical flag annotations (e.g. high-risk markers) independent of any visit. Managed by `FieldFlagsService` in `patient-history/`.
 - **MedicalRep** + **MedicalRepVisit** + **MedicalRepMedication** + **MedicalRepVisitMedication** — org-scoped pharma rep visits. Booked via `POST /v1/medical-rep-visits/book`; search via `GET /v1/medical-reps?search=`. No patient/episode/journey.
+- **Service** + **ServiceSpecialty** — billable-service catalog (org-scoped, `ServiceType`), optionally specialty-linked. See "Financial / billing" above.
+- **PriceList** + **PriceListItem** + **ProviderService** + **ProviderPriceOverride** — pricing tiers resolved by `PricingResolverService` (provider override → branch → org). Prices are `Decimal`.
+- **Invoice** + **InvoiceItem** + **Payment** + **InvoiceSequence** + **InvoiceInsuranceClaim** — invoicing lifecycle; `InvoiceSequence (organization_id, year)` backs `INV-<year>-<seq>` numbering.
 - **FormTemplate** + **FormSection** + **FormField** — DB-stored form schemas for the builder DSL. See "Form-builder DSL" above.
 - **RefreshToken** — `jti` (UUID), `token_hash` (bcrypt), `profile_id`, `organization_id`, `active_branch_id`.
 - **VerificationCode** — `code_hash` (bcrypt), `purpose` (`SIGNUP | LOGIN | PASSWORD_RESET`), `expires_at`, `consumed_at`.

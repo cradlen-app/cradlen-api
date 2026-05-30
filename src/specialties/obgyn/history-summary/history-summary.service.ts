@@ -2,14 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { coerceStringRecord } from '@common/utils/json.utils';
 import { PrismaService } from '@infrastructure/database/prisma.service';
-import { ObgynPatientAccessService } from '../patient-access.service';
+import { PatientAccessService } from '@core/patient/patient-access/patient-access.public';
 import { ObgynHistorySummaryDto } from './dto/obgyn-history-summary.dto';
 
 @Injectable()
 export class HistorySummaryService {
   constructor(
     private readonly prismaService: PrismaService,
-    private readonly access: ObgynPatientAccessService,
+    private readonly access: PatientAccessService,
   ) {}
 
   async getObgynHistorySummary(

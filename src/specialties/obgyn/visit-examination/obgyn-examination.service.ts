@@ -9,7 +9,7 @@ import {
   CLINICAL_EVENTS,
   type VisitExaminationUpdatedEvent,
 } from '@core/clinical/events/events.public';
-import { ObgynPatientAccessService } from '../patient-access.service';
+import { PatientAccessService } from '@core/patient/patient-access/patient-access.public';
 import { buildRevision } from '../revisions.helper';
 import {
   InvestigationRowDto,
@@ -18,10 +18,16 @@ import {
 } from './dto/obgyn-examination.dto';
 
 const OBGYN_JSON_SECTIONS = [
+  'general_findings',
+  'cardiovascular_findings',
+  'respiratory_findings',
   'menstrual_findings',
   'abdominal_findings',
   'pelvic_findings',
   'breast_findings',
+  'extremities_findings',
+  'neurological_findings',
+  'skin_findings',
 ] as const;
 
 const ENCOUNTER_SCALAR_FIELDS = [
@@ -51,7 +57,7 @@ const VITALS_FIELDS = [
  * One request → one Prisma transaction across five aggregates:
  *   1. VisitEncounter      (chief complaint + provisional diagnosis)
  *   2. VisitVitals         (BMI recomputed server-side)
- *   3. VisitObgynEncounter (4 OB/GYN JSON sections)
+ *   3. VisitObgynEncounter (all 10 body-system findings sections)
  *   4. VisitInvestigation  (id-keyed row diff)
  *   5. Prescription + PrescriptionItem (singleton + id-keyed row diff)
  *   + Visit.follow_up_date + Visit.examination_version bump
@@ -67,7 +73,7 @@ const VITALS_FIELDS = [
 export class ObgynExaminationService {
   constructor(
     private readonly prismaService: PrismaService,
-    private readonly access: ObgynPatientAccessService,
+    private readonly access: PatientAccessService,
     private readonly eventBus: EventBus,
   ) {}
 
@@ -130,17 +136,27 @@ export class ObgynExaminationService {
             rbs_mmol_l: vitals.rbs_mmol_l,
           }
         : null,
-      // OB/GYN JSON sections
+      // OB/GYN JSON sections (all 10 body-system findings)
+      general_findings: obgyn?.general_findings ?? null,
+      cardiovascular_findings: obgyn?.cardiovascular_findings ?? null,
+      respiratory_findings: obgyn?.respiratory_findings ?? null,
       menstrual_findings: obgyn?.menstrual_findings ?? null,
       abdominal_findings: obgyn?.abdominal_findings ?? null,
       pelvic_findings: obgyn?.pelvic_findings ?? null,
       breast_findings: obgyn?.breast_findings ?? null,
+      extremities_findings: obgyn?.extremities_findings ?? null,
+      neurological_findings: obgyn?.neurological_findings ?? null,
+      skin_findings: obgyn?.skin_findings ?? null,
       // Repeatable rows
       investigations: investigations,
       medications: prescription?.items ?? [],
       // Visit-level
       follow_up_date: visit?.follow_up_date ?? null,
       examination_version: visit?.examination_version ?? 1,
+      // Precondition token for `obgyn_encounter` amendments
+      // (POST /visits/:id/amendments). The examination GET is reachable on
+      // closed visits, so this is the documented source for that If-Match.
+      obgyn_encounter_version: obgyn?.version ?? 1,
       updated_at: visit?.updated_at ?? new Date(),
     };
   }
@@ -176,7 +192,7 @@ export class ObgynExaminationService {
         aggregates.push('vitals');
       }
 
-      // ---- (3) VisitObgynEncounter (4 OB/GYN JSON sections) ----
+      // ---- (3) VisitObgynEncounter (all 10 body-system findings sections) ----
       if (this.touchesObgynEncounter(dto)) {
         await this.upsertObgynEncounter(tx, visitId, dto, user.profileId);
         aggregates.push('obgyn_encounter');

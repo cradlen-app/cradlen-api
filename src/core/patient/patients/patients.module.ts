@@ -4,10 +4,10 @@ import { PatientsService } from './patients.service.js';
 import { OverdueVisitSweepService } from './overdue-visit-sweep.service.js';
 import { AuthorizationModule } from '@core/auth/authorization/authorization.module.js';
 import { VisitsModule } from '@core/clinical/visits/visits.module.js';
-import { PatientHistoryModule } from '@core/clinical/patient-history/patient-history.module.js';
+import { PatientAccessModule } from '@core/patient/patient-access/patient-access.public.js';
 
 @Module({
-  imports: [AuthorizationModule, VisitsModule, PatientHistoryModule],
+  imports: [AuthorizationModule, VisitsModule, PatientAccessModule],
   controllers: [PatientsController],
   providers: [PatientsService, OverdueVisitSweepService],
 })

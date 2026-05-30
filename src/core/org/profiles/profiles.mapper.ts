@@ -1,4 +1,4 @@
-import { toSpecialtySummary } from '../specialties/specialties.public.js';
+import { toSpecialtySummary } from '../specialty-catalog/specialty-catalog.public.js';
 import type { ProfileDetail, ProfileSummary } from './profiles.includes.js';
 
 export function toProfileSummary(profile: ProfileSummary) {

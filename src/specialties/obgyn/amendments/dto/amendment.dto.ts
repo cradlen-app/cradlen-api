@@ -9,9 +9,6 @@ import {
 
 export const AMENDMENT_TARGETS = [
   'obgyn_encounter',
-  'pregnancy_record',
-  'pregnancy_journey_record',
-  'pregnancy_episode_record',
   'patient_obgyn_history',
 ] as const;
 
@@ -23,8 +20,8 @@ export class CreateAmendmentDto {
 
   /**
    * Section key — required for table types that fan out by section (e.g.
-   * `pelvic`, `breast`, `menstrual` on obgyn_encounter; `cervix`,
-   * `biometrics` on pregnancy_record). Optional for monolithic tables.
+   * `pelvic_findings`, `breast_findings`, `menstrual_findings` on
+   * obgyn_encounter). Optional for monolithic tables.
    */
   @IsOptional() @IsString() section?: string;
 
