@@ -1,8 +1,9 @@
 import '@infrastructure/monitoring/sentry';
+import * as Sentry from '@sentry/nestjs';
 import { NestFactory } from '@nestjs/core';
 import { VersioningType, ValidationPipe } from '@nestjs/common';
 import type { Request, Response, NextFunction } from 'express';
-import { ConfigService } from '@nestjs/config';
+import { ConfigType } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module.js';
@@ -10,15 +11,13 @@ import { ResponseInterceptor } from './common/interceptor/response.interceptor.j
 import { LoggingInterceptor } from './common/interceptor/logging.interceptor.js';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter.js';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware.js';
-import type { AppConfig } from './config/app.config';
+import appConfigDef from './config/app.config';
 import { ErrorResponseDto, PaginationMetaDto } from './common/swagger/index.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  const configService = app.get(ConfigService);
-  const appConfig = configService.get<AppConfig>('app');
-  if (!appConfig) throw new Error('App configuration not loaded');
+  const appConfig = app.get<ConfigType<typeof appConfigDef>>(appConfigDef.KEY);
 
   const requestIdMiddleware = new RequestIdMiddleware();
   app.use(requestIdMiddleware.use.bind(requestIdMiddleware));
@@ -76,6 +75,26 @@ async function bootstrap() {
     });
     SwaggerModule.setup('docs', app, document);
   }
+
+  // Graceful shutdown: on SIGTERM/SIGINT (container stop, deploy, Ctrl-C) close
+  // the Nest app first — this runs onModuleDestroy hooks, e.g.
+  // PrismaService.$disconnect, so connections close cleanly instead of being
+  // dropped — then drain Sentry's buffered events before exiting. We own the
+  // signal handling here (rather than enableShutdownHooks) so Sentry is flushed
+  // strictly after the app has closed.
+  let shuttingDown = false;
+  const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    try {
+      await app.close();
+    } finally {
+      await Sentry.close(2000);
+      process.exit(0);
+    }
+  };
+  process.once('SIGTERM', () => void shutdown());
+  process.once('SIGINT', () => void shutdown());
 
   await app.listen(appConfig.port);
 }

@@ -62,6 +62,7 @@ export class AuthorizationService {
             where: {
               profile_id: profileId,
               organization_id: organizationId,
+              branch: { is_deleted: false },
             },
             select: { branch_id: true },
           })
@@ -89,7 +90,11 @@ export class AuthorizationService {
       return branches.map((b) => b.id);
     }
     const links = await this.prismaService.db.profileBranch.findMany({
-      where: { profile_id: profileId, organization_id: organizationId },
+      where: {
+        profile_id: profileId,
+        organization_id: organizationId,
+        branch: { is_deleted: false },
+      },
       select: { branch_id: true },
     });
     return links.map((l) => l.branch_id);
@@ -193,6 +198,35 @@ export class AuthorizationService {
   ): Promise<void> {
     if (!(await this.canManageOrganization(profileId, organizationId))) {
       throw new ForbiddenException('Organization management access denied');
+    }
+  }
+
+  /**
+   * Any active, non-deleted member of the organization. Use for reads; use
+   * canManageOrganization/assertCanManageOrganization for writes.
+   */
+  async canAccessOrganization(
+    profileId: string,
+    organizationId: string,
+  ): Promise<boolean> {
+    const match = await this.prismaService.db.profile.findFirst({
+      where: {
+        id: profileId,
+        organization_id: organizationId,
+        is_deleted: false,
+        is_active: true,
+      },
+      select: { id: true },
+    });
+    return !!match;
+  }
+
+  async assertCanAccessOrganization(
+    profileId: string,
+    organizationId: string,
+  ): Promise<void> {
+    if (!(await this.canAccessOrganization(profileId, organizationId))) {
+      throw new ForbiddenException('Organization access denied');
     }
   }
 

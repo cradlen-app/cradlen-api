@@ -4,7 +4,8 @@ import {
   ForbiddenException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import appConfig from '@config/app.config';
+import authConfig from '@config/auth.config';
 import { InvitationStatus } from '@prisma/client';
 import { InvitationsService } from './invitations.service';
 import { hashInvitationToken } from './invitations.tokens';
@@ -77,6 +78,7 @@ describe('InvitationsService.acceptInvitation', () => {
       profile: {
         upsert: jest.fn(),
         count: jest.fn(),
+        findFirst: jest.fn(),
       },
       subscription: {
         findFirst: jest.fn(),
@@ -108,13 +110,12 @@ describe('InvitationsService.acceptInvitation', () => {
         { provide: SubscriptionsService, useValue: subscriptions },
         { provide: EventBus, useValue: eventBus },
         {
-          provide: ConfigService,
-          useValue: {
-            get: (key: string) =>
-              key === 'app'
-                ? { appUrl: 'https://app.cradlen.com' }
-                : { invitationExpireHours: 48 },
-          },
+          provide: appConfig.KEY,
+          useValue: { appUrl: 'https://app.cradlen.com' },
+        },
+        {
+          provide: authConfig.KEY,
+          useValue: { invitationExpireHours: 48 },
         },
       ],
     }).compile();
@@ -129,6 +130,8 @@ describe('InvitationsService.acceptInvitation', () => {
     db.invitation.updateMany.mockResolvedValueOnce({ count: 1 });
     db.user.create.mockResolvedValueOnce({ id: 'user-2' });
     db.profile.upsert.mockResolvedValueOnce({ id: 'profile-2' });
+    // Inviter's profile in the org — resolved for the profile-scoped notification.
+    db.profile.findFirst.mockResolvedValueOnce({ id: 'profile-inviter' });
 
     const result = await service.acceptInvitation({
       invitation_id: 'inv-1',
@@ -152,6 +155,7 @@ describe('InvitationsService.acceptInvitation', () => {
         organizationId: 'org-1',
         branchId: 'branch-1',
         inviteeName: 'Sara Ahmed',
+        recipientProfileId: 'profile-inviter',
       }),
     );
   });

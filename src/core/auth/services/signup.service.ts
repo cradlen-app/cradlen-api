@@ -2,22 +2,24 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   InternalServerErrorException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { ConfigType } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import type { JobFunction, Specialty, User } from '@prisma/client';
 import { ERROR_CODES } from '@common/constant/error-codes.js';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
-import type { AuthConfig } from '@config/auth.config.js';
+import authConfig, { type AuthConfig } from '@config/auth.config.js';
 import type { RegistrationStep } from '../dto/registration-status-response.dto.js';
 import type { ResendOtpDto } from '../dto/resend-otp.dto.js';
 import type { SignupCompleteDto } from '../dto/signup-complete.dto.js';
 import type { SignupStartDto } from '../dto/signup-start.dto.js';
 import type { SignupVerifyDto } from '../dto/signup-verify.dto.js';
 import { EventBus } from '@infrastructure/messaging/event-bus.js';
+import { SpecialtiesService } from '@core/org/specialties/specialties.public.js';
 import { TokensService } from './tokens.service.js';
 import { VerificationCodesService } from './verification-codes.service.js';
 import {
@@ -37,14 +39,14 @@ export class SignupService {
 
   constructor(
     private readonly prismaService: PrismaService,
-    private readonly configService: ConfigService,
+    @Inject(authConfig.KEY)
+    config: ConfigType<typeof authConfig>,
     private readonly tokensService: TokensService,
     private readonly verificationCodesService: VerificationCodesService,
     private readonly sessionsService: SessionsService,
+    private readonly specialtiesService: SpecialtiesService,
     private readonly eventBus: EventBus,
   ) {
-    const config = this.configService.get<AuthConfig>('auth');
-    if (!config) throw new Error('Auth configuration not loaded');
     this.authConfig = config;
   }
 
@@ -192,7 +194,11 @@ export class SignupService {
     const jobFunctions = await this.resolveJobFunctions(
       dto.job_function_codes ?? [],
     );
-    const specialties = await this.resolveSpecialties(dto.specialties);
+    // Silent-skip on unmatched entries: the M2M is the source of truth and
+    // onboarding should not hard-fail on a stale specialty label.
+    const specialties = await this.specialtiesService.resolveByCodeOrName(
+      dto.specialties,
+    );
 
     const [ownerRole, freePlan] = await Promise.all([
       this.findRole('OWNER'),
@@ -308,21 +314,6 @@ export class SignupService {
       );
     }
     return rows;
-  }
-
-  private async resolveSpecialties(codeOrName: string[]): Promise<Specialty[]> {
-    if (codeOrName.length === 0) return [];
-    // Match Specialty.code first, then case-insensitive name. Unmatched
-    // entries are silently skipped — the M2M is the source of truth.
-    return this.prismaService.db.specialty.findMany({
-      where: {
-        OR: [
-          { code: { in: codeOrName } },
-          { name: { in: codeOrName, mode: 'insensitive' } },
-        ],
-        is_deleted: false,
-      },
-    });
   }
 
   private async findRole(name: string) {

@@ -97,7 +97,6 @@ Table users {
   passwordResetTokens password_reset_tokens [not null]
   authAuditLogs auth_audit_log [not null]
   sentInvitations invitations [not null]
-  notifications notifications [not null]
 }
 
 Table roles {
@@ -192,6 +191,7 @@ Table profiles {
   medical_rep_visits_created medical_rep_visits [not null]
   calendar_events calendar_events [not null]
   calendar_event_assists calendar_event_assistants [not null]
+  notifications notifications [not null]
   services_created services [not null]
   price_lists_created price_lists [not null]
   price_list_items_created price_list_items [not null]
@@ -360,7 +360,7 @@ Table invitation_branches {
 
 Table notifications {
   id String [pk]
-  user_id String [not null]
+  profile_id String [not null]
   code String [not null]
   category String [not null]
   title String [not null]
@@ -373,7 +373,7 @@ Table notifications {
   deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
-  user users [not null]
+  profile profiles [not null]
 }
 
 Table working_schedules {
@@ -2071,7 +2071,7 @@ Ref: invitation_branches.invitation_id > invitations.id [delete: Cascade]
 
 Ref: invitation_branches.(branch_id, organization_id) > branches.(id, organization_id) [delete: Cascade]
 
-Ref: notifications.user_id > users.id [delete: Cascade]
+Ref: notifications.profile_id > profiles.id [delete: Cascade]
 
 Ref: working_schedules.profile_id > profiles.id [delete: Cascade]
 
