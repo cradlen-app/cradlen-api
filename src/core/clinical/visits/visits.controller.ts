@@ -15,16 +15,6 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
-import {
-  IsEnum,
-  IsInt,
-  IsNotEmpty,
-  IsOptional,
-  IsUUID,
-  Max,
-  Min,
-} from 'class-validator';
-import { Type } from 'class-transformer';
 import { VisitStatus } from '@prisma/client';
 import { VisitsService } from './visits.service';
 import { BookVisitDto } from './dto/book-visit.dto';
@@ -35,33 +25,15 @@ import { SetFollowUpDto } from './dto/set-follow-up.dto';
 import { VisitDto } from './dto/visit.dto';
 import { VisitHistorySummaryDto } from './dto/visit-history-summary.dto';
 import { VitalsTrendPointDto } from './dto/vitals-trend-point.dto';
+import {
+  ListVisitsQueryDto,
+  ListBranchVisitsQueryDto,
+  VisitHistoryQueryDto,
+  VitalsTrendQueryDto,
+} from './dto/list-visits-query.dto';
 import { ApiStandardResponse, ApiPaginatedResponse } from '@common/swagger';
 import { CurrentUser } from '@common/decorators/current-user.decorator';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
-
-class ListVisitsQueryDto {
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number = 1;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit?: number =
-    20;
-}
-
-class ListBranchVisitsQueryDto {
-  @IsNotEmpty() @IsEnum(VisitStatus) status!: VisitStatus;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number = 1;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit?: number =
-    20;
-}
-
-class VisitHistoryQueryDto {
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number = 1;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit?: number =
-    3;
-  @IsOptional() @IsUUID() exclude?: string;
-}
-
-class VitalsTrendQueryDto {
-  @IsOptional() @IsUUID() exclude?: string;
-}
 
 @ApiTags('Visits')
 @Controller()

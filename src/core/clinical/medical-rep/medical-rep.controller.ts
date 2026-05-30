@@ -13,8 +13,6 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
-import { Type } from 'class-transformer';
 import {
   ApiPaginatedResponse,
   ApiStandardResponse,
@@ -33,13 +31,7 @@ import {
 } from './dto/medical-rep-medications.dto';
 import { UpdateMedicalRepVisitDto } from './dto/update-medical-rep-visit.dto';
 import { UpdateMedicalRepVisitStatusDto } from './dto/update-medical-rep-visit-status.dto';
-
-class ListMedicalRepVisitsQueryDto {
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number = 1;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit?: number =
-    20;
-  @IsOptional() @IsUUID() branch_id?: string;
-}
+import { ListMedicalRepVisitsQueryDto } from './dto/list-medical-rep-visits.query';
 
 @ApiTags('medical-reps')
 @Controller({ version: '1' })
