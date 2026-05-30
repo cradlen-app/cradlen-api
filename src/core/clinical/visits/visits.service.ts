@@ -137,9 +137,8 @@ export class VisitsService {
       };
 
       // Snapshot prior encounter (if any) inside the same tx so updates that
-      // come through this path leave a revision row — M8 audit guarantee
-      // applies to every write to visit_encounters, not just the
-      // EncounterService.upsert entry point.
+      // come through this booking-intake path leave a revision row — the M8
+      // audit guarantee applies to every write to visit_encounters.
       const prior = await tx.visitEncounter.findUnique({
         where: { visit_id: visitId },
       });

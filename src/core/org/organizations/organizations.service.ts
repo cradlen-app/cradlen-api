@@ -8,9 +8,9 @@ import { ConfigType } from '@nestjs/config';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import {
-  SpecialtiesService,
+  SpecialtyCatalogService,
   toSpecialtySummary,
-} from '@core/org/specialties/specialties.public.js';
+} from '@core/org/specialty-catalog/specialty-catalog.public.js';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service.js';
 import authConfig from '@config/auth.config.js';
 import type { CreateOrganizationDto } from './dto/create-organization.dto.js';
@@ -29,7 +29,7 @@ export class OrganizationsService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly authorizationService: AuthorizationService,
-    private readonly specialtiesService: SpecialtiesService,
+    private readonly specialtiesService: SpecialtyCatalogService,
     private readonly subscriptionsService: SubscriptionsService,
     @Inject(authConfig.KEY)
     config: ConfigType<typeof authConfig>,
