@@ -19,18 +19,13 @@ import { InvitationsModule } from '@core/org/invitations/invitations.module.js';
 import { StaffModule } from '@core/org/staff/staff.module.js';
 import { SubscriptionsModule } from '@core/org/subscriptions/subscriptions.module.js';
 import { NotificationsModule } from '@core/notifications/notifications.module.js';
-import { SpecialtiesModule } from '@core/org/specialties/specialties.module';
+import { SpecialtyCatalogModule } from '@core/org/specialty-catalog/specialty-catalog.module';
 import { JobFunctionsModule } from '@core/org/job-functions/job-functions.module';
-import { JourneyTemplatesModule } from '@core/clinical/journey-templates/journey-templates.module';
 import { PatientsModule } from '@core/patient/patients/patients.module';
 import { GuardiansModule } from '@core/patient/guardians/guardians.module';
-import { JourneysModule } from '@core/clinical/journeys/journeys.module';
 import { VisitsModule } from '@core/clinical/visits/visits.module';
 import { MedicalRepModule } from '@core/clinical/medical-rep/medical-rep.module';
 import { MedicationsModule } from '@core/clinical/medications/medications.module';
-import { LabTestsModule } from '@core/clinical/lab-tests/lab-tests.module';
-import { ClinicalModule } from '@core/clinical/clinical/clinical.module';
-import { PatientHistoryModule } from '@core/clinical/patient-history/patient-history.module';
 import { CarePathsModule } from '@core/clinical/care-paths/care-paths.module';
 import { ChiefComplaintsModule } from '@core/clinical/chief-complaints/chief-complaints.module';
 import { CalendarModule } from '@core/calendar/calendar.module';
@@ -69,18 +64,13 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     SubscriptionsModule,
     NotificationsModule,
     FinancialModule,
-    SpecialtiesModule,
+    SpecialtyCatalogModule,
     JobFunctionsModule,
-    JourneyTemplatesModule,
     PatientsModule,
     GuardiansModule,
-    JourneysModule,
     VisitsModule,
     MedicalRepModule,
     MedicationsModule,
-    LabTestsModule,
-    ClinicalModule,
-    PatientHistoryModule,
     CarePathsModule,
     ChiefComplaintsModule,
     CalendarModule,
