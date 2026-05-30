@@ -17,21 +17,12 @@ import {
 } from '@core/clinical/events/events.public';
 import { buildRevision } from '../revisions.helper';
 import {
-  PREGNANCY_VISIT_COLUMNS,
-  PREGNANCY_VISIT_SECTION_SET,
-  PREGNANCY_VISIT_SECTIONS,
-  type PregnancyVisitSection,
-} from '../pregnancy/pregnancy-visit-columns';
-import {
   AmendmentResultDto,
   AmendmentTarget,
   CreateAmendmentDto,
 } from './dto/amendment.dto';
 
-const VISIT_SCOPED: ReadonlySet<AmendmentTarget> = new Set([
-  'obgyn_encounter',
-  'pregnancy_record',
-]);
+const VISIT_SCOPED: ReadonlySet<AmendmentTarget> = new Set(['obgyn_encounter']);
 
 const OBGYN_ENCOUNTER_SECTIONS: ReadonlySet<string> = new Set([
   'general_findings',
@@ -83,16 +74,7 @@ export class AmendmentsService {
       });
     }
 
-    if (dto.target === 'obgyn_encounter') {
-      return this.amendObgynEncounter(
-        visitId,
-        dto,
-        user,
-        ifMatchVersion,
-        visit.patient_id,
-      );
-    }
-    return this.amendVisitPregnancyRecord(
+    return this.amendObgynEncounter(
       visitId,
       dto,
       user,
@@ -204,87 +186,6 @@ export class AmendmentsService {
     });
 
     return this.toResult('obgyn_encounter', section, {
-      visit_id: visitId,
-      patient_id: patientId,
-      from: current.version,
-      to: updated.version,
-      reason: dto.reason,
-      user,
-    });
-  }
-
-  private async amendVisitPregnancyRecord(
-    visitId: string,
-    dto: CreateAmendmentDto,
-    user: AuthContext,
-    ifMatchVersion: number,
-    patientId: string,
-  ): Promise<AmendmentResultDto> {
-    const section = dto.section;
-    if (!section || !PREGNANCY_VISIT_SECTION_SET.has(section)) {
-      throw new BadRequestException({
-        code: ERROR_CODES.VALIDATION_ERROR,
-        message: 'Unknown pregnancy_record section for amendment',
-        details: {
-          section: section ?? null,
-          allowed: PREGNANCY_VISIT_SECTIONS,
-        },
-      });
-    }
-
-    const current = await this.prismaService.db.visitPregnancyRecord.findUnique(
-      {
-        where: { visit_id: visitId },
-      },
-    );
-    if (!current) {
-      throw new NotFoundException(
-        `No pregnancy record on visit ${visitId}; nothing to amend`,
-      );
-    }
-    assertVersionMatches(ifMatchVersion, current.version);
-
-    const data: Prisma.VisitPregnancyRecordUncheckedUpdateInput = {
-      version: { increment: 1 },
-      updated_by_id: user.profileId,
-    };
-    if (section === 'warning-symptoms') {
-      data.warning_symptoms = dto.changes as Prisma.InputJsonValue;
-    } else {
-      const allowed = PREGNANCY_VISIT_COLUMNS[section as PregnancyVisitSection];
-      for (const key of allowed) {
-        if (key in dto.changes) {
-          (data as Record<string, unknown>)[key] = dto.changes[key];
-        }
-      }
-    }
-
-    const changedFields = Object.keys(data).filter(
-      (k) => k !== 'version' && k !== 'updated_by_id',
-    );
-
-    const updated = await this.prismaService.db.$transaction(async (tx) => {
-      await tx.visitPregnancyRecordRevision.create({
-        data: buildRevision(current, changedFields, user.profileId, dto.reason),
-      });
-      return tx.visitPregnancyRecord.update({
-        where: { id: current.id },
-        data,
-      });
-    });
-
-    this.publishAmended({
-      visit_id: visitId,
-      patient_id: patientId,
-      target: 'pregnancy_record',
-      section,
-      amended_by_id: user.profileId,
-      reason: dto.reason,
-      version_from: current.version,
-      version_to: updated.version,
-    });
-
-    return this.toResult('pregnancy_record', section, {
       visit_id: visitId,
       patient_id: patientId,
       from: current.version,

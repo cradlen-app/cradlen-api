@@ -163,8 +163,7 @@ inside an array on the unified DTO; `section.code` doubles as the array key.
 | Sending key as `[]`                | clears the collection                                                 |
 | Omitting the key                   | leaves the collection untouched                                       |
 | Singleton JSON columns             | sent as nested objects on the same body (e.g. `gynecological_baseline.*`) |
-| Per-section "notes" (eye icon)     | `PatientHistoryNote` keyed on `section_code = section.code`, via `POST/PATCH /patients/:id/history/notes` |
-| Granular per-row routes (`/pregnancies`, `/contraceptives`, `/medications`, `/allergies`, `/non-gyn-surgeries`) | **read-only** (GET only). All writes flow through the unified PATCH so the singleton `version` token covers them. |
+| Reading the surface                | `GET /patients/:id/obgyn-history` returns the singleton + all five child collections in one envelope. There are no granular per-row read routes — the unified GET/PATCH is the only surface, so the singleton `version` token covers everything. |
 
 PATIENT_OBGYN_HISTORY paths use `<resource>.<column>` for repeatable child
 collections (e.g. `pregnancies.birth_date`) — no `[]` in the path, since the

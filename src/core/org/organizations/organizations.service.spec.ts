@@ -6,7 +6,7 @@ import {
 import authConfig from '@config/auth.config';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service';
-import { SpecialtiesService } from '@core/org/specialties/specialties.public';
+import { SpecialtyCatalogService } from '@core/org/specialty-catalog/specialty-catalog.public';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { OrganizationsService } from './organizations.service';
 
@@ -70,7 +70,7 @@ describe('OrganizationsService', () => {
         OrganizationsService,
         { provide: PrismaService, useValue: { db } },
         { provide: AuthorizationService, useValue: authorization },
-        { provide: SpecialtiesService, useValue: specialties },
+        { provide: SpecialtyCatalogService, useValue: specialties },
         { provide: SubscriptionsService, useValue: subscriptions },
         {
           provide: authConfig.KEY,

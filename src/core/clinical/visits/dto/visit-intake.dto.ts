@@ -5,8 +5,8 @@ import {
   MaxLength,
   ValidateNested,
 } from 'class-validator';
-import { UpsertVitalsDto } from '../../clinical/dto/vitals.dto';
-import { ChiefComplaintMetaDto } from '../../clinical/dto/encounter.dto';
+import { UpsertVitalsDto } from './vitals.dto';
+import { ChiefComplaintMetaDto } from './chief-complaint-meta.dto';
 
 const LONG = 5000;
 
