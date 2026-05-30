@@ -7,9 +7,10 @@ import {
   Patch,
   UseGuards,
 } from '@nestjs/common';
-import { ApiHeader, ApiTags } from '@nestjs/swagger';
+import { ApiTags } from '@nestjs/swagger';
 import { ApiStandardResponse } from '@common/swagger';
 import {
+  ApiIfMatchHeader,
   CurrentUser,
   IfMatchVersion,
   LocksOnClosedVisit,
@@ -44,12 +45,9 @@ export class ObgynExaminationController {
 
   @Patch()
   @LocksOnClosedVisit('id')
-  @ApiHeader({
-    name: 'If-Match',
-    required: true,
-    description:
-      'Optimistic concurrency token. Echo `Visit.examination_version` as `"version:N"`.',
-  })
+  @ApiIfMatchHeader(
+    'Optimistic concurrency token. Echo `Visit.examination_version` as `"version:N"`.',
+  )
   @ApiStandardResponse(VisitExaminationEnvelopeDto)
   patch(
     @Param('id', ParseUUIDPipe) id: string,

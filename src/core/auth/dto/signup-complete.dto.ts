@@ -9,8 +9,9 @@ import {
   IsString,
   MinLength,
 } from 'class-validator';
+import { BranchInputFieldsDto } from '@core/org/branches/dto/branch-input-fields.dto.js';
 
-export class SignupCompleteDto {
+export class SignupCompleteDto extends BranchInputFieldsDto {
   @ApiProperty()
   @IsString()
   signup_token!: string;
@@ -36,46 +37,6 @@ export class SignupCompleteDto {
   @IsString({ each: true })
   @MinLength(1, { each: true })
   specialties!: string[];
-
-  @ApiProperty({ example: 'Main Branch' })
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
-  @IsString()
-  @MinLength(1)
-  branch_name!: string;
-
-  @ApiProperty({ example: '123 Main St' })
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
-  @IsString()
-  @MinLength(1)
-  branch_address!: string;
-
-  @ApiProperty({ example: 'Cairo' })
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
-  @IsString()
-  @MinLength(1)
-  branch_city!: string;
-
-  @ApiProperty({ example: 'Giza' })
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
-  @IsString()
-  @MinLength(1)
-  branch_governorate!: string;
-
-  @ApiPropertyOptional({ example: 'Egypt' })
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
-  @IsOptional()
-  @IsString()
-  branch_country?: string;
 
   @ApiPropertyOptional({
     type: [String],

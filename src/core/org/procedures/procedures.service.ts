@@ -5,7 +5,7 @@ import { PrismaService } from '@infrastructure/database/prisma.service.js';
 export class ProceduresService {
   constructor(private readonly prismaService: PrismaService) {}
 
-  async lookup(params: { specialtyId?: string; search?: string }) {
+  async findLookup(params: { specialtyId?: string; search?: string }) {
     const search = params.search?.trim();
     return this.prismaService.db.procedure.findMany({
       where: {
@@ -27,7 +27,7 @@ export class ProceduresService {
         specialty: { select: { id: true, code: true, name: true } },
       },
       orderBy: { name: 'asc' },
-      take: 100,
+      take: 100, // typeahead cap; lookups are not paginated
     });
   }
 }

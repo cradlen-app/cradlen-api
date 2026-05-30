@@ -20,19 +20,29 @@ export class IdentifierThrottlerGuard extends ThrottlerGuard {
       (req.socket as { remoteAddress?: string } | undefined)?.remoteAddress ??
       'unknown-ip';
 
-    const body = (req.body as Record<string, unknown> | undefined) ?? undefined;
-    const identifier = body
-      ? typeof body.email === 'string'
-        ? body.email.toLowerCase()
-        : typeof body.phone === 'string'
-          ? body.phone
-          : typeof body.phone_number === 'string'
-            ? body.phone_number
-            : typeof body.target === 'string'
-              ? body.target.toLowerCase()
-              : 'no-identifier'
-      : 'no-identifier';
+    const identifier = this.resolveIdentifier(
+      req.body as Record<string, unknown> | undefined,
+    );
 
     return Promise.resolve(`${ip}:${identifier}`);
+  }
+
+  /**
+   * First identifier-bearing field wins, in priority order. Email and free-text
+   * targets are lowercased so case variants share a bucket; phone numbers are
+   * left verbatim. Falls back to `no-identifier` when the body carries none.
+   */
+  private resolveIdentifier(body: Record<string, unknown> | undefined): string {
+    if (!body) return 'no-identifier';
+
+    const lowerCased = new Set(['email', 'target']);
+    for (const key of ['email', 'phone', 'phone_number', 'target']) {
+      const value = body[key];
+      if (typeof value === 'string') {
+        return lowerCased.has(key) ? value.toLowerCase() : value;
+      }
+    }
+
+    return 'no-identifier';
   }
 }

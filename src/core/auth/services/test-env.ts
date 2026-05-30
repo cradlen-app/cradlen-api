@@ -11,6 +11,7 @@ import { VerificationCodesService } from './verification-codes.service.js';
 import { PasswordResetService } from './password-reset.service.js';
 import { SignupService } from './signup.service.js';
 import { SessionsService } from './sessions.service.js';
+import { SpecialtiesService } from '@core/org/specialties/specialties.public.js';
 
 export function createAuthTestEnv(
   prismaOverrides: Record<string, unknown> = {},
@@ -65,27 +66,25 @@ export function createAuthTestEnv(
   } as unknown as PrismaService;
 
   const jwtService = new JwtService();
-  const configService = {
-    get: jest.fn().mockReturnValue({
-      jwt: {
-        accessSecret: 'access-secret',
-        refreshSecret: 'refresh-secret',
-        resetSecret: 'reset-secret',
-        accessExpiration: '15m',
-        refreshExpiration: '7d',
-        registrationExpiration: '30m',
-      },
-      verificationCodes: {
-        otpTtlMinutes: 15,
-        otpMaxAttempts: 5,
-        otpBcryptRounds: 10,
-        resendCooldownSeconds: 60,
-        resendMaxPerHour: 5,
-      },
-      freeTrialDays: 14,
-      invitationExpireHours: 72,
-      resend: { apiKey: 'key', fromEmail: 'noreply@example.com' },
-    }),
+  const authConfig = {
+    jwt: {
+      accessSecret: 'access-secret',
+      refreshSecret: 'refresh-secret',
+      resetSecret: 'reset-secret',
+      accessExpiration: '15m',
+      refreshExpiration: '7d',
+      registrationExpiration: '30m',
+    },
+    verificationCodes: {
+      otpTtlMinutes: 15,
+      otpMaxAttempts: 5,
+      otpBcryptRounds: 10,
+      resendCooldownSeconds: 60,
+      resendMaxPerHour: 5,
+    },
+    freeTrialDays: 14,
+    invitationExpireHours: 72,
+    resend: { apiKey: 'key', fromEmail: 'noreply@example.com' },
   };
   const mailService = {
     sendVerificationEmail,
@@ -101,13 +100,13 @@ export function createAuthTestEnv(
   const tokensService = new TokensService(
     prismaService,
     jwtService,
-    configService as never,
+    authConfig as never,
     eventBus,
   );
 
   const verificationCodesService = new VerificationCodesService(
     prismaService,
-    configService as never,
+    authConfig as never,
     mailService,
   );
 
@@ -125,12 +124,15 @@ export function createAuthTestEnv(
     eventBus,
   );
 
+  const specialtiesService = new SpecialtiesService(prismaService);
+
   const signupService = new SignupService(
     prismaService,
-    configService as never,
+    authConfig as never,
     tokensService,
     verificationCodesService,
     sessionsService,
+    specialtiesService,
     eventBus,
   );
 

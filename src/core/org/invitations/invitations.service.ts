@@ -1,19 +1,18 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { ConfigType } from '@nestjs/config';
 import { EventBus } from '@infrastructure/messaging/event-bus.js';
 import * as bcrypt from 'bcryptjs';
 import { InvitationStatus, Prisma } from '@prisma/client';
-import { ERROR_CODES } from '@common/constant/error-codes.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
-import type { AppConfig } from '@config/app.config.js';
-import type { AuthConfig } from '@config/auth.config.js';
+import appConfig, { type AppConfig } from '@config/app.config.js';
+import authConfig, { type AuthConfig } from '@config/auth.config.js';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { EmailService } from '@infrastructure/email/email.service.js';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service.js';
@@ -32,8 +31,8 @@ import type {
   DeclineInvitationDto,
   PreviewInvitationQueryDto,
 } from './dto/invitation.dto.js';
-import { InvitationAcceptedEvent } from '@core/notifications/events/invitation-accepted.event.js';
-import { InvitationDeclinedEvent } from '@core/notifications/events/invitation-declined.event.js';
+import { InvitationAcceptedEvent } from './events/invitation-accepted.event.js';
+import { InvitationDeclinedEvent } from './events/invitation-declined.event.js';
 import {
   INVITATION_FULL_INCLUDE,
   INVITATION_PREVIEW_INCLUDE,
@@ -63,11 +62,11 @@ export class InvitationsService {
     private readonly mailService: EmailService,
     private readonly subscriptionsService: SubscriptionsService,
     private readonly eventBus: EventBus,
-    configService: ConfigService,
+    @Inject(appConfig.KEY)
+    app: ConfigType<typeof appConfig>,
+    @Inject(authConfig.KEY)
+    auth: ConfigType<typeof authConfig>,
   ) {
-    const app = configService.get<AppConfig>('app');
-    const auth = configService.get<AuthConfig>('auth');
-    if (!app || !auth) throw new Error('Configuration not loaded');
     this.appConfig = app;
     this.authConfig = auth;
   }
@@ -354,7 +353,7 @@ export class InvitationsService {
       this.claimAndProvision(tx, invitation, dto, passwordHash),
     );
 
-    this.emitAccepted(invitation);
+    await this.emitAccepted(invitation);
     return result;
   }
 
@@ -417,7 +416,10 @@ export class InvitationsService {
     if (claimed.count !== 1)
       throw new ConflictException('Invitation already accepted');
 
-    await this.assertSubscriptionStaffLimit(tx, invitation.organization_id);
+    await this.subscriptionsService.assertStaffLimit(
+      invitation.organization_id,
+      tx,
+    );
 
     let user = await tx.user.findFirst({
       where: { email: invitation.email, is_deleted: false },
@@ -472,55 +474,44 @@ export class InvitationsService {
     };
   }
 
-  private async assertSubscriptionStaffLimit(
-    tx: Prisma.TransactionClient,
-    organizationId: string,
-  ): Promise<void> {
-    const [sub, activeStaff, pendingInvitations] = await Promise.all([
-      tx.subscription.findFirst({
-        where: { organization_id: organizationId, is_deleted: false },
-        include: { subscription_plan: true },
-        orderBy: { created_at: 'desc' },
+  private async emitAccepted(invitation: InvitationFull): Promise<void> {
+    const recipientProfileId = await this.resolveInviterProfileId(
+      invitation.invited_by_id,
+      invitation.organization_id,
+    );
+    if (!recipientProfileId) return;
+
+    this.eventBus.publish(
+      'invitation.accepted',
+      new InvitationAcceptedEvent({
+        invitationId: invitation.id,
+        recipientProfileId,
+        inviteeName: `${invitation.first_name} ${invitation.last_name}`,
+        organizationId: invitation.organization_id,
+        branchId: invitation.branches[0]?.branch_id ?? null,
       }),
-      tx.profile.count({
-        where: {
-          organization_id: organizationId,
-          is_deleted: false,
-          is_active: true,
-        },
-      }),
-      tx.invitation.count({
-        where: {
-          organization_id: organizationId,
-          is_deleted: false,
-          status: InvitationStatus.PENDING,
-        },
-      }),
-    ]);
-    if (!sub) throw new NotFoundException('No active subscription found');
-    const staffTotal = activeStaff + pendingInvitations;
-    if (staffTotal >= sub.subscription_plan.max_staff) {
-      throw new ForbiddenException({
-        code: ERROR_CODES.SUBSCRIPTION_LIMIT_REACHED,
-        message: `Staff limit reached (${sub.subscription_plan.max_staff}). Upgrade your plan.`,
-        details: {
-          resource: 'staff',
-          limit: sub.subscription_plan.max_staff,
-          current: staffTotal,
-        },
-      });
-    }
+    );
   }
 
-  private emitAccepted(invitation: InvitationFull): void {
-    const event = new InvitationAcceptedEvent({
-      invitationId: invitation.id,
-      inviterId: invitation.invited_by_id,
-      inviteeName: `${invitation.first_name} ${invitation.last_name}`,
-      organizationId: invitation.organization_id,
-      branchId: invitation.branches[0]?.branch_id ?? null,
+  /**
+   * Resolves the inviter's Profile within the invitation's organization.
+   * Notifications are profile-scoped, so the inviter (identified by user) must
+   * be mapped to their membership in that org. Returns null when no active
+   * profile exists (e.g. the inviter left the org) — the caller skips emitting.
+   */
+  private async resolveInviterProfileId(
+    userId: string,
+    organizationId: string,
+  ): Promise<string | null> {
+    const profile = await this.prismaService.db.profile.findFirst({
+      where: {
+        user_id: userId,
+        organization_id: organizationId,
+        is_deleted: false,
+      },
+      select: { id: true },
     });
-    this.eventBus.publish('invitation.accepted', event);
+    return profile?.id ?? null;
   }
 
   async getInvitation(
@@ -715,16 +706,22 @@ export class InvitationsService {
       data: { status: InvitationStatus.CANCELLED },
     });
 
-    this.eventBus.publish(
-      'invitation.declined',
-      new InvitationDeclinedEvent({
-        invitationId: invitation.id,
-        inviterId: invitation.invited_by_id,
-        inviteeName: `${invitation.first_name} ${invitation.last_name}`,
-        organizationId: invitation.organization_id,
-        branchId: invitation.branches[0]?.branch_id ?? null,
-      }),
+    const recipientProfileId = await this.resolveInviterProfileId(
+      invitation.invited_by_id,
+      invitation.organization_id,
     );
+    if (recipientProfileId) {
+      this.eventBus.publish(
+        'invitation.declined',
+        new InvitationDeclinedEvent({
+          invitationId: invitation.id,
+          recipientProfileId,
+          inviteeName: `${invitation.first_name} ${invitation.last_name}`,
+          organizationId: invitation.organization_id,
+          branchId: invitation.branches[0]?.branch_id ?? null,
+        }),
+      );
+    }
 
     return { message: 'Invitation declined' };
   }

@@ -1,3 +1,4 @@
+import { toSpecialtySummary } from '../specialties/specialties.public.js';
 import type { ProfileDetail, ProfileSummary } from './profiles.includes.js';
 
 export function toProfileSummary(profile: ProfileSummary) {
@@ -6,11 +7,9 @@ export function toProfileSummary(profile: ProfileSummary) {
     organization: {
       id: profile.organization.id,
       name: profile.organization.name,
-      specialties: profile.organization.specialty_links.map((l) => ({
-        id: l.specialty.id,
-        code: l.specialty.code,
-        name: l.specialty.name,
-      })),
+      specialties: profile.organization.specialty_links.map((l) =>
+        toSpecialtySummary(l.specialty),
+      ),
       status: profile.organization.status,
     },
     roles: profile.roles.map((item) => item.role.code),
@@ -51,10 +50,8 @@ export function toProfileDetail(profile: ProfileDetail) {
       name: jf.job_function.name,
       is_clinical: jf.job_function.is_clinical,
     })),
-    specialties: profile.specialty_links.map((sl) => ({
-      id: sl.specialty.id,
-      code: sl.specialty.code,
-      name: sl.specialty.name,
-    })),
+    specialties: profile.specialty_links.map((sl) =>
+      toSpecialtySummary(sl.specialty),
+    ),
   };
 }

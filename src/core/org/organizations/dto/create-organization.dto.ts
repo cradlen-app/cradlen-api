@@ -1,7 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsArray, IsOptional, IsString, MinLength } from 'class-validator';
+import { BranchInputFieldsDto } from '@core/org/branches/dto/branch-input-fields.dto.js';
 
-export class CreateOrganizationDto {
+export class CreateOrganizationDto extends BranchInputFieldsDto {
   @ApiProperty()
   @IsString()
   @MinLength(1)
@@ -16,29 +17,4 @@ export class CreateOrganizationDto {
   @IsArray()
   @IsString({ each: true })
   specialties?: string[];
-
-  @ApiProperty()
-  @IsString()
-  @MinLength(1)
-  branch_name!: string;
-
-  @ApiProperty()
-  @IsString()
-  @MinLength(1)
-  branch_address!: string;
-
-  @ApiProperty()
-  @IsString()
-  @MinLength(1)
-  branch_city!: string;
-
-  @ApiProperty()
-  @IsString()
-  @MinLength(1)
-  branch_governorate!: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  branch_country?: string;
 }

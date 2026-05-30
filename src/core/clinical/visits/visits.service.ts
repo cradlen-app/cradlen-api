@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { isDeepStrictEqual } from 'node:util';
 import { MaritalStatus, Prisma, VisitStatus } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
@@ -16,16 +17,25 @@ import { SetFollowUpDto } from './dto/set-follow-up.dto';
 import { VisitIntakeFieldsDto } from './dto/visit-intake.dto';
 import { EventBus } from '@infrastructure/messaging/event-bus';
 import { paginated } from '@common/utils/pagination.utils';
+import { todayBounds } from '@common/utils/date-range.utils.js';
+import { assertStatusTransition } from '@common/utils/state-transition.js';
+import { assertBookVisitPayloadValid } from '../shared/book-visit-validation.js';
+import { nextQueueNumber } from '../shared/queue-number.js';
 import {
   TemplateValidator,
   ValidatePayloadOptions,
-  ValidationError,
 } from '@builder/validator/template.validator.js';
 import { TemplatesService } from '@builder/templates/templates.service.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import { buildRevision } from '@common/utils/revisions.helper.js';
 import { CLINICAL_EVENTS } from '@core/clinical/events/clinical-events.js';
 import { VitalsTrendPointDto } from './dto/vitals-trend-point.dto.js';
+import {
+  visitHistoryInclude,
+  vitalsTrendSelect,
+  toVisitHistorySummary,
+  toVitalsTrendPoint,
+} from './visits.mapper.js';
 
 const TERMINAL_STATES: VisitStatus[] = ['COMPLETED', 'CANCELLED', 'NO_SHOW'];
 
@@ -61,28 +71,23 @@ export class VisitsService {
    * count as occupying their slot. Cancelling leaves a gap (intentional;
    * stable numbers were a locked design decision).
    */
-  private async getNextQueueNumberForSchedule(
+  private getNextQueueNumberForSchedule(
     tx: Prisma.TransactionClient,
     assignedDoctorId: string,
     branchId: string,
     scheduledAt: Date,
   ): Promise<number> {
-    const dayStart = new Date(scheduledAt);
-    dayStart.setHours(0, 0, 0, 0);
-    const dayEnd = new Date(scheduledAt);
-    dayEnd.setHours(23, 59, 59, 999);
-
-    const last = await tx.visit.findFirst({
-      where: {
-        assigned_doctor_id: assignedDoctorId,
-        branch_id: branchId,
-        scheduled_at: { gte: dayStart, lte: dayEnd },
-      },
-      orderBy: { queue_number: 'desc' },
-      select: { queue_number: true },
-    });
-
-    return (last?.queue_number ?? 0) + 1;
+    return nextQueueNumber(scheduledAt, ({ start, end }) =>
+      tx.visit.findFirst({
+        where: {
+          assigned_doctor_id: assignedDoctorId,
+          branch_id: branchId,
+          scheduled_at: { gte: start, lte: end },
+        },
+        orderBy: { queue_number: 'desc' },
+        select: { queue_number: true },
+      }),
+    );
   }
 
   private isSameDay(a: Date, b: Date): boolean {
@@ -148,10 +153,16 @@ export class VisitsService {
           } as Prisma.VisitEncounterUncheckedCreateInput,
         });
       } else {
+        // Deep, order-independent comparison — a JSON.stringify diff would flag
+        // chief_complaint_meta as changed merely because key order differs
+        // between the client payload and the stored JSON, writing a spurious
+        // revision + version bump.
         const changed = Object.keys(fields).filter(
           (k) =>
-            JSON.stringify((prior as Record<string, unknown>)[k]) !==
-            JSON.stringify((fields as Record<string, unknown>)[k]),
+            !isDeepStrictEqual(
+              (prior as Record<string, unknown>)[k],
+              (fields as Record<string, unknown>)[k],
+            ),
         );
         if (changed.length > 0) {
           await tx.visitEncounterRevision.create({
@@ -198,36 +209,18 @@ export class VisitsService {
    * are enforced too. A missing extension is not fatal — the server falls
    * back to shell-only validation rather than 404-ing on the booking.
    */
-  private async assertTemplateValid(
+  private assertTemplateValid(
     payload: Record<string, unknown>,
     options: ValidatePayloadOptions,
   ) {
-    let result;
-    try {
-      result = await this.templateValidator.validatePayload(
-        'book_visit',
-        payload,
-        options,
-      );
-    } catch (err) {
-      if (err instanceof NotFoundException && options.extensionKey) {
-        result = await this.templateValidator.validatePayload(
-          'book_visit',
-          payload,
-          { ...options, extensionKey: null },
-        );
-      } else {
-        throw err;
-      }
-    }
-    if (!result.ok) throw this.buildTemplateValidationError(result.errors);
-  }
-
-  private buildTemplateValidationError(
-    errors: ValidationError[],
-  ): BadRequestException {
-    const messages = errors.map((e) => `${e.fieldCode} ${e.message}`);
-    return new BadRequestException({ message: messages });
+    return assertBookVisitPayloadValid(
+      this.templateValidator,
+      payload,
+      options,
+      {
+        extensionFallback: true,
+      },
+    );
   }
 
   /**
@@ -405,261 +398,33 @@ export class VisitsService {
       });
     }
 
-    // Resolve the CarePath (and its linked JourneyTemplate) for this booking.
-    // Always resolved via CarePath so journey.care_path_id is never null —
-    // enabling consistent querying and analytics across all care paths.
-    // When no care_path_code is sent, default to the specialty's GENERAL_GYN path.
-    const carePathCode = dto.care_path_code ?? 'OBGYN_GENERAL';
-    const carePathInclude = {
-      journey_template: {
-        include: {
-          episodes: {
-            where: { is_deleted: false },
-            orderBy: { order: 'asc' as const },
-          },
-        },
-      },
-    } as const;
-
-    const resolvedCarePath = await this.prismaService.db.carePath.findFirst({
-      where: {
-        code: carePathCode,
-        is_deleted: false,
-        specialty: { code: dto.specialty_code, is_deleted: false },
-        OR: [
-          { organization_id: null },
-          { organization_id: user.organizationId },
-        ],
-      },
-      include: carePathInclude,
-    });
-    if (!resolvedCarePath) {
-      throw new NotFoundException(
-        `Care path "${carePathCode}" not found for specialty "${dto.specialty_code}"`,
+    const { carePathId, template, firstEpisodeTemplate } =
+      await this.resolveCarePathTemplate(
+        dto.specialty_code,
+        dto.care_path_code ?? 'OBGYN_GENERAL',
+        user.organizationId,
       );
-    }
-    const carePathId: string = resolvedCarePath.id;
-    const template: Prisma.JourneyTemplateGetPayload<{
-      include: { episodes: true };
-    }> | null = resolvedCarePath.journey_template;
-    if (!template || !template.episodes.length) {
-      throw new NotFoundException(
-        'No journey template resolved for this booking',
-      );
-    }
-    const firstEpisodeTemplate = template.episodes[0];
 
     const result = await this.prismaService.db.$transaction(async (tx) => {
-      let patient;
-      let patientWasJustCreated = false;
-      if (dto.patient_id) {
-        patient = await tx.patient.findUnique({
-          where: { id: dto.patient_id, is_deleted: false },
-        });
-        if (!patient)
-          throw new NotFoundException(`Patient ${dto.patient_id} not found`);
-      } else {
-        const existing = await tx.patient.findUnique({
-          where: { national_id: dto.national_id! },
-        });
-        if (existing && !existing.is_deleted) {
-          throw new ConflictException(
-            'A patient with this national_id already exists',
-          );
-        }
-        patient = await tx.patient.create({
-          data: {
-            full_name: dto.full_name!,
-            national_id: dto.national_id!,
-            date_of_birth: new Date(dto.date_of_birth!),
-            phone_number: dto.phone_number!,
-            address: dto.address!,
-            ...(resolvedMaritalStatus
-              ? { marital_status: resolvedMaritalStatus }
-              : {}),
-          },
-        });
-        patientWasJustCreated = true;
+      const patient = await this.resolveOrCreatePatient(
+        tx,
+        dto,
+        resolvedMaritalStatus,
+      );
+
+      // SPOUSE link (three input paths) — shared with the update flow.
+      if (resolvedMaritalStatus === 'MARRIED') {
+        await this.applySpouseLink(tx, patient.id, dto);
       }
 
-      // For looked-up patients, the caller may be re-affirming or changing
-      // marital state — sync if it differs. For just-created patients, the
-      // create already set marital_status, so skip.
-      if (
-        !patientWasJustCreated &&
-        resolvedMaritalStatus &&
-        patient.marital_status !== resolvedMaritalStatus
-      ) {
-        await tx.patient.update({
-          where: { id: patient.id },
-          data: { marital_status: resolvedMaritalStatus },
-        });
-        patient.marital_status = resolvedMaritalStatus;
-      }
-
-      // SPOUSE link. Three paths:
-      //   1. `spouse_guardian_id` provided           → existing Guardian picked from autocomplete.
-      //   2. `spouse_national_id` provided           → upsert Guardian by national_id.
-      //   3. `spouse_full_name` only (no national_id) → update existing linked spouse or create new Guardian.
-      let spouseGuardianId: string | null = null;
-      if (resolvedMaritalStatus === 'MARRIED' && dto.spouse_guardian_id) {
-        const picked = await tx.guardian.findFirst({
-          where: { id: dto.spouse_guardian_id, is_deleted: false },
-        });
-        if (!picked) {
-          throw new NotFoundException(
-            `Guardian ${dto.spouse_guardian_id} not found`,
-          );
-        }
-        spouseGuardianId = picked.id;
-      } else if (
-        resolvedMaritalStatus === 'MARRIED' &&
-        dto.spouse_full_name &&
-        dto.spouse_national_id
-      ) {
-        const spouse = await tx.guardian.upsert({
-          where: { national_id: dto.spouse_national_id },
-          create: {
-            national_id: dto.spouse_national_id,
-            full_name: dto.spouse_full_name,
-            phone_number: dto.spouse_phone_number ?? null,
-          },
-          update: {
-            full_name: dto.spouse_full_name,
-            ...(dto.spouse_phone_number !== undefined && {
-              phone_number: dto.spouse_phone_number,
-            }),
-          },
-        });
-        spouseGuardianId = spouse.id;
-      } else if (resolvedMaritalStatus === 'MARRIED' && dto.spouse_full_name) {
-        const existingSpouseLink = await tx.patientGuardian.findFirst({
-          where: {
-            patient_id: patient.id,
-            relation_to_patient: 'SPOUSE',
-            is_primary: true,
-            is_deleted: false,
-          },
-        });
-        if (existingSpouseLink) {
-          await tx.guardian.update({
-            where: { id: existingSpouseLink.guardian_id },
-            data: {
-              full_name: dto.spouse_full_name,
-              ...(dto.spouse_phone_number !== undefined && {
-                phone_number: dto.spouse_phone_number,
-              }),
-            },
-          });
-          spouseGuardianId = existingSpouseLink.guardian_id;
-        } else {
-          const spouse = await tx.guardian.create({
-            data: {
-              full_name: dto.spouse_full_name,
-              phone_number: dto.spouse_phone_number ?? null,
-            },
-          });
-          spouseGuardianId = spouse.id;
-        }
-      }
-
-      if (spouseGuardianId) {
-        // Demote any existing primary SPOUSE link to a different guardian
-        // before promoting this one. A partial unique index enforces this at
-        // the DB level (see `patient_guardians_one_primary_per_relation_unique`
-        // in F4 migration) — this updateMany keeps the in-tx state consistent.
-        await tx.patientGuardian.updateMany({
-          where: {
-            patient_id: patient.id,
-            relation_to_patient: 'SPOUSE',
-            is_primary: true,
-            is_deleted: false,
-            NOT: { guardian_id: spouseGuardianId },
-          },
-          data: { is_primary: false },
-        });
-
-        const existingLink = await tx.patientGuardian.findUnique({
-          where: {
-            patient_id_guardian_id: {
-              patient_id: patient.id,
-              guardian_id: spouseGuardianId,
-            },
-          },
-        });
-        if (!existingLink) {
-          await tx.patientGuardian.create({
-            data: {
-              patient_id: patient.id,
-              guardian_id: spouseGuardianId,
-              relation_to_patient: 'SPOUSE',
-              is_primary: true,
-            },
-          });
-        } else if (
-          existingLink.relation_to_patient !== 'SPOUSE' ||
-          !existingLink.is_primary
-        ) {
-          await tx.patientGuardian.update({
-            where: { id: existingLink.id },
-            data: { relation_to_patient: 'SPOUSE', is_primary: true },
-          });
-        }
-      }
-
-      let journey = await tx.patientJourney.findFirst({
-        where: {
-          patient_id: patient.id,
-          organization_id: user.organizationId,
-          journey_template_id: template.id,
-          care_path_id: carePathId,
-          status: 'ACTIVE',
-          is_deleted: false,
-        },
+      const { episode, journey } = await this.resolveJourneyAndEpisode(tx, {
+        patientId: patient.id,
+        organizationId: user.organizationId,
+        template,
+        carePathId,
+        firstEpisodeTemplate,
+        createdById: user.profileId,
       });
-
-      let episode;
-      if (journey) {
-        episode = await tx.patientEpisode.findFirst({
-          where: {
-            journey_id: journey.id,
-            episode_template_id: firstEpisodeTemplate.id,
-            is_deleted: false,
-          },
-        });
-        if (!episode)
-          throw new NotFoundException('General Consultation episode not found');
-      } else {
-        journey = await tx.patientJourney.create({
-          data: {
-            patient_id: patient.id,
-            organization_id: user.organizationId,
-            journey_template_id: template.id,
-            care_path_id: carePathId,
-            created_by_id: user.profileId,
-            status: 'ACTIVE',
-          },
-        });
-        await tx.patientEpisode.createMany({
-          data: template.episodes.map((ep, index) => ({
-            journey_id: journey!.id,
-            episode_template_id: ep.id,
-            name: ep.name,
-            order: ep.order,
-            status: index === 0 ? ('ACTIVE' as const) : ('PENDING' as const),
-            started_at: index === 0 ? new Date() : null,
-          })),
-        });
-        episode = await tx.patientEpisode.findFirst({
-          where: {
-            journey_id: journey.id,
-            episode_template_id: firstEpisodeTemplate.id,
-            is_deleted: false,
-          },
-        });
-        if (!episode)
-          throw new NotFoundException('General Consultation episode not found');
-      }
 
       const scheduledAt = new Date(dto.scheduled_at);
       const queueNumber = await this.getNextQueueNumberForSchedule(
@@ -684,29 +449,23 @@ export class VisitsService {
       });
       await this.applyIntake(tx, visit.id, dto, user.profileId);
 
+      // Enroll the patient in the org, atomically with the booking. createMany
+      // + skipDuplicates compiles to INSERT … ON CONFLICT DO NOTHING, so a
+      // concurrent booking that already created the (live) enrollment is
+      // silently skipped without aborting this transaction.
+      await tx.patientOrgEnrollment.createMany({
+        data: [
+          {
+            patient_id: patient.id,
+            organization_id: user.organizationId,
+            status: 'PENDING',
+          },
+        ],
+        skipDuplicates: true,
+      });
+
       return { visit, episode: episode, journey, patient };
     });
-
-    try {
-      await this.prismaService.db.patientOrgEnrollment.create({
-        data: {
-          patient_id: result.patient.id,
-          organization_id: result.journey.organization_id,
-          status: 'PENDING',
-        },
-      });
-    } catch (error) {
-      if (
-        !(
-          error instanceof Prisma.PrismaClientKnownRequestError &&
-          error.code === 'P2002'
-        )
-      ) {
-        throw error;
-      }
-      // P2002 = unique constraint violation — concurrent booking already created
-      // the enrollment. Safe to ignore.
-    }
 
     this.eventBus.publish('visit.booked', {
       assignedDoctorId: dto.assigned_doctor_id,
@@ -714,6 +473,180 @@ export class VisitsService {
       payload: result,
     });
     return result;
+  }
+
+  /**
+   * Resolves the CarePath (and its linked JourneyTemplate) for a booking.
+   * Always resolved via CarePath so journey.care_path_id is never null —
+   * enabling consistent querying and analytics across all care paths.
+   */
+  private async resolveCarePathTemplate(
+    specialtyCode: string,
+    carePathCode: string,
+    organizationId: string,
+  ) {
+    const resolvedCarePath = await this.prismaService.db.carePath.findFirst({
+      where: {
+        code: carePathCode,
+        is_deleted: false,
+        specialty: { code: specialtyCode, is_deleted: false },
+        OR: [{ organization_id: null }, { organization_id: organizationId }],
+      },
+      include: {
+        journey_template: {
+          include: {
+            episodes: {
+              where: { is_deleted: false },
+              orderBy: { order: 'asc' },
+            },
+          },
+        },
+      },
+    });
+    if (!resolvedCarePath) {
+      throw new NotFoundException(
+        `Care path "${carePathCode}" not found for specialty "${specialtyCode}"`,
+      );
+    }
+    const template = resolvedCarePath.journey_template;
+    if (!template || !template.episodes.length) {
+      throw new NotFoundException(
+        'No journey template resolved for this booking',
+      );
+    }
+    return {
+      carePathId: resolvedCarePath.id,
+      template,
+      firstEpisodeTemplate: template.episodes[0],
+    };
+  }
+
+  /**
+   * Loads the patient (by id) or creates a new one (by national_id), then syncs
+   * marital_status for looked-up patients when it changed.
+   */
+  private async resolveOrCreatePatient(
+    tx: Prisma.TransactionClient,
+    dto: BookVisitDto,
+    resolvedMaritalStatus: MaritalStatus | undefined,
+  ) {
+    let patient;
+    let patientWasJustCreated = false;
+    if (dto.patient_id) {
+      patient = await tx.patient.findUnique({
+        where: { id: dto.patient_id, is_deleted: false },
+      });
+      if (!patient)
+        throw new NotFoundException(`Patient ${dto.patient_id} not found`);
+    } else {
+      const existing = await tx.patient.findUnique({
+        where: { national_id: dto.national_id! },
+      });
+      if (existing && !existing.is_deleted) {
+        throw new ConflictException(
+          'A patient with this national_id already exists',
+        );
+      }
+      patient = await tx.patient.create({
+        data: {
+          full_name: dto.full_name!,
+          national_id: dto.national_id!,
+          date_of_birth: new Date(dto.date_of_birth!),
+          phone_number: dto.phone_number!,
+          address: dto.address!,
+          ...(resolvedMaritalStatus
+            ? { marital_status: resolvedMaritalStatus }
+            : {}),
+        },
+      });
+      patientWasJustCreated = true;
+    }
+
+    if (
+      !patientWasJustCreated &&
+      resolvedMaritalStatus &&
+      patient.marital_status !== resolvedMaritalStatus
+    ) {
+      await tx.patient.update({
+        where: { id: patient.id },
+        data: { marital_status: resolvedMaritalStatus },
+      });
+      patient.marital_status = resolvedMaritalStatus;
+    }
+    return patient;
+  }
+
+  /**
+   * Finds the active journey for (patient, template, care path) or creates the
+   * journey + its episodes, then returns the journey and its first episode.
+   */
+  private async resolveJourneyAndEpisode(
+    tx: Prisma.TransactionClient,
+    params: {
+      patientId: string;
+      organizationId: string;
+      template: Prisma.JourneyTemplateGetPayload<{
+        include: { episodes: true };
+      }>;
+      carePathId: string;
+      firstEpisodeTemplate: { id: string };
+      createdById: string;
+    },
+  ) {
+    const {
+      patientId,
+      organizationId,
+      template,
+      carePathId,
+      firstEpisodeTemplate,
+      createdById,
+    } = params;
+
+    let journey = await tx.patientJourney.findFirst({
+      where: {
+        patient_id: patientId,
+        organization_id: organizationId,
+        journey_template_id: template.id,
+        care_path_id: carePathId,
+        status: 'ACTIVE',
+        is_deleted: false,
+      },
+    });
+
+    if (!journey) {
+      journey = await tx.patientJourney.create({
+        data: {
+          patient_id: patientId,
+          organization_id: organizationId,
+          journey_template_id: template.id,
+          care_path_id: carePathId,
+          created_by_id: createdById,
+          status: 'ACTIVE',
+        },
+      });
+      await tx.patientEpisode.createMany({
+        data: template.episodes.map((ep, index) => ({
+          journey_id: journey!.id,
+          episode_template_id: ep.id,
+          name: ep.name,
+          order: ep.order,
+          status: index === 0 ? ('ACTIVE' as const) : ('PENDING' as const),
+          started_at: index === 0 ? new Date() : null,
+        })),
+      });
+    }
+
+    const episode = await tx.patientEpisode.findFirst({
+      where: {
+        journey_id: journey.id,
+        episode_template_id: firstEpisodeTemplate.id,
+        is_deleted: false,
+      },
+    });
+    if (!episode) {
+      throw new NotFoundException('General Consultation episode not found');
+    }
+    return { journey, episode };
   }
 
   async findAllForEpisode(
@@ -763,45 +696,12 @@ export class VisitsService {
         orderBy: { completed_at: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
-        include: {
-          encounter: {
-            select: { provisional_diagnosis: true },
-          },
-          prescription: {
-            include: {
-              items: {
-                where: { is_deleted: false },
-                orderBy: { order: 'asc' },
-                include: {
-                  medication: { select: { name: true } },
-                },
-              },
-            },
-          },
-          investigations: {
-            where: { is_deleted: false },
-            include: {
-              lab_test: { select: { name: true } },
-            },
-          },
-        },
+        include: visitHistoryInclude,
       }),
       this.prismaService.db.visit.count({ where }),
     ]);
 
-    const summaries = visits.map((v) => ({
-      id: v.id,
-      appointment_type: v.appointment_type,
-      completed_at: v.completed_at!,
-      diagnosis: v.encounter?.provisional_diagnosis ?? null,
-      medications: (v.prescription?.items ?? []).map((item) => ({
-        name: item.medication?.name ?? item.custom_drug_name ?? '',
-        dose: item.dose,
-      })),
-      investigations: (v.investigations ?? [])
-        .map((inv) => inv.lab_test?.name ?? inv.custom_test_name ?? '')
-        .filter(Boolean),
-    }));
+    const summaries = visits.map(toVisitHistorySummary);
 
     return paginated(summaries, { page, limit, total });
   }
@@ -821,30 +721,10 @@ export class VisitsService {
         },
       },
       orderBy: { completed_at: 'asc' },
-      select: {
-        id: true,
-        completed_at: true,
-        vitals: {
-          where: { is_deleted: false },
-          select: {
-            systolic_bp: true,
-            diastolic_bp: true,
-            weight_kg: true,
-            bmi: true,
-          },
-        },
-      },
+      select: vitalsTrendSelect,
     });
 
-    return visits.map((v) => ({
-      visit_id: v.id,
-      completed_at: v.completed_at!,
-      systolic_bp: v.vitals?.systolic_bp ?? null,
-      diastolic_bp: v.vitals?.diastolic_bp ?? null,
-      weight_kg:
-        v.vitals?.weight_kg != null ? Number(v.vitals.weight_kg) : null,
-      bmi: v.vitals?.bmi != null ? Number(v.vitals.bmi) : null,
-    }));
+    return visits.map(toVitalsTrendPoint);
   }
 
   async findAllForBranch(
@@ -871,7 +751,7 @@ export class VisitsService {
 
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
-    const { start, end } = this.todayBounds();
+    const { start, end } = todayBounds();
     const where = {
       branch_id: branchId,
       status,
@@ -918,14 +798,6 @@ export class VisitsService {
     ]);
 
     return paginated(visits, { page, limit, total });
-  }
-
-  private todayBounds() {
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    const end = new Date();
-    end.setHours(23, 59, 59, 999);
-    return { start, end };
   }
 
   private listInclude = {
@@ -975,7 +847,7 @@ export class VisitsService {
     await this.assertBranchAccess(branchId, user);
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
-    const { start, end } = this.todayBounds();
+    const { start, end } = todayBounds();
     const where: Prisma.VisitWhereInput = {
       branch_id: branchId,
       is_deleted: false,
@@ -1008,7 +880,7 @@ export class VisitsService {
     await this.assertBranchAccess(branchId, user);
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
-    const { start, end } = this.todayBounds();
+    const { start, end } = todayBounds();
     const where: Prisma.VisitWhereInput = {
       branch_id: branchId,
       is_deleted: false,
@@ -1035,7 +907,7 @@ export class VisitsService {
   ) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
-    const { start, end } = this.todayBounds();
+    const { start, end } = todayBounds();
     const where: Prisma.VisitWhereInput = {
       assigned_doctor_id: user.profileId,
       is_deleted: false,
@@ -1061,7 +933,7 @@ export class VisitsService {
   }
 
   async findMyCurrent(user: AuthContext) {
-    const { start, end } = this.todayBounds();
+    const { start, end } = todayBounds();
     const visit = await this.prismaService.db.visit.findFirst({
       where: {
         assigned_doctor_id: user.profileId,
@@ -1212,12 +1084,12 @@ export class VisitsService {
 
   async updateStatus(id: string, dto: UpdateVisitStatusDto, user: AuthContext) {
     const visit = await this.findOne(id, user);
-    const allowedNext = VALID_TRANSITIONS[visit.status];
-    if (!allowedNext.includes(dto.status)) {
-      throw new BadRequestException(
-        `Cannot transition from ${visit.status} to ${dto.status}`,
-      );
-    }
+    assertStatusTransition(
+      VALID_TRANSITIONS,
+      visit.status,
+      dto.status,
+      (current, next) => `Cannot transition from ${current} to ${next}`,
+    );
     if (dto.status === 'COMPLETED') {
       const encounter = await this.prismaService.db.visitEncounter.findUnique({
         where: { visit_id: id },
@@ -1370,10 +1242,22 @@ export class VisitsService {
     return updatedVisit;
   }
 
+  /**
+   * Resolves the spouse Guardian for a patient (three input paths: picked id,
+   * upsert-by-national-id, or name-only) and makes it the single primary SPOUSE
+   * link — demoting any other primary SPOUSE link first to respect the partial
+   * unique index. Shared by bookVisit and update; only called when the patient
+   * is MARRIED.
+   */
   private async applySpouseLink(
     tx: Prisma.TransactionClient,
     patientId: string,
-    dto: UpdateVisitDto,
+    dto: {
+      spouse_guardian_id?: string;
+      spouse_national_id?: string;
+      spouse_full_name?: string;
+      spouse_phone_number?: string;
+    },
   ) {
     let spouseGuardianId: string | null = null;
     if (dto.spouse_guardian_id) {
@@ -1434,6 +1318,20 @@ export class VisitsService {
     }
 
     if (spouseGuardianId) {
+      // Demote any existing primary SPOUSE link to a different guardian before
+      // promoting this one — the partial unique index
+      // `patient_guardians_one_primary_per_relation_unique` allows only one.
+      await tx.patientGuardian.updateMany({
+        where: {
+          patient_id: patientId,
+          relation_to_patient: 'SPOUSE',
+          is_primary: true,
+          is_deleted: false,
+          NOT: { guardian_id: spouseGuardianId },
+        },
+        data: { is_primary: false },
+      });
+
       const existingLink = await tx.patientGuardian.findUnique({
         where: {
           patient_id_guardian_id: {

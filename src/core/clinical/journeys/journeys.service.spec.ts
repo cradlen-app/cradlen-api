@@ -78,6 +78,13 @@ describe('JourneysService', () => {
       journeyTemplate: { findUnique: jest.fn() },
       $transaction: jest.fn(),
     };
+    // Default: callback-style $transaction runs its callback with db as the tx
+    // client; array-style resolves the array. Individual tests may override.
+    db.$transaction.mockImplementation((arg: unknown) =>
+      typeof arg === 'function'
+        ? (arg as (tx: typeof db) => unknown)(db)
+        : Promise.resolve(arg),
+    );
     prismaMock = { db };
     const module: TestingModule = await Test.createTestingModule({
       providers: [

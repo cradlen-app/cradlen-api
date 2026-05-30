@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
-import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ConfigModule, ConfigType } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { SentryModule } from '@sentry/nestjs/setup';
@@ -39,7 +39,6 @@ import { ObgynModule } from '@specialties/obgyn/obgyn.module';
 import { TemplatesModule } from '@builder/templates/templates.module.js';
 import { FinancialModule } from '@core/financial/financial.module.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
-import type { AppConfig } from './config/app.config';
 
 @Module({
   imports: [
@@ -52,11 +51,9 @@ import type { AppConfig } from './config/app.config';
       load: [appConfig, databaseConfig, authConfig],
     }),
     ThrottlerModule.forRootAsync({
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => {
-        const appConfig = config.get<AppConfig>('app');
-        if (!appConfig) throw new Error('App configuration not loaded');
-        const { ttl, limit } = appConfig.throttle;
+      inject: [appConfig.KEY],
+      useFactory: (config: ConfigType<typeof appConfig>) => {
+        const { ttl, limit } = config.throttle;
         return [{ ttl, limit }];
       },
     }),

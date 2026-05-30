@@ -5,31 +5,7 @@ import { Writable } from 'stream';
 // throw on initialization. The redaction assertions below build a
 // throwaway pino instance with the same paths so we can read output
 // deterministically without touching stdout.
-import { logger as productionLogger } from './logger.js';
-
-const REDACTION_PATHS = [
-  'req.body.password',
-  'req.body.confirm_password',
-  'req.body.new_password',
-  'req.body.code',
-  'req.body.refresh_token',
-  'req.body.reset_token',
-  'req.body.signup_token',
-  'req.body.selection_token',
-  'req.headers.authorization',
-  'req.headers.cookie',
-  'password',
-  'confirm_password',
-  'new_password',
-  'password_hashed',
-  'token_hash',
-  'code_hash',
-  'access_token',
-  'refresh_token',
-  'reset_token',
-  'signup_token',
-  'selection_token',
-];
+import { logger as productionLogger, REDACTION_PATHS } from './logger.js';
 
 function captureLog(value: object): Record<string, unknown> {
   const chunks: string[] = [];

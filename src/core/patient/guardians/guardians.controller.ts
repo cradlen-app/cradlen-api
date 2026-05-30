@@ -1,11 +1,11 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { GuardiansService } from './guardians.service';
-import { ListGuardiansQueryDto } from './dto/list-guardians-query.dto';
-import { GuardianSearchResultDto } from './dto/guardian.dto';
+import { GuardiansService } from './guardians.service.js';
+import { ListGuardiansQueryDto } from './dto/list-guardians-query.dto.js';
+import { GuardianSearchResultDto } from './dto/guardian.dto.js';
 import { ApiPaginatedResponse } from '@common/swagger';
-import { CurrentUser } from '@common/decorators/current-user.decorator';
-import { AuthContext } from '@common/interfaces/auth-context.interface';
+import { CurrentUser } from '@common/decorators/current-user.decorator.js';
+import { AuthContext } from '@common/interfaces/auth-context.interface.js';
 
 @ApiTags('Guardians')
 @Controller('guardians')

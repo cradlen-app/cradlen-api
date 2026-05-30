@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { PrismaService } from '@infrastructure/database/prisma.service';
-import { AuthContext } from '@common/interfaces/auth-context.interface';
-import { paginated } from '@common/utils/pagination.utils';
-import { ListGuardiansQueryDto } from './dto/list-guardians-query.dto';
+import { PrismaService } from '@infrastructure/database/prisma.service.js';
+import { AuthContext } from '@common/interfaces/auth-context.interface.js';
+import { paginated } from '@common/utils/pagination.utils.js';
+import { ListGuardiansQueryDto } from './dto/list-guardians-query.dto.js';
 
 @Injectable()
 export class GuardiansService {

@@ -1,16 +1,17 @@
 import {
   ForbiddenException,
+  Inject,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { ConfigType } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import type { User } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { EventBus } from '@infrastructure/messaging/event-bus.js';
-import type { AuthConfig } from '@config/auth.config.js';
+import authConfig, { type AuthConfig } from '@config/auth.config.js';
 import type { AuthTokensDto } from '../dto/auth-tokens.dto.js';
 import type { ResetTokenResponseDto } from '../dto/reset-token-response.dto.js';
 import type {
@@ -58,11 +59,10 @@ export class TokensService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
+    @Inject(authConfig.KEY)
+    config: ConfigType<typeof authConfig>,
     private readonly eventBus: EventBus,
   ) {
-    const config = this.configService.get<AuthConfig>('auth');
-    if (!config) throw new Error('Auth configuration not loaded');
     this.authConfig = config;
   }
 

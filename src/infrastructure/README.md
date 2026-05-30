@@ -1,6 +1,6 @@
 # `infrastructure/`
 
-Adapters that wrap external technology behind small, swappable interfaces. The rest of the codebase depends on these abstractions, never on vendor SDKs directly.
+Adapters that wrap external technology so the rest of the codebase depends on these in-house wrappers, never on vendor SDKs directly. Each adapter confines its vendor import to a single file; some (e.g. `EventBus`) also hide the implementation behind an interface so it can be swapped without touching callers.
 
 ## Dependency rule
 
@@ -20,6 +20,6 @@ Adapters that wrap external technology behind small, swappable interfaces. The r
 
 ## Conventions
 
-- Each adapter exposes a `*.module.ts` and one or more interfaces in the same folder.
+- Each adapter exposes a `*.module.ts` and its service(s) in the same folder.
 - Vendor SDK imports are confined to a single file per adapter.
-- Stub folders contain only an interface + README until a consumer arrives.
+- Stub folders contain only a README until a consumer arrives.

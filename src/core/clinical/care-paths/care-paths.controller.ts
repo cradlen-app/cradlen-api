@@ -1,16 +1,11 @@
 import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { ApiQuery, ApiTags } from '@nestjs/swagger';
-import { IsOptional, IsString, IsUUID } from 'class-validator';
 import { CarePathsService } from './care-paths.service';
 import { ApiStandardResponse } from '@common/swagger';
 import { CarePathDto, CarePathEpisodeDto } from './dto/care-path.dto';
+import { ListCarePathsQueryDto } from './dto/list-care-paths.query';
 import { CurrentUser } from '@common/decorators/current-user.decorator';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
-
-class ListCarePathsQueryDto {
-  @IsOptional() @IsUUID() specialtyId?: string;
-  @IsOptional() @IsString() specialtyCode?: string;
-}
 
 @ApiTags('Care Paths')
 @Controller('care-paths')
@@ -34,13 +29,19 @@ export class CarePathsController {
 
   @Get(':id')
   @ApiStandardResponse(CarePathDto)
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.findOne(id);
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.service.findOne(id, user.organizationId);
   }
 
   @Get(':id/episodes')
   @ApiStandardResponse(CarePathEpisodeDto)
-  findEpisodes(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.findEpisodes(id);
+  findEpisodes(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.service.findEpisodes(id, user.organizationId);
   }
 }
