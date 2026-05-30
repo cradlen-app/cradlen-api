@@ -115,8 +115,18 @@ export class FieldFlagsService {
     created_at: Date;
     updated_at: Date;
   }): FieldFlagDto {
+    // Map fields explicitly — Object.assign would copy the row's internal
+    // columns (is_deleted, deleted_at, …) into the response.
     const dto = new FieldFlagDto();
-    Object.assign(dto, flag);
+    dto.id = flag.id;
+    dto.patient_id = flag.patient_id;
+    dto.organization_id = flag.organization_id;
+    dto.author_id = flag.author_id;
+    dto.section_code = flag.section_code;
+    dto.field_code = flag.field_code;
+    dto.note = flag.note;
+    dto.created_at = flag.created_at;
+    dto.updated_at = flag.updated_at;
     return dto;
   }
 }

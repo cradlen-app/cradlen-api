@@ -1,13 +1,5 @@
 import { registerAs } from '@nestjs/config';
-
-function parsePositiveInt(name: string, fallback: string): number {
-  const raw = process.env[name] ?? fallback;
-  const value = parseInt(raw, 10);
-  if (!Number.isInteger(value) || value <= 0) {
-    throw new Error(`${name} must be a positive integer`);
-  }
-  return value;
-}
+import { parseList, parsePositiveInt, requireEnv } from './env.utils.js';
 
 export interface AppConfig {
   name: string;
@@ -15,7 +7,6 @@ export interface AppConfig {
   port: number;
   appUrl: string;
   versioning: {
-    enabled: boolean;
     prefix: string;
     defaultVersion: string;
   };
@@ -25,7 +16,7 @@ export interface AppConfig {
     fallbackLocale: string;
   };
   cors: {
-    origins: string | string[];
+    origins: string[];
   };
   throttle: {
     ttl: number;
@@ -39,23 +30,18 @@ export default registerAs(
     name: process.env.APP_NAME ?? 'cradlen-api',
     env: process.env.NODE_ENV ?? 'development',
     port: parsePositiveInt('PORT', '3000'),
-    appUrl:
-      process.env.APP_URL ??
-      (() => {
-        throw new Error('APP_URL is not set');
-      })(),
+    appUrl: requireEnv('APP_URL'),
     versioning: {
-      enabled: true,
       prefix: 'v',
       defaultVersion: process.env.API_DEFAULT_VERSION ?? '1',
     },
     localisation: {
       defaultLocale: process.env.DEFAULT_LOCALE ?? 'en',
-      supportedLocales: (process.env.SUPPORTED_LOCALES ?? 'en,ar').split(','),
+      supportedLocales: parseList(process.env.SUPPORTED_LOCALES, ['en', 'ar']),
       fallbackLocale: process.env.FALLBACK_LOCALE ?? 'en',
     },
     cors: {
-      origins: process.env.CORS_ORIGINS?.split(',') ?? [],
+      origins: parseList(process.env.CORS_ORIGINS, []),
     },
     throttle: {
       ttl: parsePositiveInt('THROTTLE_TTL', '60000'),

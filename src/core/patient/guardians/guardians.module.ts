@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
-import { GuardiansController } from './guardians.controller';
-import { GuardiansService } from './guardians.service';
+import { GuardiansController } from './guardians.controller.js';
+import { GuardiansService } from './guardians.service.js';
 
 @Module({
   controllers: [GuardiansController],

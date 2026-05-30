@@ -94,8 +94,9 @@ Table users {
   profiles profiles [not null]
   refreshTokens refresh_tokens [not null]
   verificationCodes verification_codes [not null]
+  passwordResetTokens password_reset_tokens [not null]
+  authAuditLogs auth_audit_log [not null]
   sentInvitations invitations [not null]
-  notifications notifications [not null]
 }
 
 Table roles {
@@ -190,6 +191,7 @@ Table profiles {
   medical_rep_visits_created medical_rep_visits [not null]
   calendar_events calendar_events [not null]
   calendar_event_assists calendar_event_assistants [not null]
+  notifications notifications [not null]
   services_created services [not null]
   price_lists_created price_lists [not null]
   price_list_items_created price_list_items [not null]
@@ -265,6 +267,28 @@ Table refresh_tokens {
   user users [not null]
 }
 
+Table auth_audit_log {
+  id String [pk]
+  event_name String [not null]
+  user_id String
+  email String
+  payload Json [not null]
+  at DateTime [not null]
+  created_at DateTime [default: `now()`, not null]
+  user users
+}
+
+Table password_reset_tokens {
+  id String [pk]
+  jti String [unique, not null]
+  user_id String [not null]
+  target String [not null]
+  expires_at DateTime [not null]
+  consumed_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  user users [not null]
+}
+
 Table verification_codes {
   id String [pk]
   user_id String
@@ -336,7 +360,7 @@ Table invitation_branches {
 
 Table notifications {
   id String [pk]
-  user_id String [not null]
+  profile_id String [not null]
   code String [not null]
   category String [not null]
   title String [not null]
@@ -349,7 +373,7 @@ Table notifications {
   deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
-  user users [not null]
+  profile profiles [not null]
 }
 
 Table working_schedules {
@@ -650,10 +674,6 @@ Table medications {
   deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
-
-  indexes {
-    (organization_id, code) [unique]
-  }
 }
 
 Table lab_tests {
@@ -2033,6 +2053,10 @@ Ref: subscriptions.subscription_plan_id > subscription_plans.id
 
 Ref: refresh_tokens.user_id > users.id [delete: Cascade]
 
+Ref: auth_audit_log.user_id > users.id [delete: Set Null]
+
+Ref: password_reset_tokens.user_id > users.id [delete: Cascade]
+
 Ref: verification_codes.user_id > users.id [delete: Cascade]
 
 Ref: invitations.organization_id > organizations.id [delete: Cascade]
@@ -2047,7 +2071,7 @@ Ref: invitation_branches.invitation_id > invitations.id [delete: Cascade]
 
 Ref: invitation_branches.(branch_id, organization_id) > branches.(id, organization_id) [delete: Cascade]
 
-Ref: notifications.user_id > users.id [delete: Cascade]
+Ref: notifications.profile_id > profiles.id [delete: Cascade]
 
 Ref: working_schedules.profile_id > profiles.id [delete: Cascade]
 

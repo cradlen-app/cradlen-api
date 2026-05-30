@@ -33,9 +33,15 @@ export class CarePathsService {
     });
   }
 
-  async findOne(id: string) {
-    const carePath = await this.prismaService.db.carePath.findUnique({
-      where: { id },
+  async findOne(id: string, organizationId: string) {
+    const carePath = await this.prismaService.db.carePath.findFirst({
+      where: {
+        id,
+        is_deleted: false,
+        // System paths (null org) plus the caller's own org-specific paths;
+        // never another org's private path.
+        OR: [{ organization_id: null }, { organization_id: organizationId }],
+      },
       include: {
         episodes: {
           where: { is_deleted: false },
@@ -43,14 +49,14 @@ export class CarePathsService {
         },
       },
     });
-    if (!carePath || carePath.is_deleted) {
+    if (!carePath) {
       throw new NotFoundException(`Care path ${id} not found`);
     }
     return carePath;
   }
 
-  async findEpisodes(carePathId: string) {
-    await this.findOne(carePathId);
+  async findEpisodes(carePathId: string, organizationId: string) {
+    await this.findOne(carePathId, organizationId);
     return this.prismaService.db.carePathEpisode.findMany({
       where: { care_path_id: carePathId, is_deleted: false },
       orderBy: { order: 'asc' },

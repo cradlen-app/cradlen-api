@@ -7,9 +7,10 @@ import {
   Patch,
   UseGuards,
 } from '@nestjs/common';
-import { ApiHeader, ApiTags } from '@nestjs/swagger';
+import { ApiTags } from '@nestjs/swagger';
 import { ApiStandardResponse } from '@common/swagger';
 import {
+  ApiIfMatchHeader,
   CurrentUser,
   IfMatchVersion,
   LocksOnClosedVisit,
@@ -25,13 +26,6 @@ import {
   UpdateVisitPregnancyRecordDto,
   VisitPregnancyRecordDto,
 } from './dto/pregnancy.dto';
-
-const IF_MATCH = {
-  name: 'If-Match',
-  required: true,
-  description:
-    'Optimistic concurrency token. Echo the row\'s current `version` as `"version:N"`.',
-};
 
 @ApiTags('OB/GYN — Pregnancy')
 @Controller()
@@ -51,19 +45,14 @@ export class PregnancyController {
   }
 
   @Patch('journeys/:journeyId/pregnancy-record')
-  @ApiHeader(IF_MATCH)
+  @ApiIfMatchHeader()
   patchJourneyRecord(
     @Param('journeyId', ParseUUIDPipe) journeyId: string,
     @Body() dto: PregnancySnapshotDto,
     @IfMatchVersion() version: number,
     @CurrentUser() user: AuthContext,
   ) {
-    return this.service.patchJourneyRecord(
-      journeyId,
-      dto as unknown as Record<string, unknown>,
-      version,
-      user,
-    );
+    return this.service.patchJourneyRecord(journeyId, dto, version, user);
   }
 
   // ---------- Episode-level trimester milestones ----------
@@ -78,7 +67,7 @@ export class PregnancyController {
   }
 
   @Patch('episodes/:episodeId/pregnancy-record')
-  @ApiHeader(IF_MATCH)
+  @ApiIfMatchHeader()
   patchEpisodeRecord(
     @Param('episodeId', ParseUUIDPipe) episodeId: string,
     @Body() dto: PregnancyEpisodeUpdateDto,
@@ -101,18 +90,13 @@ export class PregnancyController {
 
   @Patch('visits/:visitId/pregnancy-record')
   @LocksOnClosedVisit('visitId')
-  @ApiHeader(IF_MATCH)
+  @ApiIfMatchHeader()
   patchVisitRecord(
     @Param('visitId', ParseUUIDPipe) visitId: string,
     @Body() dto: UpdateVisitPregnancyRecordDto,
     @IfMatchVersion() version: number,
     @CurrentUser() user: AuthContext,
   ) {
-    return this.service.patchVisitRecord(
-      visitId,
-      dto as unknown as Record<string, unknown>,
-      version,
-      user,
-    );
+    return this.service.patchVisitRecord(visitId, dto, version, user);
   }
 }

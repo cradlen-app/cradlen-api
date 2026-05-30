@@ -1,13 +1,5 @@
 import { registerAs } from '@nestjs/config';
-
-function parsePositiveInt(name: string, fallback: string): number {
-  const raw = process.env[name] ?? fallback;
-  const value = parseInt(raw, 10);
-  if (!Number.isInteger(value) || value <= 0) {
-    throw new Error(`${name} must be a positive integer`);
-  }
-  return value;
-}
+import { parsePositiveInt, requireEnv } from './env.utils.js';
 
 export interface AuthConfig {
   jwt: {
@@ -22,6 +14,13 @@ export interface AuthConfig {
     apiKey: string;
     fromEmail: string;
   };
+  verificationCodes: {
+    otpTtlMinutes: number;
+    otpMaxAttempts: number;
+    otpBcryptRounds: number;
+    resendCooldownSeconds: number;
+    resendMaxPerHour: number;
+  };
   freeTrialDays: number;
   invitationExpireHours: number;
 }
@@ -30,32 +29,26 @@ export default registerAs(
   'auth',
   (): AuthConfig => ({
     jwt: {
-      accessSecret:
-        process.env.JWT_ACCESS_SECRET ??
-        (() => {
-          throw new Error('JWT_ACCESS_SECRET is not set');
-        })(),
-      refreshSecret:
-        process.env.JWT_REFRESH_SECRET ??
-        (() => {
-          throw new Error('JWT_REFRESH_SECRET is not set');
-        })(),
-      resetSecret:
-        process.env.JWT_RESET_SECRET ??
-        (() => {
-          throw new Error('JWT_RESET_SECRET is not set');
-        })(),
+      accessSecret: requireEnv('JWT_ACCESS_SECRET'),
+      refreshSecret: requireEnv('JWT_REFRESH_SECRET'),
+      resetSecret: requireEnv('JWT_RESET_SECRET'),
       accessExpiration: process.env.JWT_ACCESS_EXPIRATION ?? '15m',
       refreshExpiration: process.env.JWT_REFRESH_EXPIRATION ?? '7d',
       registrationExpiration: process.env.JWT_REGISTRATION_EXPIRATION ?? '30m',
     },
     resend: {
-      apiKey:
-        process.env.RESEND_API_KEY ??
-        (() => {
-          throw new Error('RESEND_API_KEY is not set');
-        })(),
+      apiKey: requireEnv('RESEND_API_KEY'),
       fromEmail: process.env.RESEND_FROM_EMAIL ?? 'noreply@example.com',
+    },
+    verificationCodes: {
+      otpTtlMinutes: parsePositiveInt('OTP_TTL_MINUTES', '15'),
+      otpMaxAttempts: parsePositiveInt('OTP_MAX_ATTEMPTS', '5'),
+      otpBcryptRounds: parsePositiveInt('OTP_BCRYPT_ROUNDS', '10'),
+      resendCooldownSeconds: parsePositiveInt(
+        'OTP_RESEND_COOLDOWN_SECONDS',
+        '60',
+      ),
+      resendMaxPerHour: parsePositiveInt('OTP_RESEND_MAX_PER_HOUR', '5'),
     },
     freeTrialDays: parsePositiveInt('FREE_TRIAL_DAYS', '14'),
     invitationExpireHours: parsePositiveInt('INVITATION_EXPIRE_HOURS', '72'),

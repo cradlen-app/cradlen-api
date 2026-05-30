@@ -8,6 +8,8 @@ import {
   CLINICAL_EVENTS,
   type PatientHistoryUpdatedEvent,
 } from '@core/clinical/events/events.public';
+import { splitDiff } from '@common/utils/id-keyed-diff';
+import { coerceStringRecord } from '@common/utils/json.utils';
 import { ObgynPatientAccessService } from '../patient-access.service';
 import { buildRevision } from '../revisions.helper';
 import {
@@ -35,6 +37,9 @@ type SingletonJsonField = (typeof SINGLETON_JSON_FIELDS)[number];
 
 const LIVE_BIRTH_OUTCOMES = ['LIVE_BIRTH'];
 const ABORTION_LIKE_OUTCOMES = ['MISCARRIAGE', 'ABORTION', 'ECTOPIC'];
+const STILLBIRTH_OUTCOME = 'STILLBIRTH';
+// A stillbirth counts toward parity only once the fetus is viable (>= 20 weeks).
+const STILLBIRTH_VIABLE_WEEKS = 20;
 
 @Injectable()
 export class ObgynHistoryService {
@@ -176,11 +181,8 @@ export class ObgynHistoryService {
       }
 
       const now = new Date().toISOString();
-      const raw = current.section_timestamps;
-      const existingTimestamps: Record<string, string> =
-        raw !== null && typeof raw === 'object' && !Array.isArray(raw)
-          ? (raw as Record<string, string>)
-          : {};
+      const existingTimestamps =
+        coerceStringRecord(current.section_timestamps) ?? {};
       const updatedTimestamps = { ...existingTimestamps };
       for (const section of changedSections) {
         updatedTimestamps[section] = now;
@@ -290,28 +292,6 @@ export class ObgynHistoryService {
 
   // ---- Child diff helpers (id-keyed: upsert / create / soft-delete) -------
 
-  private splitDiff<T extends { id?: string }>(
-    rows: T[],
-    liveIds: Set<string>,
-  ) {
-    const toUpdate: T[] = [];
-    const toCreate: T[] = [];
-    const keptIds = new Set<string>();
-    for (const row of rows) {
-      if (row.id && liveIds.has(row.id)) {
-        toUpdate.push(row);
-        keptIds.add(row.id);
-      } else {
-        toCreate.push(row);
-      }
-    }
-    const toDelete: string[] = [];
-    for (const id of liveIds) {
-      if (!keptIds.has(id)) toDelete.push(id);
-    }
-    return { toUpdate, toCreate, toDelete };
-  }
-
   private async diffPregnancies(
     tx: Prisma.TransactionClient,
     patientId: string,
@@ -320,7 +300,7 @@ export class ObgynHistoryService {
     profileId: string,
   ) {
     const liveIds = new Set(prior.map((p) => p.id));
-    const { toUpdate, toCreate, toDelete } = this.splitDiff(rows, liveIds);
+    const { toUpdate, toCreate, toDelete } = splitDiff(rows, liveIds);
     for (const row of toUpdate) {
       await tx.patientPregnancyHistory.update({
         where: { id: row.id! },
@@ -376,7 +356,7 @@ export class ObgynHistoryService {
     profileId: string,
   ) {
     const liveIds = new Set(prior.map((p) => p.id));
-    const { toUpdate, toCreate, toDelete } = this.splitDiff(rows, liveIds);
+    const { toUpdate, toCreate, toDelete } = splitDiff(rows, liveIds);
     for (const row of toUpdate) {
       await tx.patientContraceptiveHistory.update({
         where: { id: row.id! },
@@ -420,7 +400,7 @@ export class ObgynHistoryService {
     profileId: string,
   ) {
     const liveIds = new Set(prior.map((p) => p.id));
-    const { toUpdate, toCreate, toDelete } = this.splitDiff(rows, liveIds);
+    const { toUpdate, toCreate, toDelete } = splitDiff(rows, liveIds);
     for (const row of toUpdate) {
       await tx.patientNonGynSurgery.update({
         where: { id: row.id! },
@@ -464,7 +444,7 @@ export class ObgynHistoryService {
     profileId: string,
   ) {
     const liveIds = new Set(prior.map((p) => p.id));
-    const { toUpdate, toCreate, toDelete } = this.splitDiff(rows, liveIds);
+    const { toUpdate, toCreate, toDelete } = splitDiff(rows, liveIds);
     for (const row of toUpdate) {
       await tx.patientMedication.update({
         where: { id: row.id! },
@@ -520,7 +500,7 @@ export class ObgynHistoryService {
     profileId: string,
   ) {
     const liveIds = new Set(prior.map((p) => p.id));
-    const { toUpdate, toCreate, toDelete } = this.splitDiff(rows, liveIds);
+    const { toUpdate, toCreate, toDelete } = splitDiff(rows, liveIds);
     for (const row of toUpdate) {
       await tx.patientAllergy.update({
         where: { id: row.id! },
@@ -577,8 +557,8 @@ export class ObgynHistoryService {
       if (LIVE_BIRTH_OUTCOMES.includes(outcome)) {
         para += 1;
       } else if (
-        outcome === 'STILLBIRTH' &&
-        (r.gestational_age_weeks ?? 0) >= 20
+        outcome === STILLBIRTH_OUTCOME &&
+        (r.gestational_age_weeks ?? 0) >= STILLBIRTH_VIABLE_WEEKS
       ) {
         para += 1;
       } else if (ABORTION_LIKE_OUTCOMES.includes(outcome)) {

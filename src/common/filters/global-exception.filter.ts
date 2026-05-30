@@ -25,8 +25,29 @@ interface ErrorBody {
   details: Record<string, unknown>;
 }
 
+interface HandledError {
+  status: number;
+  body: ErrorBody;
+}
+
 function isValidationErrorResponse(v: unknown): v is ValidationErrorResponse {
   return typeof v === 'object' && v !== null && 'message' in v;
+}
+
+/** Read a string-valued key off an unknown HttpException response body. */
+function readString(raw: unknown, key: string): string | null {
+  if (raw === null || typeof raw !== 'object') return null;
+  const value = (raw as Record<string, unknown>)[key];
+  return typeof value === 'string' ? value : null;
+}
+
+/** Read an object-valued key off an unknown HttpException response body. */
+function readObject(raw: unknown, key: string): Record<string, unknown> | null {
+  if (raw === null || typeof raw !== 'object') return null;
+  const value = (raw as Record<string, unknown>)[key];
+  return typeof value === 'object' && value !== null
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
 function resolveCode(status: number): ErrorCode {
@@ -49,7 +70,9 @@ function buildValidationDetails(raw: unknown): Record<string, unknown> {
   const messages = Array.isArray(raw.message) ? raw.message : [raw.message];
 
   const fields = messages.reduce<Record<string, string[]>>((acc, msg) => {
-    // class-validator messages are prefixed with the property name: "email must be..."
+    // Heuristic, not robust parsing: class-validator prefixes each message with
+    // the property name ("email must be..."), so the first token is the field.
+    // Messages that don't follow that shape bucket under "unknown".
     const spaceIdx = msg.indexOf(' ');
     const field = spaceIdx !== -1 ? msg.slice(0, spaceIdx) : 'unknown';
     (acc[field] ??= []).push(msg);
@@ -70,121 +93,150 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     const requestId = request.headers['x-request-id'] as string | undefined;
 
-    let status = HttpStatus.INTERNAL_SERVER_ERROR;
-    let body: ErrorBody;
+    const { status, body } = this.handle(exception, request);
 
-    if (exception instanceof Prisma.PrismaClientKnownRequestError) {
-      const { code, meta } = exception;
-      if (code === 'P2002') {
-        const fields = Array.isArray(meta?.['target'])
-          ? (meta['target'] as string[])
-          : [];
-        status = HttpStatus.CONFLICT;
-        body = {
-          code: ERROR_CODES.CONFLICT,
-          message: 'A record with these details already exists',
-          statusCode: status,
-          details: { fields },
-        };
-      } else if (code === 'P2025') {
-        status = HttpStatus.NOT_FOUND;
-        body = {
-          code: ERROR_CODES.NOT_FOUND,
-          message: 'Record not found',
-          statusCode: status,
-          details: {},
-        };
-      } else if (code === 'P2003') {
-        status = HttpStatus.BAD_REQUEST;
-        body = {
-          code: ERROR_CODES.BAD_REQUEST,
-          message: 'Related record not found',
-          statusCode: status,
-          details: { field: meta?.['field_name'] ?? 'unknown' },
-        };
-      } else {
-        this.logger.error(
-          `Prisma error ${code} on ${request.method} ${request.url}`,
-          exception.stack,
-        );
-        Sentry.captureException(exception);
-        body = {
-          code: ERROR_CODES.INTERNAL_SERVER_ERROR,
-          message: 'A database error occurred',
-          statusCode: status,
-          details: {},
-        };
-      }
-    } else if (exception instanceof Prisma.PrismaClientValidationError) {
-      status = HttpStatus.BAD_REQUEST;
-      body = {
-        code: ERROR_CODES.VALIDATION_ERROR,
-        message: 'Invalid data supplied to the database',
-        statusCode: status,
-        details: {},
-      };
-    } else if (exception instanceof BadRequestException) {
-      const raw = exception.getResponse();
-      status = exception.getStatus();
-      body = {
-        code: ERROR_CODES.VALIDATION_ERROR,
-        message: 'Validation failed',
-        statusCode: status,
-        details: buildValidationDetails(raw),
-      };
-    } else if (exception instanceof HttpException) {
-      status = exception.getStatus();
-      const raw = exception.getResponse();
-      const message =
-        isValidationErrorResponse(raw) && typeof raw.message === 'string'
-          ? raw.message
-          : exception.message;
-      const rawCode =
-        raw !== null &&
-        typeof raw === 'object' &&
-        'code' in raw &&
-        typeof (raw as Record<string, unknown>)['code'] === 'string'
-          ? ((raw as Record<string, unknown>)['code'] as string)
-          : null;
-      const errorCode =
-        rawCode !== null &&
-        (Object.values(ERROR_CODES) as string[]).includes(rawCode)
-          ? (rawCode as ErrorCode)
-          : resolveCode(status);
-      const rawDetails =
-        raw !== null &&
-        typeof raw === 'object' &&
-        'details' in raw &&
-        typeof (raw as Record<string, unknown>)['details'] === 'object' &&
-        (raw as Record<string, unknown>)['details'] !== null
-          ? ((raw as Record<string, unknown>)['details'] as Record<
-              string,
-              unknown
-            >)
-          : {};
-      body = {
-        code: errorCode,
-        message,
-        statusCode: status,
-        details: rawDetails,
-      };
-      if ((status as number) >= 500) {
-        Sentry.captureException(exception);
-      }
-    } else {
-      this.logger.error(
-        `Unhandled exception on ${request.method} ${request.url}`,
-        exception instanceof Error ? exception.stack : String(exception),
-      );
+    // Single capture policy: server faults (5xx) go to Sentry; client errors
+    // (4xx) are expected and stay out of the error stream.
+    if (status >= 500) {
       Sentry.captureException(exception);
-      body = {
-        code: ERROR_CODES.INTERNAL_SERVER_ERROR,
-        message: 'An unexpected error occurred',
-        statusCode: status,
-        details: {},
-      };
     }
 
     response.status(status).json({ error: { ...body, requestId } });
+  }
+
+  private handle(exception: unknown, request: Request): HandledError {
+    if (exception instanceof Prisma.PrismaClientKnownRequestError) {
+      return this.handlePrismaKnown(exception, request);
+    }
+    if (exception instanceof Prisma.PrismaClientValidationError) {
+      return {
+        status: HttpStatus.BAD_REQUEST,
+        body: {
+          code: ERROR_CODES.VALIDATION_ERROR,
+          message: 'Invalid data supplied to the database',
+          statusCode: HttpStatus.BAD_REQUEST,
+          details: {},
+        },
+      };
+    }
+    if (exception instanceof HttpException) {
+      return this.handleHttp(exception);
+    }
+    return this.handleUnknown(exception, request);
+  }
+
+  private handlePrismaKnown(
+    exception: Prisma.PrismaClientKnownRequestError,
+    request: Request,
+  ): HandledError {
+    const { code, meta } = exception;
+
+    if (code === 'P2002') {
+      const fields = Array.isArray(meta?.['target'])
+        ? (meta['target'] as string[])
+        : [];
+      return {
+        status: HttpStatus.CONFLICT,
+        body: {
+          code: ERROR_CODES.CONFLICT,
+          message: 'A record with these details already exists',
+          statusCode: HttpStatus.CONFLICT,
+          details: { fields },
+        },
+      };
+    }
+
+    if (code === 'P2025') {
+      return {
+        status: HttpStatus.NOT_FOUND,
+        body: {
+          code: ERROR_CODES.NOT_FOUND,
+          message: 'Record not found',
+          statusCode: HttpStatus.NOT_FOUND,
+          details: {},
+        },
+      };
+    }
+
+    if (code === 'P2003') {
+      return {
+        status: HttpStatus.BAD_REQUEST,
+        body: {
+          code: ERROR_CODES.BAD_REQUEST,
+          message: 'Related record not found',
+          statusCode: HttpStatus.BAD_REQUEST,
+          details: { field: meta?.['field_name'] ?? 'unknown' },
+        },
+      };
+    }
+
+    this.logger.error(
+      `Prisma error ${code} on ${request.method} ${request.url}`,
+      exception.stack,
+    );
+    return {
+      status: HttpStatus.INTERNAL_SERVER_ERROR,
+      body: {
+        code: ERROR_CODES.INTERNAL_SERVER_ERROR,
+        message: 'A database error occurred',
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        details: {},
+      },
+    };
+  }
+
+  private handleHttp(exception: HttpException): HandledError {
+    const status = exception.getStatus();
+    const raw = exception.getResponse();
+
+    if (exception instanceof BadRequestException) {
+      return {
+        status,
+        body: {
+          code: ERROR_CODES.VALIDATION_ERROR,
+          message: 'Validation failed',
+          statusCode: status,
+          details: buildValidationDetails(raw),
+        },
+      };
+    }
+
+    const message =
+      isValidationErrorResponse(raw) && typeof raw.message === 'string'
+        ? raw.message
+        : exception.message;
+
+    const rawCode = readString(raw, 'code');
+    const errorCode =
+      rawCode !== null &&
+      (Object.values(ERROR_CODES) as string[]).includes(rawCode)
+        ? (rawCode as ErrorCode)
+        : resolveCode(status);
+
+    return {
+      status,
+      body: {
+        code: errorCode,
+        message,
+        statusCode: status,
+        details: readObject(raw, 'details') ?? {},
+      },
+    };
+  }
+
+  private handleUnknown(exception: unknown, request: Request): HandledError {
+    this.logger.error(
+      `Unhandled exception on ${request.method} ${request.url}`,
+      exception instanceof Error ? exception.stack : String(exception),
+    );
+    return {
+      status: HttpStatus.INTERNAL_SERVER_ERROR,
+      body: {
+        code: ERROR_CODES.INTERNAL_SERVER_ERROR,
+        message: 'An unexpected error occurred',
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        details: {},
+      },
+    };
   }
 }

@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import type { FormField, FormSection, FormTemplate } from '@prisma/client';
+import type {
+  FormField,
+  FormScope,
+  FormSection,
+  FormTemplate,
+} from '@prisma/client';
 import { ConfigShape } from '../fields/field-config.schema.js';
 import {
   FieldDescriptor,
@@ -16,7 +21,7 @@ export interface RenderedTemplate {
   code: string;
   name: string;
   description: string | null;
-  scope: string;
+  scope: FormScope;
   version: number;
   activated_at: Date | null;
   specialty_id: string | null;

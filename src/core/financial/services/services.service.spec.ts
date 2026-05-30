@@ -79,16 +79,28 @@ describe('ServicesService', () => {
   describe('create', () => {
     it('creates a service with specialty ids', async () => {
       mockDb.service.findFirst.mockResolvedValue(null);
-      const created = { id: 's1', name: 'Test', specialties: [{ specialty_id: 'sp1' }] };
+      const created = {
+        id: 's1',
+        name: 'Test',
+        specialties: [{ specialty_id: 'sp1' }],
+      };
       mockDb.service.create.mockResolvedValue(created);
 
       const result = await service.create(
         ORG,
-        { code: 'TST', name: 'Test', service_type: ServiceType.PROCEDURE, specialty_ids: ['sp1'] },
+        {
+          code: 'TST',
+          name: 'Test',
+          service_type: ServiceType.PROCEDURE,
+          specialty_ids: ['sp1'],
+        },
         USER,
       );
 
-      expect(mockAuth.assertCanManageOrganization).toHaveBeenCalledWith(USER.profileId, ORG);
+      expect(mockAuth.assertCanManageOrganization).toHaveBeenCalledWith(
+        USER.profileId,
+        ORG,
+      );
       expect(result.specialty_ids).toEqual(['sp1']);
     });
 
@@ -96,20 +108,32 @@ describe('ServicesService', () => {
       mockDb.service.findFirst.mockResolvedValue({ id: 'existing' });
 
       await expect(
-        service.create(ORG, { code: 'DUP', name: 'X', service_type: ServiceType.OTHER }, USER),
+        service.create(
+          ORG,
+          { code: 'DUP', name: 'X', service_type: ServiceType.OTHER },
+          USER,
+        ),
       ).rejects.toThrow(ConflictException);
     });
   });
 
   describe('update', () => {
     it('updates service fields and replaces specialties', async () => {
-      mockDb.service.findFirst.mockResolvedValue({ id: 's1', organization_id: ORG });
+      mockDb.service.findFirst.mockResolvedValue({
+        id: 's1',
+        organization_id: ORG,
+      });
       const updated = { id: 's1', name: 'Updated', specialties: [] };
 
       mockDb.$transaction.mockImplementation(async (fn: any) => fn(mockDb));
       mockDb.service.update.mockResolvedValue(updated);
 
-      const result = await service.update(ORG, 's1', { name: 'Updated', specialty_ids: [] }, USER);
+      const result = await service.update(
+        ORG,
+        's1',
+        { name: 'Updated', specialty_ids: [] },
+        USER,
+      );
 
       expect(mockAuth.assertCanManageOrganization).toHaveBeenCalled();
       expect(result.specialty_ids).toEqual([]);
@@ -126,7 +150,10 @@ describe('ServicesService', () => {
 
   describe('remove', () => {
     it('soft-deletes the service', async () => {
-      mockDb.service.findFirst.mockResolvedValue({ id: 's1', organization_id: ORG });
+      mockDb.service.findFirst.mockResolvedValue({
+        id: 's1',
+        organization_id: ORG,
+      });
       mockDb.service.update.mockResolvedValue({});
 
       await service.remove(ORG, 's1', USER);
@@ -141,7 +168,9 @@ describe('ServicesService', () => {
     it('throws NotFoundException when service not found', async () => {
       mockDb.service.findFirst.mockResolvedValue(null);
 
-      await expect(service.remove(ORG, 'missing', USER)).rejects.toThrow(NotFoundException);
+      await expect(service.remove(ORG, 'missing', USER)).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });

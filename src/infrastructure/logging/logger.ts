@@ -41,7 +41,40 @@ const stdoutStream = isDev
     })
   : process.stdout;
 
+// Redaction targets cover request bodies, headers, and known token-bearing
+// fields. Pino removes the value before serialization, so secrets never
+// reach stdout, Sentry, or any downstream stream — even at trace level.
+export const REDACTION_PATHS = [
+  // Inbound credentials and one-time codes (Nest request lifecycle).
+  'req.body.password',
+  'req.body.confirm_password',
+  'req.body.new_password',
+  'req.body.code',
+  'req.body.refresh_token',
+  'req.body.reset_token',
+  'req.body.signup_token',
+  'req.body.selection_token',
+  'req.headers.authorization',
+  'req.headers.cookie',
+  // Server-side echoes of the same secrets (defensive — many handlers
+  // log dto objects directly during debugging).
+  'password',
+  'confirm_password',
+  'new_password',
+  'password_hashed',
+  'token_hash',
+  'code_hash',
+  'access_token',
+  'refresh_token',
+  'reset_token',
+  'signup_token',
+  'selection_token',
+];
+
 export const logger = pino(
-  { level: process.env.LOG_LEVEL ?? 'info' },
+  {
+    level: process.env.LOG_LEVEL ?? 'info',
+    redact: { paths: REDACTION_PATHS, censor: '[REDACTED]' },
+  },
   pino.multistream([{ stream: stdoutStream }, { stream: sentryWritable }]),
 );

@@ -25,10 +25,11 @@ export function buildPaginationMeta({
 export function paginated<T>(
   items: T[],
   options: PaginateOptions,
+  extraMeta?: Record<string, unknown>,
 ): PaginatedPayload<T> {
   const payload = {
     items,
-    meta: buildPaginationMeta(options),
+    meta: { ...buildPaginationMeta(options), ...extraMeta },
   } as PaginatedPayload<T>;
 
   Object.defineProperty(payload, '__paginatedPayload', {
