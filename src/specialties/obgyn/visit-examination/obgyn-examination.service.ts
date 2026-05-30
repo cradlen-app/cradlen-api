@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { assertVersionMatches } from '@common/decorators/if-match.decorator';
+import { splitDiff } from '@common/utils/id-keyed-diff';
 import { EventBus } from '@infrastructure/messaging/event-bus';
 import {
   CLINICAL_EVENTS,
@@ -76,13 +77,12 @@ export class ObgynExaminationService {
 
   async get(visitId: string, user: AuthContext) {
     await this.access.assertVisitInOrg(visitId, user);
-    return this.composeEnvelope(this.prismaService.db, visitId, user.profileId);
+    return this.composeEnvelope(this.prismaService.db, visitId);
   }
 
   private async composeEnvelope(
     tx: Prisma.TransactionClient | typeof this.prismaService.db,
     visitId: string,
-    profileId: string,
   ) {
     const [visit, encounter, vitals, obgyn, investigations, prescription] =
       await Promise.all([
@@ -142,8 +142,6 @@ export class ObgynExaminationService {
       follow_up_date: visit?.follow_up_date ?? null,
       examination_version: visit?.examination_version ?? 1,
       updated_at: visit?.updated_at ?? new Date(),
-      // Unused by FE but useful for auditing:
-      _updated_by_profile_id: profileId,
     };
   }
 
@@ -161,7 +159,7 @@ export class ObgynExaminationService {
 
     await this.prismaService.db.$transaction(async (tx) => {
       const visit = await tx.visit.findUnique({ where: { id: visitId } });
-      if (!visit) throw new Error(`Visit ${visitId} not found`);
+      if (!visit) throw new NotFoundException(`Visit ${visitId} not found`);
       assertVersionMatches(ifMatchVersion, visit.examination_version);
 
       const aggregates: string[] = [];
@@ -232,7 +230,7 @@ export class ObgynExaminationService {
       );
     });
 
-    return this.composeEnvelope(this.prismaService.db, visitId, user.profileId);
+    return this.composeEnvelope(this.prismaService.db, visitId);
   }
 
   // ---------------------------------------------------------------------------
@@ -422,28 +420,6 @@ export class ObgynExaminationService {
   // Repeatable diff helpers (id-keyed: upsert / create / soft-delete)
   // ---------------------------------------------------------------------------
 
-  private splitDiff<T extends { id?: string }>(
-    rows: T[],
-    liveIds: Set<string>,
-  ) {
-    const toUpdate: T[] = [];
-    const toCreate: T[] = [];
-    const keptIds = new Set<string>();
-    for (const row of rows) {
-      if (row.id && liveIds.has(row.id)) {
-        toUpdate.push(row);
-        keptIds.add(row.id);
-      } else {
-        toCreate.push(row);
-      }
-    }
-    const toDelete: string[] = [];
-    for (const id of liveIds) {
-      if (!keptIds.has(id)) toDelete.push(id);
-    }
-    return { toUpdate, toCreate, toDelete };
-  }
-
   private async diffInvestigations(
     tx: Prisma.TransactionClient,
     visitId: string,
@@ -455,7 +431,7 @@ export class ObgynExaminationService {
       select: { id: true },
     });
     const liveIds = new Set(prior.map((p) => p.id));
-    const { toUpdate, toCreate, toDelete } = this.splitDiff(rows, liveIds);
+    const { toUpdate, toCreate, toDelete } = splitDiff(rows, liveIds);
 
     for (const row of toUpdate) {
       await tx.visitInvestigation.update({
@@ -517,7 +493,7 @@ export class ObgynExaminationService {
       select: { id: true, order: true },
     });
     const liveIds = new Set(prior.map((p) => p.id));
-    const { toUpdate, toCreate, toDelete } = this.splitDiff(rows, liveIds);
+    const { toUpdate, toCreate, toDelete } = splitDiff(rows, liveIds);
 
     // Snapshot prescription for revision before any item write.
     if (toUpdate.length > 0 || toCreate.length > 0 || toDelete.length > 0) {

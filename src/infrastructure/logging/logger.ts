@@ -44,7 +44,7 @@ const stdoutStream = isDev
 // Redaction targets cover request bodies, headers, and known token-bearing
 // fields. Pino removes the value before serialization, so secrets never
 // reach stdout, Sentry, or any downstream stream — even at trace level.
-const REDACTION_PATHS = [
+export const REDACTION_PATHS = [
   // Inbound credentials and one-time codes (Nest request lifecycle).
   'req.body.password',
   'req.body.confirm_password',

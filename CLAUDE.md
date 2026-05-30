@@ -62,7 +62,7 @@ src/
 ├── core/                     # Domain layer
 │   ├── auth/                 # auth (3-step signup, login, OTP, password reset) + authorization/ (role/branch checks)
 │   ├── org/                  # organizations, branches, profiles, staff, invitations, roles, job-functions, specialties, subscriptions
-│   ├── patient/patients/     # Patient records (cross-org via PatientJourney); PatientEnrollmentCleanupService purges stale draft enrollments hourly
+│   ├── patient/patients/     # Patient records (cross-org via PatientJourney); OverdueVisitSweepService marks past-due, never-checked-in visits NO_SHOW nightly
 │   ├── calendar/             # Per-profile calendar events; publishes CALENDAR_EVENTS (created/updated/deleted) — see calendar.events.ts
 │   ├── clinical/             # clinical/ (encounter/vitals/prescriptions/investigations), visits/ (+ encounter-mutation guard), care-paths/, journeys/, journey-templates/, patient-history/, lab-tests/, medications/, chief-complaints/, medical-rep/, events/ (domain-events catalog)
 │   ├── notifications/        # In-app notifications + listener that maps invitation events → notifications
@@ -184,7 +184,7 @@ The signup-complete payload accepts: `organization_name`, `specialties: string[]
 
 JWT tokens carry `{ userId, profileId, organizationId, type }`. Refresh tokens use JTI rotation (each refresh revokes the old token; bcrypt-hashed `token_hash` stored).
 
-**OTP:** 15-minute TTL, max 5 attempts. Resend cooldown 60s, max 5 resends/hour. `RegistrationCleanupService` purges PENDING users older than 24h hourly. `PatientEnrollmentCleanupService` (`src/core/patient/patients/`) runs a similar cron to purge stale draft patient enrollments.
+**OTP:** 15-minute TTL, max 5 attempts. Resend cooldown 60s, max 5 resends/hour. `RegistrationCleanupService` purges PENDING users older than 24h hourly. `OverdueVisitSweepService` (`src/core/patient/patients/`) runs a nightly cron (02:00) that marks past-due, never-checked-in `SCHEDULED` visits as `NO_SHOW`.
 
 **Password reset:** `POST /auth/forgot-password` → `POST /auth/verify-reset-code` → `POST /auth/reset-password`.
 
@@ -253,10 +253,10 @@ DB-stored form templates the frontend renders against. Authored in code (`prisma
 
 - `sections/` — `SectionDescriptor` and `SectionConfigSchema` — schema types for declaring section-level config within a template. One descriptor per section kind; the seed validates against this before writing.
 - `fields/` — `FIELD_TYPES` registry (per-field-type config invariants), `ENTITIES` registry (the extension point for `ENTITY_SEARCH` — one entry per searchable kind, not a new `FormFieldType`), `ALLOWED_PATHS` map enforcing binding integrity at seed time (typos throw before any DB write), namespaced `ConfigShape` validator (`{ui, validation, logic}` only — no flat keys).
-- `rules/` — `Predicate { effect, when, message? }` types + pure `evaluate()` function. Operators: `eq` / `ne` / `in` / `and` / `or`. Effects: `visible` and `enabled` are UI-only; `required` and `forbidden` are server + UI. The server **never** consumes `visible` — a hidden-in-UI field can still be 400-rejected if its `required` predicate is true.
+- `rules/` — `Predicate { effect, when, message? }` types + pure `evaluate()` function. Operators: `eq` / `ne` / `in` / `contains` / `and` / `or`. Effects: `visible` and `enabled` are UI-only; `required` and `forbidden` are server + UI. The server **never** consumes `visible` — a hidden-in-UI field can still be 400-rejected if its `required` predicate is true.
 - `runtime/` — `TemplateExecutionContext` indexes an in-flight payload by field code for predicate evaluation.
 - `renderer/` — strips internal columns (`is_deleted`, `created_by_id`, …) and attaches the typed `TemplateBindingContract` per field.
-- `validator/` — `TemplateValidator.validatePayload(code, payload)` walks fields and enforces `required` + `forbidden` predicates. **Not yet wired into the book endpoints** — services have hand-coded validation for the specific exclusivity cases. Generic template-driven enforcement is deferred until template #2 lands.
+- `validator/` — `TemplateValidator.validatePayload(code, payload, options?)` walks fields and enforces `required` + `forbidden` predicates (column-level `required` plus triggered `required`/`forbidden` predicate effects; `visible`/`enabled` are never consumed server-side). Wired into the `book_visit` flow in `visits.service.ts` (with `extensionKey` for the OB/GYN extension) and `medical-rep.service.ts`. `options.sparse` skips required checks for PATCH while still enforcing `forbidden`.
 - `templates/` — read-only API: `GET /v1/form-templates` (active rows), `GET /v1/form-templates/:code` (the active version), `GET /v1/form-templates/:code/versions/:version` (specific version, for stale-cache reads during rollback). The full binding contract + search-field two-bucket lifecycle + discriminator state-reset rule live in `src/builder/templates/templates.README.md`.
 
 **Binding namespaces** (`BindingNamespace`): `PATIENT`, `VISIT`, `INTAKE`, `GUARDIAN`, `MEDICAL_REP`, `LOOKUP` (data-bound search/picker widgets — value submitted is the resolved ID), `SYSTEM` (pure flow-control, never persisted, e.g. the `visitor_type` discriminator), `COMPUTED` (server recomputes — e.g. BMI from weight/height; client value advisory).

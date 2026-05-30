@@ -9,13 +9,27 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+} from '@nestjs/swagger';
 import { CurrentUser } from '@common/decorators/current-user.decorator.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
-import { ApiStandardResponse, ApiVoidResponse } from '@common/swagger/index.js';
+import {
+  ApiStandardArrayResponse,
+  ApiStandardResponse,
+  ApiVoidResponse,
+} from '@common/swagger/index.js';
 import { OrganizationsService } from './organizations.service.js';
 import { CreateOrganizationDto } from './dto/create-organization.dto.js';
 import { UpdateOrganizationDto } from './dto/update-organization.dto.js';
+import {
+  CreateOrganizationResultDto,
+  OrganizationResponseDto,
+  SpecialtySummaryDto,
+} from './dto/organization-response.dto.js';
 
 @ApiTags('Organizations')
 @ApiBearerAuth()
@@ -25,7 +39,7 @@ export class OrganizationsController {
 
   @Post()
   @ApiOperation({ summary: 'Create a new organization' })
-  @ApiStandardResponse(Object)
+  @ApiStandardResponse(CreateOrganizationResultDto)
   createOrganization(
     @CurrentUser() user: AuthContext,
     @Body() dto: CreateOrganizationDto,
@@ -39,7 +53,8 @@ export class OrganizationsController {
     description:
       "Returns only the specialties the organization has configured (OrganizationSpecialty rows). Used by the book-visit form's specialty dropdown. Available to any active profile in the organization.",
   })
-  @ApiStandardResponse(Object)
+  @ApiParam({ name: 'organizationId', format: 'uuid' })
+  @ApiStandardArrayResponse(SpecialtySummaryDto)
   listOrganizationSpecialties(
     @CurrentUser() user: AuthContext,
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -52,7 +67,8 @@ export class OrganizationsController {
 
   @Get(':organizationId')
   @ApiOperation({ summary: 'Get organization details' })
-  @ApiStandardResponse(Object)
+  @ApiParam({ name: 'organizationId', format: 'uuid' })
+  @ApiStandardResponse(OrganizationResponseDto)
   getOrganization(
     @CurrentUser() user: AuthContext,
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -65,7 +81,8 @@ export class OrganizationsController {
 
   @Patch(':organizationId')
   @ApiOperation({ summary: 'Update organization details' })
-  @ApiStandardResponse(Object)
+  @ApiParam({ name: 'organizationId', format: 'uuid' })
+  @ApiStandardResponse(OrganizationResponseDto)
   updateOrganization(
     @CurrentUser() user: AuthContext,
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -81,6 +98,7 @@ export class OrganizationsController {
   @Delete(':organizationId')
   @HttpCode(204)
   @ApiOperation({ summary: 'Delete organization and all its data' })
+  @ApiParam({ name: 'organizationId', format: 'uuid' })
   @ApiVoidResponse()
   deleteOrganization(
     @CurrentUser() user: AuthContext,

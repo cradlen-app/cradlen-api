@@ -25,8 +25,8 @@ export class PrescriptionsService {
   async findOne(visitId: string, user: AuthContext) {
     const visit = await this.visitAccess.loadOrThrow(visitId, user);
     await this.visitAccess.assertBranchAccess(visit, user);
-    return this.prismaService.db.prescription.findUnique({
-      where: { visit_id: visitId },
+    return this.prismaService.db.prescription.findFirst({
+      where: { visit_id: visitId, is_deleted: false },
       include: {
         items: { where: { is_deleted: false }, orderBy: { order: 'asc' } },
       },
@@ -37,8 +37,8 @@ export class PrescriptionsService {
     const visit = await this.visitAccess.loadOrThrow(visitId, user);
     this.visitAccess.assertCanEditPrescription(visit, user);
 
-    const prior = await this.prismaService.db.prescription.findUnique({
-      where: { visit_id: visitId },
+    const prior = await this.prismaService.db.prescription.findFirst({
+      where: { visit_id: visitId, is_deleted: false },
     });
 
     if (!prior) {

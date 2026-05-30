@@ -1,9 +1,7 @@
 import {
-  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
-  NotFoundException,
 } from '@nestjs/common';
 import { Medication, Prisma } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service';
@@ -14,6 +12,11 @@ import { CreateMedicationDto } from './dto/create-medication.dto';
 import { UpdateMedicationDto } from './dto/update-medication.dto';
 import { ListMedicationsQueryDto } from './dto/list-medications-query.dto';
 import { MedicationPrescriberDto } from './dto/medication.dto';
+import {
+  orgScopedReadFilter,
+  assertOrgMutable,
+  assertOrgReferenceable,
+} from '../shared/org-scoped-catalog.js';
 
 type MedicationStats = {
   total_prescriptions: number;
@@ -34,12 +37,7 @@ export class MedicationsService {
     const where: Prisma.MedicationWhereInput = {
       is_deleted: false,
       AND: [
-        {
-          OR: [
-            { organization_id: null },
-            { organization_id: user.organizationId },
-          ],
-        },
+        orgScopedReadFilter(user.organizationId),
         ...(query.search
           ? [
               {
@@ -174,15 +172,10 @@ export class MedicationsService {
     const med = await this.prismaService.db.medication.findUnique({
       where: { id, is_deleted: false },
     });
-    if (!med) throw new NotFoundException(`Medication ${id} not found`);
-    if (med.organization_id === null) {
-      throw new BadRequestException(
-        'Global medications cannot be modified or deleted',
-      );
-    }
-    if (med.organization_id !== user.organizationId) {
-      throw new NotFoundException(`Medication ${id} not found`);
-    }
+    assertOrgMutable(med, user.organizationId, {
+      notFound: `Medication ${id} not found`,
+      globalForbidden: 'Global medications cannot be modified or deleted',
+    });
     return med;
   }
 
@@ -267,14 +260,10 @@ export class MedicationsService {
       where: { id: medicationId, is_deleted: false },
       select: { organization_id: true },
     });
-    if (
-      !med ||
-      (med.organization_id !== null &&
-        med.organization_id !== user.organizationId)
-    ) {
-      throw new BadRequestException(
-        `Medication ${medicationId} is not available to this organization`,
-      );
-    }
+    assertOrgReferenceable(
+      med,
+      user.organizationId,
+      `Medication ${medicationId} is not available to this organization`,
+    );
   }
 }

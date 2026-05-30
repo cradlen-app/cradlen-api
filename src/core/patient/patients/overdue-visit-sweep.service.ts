@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { PrismaService } from '@infrastructure/database/prisma.service';
-import { VisitsService } from '@core/clinical/visits/visits.service';
-import { AuthContext } from '@common/interfaces/auth-context.interface';
+import { PrismaService } from '@infrastructure/database/prisma.service.js';
+import { VisitsService } from '@core/clinical/visits/visits.service.js';
+import { AuthContext } from '@common/interfaces/auth-context.interface.js';
 
 const SYSTEM_AUTH_CONTEXT: AuthContext = {
   userId: 'system',
@@ -12,9 +12,13 @@ const SYSTEM_AUTH_CONTEXT: AuthContext = {
   branchIds: [],
 };
 
+/**
+ * Nightly sweep that marks past-due, never-checked-in SCHEDULED visits as
+ * NO_SHOW so they stop appearing as upcoming appointments.
+ */
 @Injectable()
-export class PatientEnrollmentCleanupService {
-  private readonly logger = new Logger(PatientEnrollmentCleanupService.name);
+export class OverdueVisitSweepService {
+  private readonly logger = new Logger(OverdueVisitSweepService.name);
 
   constructor(
     private readonly prismaService: PrismaService,

@@ -4,7 +4,8 @@ import {
   ForbiddenException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import appConfig from '@config/app.config';
+import authConfig from '@config/auth.config';
 import { InvitationStatus } from '@prisma/client';
 import { InvitationsService } from './invitations.service';
 import { hashInvitationToken } from './invitations.tokens';
@@ -20,6 +21,7 @@ describe('InvitationsService.acceptInvitation', () => {
   let db: any;
   let txClient: jest.Mock;
   let eventBus: { publish: jest.Mock };
+  let subscriptions: { assertStaffLimit: jest.Mock };
   const RAW_TOKEN = 'good-token';
   let tokenHash: string;
 
@@ -76,6 +78,7 @@ describe('InvitationsService.acceptInvitation', () => {
       profile: {
         upsert: jest.fn(),
         count: jest.fn(),
+        findFirst: jest.fn(),
       },
       subscription: {
         findFirst: jest.fn(),
@@ -93,6 +96,7 @@ describe('InvitationsService.acceptInvitation', () => {
     };
     txClient = db.$transaction;
     eventBus = { publish: jest.fn() };
+    subscriptions = { assertStaffLimit: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -103,16 +107,15 @@ describe('InvitationsService.acceptInvitation', () => {
           useValue: {},
         },
         { provide: EmailService, useValue: {} },
-        { provide: SubscriptionsService, useValue: {} },
+        { provide: SubscriptionsService, useValue: subscriptions },
         { provide: EventBus, useValue: eventBus },
         {
-          provide: ConfigService,
-          useValue: {
-            get: (key: string) =>
-              key === 'app'
-                ? { appUrl: 'https://app.cradlen.com' }
-                : { invitationExpireHours: 48 },
-          },
+          provide: appConfig.KEY,
+          useValue: { appUrl: 'https://app.cradlen.com' },
+        },
+        {
+          provide: authConfig.KEY,
+          useValue: { invitationExpireHours: 48 },
         },
       ],
     }).compile();
@@ -125,13 +128,10 @@ describe('InvitationsService.acceptInvitation', () => {
     db.invitation.findFirst.mockResolvedValueOnce(invitation);
     db.user.findFirst.mockResolvedValue(null); // out-of-tx pre-check + in-tx lookup
     db.invitation.updateMany.mockResolvedValueOnce({ count: 1 });
-    db.subscription.findFirst.mockResolvedValueOnce({
-      subscription_plan: { max_staff: 50 },
-    });
-    db.profile.count.mockResolvedValueOnce(3);
-    db.invitation.count.mockResolvedValueOnce(2);
     db.user.create.mockResolvedValueOnce({ id: 'user-2' });
     db.profile.upsert.mockResolvedValueOnce({ id: 'profile-2' });
+    // Inviter's profile in the org — resolved for the profile-scoped notification.
+    db.profile.findFirst.mockResolvedValueOnce({ id: 'profile-inviter' });
 
     const result = await service.acceptInvitation({
       invitation_id: 'inv-1',
@@ -155,6 +155,7 @@ describe('InvitationsService.acceptInvitation', () => {
         organizationId: 'org-1',
         branchId: 'branch-1',
         inviteeName: 'Sara Ahmed',
+        recipientProfileId: 'profile-inviter',
       }),
     );
   });
@@ -189,11 +190,9 @@ describe('InvitationsService.acceptInvitation', () => {
     db.invitation.findFirst.mockResolvedValueOnce(buildInvitation());
     db.user.findFirst.mockResolvedValue(null);
     db.invitation.updateMany.mockResolvedValueOnce({ count: 1 });
-    db.subscription.findFirst.mockResolvedValueOnce({
-      subscription_plan: { max_staff: 5 },
-    });
-    db.profile.count.mockResolvedValueOnce(4);
-    db.invitation.count.mockResolvedValueOnce(1);
+    subscriptions.assertStaffLimit.mockRejectedValueOnce(
+      new ForbiddenException('Staff limit reached'),
+    );
 
     await expect(
       service.acceptInvitation({

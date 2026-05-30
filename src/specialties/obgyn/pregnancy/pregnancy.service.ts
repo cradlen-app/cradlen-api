@@ -12,6 +12,14 @@ import {
 } from '@core/clinical/events/events.public';
 import { ObgynPatientAccessService } from '../patient-access.service';
 import { buildRevision } from '../revisions.helper';
+import {
+  PregnancySnapshotDto,
+  UpdateVisitPregnancyRecordDto,
+} from './dto/pregnancy.dto';
+import {
+  PREGNANCY_VISIT_JSON_COLUMNS,
+  PREGNANCY_VISIT_WRITABLE_COLUMNS,
+} from './pregnancy-visit-columns';
 
 const PREGNANCY_CARE_PATH_CODE = 'OBGYN_PREGNANCY';
 
@@ -73,7 +81,7 @@ export class PregnancyService {
 
   async patchJourneyRecord(
     journeyId: string,
-    patch: Record<string, unknown>,
+    patch: PregnancySnapshotDto,
     ifMatchVersion: number,
     user: AuthContext,
   ) {
@@ -116,7 +124,7 @@ export class PregnancyService {
   }
 
   private toJourneyData(
-    patch: Record<string, unknown>,
+    dto: PregnancySnapshotDto,
   ): Prisma.PregnancyJourneyRecordUncheckedUpdateInput {
     // Permit only known columns; ignore unknown keys silently (the DTO already
     // validates shape — this is a defensive whitelist before hitting Prisma).
@@ -133,6 +141,7 @@ export class PregnancyService {
       'gender',
       'delivery_plan',
     ] as const;
+    const patch = dto as Record<string, unknown>;
     const out: Record<string, unknown> = {};
     for (const key of allowed) {
       if (key in patch) {
@@ -227,7 +236,7 @@ export class PregnancyService {
    */
   async patchVisitRecord(
     visitId: string,
-    patch: Record<string, unknown>,
+    patch: UpdateVisitPregnancyRecordDto,
     ifMatchVersion: number,
     user: AuthContext,
   ) {
@@ -239,6 +248,8 @@ export class PregnancyService {
     const changedFields = Object.keys(data);
     if (changedFields.length === 0) return current;
 
+    // No per-section event — high frequency, low downstream value. The
+    // revision row is sufficient audit.
     return this.prismaService.db.$transaction(async (tx) => {
       await tx.visitPregnancyRecordRevision.create({
         data: buildRevision(current, changedFields, user.profileId),
@@ -252,8 +263,6 @@ export class PregnancyService {
         },
       });
     });
-    // No per-section event — high frequency, low downstream value. The
-    // revision row is sufficient audit.
   }
 
   private async assertVisitOnPregnancyJourney(
@@ -275,44 +284,18 @@ export class PregnancyService {
   }
 
   private toVisitData(
-    patch: Record<string, unknown>,
+    dto: UpdateVisitPregnancyRecordDto,
   ): Prisma.VisitPregnancyRecordUncheckedUpdateInput {
-    // Whitelist of writable columns on VisitPregnancyRecord. Anything outside
-    // this set is ignored (defensive — the DTO already validates shape).
-    const allowed = [
-      'cervix_length_mm',
-      'cervix_dilatation_cm',
-      'cervix_effacement_pct',
-      'cervix_position',
-      'membranes',
-      'warning_symptoms',
-      'fundal_height_cm',
-      'fundal_corresponds_ga',
-      'amniotic_fluid',
-      'placenta_location',
-      'placenta_grade',
-      'fetal_lie',
-      'presentation',
-      'engagement',
-      'fetal_heart_rate_bpm',
-      'fetal_rhythm',
-      'fetal_movements',
-      'bpd_mm',
-      'hc_mm',
-      'ac_mm',
-      'fl_mm',
-      'efw_g',
-      'growth_percentile',
-      'growth_impression',
-    ] as const;
-
+    // Whitelist of writable columns on VisitPregnancyRecord (single source of
+    // truth in pregnancy-visit-columns.ts). Anything outside this set is
+    // ignored — defensive, since the DTO already validates shape.
+    const patch = dto as Record<string, unknown>;
     const out: Record<string, unknown> = {};
-    for (const key of allowed) {
+    for (const key of PREGNANCY_VISIT_WRITABLE_COLUMNS) {
       if (key in patch) {
-        out[key] =
-          key === 'warning_symptoms'
-            ? (patch[key] as Prisma.InputJsonValue)
-            : patch[key];
+        out[key] = PREGNANCY_VISIT_JSON_COLUMNS.has(key)
+          ? (patch[key] as Prisma.InputJsonValue)
+          : patch[key];
       }
     }
     return out as Prisma.VisitPregnancyRecordUncheckedUpdateInput;

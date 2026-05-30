@@ -8,13 +8,23 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@common/decorators/current-user.decorator.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
-import { ApiStandardResponse, ApiVoidResponse } from '@common/swagger/index.js';
+import {
+  ApiPaginatedResponse,
+  ApiStandardResponse,
+  ApiVoidResponse,
+} from '@common/swagger/index.js';
 import { BranchesService } from './branches.service.js';
-import { CreateBranchDto, UpdateBranchDto } from './dto/branch.dto.js';
+import { BranchResponseDto } from './dto/branch-response.dto.js';
+import {
+  CreateBranchDto,
+  ListBranchesQueryDto,
+  UpdateBranchDto,
+} from './dto/branch.dto.js';
 
 @ApiTags('Branches')
 @ApiBearerAuth()
@@ -24,17 +34,22 @@ export class BranchesController {
 
   @Get()
   @ApiOperation({ summary: 'List organization branches' })
-  @ApiStandardResponse(Object)
+  @ApiPaginatedResponse(BranchResponseDto)
   listBranches(
     @CurrentUser() user: AuthContext,
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Query() query: ListBranchesQueryDto,
   ) {
-    return this.branchesService.listBranches(user.profileId, organizationId);
+    return this.branchesService.listBranches(
+      user.profileId,
+      organizationId,
+      query,
+    );
   }
 
   @Post()
   @ApiOperation({ summary: 'Create branch' })
-  @ApiStandardResponse(Object)
+  @ApiStandardResponse(BranchResponseDto)
   createBranch(
     @CurrentUser() user: AuthContext,
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -49,7 +64,7 @@ export class BranchesController {
 
   @Get(':branchId')
   @ApiOperation({ summary: 'Get branch by ID' })
-  @ApiStandardResponse(Object)
+  @ApiStandardResponse(BranchResponseDto)
   getBranch(
     @CurrentUser() user: AuthContext,
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -64,7 +79,7 @@ export class BranchesController {
 
   @Patch(':branchId')
   @ApiOperation({ summary: 'Update branch' })
-  @ApiStandardResponse(Object)
+  @ApiStandardResponse(BranchResponseDto)
   updateBranch(
     @CurrentUser() user: AuthContext,
     @Param('organizationId', ParseUUIDPipe) organizationId: string,

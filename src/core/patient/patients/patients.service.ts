@@ -1,20 +1,45 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '@infrastructure/database/prisma.service';
+import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
-import { AuthContext } from '@common/interfaces/auth-context.interface';
-import { CreatePatientDto } from './dto/create-patient.dto';
-import { UpdatePatientDto } from './dto/update-patient.dto';
-import { ListPatientsQueryDto } from './dto/list-patients-query.dto';
-import { ListBranchPatientsQueryDto } from './dto/list-branch-patients-query.dto';
-import { paginated } from '@common/utils/pagination.utils';
+import { PatientAccessService } from '@core/clinical/patient-history/patient-access.service.js';
+import { AuthContext } from '@common/interfaces/auth-context.interface.js';
+import { CreatePatientDto } from './dto/create-patient.dto.js';
+import { UpdatePatientDto } from './dto/update-patient.dto.js';
+import { ListPatientsQueryDto } from './dto/list-patients-query.dto.js';
+import { ListBranchPatientsQueryDto } from './dto/list-branch-patients-query.dto.js';
+import { paginated } from '@common/utils/pagination.utils.js';
 import { PatientOrgEnrollmentStatus } from '@prisma/client';
+import { DEFAULT_PATIENT_PAGE_SIZE } from './patients.constants.js';
+import {
+  SPOUSE_GUARDIAN_SELECT,
+  flattenSpouse,
+  toEpisodeSummary,
+} from './patients.mapper.js';
 
 @Injectable()
 export class PatientsService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly authorizationService: AuthorizationService,
+    private readonly patientAccessService: PatientAccessService,
   ) {}
+
+  /**
+   * Whether the caller should see the full clinician view (active journey +
+   * episodes) rather than the trimmed episode list. True for org OWNERs and for
+   * any profile holding a clinical job function (OBGYN, doctors, nurses, …).
+   */
+  private async isClinicalViewer(user: AuthContext): Promise<boolean> {
+    if (user.roles.includes('OWNER')) return true;
+    const clinical = await this.prismaService.db.profileJobFunction.findFirst({
+      where: {
+        profile_id: user.profileId,
+        job_function: { is_clinical: true },
+      },
+      select: { id: true },
+    });
+    return clinical !== null;
+  }
 
   async create(dto: CreatePatientDto) {
     return this.prismaService.db.patient.create({
@@ -30,9 +55,8 @@ export class PatientsService {
 
   async findAll(query: ListPatientsQueryDto, user: AuthContext) {
     const page = query.page ?? 1;
-    const limit = query.limit ?? 11;
-    const isClinicianRole =
-      user.roles.includes('DOCTOR') || user.roles.includes('OWNER');
+    const limit = query.limit ?? DEFAULT_PATIENT_PAGE_SIZE;
+    const isClinicalViewer = await this.isClinicalViewer(user);
 
     const where = {
       is_deleted: false,
@@ -88,14 +112,7 @@ export class PatientsService {
             where: { is_deleted: false, relation_to_patient: 'SPOUSE' },
             take: 1,
             include: {
-              guardian: {
-                select: {
-                  id: true,
-                  full_name: true,
-                  national_id: true,
-                  phone_number: true,
-                },
-              },
+              guardian: { select: SPOUSE_GUARDIAN_SELECT },
             },
           },
         },
@@ -110,16 +127,8 @@ export class PatientsService {
       const carePathField = activeCarePathCode
         ? { active_care_path_code: activeCarePathCode }
         : {};
-      const spouse = guardian_links[0]?.guardian ?? null;
-      const spouseFields = spouse
-        ? {
-            spouse_guardian_id: spouse.id,
-            spouse_full_name: spouse.full_name,
-            spouse_national_id: spouse.national_id,
-            spouse_phone_number: spouse.phone_number,
-          }
-        : {};
-      if (isClinicianRole) {
+      const spouseFields = flattenSpouse(guardian_links);
+      if (isClinicalViewer) {
         return {
           ...rest,
           active_journey: activeJourney,
@@ -130,11 +139,7 @@ export class PatientsService {
       return {
         ...rest,
         active_episodes: activeJourney
-          ? activeJourney.episodes.map((e) => ({
-              id: e.id,
-              name: e.name,
-              order: e.order,
-            }))
+          ? activeJourney.episodes.map(toEpisodeSummary)
           : [],
         ...carePathField,
         ...spouseFields,
@@ -156,7 +161,7 @@ export class PatientsService {
     );
 
     const page = query.page ?? 1;
-    const limit = query.limit ?? 11;
+    const limit = query.limit ?? DEFAULT_PATIENT_PAGE_SIZE;
 
     const journeyWhere = {
       organization_id: user.organizationId,
@@ -275,43 +280,29 @@ export class PatientsService {
     return map;
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, user: AuthContext) {
+    await this.patientAccessService.assertPatientInOrg(id, user);
     const patient = await this.prismaService.db.patient.findUnique({
       where: { id, is_deleted: false },
       include: {
         guardian_links: {
           where: { is_deleted: false, relation_to_patient: 'SPOUSE' },
           include: {
-            guardian: {
-              select: {
-                id: true,
-                full_name: true,
-                national_id: true,
-                phone_number: true,
-              },
-            },
+            guardian: { select: SPOUSE_GUARDIAN_SELECT },
           },
         },
       },
     });
     if (!patient) throw new NotFoundException(`Patient ${id} not found`);
     const { guardian_links, ...rest } = patient;
-    const spouse = guardian_links[0]?.guardian ?? null;
     return {
       ...rest,
-      ...(spouse
-        ? {
-            spouse_guardian_id: spouse.id,
-            spouse_full_name: spouse.full_name,
-            spouse_national_id: spouse.national_id,
-            spouse_phone_number: spouse.phone_number,
-          }
-        : {}),
+      ...flattenSpouse(guardian_links),
     };
   }
 
-  async update(id: string, dto: UpdatePatientDto) {
-    await this.findOne(id);
+  async update(id: string, dto: UpdatePatientDto, user: AuthContext) {
+    await this.findOne(id, user);
     return this.prismaService.db.patient.update({
       where: { id },
       data: {

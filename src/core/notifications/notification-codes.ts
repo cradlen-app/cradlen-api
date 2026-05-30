@@ -3,9 +3,13 @@
 // cross-version routing. `category` is the human-facing display group;
 // `defaultTitle` is overridable per call but lives here as a sane default.
 
+import type { NOTIFICATION_CATEGORIES } from './dto/notification.dto.js';
+
+export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number];
+
 export interface NotificationCode {
   code: string;
-  category: string;
+  category: NotificationCategory;
   defaultTitle: string;
 }
 

@@ -2,9 +2,10 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { paginated } from '@common/utils/pagination.utils.js';
+import { toNotificationResponse } from './notifications.mapper.js';
 
 interface CreateNotificationInput {
-  userId: string;
+  profileId: string;
   code: string;
   category: string;
   title: string;
@@ -20,7 +21,7 @@ export class NotificationsService {
   async create(input: CreateNotificationInput) {
     return this.prismaService.db.notification.create({
       data: {
-        user_id: input.userId,
+        profile_id: input.profileId,
         code: input.code,
         category: input.category,
         title: input.title,
@@ -31,9 +32,14 @@ export class NotificationsService {
     });
   }
 
-  async list(userId: string, page: number, limit: number, category?: string) {
+  async list(
+    profileId: string,
+    page: number,
+    limit: number,
+    category?: string,
+  ) {
     const where: Prisma.NotificationWhereInput = {
-      user_id: userId,
+      profile_id: profileId,
       is_deleted: false,
       ...(category ? { category } : {}),
     };
@@ -47,31 +53,39 @@ export class NotificationsService {
       }),
       this.prismaService.db.notification.count({ where }),
       this.prismaService.db.notification.count({
-        where: { user_id: userId, is_deleted: false, is_read: false },
+        where: { profile_id: profileId, is_deleted: false, is_read: false },
       }),
     ]);
 
-    const result = paginated(items, { page, limit, total });
-    (result.meta as unknown as Record<string, unknown>).unreadCount =
-      unreadCount;
-    return result;
+    return paginated(
+      items.map(toNotificationResponse),
+      { page, limit, total },
+      {
+        unreadCount,
+      },
+    );
   }
 
-  async markRead(id: string, userId: string) {
+  async markRead(id: string, profileId: string) {
+    // Ownership-guarded and idempotent: only flips an unread row, so read_at is
+    // never re-stamped on one already read. We then read back the current state
+    // to return it (and to distinguish "not found" from "already read").
+    await this.prismaService.db.notification.updateMany({
+      where: { id, profile_id: profileId, is_deleted: false, is_read: false },
+      data: { is_read: true, read_at: new Date() },
+    });
+
     const notification = await this.prismaService.db.notification.findFirst({
-      where: { id, user_id: userId, is_deleted: false },
+      where: { id, profile_id: profileId, is_deleted: false },
     });
     if (!notification) throw new NotFoundException('Notification not found');
 
-    return this.prismaService.db.notification.update({
-      where: { id },
-      data: { is_read: true, read_at: new Date() },
-    });
+    return toNotificationResponse(notification);
   }
 
-  async markAllRead(userId: string) {
+  async markAllRead(profileId: string) {
     await this.prismaService.db.notification.updateMany({
-      where: { user_id: userId, is_read: false, is_deleted: false },
+      where: { profile_id: profileId, is_read: false, is_deleted: false },
       data: { is_read: true, read_at: new Date() },
     });
   }

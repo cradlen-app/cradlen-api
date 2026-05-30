@@ -151,9 +151,11 @@ export class JourneysService {
       throw new NotFoundException(`Episode ${episodeId} not found`);
     }
 
-    if (dto.status === 'ACTIVE') {
-      const anotherActive =
-        await this.prismaService.db.patientJourney.findFirst({
+    // Conflict check + update must be atomic: two concurrent activations could
+    // otherwise both pass the "another episode already ACTIVE?" guard.
+    await this.prismaService.db.$transaction(async (tx) => {
+      if (dto.status === 'ACTIVE') {
+        const anotherActive = await tx.patientJourney.findFirst({
           where: {
             id: journeyId,
             episodes: {
@@ -165,20 +167,21 @@ export class JourneysService {
             },
           },
         });
-      if (anotherActive) {
-        throw new ForbiddenException(
-          'Complete the current active episode before activating another',
-        );
+        if (anotherActive) {
+          throw new ForbiddenException(
+            'Complete the current active episode before activating another',
+          );
+        }
       }
-    }
 
-    await this.prismaService.db.patientEpisode.update({
-      where: { id: episodeId },
-      data: {
-        status: dto.status,
-        started_at: dto.status === 'ACTIVE' ? new Date() : undefined,
-        ended_at: dto.status === 'COMPLETED' ? new Date() : undefined,
-      },
+      await tx.patientEpisode.update({
+        where: { id: episodeId },
+        data: {
+          status: dto.status,
+          started_at: dto.status === 'ACTIVE' ? new Date() : undefined,
+          ended_at: dto.status === 'COMPLETED' ? new Date() : undefined,
+        },
+      });
     });
 
     return this.findOne(journeyId, user);

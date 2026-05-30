@@ -6,8 +6,9 @@ import { BindingNamespace } from '@prisma/client';
  * Every field in a seeded template runs through `validateBinding(namespace,
  * path)` before upsert, so binding typos never reach the database. A CI
  * contract test (`allowed-paths.contract.spec.ts`) cross-checks this map
- * against the actual `BookVisitDto` / `BookMedicalRepVisitDto` shapes — a DTO
- * rename without an `ALLOWED_PATHS` update fails CI loudly.
+ * against the actual DTO shapes — `BookVisitDto`, `VisitIntakeFieldsDto`,
+ * `BookMedicalRepVisitDto`, `UpsertVitalsDto`, and `ChiefComplaintMetaDto` —
+ * so a DTO rename without an `ALLOWED_PATHS` update fails CI loudly.
  *
  * Why not auto-derive from DTOs? Some legal paths intentionally don't map
  * 1:1 to a single DTO (LOOKUP/SYSTEM/COMPUTED have no DTO column; INTAKE
