@@ -125,6 +125,7 @@ describe('VisitsService', () => {
     patientOrgEnrollment: {
       findFirst: jest.Mock;
       create: jest.Mock;
+      createMany: jest.Mock;
       updateMany: jest.Mock;
     };
     $transaction: jest.Mock;
@@ -165,6 +166,7 @@ describe('VisitsService', () => {
       patientOrgEnrollment: {
         findFirst: jest.fn(),
         create: jest.fn(),
+        createMany: jest.fn(),
         updateMany: jest.fn(),
       },
       $transaction: jest.fn(),
@@ -790,9 +792,8 @@ describe('VisitsService', () => {
       db.profile = {
         findFirst: jest.fn().mockResolvedValue({ id: 'doctor-uuid' }),
       };
-      // enrollment create returns a resolved Promise by default so the
-      // try/catch path succeeds silently in the pre-existing tests.
-      db.patientOrgEnrollment.create.mockResolvedValue({ id: 'enroll-uuid' });
+      // enrollment is created in-transaction via createMany + skipDuplicates.
+      db.patientOrgEnrollment.createMany.mockResolvedValue({ count: 1 });
     });
 
     it('throws BadRequestException when patient_id absent and required patient fields missing', async () => {
@@ -964,35 +965,27 @@ describe('VisitsService', () => {
       );
     });
 
-    it('creates a PENDING enrollment when no enrollment exists', async () => {
-      db.patientOrgEnrollment.create.mockResolvedValue({ id: 'enroll-uuid' });
+    it('creates a PENDING enrollment in-transaction, idempotently', async () => {
+      db.patientOrgEnrollment.createMany.mockResolvedValue({ count: 1 });
 
       await service.bookVisit(bookDto, mockUser);
 
-      expect(db.patientOrgEnrollment.create).toHaveBeenCalledWith({
-        data: {
-          patient_id: mockPatient.id,
-          organization_id: mockJourney.organization_id,
-          status: 'PENDING',
-        },
+      // createMany + skipDuplicates compiles to INSERT … ON CONFLICT DO NOTHING,
+      // so a concurrent booking that already enrolled the patient is skipped at
+      // the DB without aborting this transaction.
+      expect(db.patientOrgEnrollment.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            patient_id: mockPatient.id,
+            organization_id: mockUser.organizationId,
+            status: 'PENDING',
+          },
+        ],
+        skipDuplicates: true,
       });
     });
 
-    it('silently handles P2002 when concurrent booking creates enrollment first', async () => {
-      const p2002 = new Prisma.PrismaClientKnownRequestError(
-        'Unique constraint failed',
-        {
-          code: 'P2002',
-          clientVersion: '7.0.0',
-          meta: { target: ['patient_id', 'organization_id'] },
-        },
-      );
-      db.patientOrgEnrollment.create.mockRejectedValue(p2002);
-
-      await expect(service.bookVisit(bookDto, mockUser)).resolves.not.toThrow();
-    });
-
-    it('re-throws non-P2002 errors from enrollment creation', async () => {
+    it('rolls the booking back when enrollment insertion errors', async () => {
       const dbError = new Prisma.PrismaClientKnownRequestError(
         'Connection error',
         {
@@ -1001,7 +994,7 @@ describe('VisitsService', () => {
           meta: {},
         },
       );
-      db.patientOrgEnrollment.create.mockRejectedValue(dbError);
+      db.patientOrgEnrollment.createMany.mockRejectedValue(dbError);
 
       await expect(service.bookVisit(bookDto, mockUser)).rejects.toThrow();
     });
