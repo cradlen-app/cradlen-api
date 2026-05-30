@@ -22,6 +22,13 @@ export interface AuthConfig {
     apiKey: string;
     fromEmail: string;
   };
+  verificationCodes: {
+    otpTtlMinutes: number;
+    otpMaxAttempts: number;
+    otpBcryptRounds: number;
+    resendCooldownSeconds: number;
+    resendMaxPerHour: number;
+  };
   freeTrialDays: number;
   invitationExpireHours: number;
 }
@@ -56,6 +63,16 @@ export default registerAs(
           throw new Error('RESEND_API_KEY is not set');
         })(),
       fromEmail: process.env.RESEND_FROM_EMAIL ?? 'noreply@example.com',
+    },
+    verificationCodes: {
+      otpTtlMinutes: parsePositiveInt('OTP_TTL_MINUTES', '15'),
+      otpMaxAttempts: parsePositiveInt('OTP_MAX_ATTEMPTS', '5'),
+      otpBcryptRounds: parsePositiveInt('OTP_BCRYPT_ROUNDS', '10'),
+      resendCooldownSeconds: parsePositiveInt(
+        'OTP_RESEND_COOLDOWN_SECONDS',
+        '60',
+      ),
+      resendMaxPerHour: parsePositiveInt('OTP_RESEND_MAX_PER_HOUR', '5'),
     },
     freeTrialDays: parsePositiveInt('FREE_TRIAL_DAYS', '14'),
     invitationExpireHours: parsePositiveInt('INVITATION_EXPIRE_HOURS', '72'),
