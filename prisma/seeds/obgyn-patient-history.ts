@@ -1121,8 +1121,9 @@ export async function seedObgynPatientHistoryTemplate(prisma: PrismaClient) {
     update: {
       name: 'OB/GYN Patient History',
       description:
-        'Patient-level OB/GYN history surface. Writes via the unified bulk PATCH /patients/:id/obgyn-history.',
+        'Read-only patient-level OB/GYN history surface (the "specialty full history" view, GET /patients/:id/obgyn-history). Display-only — capture happens in the examination flow.',
       scope: 'PATIENT_HISTORY',
+      is_display_only: true,
       specialty_id: gynSpecialty?.id ?? null,
       parent_template_id: null,
       extension_key: null,
@@ -1132,9 +1133,10 @@ export async function seedObgynPatientHistoryTemplate(prisma: PrismaClient) {
       version: TEMPLATE_VERSION,
       name: 'OB/GYN Patient History',
       description:
-        'Patient-level OB/GYN history surface. Writes via the unified bulk PATCH /patients/:id/obgyn-history.',
+        'Read-only patient-level OB/GYN history surface (the "specialty full history" view, GET /patients/:id/obgyn-history). Display-only — capture happens in the examination flow.',
       scope: 'PATIENT_HISTORY',
       status: 'DRAFT',
+      is_display_only: true,
       specialty_id: gynSpecialty?.id ?? null,
     },
   });
