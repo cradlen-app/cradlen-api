@@ -12,6 +12,7 @@ import { VerificationCodesService } from './services/verification-codes.service.
 import { PasswordResetService } from './services/password-reset.service.js';
 import { SignupService } from './services/signup.service.js';
 import { SessionsService } from './services/sessions.service.js';
+import { AuthAuditListener } from './events/auth-audit.listener.js';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { SessionsService } from './services/sessions.service.js';
     SessionsService,
     JwtStrategy,
     RegistrationCleanupService,
+    AuthAuditListener,
   ],
 })
 export class AuthModule {}

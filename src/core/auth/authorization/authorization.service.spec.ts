@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { AuthorizationService } from './authorization.service';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 
@@ -238,5 +238,100 @@ describe('AuthorizationService — per-branch staff management', () => {
         ForbiddenException,
       );
     });
+  });
+});
+
+describe('AuthorizationService.getProfileContext', () => {
+  let service: AuthorizationService;
+  let profile: { findFirst: jest.Mock };
+  let branch: { findMany: jest.Mock };
+  let profileBranch: { findMany: jest.Mock };
+
+  beforeEach(async () => {
+    profile = { findFirst: jest.fn() };
+    branch = { findMany: jest.fn() };
+    profileBranch = { findMany: jest.fn() };
+    const module = await Test.createTestingModule({
+      providers: [
+        AuthorizationService,
+        {
+          provide: PrismaService,
+          useValue: { db: { profile, branch, profileBranch } },
+        },
+      ],
+    }).compile();
+    service = module.get(AuthorizationService);
+  });
+
+  it('resolves OWNER context in exactly 2 queries (profile + org branches)', async () => {
+    profile.findFirst.mockResolvedValue({
+      roles: [{ role: { code: 'OWNER', name: 'OWNER' } }],
+    });
+    branch.findMany.mockResolvedValue([{ id: 'b1' }, { id: 'b2' }]);
+
+    const ctx = await service.getProfileContext('u', 'p', 'org', 'b1');
+
+    expect(ctx).toEqual({
+      userId: 'u',
+      profileId: 'p',
+      organizationId: 'org',
+      activeBranchId: 'b1',
+      roles: ['OWNER'],
+      branchIds: ['b1', 'b2'],
+    });
+    expect(profile.findFirst).toHaveBeenCalledTimes(1);
+    expect(branch.findMany).toHaveBeenCalledTimes(1);
+    expect(profileBranch.findMany).not.toHaveBeenCalled();
+  });
+
+  it('resolves member context in exactly 2 queries (profile + profileBranch)', async () => {
+    profile.findFirst.mockResolvedValue({
+      roles: [{ role: { code: 'STAFF', name: 'STAFF' } }],
+    });
+    profileBranch.findMany.mockResolvedValue([
+      { branch_id: 'b1' },
+      { branch_id: 'b2' },
+    ]);
+
+    const ctx = await service.getProfileContext('u', 'p', 'org');
+
+    expect(ctx.roles).toEqual(['STAFF']);
+    expect(ctx.branchIds).toEqual(['b1', 'b2']);
+    expect(profile.findFirst).toHaveBeenCalledTimes(1);
+    expect(profileBranch.findMany).toHaveBeenCalledTimes(1);
+    expect(branch.findMany).not.toHaveBeenCalled();
+  });
+
+  it('filters on user.is_active and organization.status in the single profile query', async () => {
+    profile.findFirst.mockResolvedValue({
+      roles: [{ role: { code: 'OWNER', name: 'OWNER' } }],
+    });
+    branch.findMany.mockResolvedValue([]);
+
+    await service.getProfileContext('u', 'p', 'org');
+
+    expect(profile.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: 'p',
+          user_id: 'u',
+          organization_id: 'org',
+          is_active: true,
+          is_deleted: false,
+          user: { is_deleted: false, is_active: true },
+          organization: { status: 'ACTIVE', is_deleted: false },
+        }),
+      }),
+    );
+  });
+
+  it('rejects with UnauthorizedException when the merged query returns nothing', async () => {
+    profile.findFirst.mockResolvedValue(null);
+
+    await expect(service.getProfileContext('u', 'p', 'org')).rejects.toThrow(
+      UnauthorizedException,
+    );
+    expect(branch.findMany).not.toHaveBeenCalled();
+    expect(profileBranch.findMany).not.toHaveBeenCalled();
   });
 });

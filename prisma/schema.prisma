@@ -372,6 +372,8 @@ model User {
   profiles             Profile[]
   refreshTokens        RefreshToken[]
   verificationCodes    VerificationCode[]
+  passwordResetTokens  PasswordResetToken[]
+  authAuditLogs        AuthAuditLog[]
   sentInvitations      Invitation[]       @relation("InvitedBy")
   notifications        Notification[]
 
@@ -562,6 +564,46 @@ model RefreshToken {
 
   @@index([user_id, is_revoked])
   @@map("refresh_tokens")
+}
+
+// Audit trail for AUTH_EVENTS. Written by AuthAuditListener on every
+// signup.completed / login.succeeded / login.failed /
+// password_reset.completed / refresh.rotated event. Independent of
+// rest of the request flow: a write failure must NOT bubble up and
+// fail the user-facing action.
+model AuthAuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  event_name String
+  user_id    String?  @db.Uuid
+  email      String?
+  payload    Json
+  at         DateTime
+  created_at DateTime @default(now())
+  user       User?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@index([user_id, created_at])
+  @@index([event_name, created_at])
+  @@map("auth_audit_log")
+}
+
+// Tracks reset tokens AFTER the verify step issues a verified token.
+// PasswordResetService.verify writes one row; reset() looks the row up by
+// jti and rejects re-use via consumed_at. Forgot-password.start does NOT
+// write a row — synthesized tokens for unknown emails have no underlying
+// user and the verify step short-circuits with INVALID_CODE before this
+// table is touched, so symmetry with the real-but-wrong-code path holds.
+model PasswordResetToken {
+  id          String    @id @default(uuid()) @db.Uuid
+  jti         String    @unique @db.Uuid
+  user_id     String    @db.Uuid
+  target      String
+  expires_at  DateTime
+  consumed_at DateTime?
+  created_at  DateTime  @default(now())
+  user        User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@map("password_reset_tokens")
 }
 
 model VerificationCode {
@@ -1007,7 +1049,9 @@ model Medication {
   created_at              DateTime                    @default(now())
   updated_at              DateTime                    @updatedAt
 
-  @@unique([organization_id, code])
+  // Partial unique index `medications_organization_id_code_live_unique`
+  // added via raw SQL in the `medications_code_partial_unique` migration —
+  // enforces unique `code` per organization on live (is_deleted=false) rows.
   @@index([organization_id, is_deleted])
   @@map("medications")
 }

@@ -5,28 +5,38 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
-import {
-  EngagementType,
-  ExecutiveTitle,
-  JobFunction,
-  Prisma,
-  Specialty,
-} from '@prisma/client';
+import { EngagementType, Prisma } from '@prisma/client';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { paginated } from '@common/utils/pagination.utils.js';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service.js';
 import {
   STAFF_ROLE_NAMES,
-  type BranchScheduleDto,
   type CreateStaffDto,
   type ListStaffQueryDto,
   type UpdateStaffDto,
 } from './dto/staff.dto.js';
 import { persistSchedules } from './schedule.helpers.js';
-import { minutesToHhmm } from './shift-time.helpers.js';
-
-const STAFF_EMAIL_DOMAIN = 'cradlen.com';
+import { createUserWithGeneratedEmail } from './staff-email.helper.js';
+import {
+  assertBranchesInOrganization,
+  assertNonOwnerRoles,
+  assertScheduleBranches,
+  assertShiftTimes,
+  resolveJobFunctionsAndSpecialties,
+} from './staff.assertions.js';
+import { staffInclude, toStaffResponse } from './staff.mapper.js';
+import {
+  diffIds,
+  replaceProfileBranches,
+  replaceProfileJobFunctions,
+  replaceProfileRoles,
+  replaceProfileSpecialties,
+  syncProfileBranches,
+  syncProfileJobFunctions,
+  syncProfileRoles,
+  syncProfileSpecialties,
+} from './staff-m2m.helper.js';
 
 /**
  * JobFunction codes that count as "doctors" for the `doctors_only=true`
@@ -40,11 +50,6 @@ const DOCTOR_JOB_FUNCTION_CODES: string[] = [
   'PEDIATRICIAN',
   'OTHER_DOCTOR',
 ];
-
-interface ResolvedAccess {
-  jobFunctions: JobFunction[];
-  specialties: Specialty[];
-}
 
 @Injectable()
 export class StaffService {
@@ -76,28 +81,30 @@ export class StaffService {
     );
     await this.subscriptionsService.assertStaffLimit(organizationId);
 
-    await this.assertBranchesInOrganization(organizationId, uniqueBranchIds);
-    await this.assertNonOwnerRoles(uniqueRoleIds);
+    await assertBranchesInOrganization(
+      this.prismaService,
+      organizationId,
+      uniqueBranchIds,
+    );
+    await assertNonOwnerRoles(this.prismaService, uniqueRoleIds);
 
-    const resolved = await this.resolveJobFunctionsAndSpecialties(
+    const resolved = await resolveJobFunctionsAndSpecialties(
+      this.prismaService,
       jobFunctionCodes,
       specialtyCodes,
     );
 
     if (dto.schedule?.length) {
-      const invalidIds = dto.schedule
-        .map((s) => s.branch_id)
-        .filter((id) => !uniqueBranchIds.includes(id));
-      if (invalidIds.length) {
-        throw new BadRequestException(
-          `Schedule branch_ids not in branch_ids: ${invalidIds.join(', ')}`,
-        );
-      }
-      this.assertShiftTimes(dto.schedule);
+      assertScheduleBranches(dto.schedule, uniqueBranchIds);
+      assertShiftTimes(dto.schedule);
     }
 
+    // TOCTOU: `phone_number` is not @unique on User, so this pre-check is the
+    // de-facto collision defense. A proper fix is a Prisma migration adding a
+    // unique partial index. Until then, concurrent admin invocations CAN race.
     const existingByPhone = await this.prismaService.db.user.findFirst({
       where: { phone_number: dto.phone_number, is_deleted: false },
+      select: { id: true },
     });
     if (existingByPhone) {
       throw new ConflictException(
@@ -105,20 +112,14 @@ export class StaffService {
       );
     }
 
-    const email = await this.generateUniqueEmail(dto.first_name, dto.last_name);
+    const passwordHashed = await bcrypt.hash(dto.password, 12);
 
     return this.prismaService.db.$transaction(async (tx) => {
-      const user = await tx.user.create({
-        data: {
-          first_name: dto.first_name,
-          last_name: dto.last_name,
-          email,
-          phone_number: dto.phone_number,
-          password_hashed: await bcrypt.hash(dto.password, 12),
-          registration_status: 'ACTIVE',
-          onboarding_completed: true,
-          verified_at: null,
-        },
+      const user = await createUserWithGeneratedEmail(tx, {
+        first_name: dto.first_name,
+        last_name: dto.last_name,
+        phone_number: dto.phone_number,
+        password_hashed: passwordHashed,
       });
 
       const profile = await tx.profile.create({
@@ -130,30 +131,23 @@ export class StaffService {
         },
       });
 
-      await Promise.all([
-        ...uniqueRoleIds.map((role_id) =>
-          tx.profileRole.create({ data: { profile_id: profile.id, role_id } }),
-        ),
-        ...uniqueBranchIds.map((branch_id) =>
-          tx.profileBranch.create({
-            data: {
-              profile_id: profile.id,
-              branch_id,
-              organization_id: organizationId,
-            },
-          }),
-        ),
-        ...resolved.jobFunctions.map((jf) =>
-          tx.profileJobFunction.create({
-            data: { profile_id: profile.id, job_function_id: jf.id },
-          }),
-        ),
-        ...resolved.specialties.map((s) =>
-          tx.profileSpecialty.create({
-            data: { profile_id: profile.id, specialty_id: s.id },
-          }),
-        ),
-      ]);
+      await replaceProfileRoles(tx, profile.id, uniqueRoleIds);
+      await replaceProfileBranches(
+        tx,
+        profile.id,
+        organizationId,
+        uniqueBranchIds,
+      );
+      await replaceProfileJobFunctions(
+        tx,
+        profile.id,
+        resolved.jobFunctions.map((jf) => jf.id),
+      );
+      await replaceProfileSpecialties(
+        tx,
+        profile.id,
+        resolved.specialties.map((s) => s.id),
+      );
 
       if (dto.schedule?.length) {
         await persistSchedules(tx, profile.id, dto.schedule);
@@ -163,7 +157,7 @@ export class StaffService {
         user_id: user.id,
         profile_id: profile.id,
         organization_id: organizationId,
-        generated_email: email,
+        generated_email: user.email,
       };
     });
   }
@@ -282,7 +276,7 @@ export class StaffService {
     const [profiles, total] = await Promise.all([
       this.prismaService.db.profile.findMany({
         where,
-        include: this.staffInclude(),
+        include: staffInclude,
         orderBy: { created_at: 'asc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -291,7 +285,7 @@ export class StaffService {
     ]);
 
     return paginated(
-      profiles.map((p) => this.toStaffResponse(p)),
+      profiles.map((p) => toStaffResponse(p)),
       { page, limit, total },
     );
   }
@@ -351,22 +345,22 @@ export class StaffService {
         callerProfileId,
         organizationId,
       );
-      await this.assertNonOwnerRoles(uniqueRoleIds);
+      await assertNonOwnerRoles(this.prismaService, uniqueRoleIds);
     }
 
     if (dto.branch_ids) {
       uniqueBranchIds = [...new Set(dto.branch_ids)];
-      await this.assertBranchesInOrganization(organizationId, uniqueBranchIds);
+      await assertBranchesInOrganization(
+        this.prismaService,
+        organizationId,
+        uniqueBranchIds,
+      );
       // Intersect rule: only branches in the symmetric difference between
       // the staff's current branches and the new set need to be in the
       // caller's scope. Branches that are unchanged on both sides don't.
       const currentBranchIds = profile.branches.map((b) => b.branch_id);
-      const currentSet = new Set(currentBranchIds);
-      const newSet = new Set(uniqueBranchIds);
-      const diff = [
-        ...currentBranchIds.filter((id) => !newSet.has(id)),
-        ...uniqueBranchIds.filter((id) => !currentSet.has(id)),
-      ];
+      const { toAdd, toRemove } = diffIds(currentBranchIds, uniqueBranchIds);
+      const diff = [...toAdd, ...toRemove];
       if (diff.length) {
         await this.authorizationService.assertCanManageStaffOnBranches(
           callerProfileId,
@@ -376,7 +370,8 @@ export class StaffService {
       }
     }
 
-    const resolved = await this.resolveJobFunctionsAndSpecialties(
+    const resolved = await resolveJobFunctionsAndSpecialties(
+      this.prismaService,
       dto.job_function_codes ? [...new Set(dto.job_function_codes)] : undefined,
       dto.specialty_codes ? [...new Set(dto.specialty_codes)] : undefined,
     );
@@ -390,16 +385,8 @@ export class StaffService {
             select: { branch_id: true },
           })
         ).map((b) => b.branch_id);
-
-      const invalidIds = dto.schedule
-        .map((s) => s.branch_id)
-        .filter((id) => !effectiveBranchIds.includes(id));
-      if (invalidIds.length) {
-        throw new BadRequestException(
-          `Schedule branch_ids not in branch_ids: ${invalidIds.join(', ')}`,
-        );
-      }
-      this.assertShiftTimes(dto.schedule);
+      assertScheduleBranches(dto.schedule, effectiveBranchIds);
+      assertShiftTimes(dto.schedule);
     }
 
     return this.prismaService.db.$transaction(async (tx) => {
@@ -435,58 +422,31 @@ export class StaffService {
       }
 
       if (uniqueRoleIds) {
-        await tx.profileRole.deleteMany({
-          where: { profile_id: staffProfileId },
-        });
-        await Promise.all(
-          uniqueRoleIds.map((role_id) =>
-            tx.profileRole.create({
-              data: { profile_id: staffProfileId, role_id },
-            }),
-          ),
-        );
+        await syncProfileRoles(tx, staffProfileId, uniqueRoleIds);
       }
 
       if (uniqueBranchIds) {
-        await tx.profileBranch.deleteMany({
-          where: { profile_id: staffProfileId },
-        });
-        await Promise.all(
-          uniqueBranchIds.map((branch_id) =>
-            tx.profileBranch.create({
-              data: {
-                profile_id: staffProfileId,
-                branch_id,
-                organization_id: organizationId,
-              },
-            }),
-          ),
+        await syncProfileBranches(
+          tx,
+          staffProfileId,
+          organizationId,
+          uniqueBranchIds,
         );
       }
 
       if (dto.job_function_codes !== undefined) {
-        await tx.profileJobFunction.deleteMany({
-          where: { profile_id: staffProfileId },
-        });
-        await Promise.all(
-          resolved.jobFunctions.map((jf) =>
-            tx.profileJobFunction.create({
-              data: { profile_id: staffProfileId, job_function_id: jf.id },
-            }),
-          ),
+        await syncProfileJobFunctions(
+          tx,
+          staffProfileId,
+          resolved.jobFunctions.map((jf) => jf.id),
         );
       }
 
       if (dto.specialty_codes !== undefined) {
-        await tx.profileSpecialty.deleteMany({
-          where: { profile_id: staffProfileId },
-        });
-        await Promise.all(
-          resolved.specialties.map((s) =>
-            tx.profileSpecialty.create({
-              data: { profile_id: staffProfileId, specialty_id: s.id },
-            }),
-          ),
+        await syncProfileSpecialties(
+          tx,
+          staffProfileId,
+          resolved.specialties.map((s) => s.id),
         );
       }
 
@@ -496,10 +456,10 @@ export class StaffService {
 
       const updated = await tx.profile.findFirst({
         where: { id: staffProfileId },
-        include: this.staffInclude(),
+        include: staffInclude,
       });
 
-      return this.toStaffResponse(updated!);
+      return toStaffResponse(updated!);
     });
   }
 
@@ -576,214 +536,5 @@ export class StaffService {
         where: { profile_id: staffProfileId, branch_id: branchId },
       });
     });
-  }
-
-  private staffInclude() {
-    return {
-      user: {
-        select: {
-          id: true,
-          first_name: true,
-          last_name: true,
-          email: true,
-          phone_number: true,
-        },
-      },
-      roles: { include: { role: true } },
-      branches: {
-        where: { branch: { is_deleted: false } },
-        include: { branch: true },
-      },
-      job_functions: { include: { job_function: true } },
-      specialty_links: { include: { specialty: true } },
-      workingSchedules: {
-        include: { days: { include: { shifts: true } } },
-      },
-    } satisfies Prisma.ProfileInclude;
-  }
-
-  private toStaffResponse(p: {
-    id: string;
-    user_id: string;
-    executive_title: ExecutiveTitle | null;
-    engagement_type: EngagementType;
-    user: {
-      id: string;
-      first_name: string;
-      last_name: string;
-      email: string | null;
-      phone_number: string | null;
-    };
-    roles: { role: { id: string; name: string } }[];
-    branches: {
-      branch: {
-        id: string;
-        name: string;
-        city: string;
-        governorate: string;
-      };
-    }[];
-    job_functions: {
-      job_function: {
-        id: string;
-        code: string;
-        name: string;
-        is_clinical: boolean;
-      };
-    }[];
-    specialty_links: {
-      specialty: { id: string; code: string; name: string };
-    }[];
-    workingSchedules: {
-      branch_id: string;
-      days: {
-        day_of_week: string;
-        shifts: { start_minute: number; end_minute: number }[];
-      }[];
-    }[];
-  }) {
-    return {
-      profile_id: p.id,
-      user_id: p.user.id,
-      first_name: p.user.first_name,
-      last_name: p.user.last_name,
-      email: p.user.email,
-      phone_number: p.user.phone_number,
-      executive_title: p.executive_title,
-      engagement_type: p.engagement_type,
-      roles: p.roles.map((r) => ({ id: r.role.id, name: r.role.name })),
-      branches: p.branches.map((b) => ({
-        id: b.branch.id,
-        name: b.branch.name,
-        city: b.branch.city,
-        governorate: b.branch.governorate,
-      })),
-      job_functions: p.job_functions.map((jf) => ({
-        id: jf.job_function.id,
-        code: jf.job_function.code,
-        name: jf.job_function.name,
-        is_clinical: jf.job_function.is_clinical,
-      })),
-      specialties: p.specialty_links.map((sl) => ({
-        id: sl.specialty.id,
-        code: sl.specialty.code,
-        name: sl.specialty.name,
-      })),
-      schedule: p.workingSchedules.map((ws) => ({
-        branch_id: ws.branch_id,
-        days: ws.days.map((d) => ({
-          day_of_week: d.day_of_week,
-          shifts: d.shifts.map((s) => ({
-            start_time: minutesToHhmm(s.start_minute),
-            end_time: minutesToHhmm(s.end_minute),
-          })),
-        })),
-      })),
-    };
-  }
-
-  private async generateUniqueEmail(
-    firstName: string,
-    lastName: string,
-  ): Promise<string> {
-    const slug = (s: string) =>
-      s
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[̀-ͯ]/g, '')
-        .replace(/[^a-z0-9]/g, '');
-
-    const base = `${slug(firstName)}-${slug(lastName)}`;
-
-    for (let attempt = 0; attempt < 10; attempt++) {
-      const suffix = Math.floor(1000 + Math.random() * 9000);
-      const email = `${base}${suffix}@${STAFF_EMAIL_DOMAIN}`;
-      const exists = await this.prismaService.db.user.findFirst({
-        where: { email },
-      });
-      if (!exists) return email;
-    }
-
-    return `${base}${Date.now()}@${STAFF_EMAIL_DOMAIN}`;
-  }
-
-  private async assertBranchesInOrganization(
-    organizationId: string,
-    branchIds: string[],
-  ) {
-    const count = await this.prismaService.db.branch.count({
-      where: {
-        id: { in: branchIds },
-        organization_id: organizationId,
-        is_deleted: false,
-      },
-    });
-    if (count !== branchIds.length) {
-      throw new NotFoundException('One or more branches were not found');
-    }
-  }
-
-  private assertShiftTimes(schedule: BranchScheduleDto[]) {
-    for (const branch of schedule) {
-      for (const day of branch.days) {
-        for (const shift of day.shifts) {
-          if (shift.end_time <= shift.start_time) {
-            throw new BadRequestException(
-              `Shift end_time must be after start_time (${shift.start_time} – ${shift.end_time})`,
-            );
-          }
-        }
-      }
-    }
-  }
-
-  private async assertNonOwnerRoles(roleIds: string[]) {
-    const roles = await this.prismaService.db.role.findMany({
-      where: { id: { in: roleIds } },
-      select: { id: true, name: true },
-    });
-    if (roles.length !== roleIds.length) {
-      throw new NotFoundException('One or more roles were not found');
-    }
-    if (roles.some((r) => r.name === 'OWNER')) {
-      throw new BadRequestException(
-        'OWNER role cannot be assigned via staff endpoints; it is reserved for the organization founder.',
-      );
-    }
-  }
-
-  private async resolveJobFunctionsAndSpecialties(
-    jobFunctionCodes?: string[],
-    specialtyCodes?: string[],
-  ): Promise<ResolvedAccess> {
-    const [jobFunctions, specialties] = await Promise.all([
-      jobFunctionCodes && jobFunctionCodes.length
-        ? this.prismaService.db.jobFunction.findMany({
-            where: { code: { in: jobFunctionCodes } },
-          })
-        : Promise.resolve([] as JobFunction[]),
-      specialtyCodes && specialtyCodes.length
-        ? this.prismaService.db.specialty.findMany({
-            where: { code: { in: specialtyCodes }, is_deleted: false },
-          })
-        : Promise.resolve([] as Specialty[]),
-    ]);
-
-    if (jobFunctionCodes && jobFunctions.length !== jobFunctionCodes.length) {
-      const found = new Set(jobFunctions.map((jf) => jf.code));
-      const missing = jobFunctionCodes.filter((c) => !found.has(c));
-      throw new BadRequestException(
-        `Unknown job_function_codes: ${missing.join(', ')}`,
-      );
-    }
-    if (specialtyCodes && specialties.length !== specialtyCodes.length) {
-      const found = new Set(specialties.map((s) => s.code));
-      const missing = specialtyCodes.filter((c) => !found.has(c));
-      throw new BadRequestException(
-        `Unknown specialty_codes: ${missing.join(', ')}`,
-      );
-    }
-
-    return { jobFunctions, specialties };
   }
 }

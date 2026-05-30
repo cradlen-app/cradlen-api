@@ -557,15 +557,14 @@ export class InvoicesService {
   ): Promise<void> {
     if (user.roles.includes('OWNER')) return;
 
-    const jobFunction = await this.prismaService.db.profileJobFunction.findFirst(
-      {
+    const jobFunction =
+      await this.prismaService.db.profileJobFunction.findFirst({
         where: {
           profile_id: user.profileId,
           job_function: { code: 'RECEPTIONIST' },
           profile: { organization_id: organizationId, is_deleted: false },
         },
-      },
-    );
+      });
 
     if (!jobFunction) {
       throw new BadRequestException(
