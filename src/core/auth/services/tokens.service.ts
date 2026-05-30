@@ -26,6 +26,17 @@ import {
 
 const BCRYPT_ROUNDS = 12;
 
+/**
+ * JWT `aud` and `iss` claims attached to every token this service issues.
+ * Deployments running an older build sign tokens without these; this
+ * service still accepts those during the grace window so a rolling
+ * deploy never invalidates active sessions. After the grace window has
+ * passed in production, drop the `undefined` branches in verifyWithGrace
+ * and the matching ones in JwtStrategy.validate to close the spec gap.
+ */
+const JWT_AUDIENCE = 'cradlen-api';
+const JWT_ISSUER = 'cradlen-api';
+
 export interface IssueTokenPairArgs {
   user: Pick<User, 'id'>;
   profileId: string;
@@ -65,6 +76,8 @@ export class TokensService {
     );
     const signup_token = this.jwtService.sign(payload, {
       secret: this.authConfig.jwt.accessSecret,
+      audience: JWT_AUDIENCE,
+      issuer: JWT_ISSUER,
       expiresIn: expires_in,
     });
     return { signup_token, expires_in };
@@ -74,14 +87,10 @@ export class TokensService {
     token: string,
     expectedType: 'signup' | 'profile_selection',
   ): string {
-    let payload: SignupTokenPayload;
-    try {
-      payload = this.jwtService.verify<SignupTokenPayload>(token, {
-        secret: this.authConfig.jwt.accessSecret,
-      });
-    } catch {
-      throw new UnauthorizedException('Invalid or expired token');
-    }
+    const payload = this.verifyWithGrace<SignupTokenPayload>(token, {
+      secret: this.authConfig.jwt.accessSecret,
+      errorMessage: 'Invalid or expired token',
+    });
     if (payload.type !== expectedType)
       throw new UnauthorizedException('Invalid token type');
     return payload.userId;
@@ -94,8 +103,9 @@ export class TokensService {
     if (!match) return null;
 
     try {
-      const payload = this.jwtService.verify<JwtAccessPayload>(match[1], {
+      const payload = this.verifyWithGrace<JwtAccessPayload>(match[1], {
         secret: this.authConfig.jwt.accessSecret,
+        errorMessage: 'Invalid token',
       });
       return payload.type === 'access' ? payload.userId : null;
     } catch {
@@ -121,6 +131,8 @@ export class TokensService {
     );
     const reset_token = this.jwtService.sign(payload, {
       secret: this.authConfig.jwt.resetSecret,
+      audience: JWT_AUDIENCE,
+      issuer: JWT_ISSUER,
       expiresIn,
     });
     return { reset_token, expires_in: expiresIn };
@@ -130,14 +142,10 @@ export class TokensService {
     token: string,
     expectedVerified: boolean,
   ): { userId: string; target: string; jti: string } {
-    let payload: PasswordResetTokenPayload;
-    try {
-      payload = this.jwtService.verify<PasswordResetTokenPayload>(token, {
-        secret: this.authConfig.jwt.resetSecret,
-      });
-    } catch {
-      throw new UnauthorizedException('Invalid or expired reset token');
-    }
+    const payload = this.verifyWithGrace<PasswordResetTokenPayload>(token, {
+      secret: this.authConfig.jwt.resetSecret,
+      errorMessage: 'Invalid or expired reset token',
+    });
     if (
       payload.type !== 'password_reset' ||
       payload.verified !== expectedVerified
@@ -148,16 +156,44 @@ export class TokensService {
   }
 
   decodeRefreshToken(token: string): JwtRefreshPayload {
-    let payload: JwtRefreshPayload;
-    try {
-      payload = this.jwtService.verify<JwtRefreshPayload>(token, {
-        secret: this.authConfig.jwt.refreshSecret,
-      });
-    } catch {
-      throw new UnauthorizedException('Invalid or expired refresh token');
-    }
+    const payload = this.verifyWithGrace<JwtRefreshPayload>(token, {
+      secret: this.authConfig.jwt.refreshSecret,
+      errorMessage: 'Invalid or expired refresh token',
+    });
     if (payload.type !== 'refresh') {
       throw new UnauthorizedException('Invalid token type');
+    }
+    return payload;
+  }
+
+  /**
+   * Verifies a JWT with the supplied secret and asserts the `aud` claim
+   * is either absent (legacy, grace) or matches JWT_AUDIENCE. Any
+   * failure path collapses into the supplied user-facing message so
+   * the caller cannot probe signature vs. audience vs. expiration.
+   */
+  private verifyWithGrace<T extends object>(
+    token: string,
+    opts: { secret: string; ignoreExpiration?: boolean; errorMessage: string },
+  ): T {
+    let payload: T;
+    try {
+      payload = this.jwtService.verify<T>(token, {
+        secret: opts.secret,
+        ignoreExpiration: opts.ignoreExpiration ?? false,
+      });
+    } catch {
+      throw new UnauthorizedException(opts.errorMessage);
+    }
+    const claims = payload as { aud?: string | string[]; iss?: string };
+    if (claims.aud !== undefined) {
+      const audList = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+      if (!audList.includes(JWT_AUDIENCE)) {
+        throw new UnauthorizedException(opts.errorMessage);
+      }
+    }
+    if (claims.iss !== undefined && claims.iss !== JWT_ISSUER) {
+      throw new UnauthorizedException(opts.errorMessage);
     }
     return payload;
   }
@@ -192,10 +228,14 @@ export class TokensService {
     };
     const access_token = this.jwtService.sign(accessPayload, {
       secret: this.authConfig.jwt.accessSecret,
+      audience: JWT_AUDIENCE,
+      issuer: JWT_ISSUER,
       expiresIn: accessExpiresIn,
     });
     const refresh_token = this.jwtService.sign(refreshPayload, {
       secret: this.authConfig.jwt.refreshSecret,
+      audience: JWT_AUDIENCE,
+      issuer: JWT_ISSUER,
       expiresIn: refreshExpiresIn,
     });
     const token_hash = await bcrypt.hash(refresh_token, BCRYPT_ROUNDS);
@@ -252,13 +292,11 @@ export class TokensService {
 
   async revokeRefreshToken(rawRefreshToken: string): Promise<void> {
     try {
-      const payload = this.jwtService.verify<JwtRefreshPayload>(
-        rawRefreshToken,
-        {
-          secret: this.authConfig.jwt.refreshSecret,
-          ignoreExpiration: true,
-        },
-      );
+      const payload = this.verifyWithGrace<JwtRefreshPayload>(rawRefreshToken, {
+        secret: this.authConfig.jwt.refreshSecret,
+        ignoreExpiration: true,
+        errorMessage: 'Invalid token',
+      });
       if (payload.type !== 'refresh') return;
       await this.prismaService.db.refreshToken.updateMany({
         where: { jti: payload.jti, is_revoked: false },

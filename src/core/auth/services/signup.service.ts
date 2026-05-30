@@ -63,25 +63,36 @@ export class SignupService {
       // must not reactivate a foreign identity or email someone else's OTP.
       if (existing.is_deleted && existing.email === dto.email) {
         const password_hashed = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
-        await this.prismaService.db.user.update({
-          where: { id: existing.id },
-          data: {
-            is_deleted: false,
-            deleted_at: null,
-            is_active: true,
-            registration_status: 'PENDING',
-            onboarding_completed: false,
-            verified_at: null,
-            first_name: dto.first_name,
-            last_name: dto.last_name,
-            password_hashed,
-            phone_number: dto.phone_number ?? null,
-          },
-        });
-        await this.verificationCodesService.send({
-          userId: existing.id,
-          target: dto.email,
-          purpose: 'SIGNUP',
+        // user.update + verificationCode.create commit together. The
+        // email dispatch sits inside send() and holds the Prisma
+        // connection open during the Resend roundtrip — acceptable
+        // because reactivation is rare. The previous non-transactional
+        // path could leave a reactivated user with no verification row
+        // at all on a verificationCode.create failure (S-11).
+        await this.prismaService.db.$transaction(async (tx) => {
+          await tx.user.update({
+            where: { id: existing.id },
+            data: {
+              is_deleted: false,
+              deleted_at: null,
+              is_active: true,
+              registration_status: 'PENDING',
+              onboarding_completed: false,
+              verified_at: null,
+              first_name: dto.first_name,
+              last_name: dto.last_name,
+              password_hashed,
+              phone_number: dto.phone_number ?? null,
+            },
+          });
+          await this.verificationCodesService.send(
+            {
+              userId: existing.id,
+              target: dto.email,
+              purpose: 'SIGNUP',
+            },
+            tx,
+          );
         });
         return this.tokensService.issueSignupToken(existing.id, 'signup');
       }

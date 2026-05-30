@@ -2,6 +2,18 @@ import { execSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 
+/**
+ * Integration / E2E global setup.
+ *
+ * Requires `test/.env.test` (gitignored) with a DATABASE_URL pointing
+ * at a dedicated test Postgres — DO NOT point this at any database
+ * that holds real data, the cleaner truncates tables between tests.
+ *
+ * Applies the latest migrations, then runs the canonical seed so the
+ * test database matches what production would have: roles
+ * (OWNER, BRANCH_MANAGER, STAFF, EXTERNAL), job functions, subscription
+ * plans, the OBGYN specialty, procedures, journey templates, etc.
+ */
 export default async function globalSetup() {
   const envFile = path.resolve(__dirname, '../.env.test');
   if (fs.existsSync(envFile)) {
@@ -11,7 +23,7 @@ export default async function globalSetup() {
 
   if (!process.env.DATABASE_URL) {
     throw new Error(
-      'DATABASE_URL must be set for E2E/integration tests. Create test/.env.test or set env var.',
+      'DATABASE_URL must be set for E2E/integration tests. Create test/.env.test or set the env var.',
     );
   }
 
@@ -20,31 +32,11 @@ export default async function globalSetup() {
     stdio: 'inherit',
   });
 
-  const { PrismaNeon } = await import('@prisma/adapter-neon');
-  const { PrismaClient } = await import('@prisma/client');
-  const adapter = new PrismaNeon({
-    connectionString: process.env.DATABASE_URL,
+  // Canonical seed — gives us OWNER/BRANCH_MANAGER/STAFF/EXTERNAL roles,
+  // job functions, subscription plans, OBGYN specialty, journey templates,
+  // care paths, medications, lab tests, and the OB/GYN form templates.
+  execSync('npx prisma db seed', {
+    env: { ...process.env },
+    stdio: 'inherit',
   });
-  const prisma = new PrismaClient({ adapter } as ConstructorParameters<
-    typeof PrismaClient
-  >[0]);
-
-  await prisma.role.upsert({
-    where: { name: 'owner' },
-    update: {},
-    create: { name: 'owner' },
-  });
-  await prisma.role.upsert({
-    where: { name: 'doctor' },
-    update: {},
-    create: { name: 'doctor' },
-  });
-
-  await prisma.subscriptionPlan.upsert({
-    where: { plan: 'free_trial' },
-    update: {},
-    create: { plan: 'free_trial', max_branches: 1, max_staff: 5 },
-  });
-
-  await (prisma as { $disconnect: () => Promise<void> }).$disconnect();
 }
