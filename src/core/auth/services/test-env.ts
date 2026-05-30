@@ -55,6 +55,10 @@ export function createAuthTestEnv(
       },
       profile: { findMany: profileFindMany, findFirst: profileFindFirst },
       branch: { findMany: branchFindMany },
+      passwordResetToken: {
+        create: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
       $transaction: jest.fn(),
       ...prismaOverrides,
     },

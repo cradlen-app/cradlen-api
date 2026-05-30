@@ -1,30 +1,24 @@
 import { RolesService } from './roles.service.js';
-import type { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import type { PrismaService } from '@infrastructure/database/prisma.service.js';
 
 describe('RolesService', () => {
-  it('asserts staff-management access before listing roles', async () => {
-    const assertCanManageStaff = jest.fn().mockResolvedValue(undefined);
+  it('returns the seeded role catalogue ordered by name', async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      { id: 'role-id-1', code: 'BRANCH_MANAGER', name: 'BRANCH_MANAGER' },
+      { id: 'role-id-2', code: 'OWNER', name: 'OWNER' },
+    ]);
     const prismaService = {
-      db: {
-        role: {
-          findMany: jest
-            .fn()
-            .mockResolvedValue([{ id: 'role-id', name: 'OWNER' }]),
-        },
-      },
+      db: { role: { findMany } },
     } as unknown as PrismaService;
-    const authorizationService = {
-      assertCanManageStaff,
-    } as unknown as AuthorizationService;
-    const service = new RolesService(prismaService, authorizationService);
+    const service = new RolesService(prismaService);
 
-    await expect(
-      service.listRoles('profile-id', 'account-id'),
-    ).resolves.toEqual([{ id: 'role-id', name: 'OWNER' }]);
-    expect(assertCanManageStaff).toHaveBeenCalledWith(
-      'profile-id',
-      'account-id',
-    );
+    await expect(service.findLookup()).resolves.toEqual([
+      { id: 'role-id-1', code: 'BRANCH_MANAGER', name: 'BRANCH_MANAGER' },
+      { id: 'role-id-2', code: 'OWNER', name: 'OWNER' },
+    ]);
+    expect(findMany).toHaveBeenCalledWith({
+      select: { id: true, code: true, name: true },
+      orderBy: { name: 'asc' },
+    });
   });
 });

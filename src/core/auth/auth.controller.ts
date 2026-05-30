@@ -7,11 +7,13 @@ import {
   HttpStatus,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '@common/decorators/public.decorator.js';
 import { CurrentUser } from '@common/decorators/current-user.decorator.js';
+import { IdentifierThrottlerGuard } from '@common/guards/identifier-throttler.guard.js';
 import { ApiStandardResponse, ApiVoidResponse } from '@common/swagger/index.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import { MeResponseDto } from './dto/me-response.dto.js';
@@ -60,6 +62,7 @@ export class AuthController {
 
   @Post('signup/start')
   @Public()
+  @UseGuards(IdentifierThrottlerGuard)
   @Throttle({ default: { limit: 5, ttl: 600000 } })
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Start owner signup and send verification code' })
@@ -70,6 +73,7 @@ export class AuthController {
 
   @Post('signup/verify')
   @Public()
+  @UseGuards(IdentifierThrottlerGuard)
   @Throttle({ default: { limit: 10, ttl: 600000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Verify signup code and activate identity' })
@@ -117,6 +121,7 @@ export class AuthController {
 
   @Post('login')
   @Public()
+  @UseGuards(IdentifierThrottlerGuard)
   @Throttle({ default: { limit: 10, ttl: 600000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -149,6 +154,7 @@ export class AuthController {
 
   @Post('refresh')
   @Public()
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Rotate contextual token pair' })
   @ApiStandardResponse(AuthTokensDto)
@@ -158,6 +164,7 @@ export class AuthController {
 
   @Post('logout')
   @Public()
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Revoke refresh token' })
   @ApiVoidResponse()
@@ -167,6 +174,7 @@ export class AuthController {
 
   @Post('forgot-password')
   @Public()
+  @UseGuards(IdentifierThrottlerGuard)
   @Throttle({ default: { limit: 5, ttl: 600000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Send password reset code to email' })
@@ -208,6 +216,7 @@ export class AuthController {
 
   @Post('reset-password')
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 600000 } })
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Set new password using verified reset token' })
   @ApiVoidResponse()

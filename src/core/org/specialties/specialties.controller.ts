@@ -1,13 +1,11 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '@common/decorators/public.decorator.js';
+import { CurrentUser } from '@common/decorators/current-user.decorator.js';
+import { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import { SpecialtiesService } from './specialties.service.js';
 import { ApiStandardResponse } from '@common/swagger/index.js';
-import {
-  SpecialtyDto,
-  SpecialtyLookupDto,
-  JourneyTemplateInSpecialtyDto,
-} from './dto/specialty.dto.js';
+import { SpecialtyDto, SpecialtyLookupDto } from './dto/specialty.dto.js';
 
 @ApiTags('Specialties')
 @Controller('specialties')
@@ -23,14 +21,11 @@ export class SpecialtiesController {
   }
 
   @Get()
+  @ApiOperation({
+    summary: "List specialties subscribed to by the caller's organization",
+  })
   @ApiStandardResponse(SpecialtyDto)
-  findAll() {
-    return this.specialtiesService.findAll();
-  }
-
-  @Get(':id/journey-templates')
-  @ApiStandardResponse(JourneyTemplateInSpecialtyDto)
-  findJourneyTemplates(@Param('id') id: string) {
-    return this.specialtiesService.findJourneyTemplates(id);
+  findAll(@CurrentUser() user: AuthContext) {
+    return this.specialtiesService.findAll(user.organizationId);
   }
 }

@@ -187,18 +187,19 @@ describe('Auth domain events', () => {
   it('emits auth.password_reset.completed after a successful reset', async () => {
     const { passwordResetService, jwtService, publish, prismaService } =
       createAuthTestEnv();
+    const passwordResetUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
     const userUpdate = jest.fn().mockResolvedValue({});
     const refreshTokenUpdateMany = jest.fn().mockResolvedValue({ count: 0 });
-    const $transaction = jest.fn(async (ops: unknown[]) => Promise.all(ops));
-    (
-      prismaService.db as unknown as {
-        $transaction: jest.Mock;
-        user: { update: jest.Mock };
-        refreshToken: { updateMany: jest.Mock };
-      }
-    ).$transaction = $transaction;
-    prismaService.db.user.update = userUpdate;
-    prismaService.db.refreshToken.updateMany = refreshTokenUpdateMany;
+    const $transaction = jest.fn(
+      async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          passwordResetToken: { updateMany: passwordResetUpdateMany },
+          user: { update: userUpdate },
+          refreshToken: { updateMany: refreshTokenUpdateMany },
+        }),
+    );
+    (prismaService.db as unknown as { $transaction: jest.Mock }).$transaction =
+      $transaction;
 
     const resetToken = jwtService.sign(
       {
