@@ -1070,6 +1070,23 @@ Table care_path_history_sections {
   }
 }
 
+Table care_path_clinical_surfaces {
+  id String [pk]
+  specialty_code String [not null]
+  care_path_code String [not null]
+  template_code String [not null]
+  label String [not null]
+  order Int [not null, default: 0]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+
+  indexes {
+    (specialty_code, care_path_code) [unique]
+  }
+}
+
 Table patient_obgyn_histories {
   id String [pk]
   patient_id String [unique, not null]
