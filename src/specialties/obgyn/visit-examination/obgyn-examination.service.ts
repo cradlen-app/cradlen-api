@@ -13,6 +13,7 @@ import { PatientAccessService } from '@core/patient/patient-access/patient-acces
 import { buildRevision } from '../revisions.helper';
 import { ObgynHistoryService } from '../patient-history/obgyn-history.service';
 import {
+  DiagnosisRowDto,
   InvestigationRowDto,
   MedicationItemRowDto,
   UpdateObgynExaminationDto,
@@ -110,40 +111,51 @@ export class ObgynExaminationService {
     tx: Prisma.TransactionClient | typeof this.prismaService.db,
     visitId: string,
   ) {
-    const [visit, encounter, vitals, obgyn, investigations, prescription] =
-      await Promise.all([
-        tx.visit.findUnique({
-          where: { id: visitId },
-          include: {
-            episode: {
-              select: {
-                journey: {
-                  select: {
-                    patient_id: true,
-                    care_path: { select: { code: true } },
-                  },
+    const [
+      visit,
+      encounter,
+      vitals,
+      obgyn,
+      investigations,
+      diagnoses,
+      prescription,
+    ] = await Promise.all([
+      tx.visit.findUnique({
+        where: { id: visitId },
+        include: {
+          episode: {
+            select: {
+              journey: {
+                select: {
+                  patient_id: true,
+                  care_path: { select: { code: true } },
                 },
               },
             },
           },
-        }),
-        tx.visitEncounter.findUnique({ where: { visit_id: visitId } }),
-        tx.visitVitals.findUnique({ where: { visit_id: visitId } }),
-        tx.visitObgynEncounter.findUnique({ where: { visit_id: visitId } }),
-        tx.visitInvestigation.findMany({
-          where: { visit_id: visitId, is_deleted: false },
-          orderBy: { created_at: 'asc' },
-        }),
-        tx.prescription.findUnique({
-          where: { visit_id: visitId },
-          include: {
-            items: {
-              where: { is_deleted: false },
-              orderBy: { order: 'asc' },
-            },
+        },
+      }),
+      tx.visitEncounter.findUnique({ where: { visit_id: visitId } }),
+      tx.visitVitals.findUnique({ where: { visit_id: visitId } }),
+      tx.visitObgynEncounter.findUnique({ where: { visit_id: visitId } }),
+      tx.visitInvestigation.findMany({
+        where: { visit_id: visitId, is_deleted: false },
+        orderBy: { created_at: 'asc' },
+      }),
+      tx.visitDiagnosis.findMany({
+        where: { visit_id: visitId, is_deleted: false },
+        orderBy: [{ is_primary: 'desc' }, { order: 'asc' }],
+      }),
+      tx.prescription.findUnique({
+        where: { visit_id: visitId },
+        include: {
+          items: {
+            where: { is_deleted: false },
+            orderBy: { order: 'asc' },
           },
-        }),
-      ]);
+        },
+      }),
+    ]);
 
     // Patient-level history (for pre-filling the care-path-relevant `history_*`
     // sections) + the journey's care path so the picker defaults to where
@@ -192,6 +204,7 @@ export class ObgynExaminationService {
       neurological_findings: obgyn?.neurological_findings ?? null,
       skin_findings: obgyn?.skin_findings ?? null,
       // Repeatable rows
+      diagnoses: diagnoses,
       investigations: investigations,
       medications: prescription?.items ?? [],
       // Patient-level OB/GYN history envelope (pre-fills care-path history sections)
@@ -225,6 +238,21 @@ export class ObgynExaminationService {
       assertVersionMatches(ifMatchVersion, visit.examination_version);
 
       const aggregates: string[] = [];
+
+      // ---- (0) VisitDiagnosis rows (structured ICD-10 list) ----
+      // Mirror the primary diagnosis onto the encounter scalars so the
+      // free-text `provisional_diagnosis` (completion guard, history summaries)
+      // stays in sync. Runs before the encounter write so the derived values
+      // ride the same upsert + revision.
+      if (dto.diagnoses !== undefined) {
+        await this.diffDiagnoses(tx, visitId, dto.diagnoses, user.profileId);
+        const primary = await this.resolvePrimaryDiagnosis(tx, visitId);
+        const scalars = dto as Record<string, unknown>;
+        scalars.provisional_diagnosis = primary?.description ?? '';
+        scalars.diagnosis_code = primary?.code ?? null;
+        scalars.diagnosis_certainty = primary?.certainty ?? null;
+        aggregates.push('diagnoses');
+      }
 
       // ---- (1) VisitEncounter (chief complaint + provisional diagnosis) ----
       if (this.touchesEncounter(dto)) {
@@ -498,6 +526,68 @@ export class ObgynExaminationService {
   // ---------------------------------------------------------------------------
   // Repeatable diff helpers (id-keyed: upsert / create / soft-delete)
   // ---------------------------------------------------------------------------
+
+  /** The primary diagnosis (or first by order) of a visit's live rows, or null. */
+  private async resolvePrimaryDiagnosis(
+    tx: Prisma.TransactionClient,
+    visitId: string,
+  ) {
+    const rows = await tx.visitDiagnosis.findMany({
+      where: { visit_id: visitId, is_deleted: false },
+      orderBy: [{ is_primary: 'desc' }, { order: 'asc' }],
+      select: { code: true, description: true, certainty: true },
+      take: 1,
+    });
+    return rows[0] ?? null;
+  }
+
+  private async diffDiagnoses(
+    tx: Prisma.TransactionClient,
+    visitId: string,
+    rows: DiagnosisRowDto[],
+    profileId: string,
+  ) {
+    const prior = await tx.visitDiagnosis.findMany({
+      where: { visit_id: visitId, is_deleted: false },
+      select: { id: true, order: true },
+    });
+    const liveIds = new Set(prior.map((p) => p.id));
+    const { toUpdate, toCreate, toDelete } = splitDiff(rows, liveIds);
+
+    for (const row of toUpdate) {
+      await tx.visitDiagnosis.update({
+        where: { id: row.id! },
+        data: {
+          ...(row.code !== undefined && { code: row.code }),
+          ...(row.description !== undefined && {
+            description: row.description,
+          }),
+          ...(row.is_primary !== undefined && { is_primary: row.is_primary }),
+          ...(row.certainty !== undefined && { certainty: row.certainty }),
+        },
+      });
+    }
+    let nextOrder = prior.reduce((max, p) => Math.max(max, p.order + 1), 0);
+    for (const row of toCreate) {
+      await tx.visitDiagnosis.create({
+        data: {
+          visit_id: visitId,
+          code: row.code ?? '',
+          description: row.description ?? '',
+          is_primary: row.is_primary ?? false,
+          certainty: row.certainty ?? null,
+          order: nextOrder++,
+          created_by_id: profileId,
+        },
+      });
+    }
+    if (toDelete.length > 0) {
+      await tx.visitDiagnosis.updateMany({
+        where: { id: { in: toDelete } },
+        data: { is_deleted: true, deleted_at: new Date() },
+      });
+    }
+  }
 
   private async diffInvestigations(
     tx: Prisma.TransactionClient,
