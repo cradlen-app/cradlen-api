@@ -357,11 +357,17 @@ export class ObgynHistoryService {
           ...(row.mode_of_delivery !== undefined && {
             mode_of_delivery: row.mode_of_delivery,
           }),
+          ...(row.mode_of_delivery_other !== undefined && {
+            mode_of_delivery_other: row.mode_of_delivery_other,
+          }),
           ...(row.gestational_age_weeks !== undefined && {
             gestational_age_weeks: row.gestational_age_weeks,
           }),
           ...(row.neonatal_outcome !== undefined && {
             neonatal_outcome: row.neonatal_outcome,
+          }),
+          ...(row.neonatal_outcome_other !== undefined && {
+            neonatal_outcome_other: row.neonatal_outcome_other,
           }),
           ...(row.complications !== undefined && {
             complications: row.complications,
@@ -377,8 +383,10 @@ export class ObgynHistoryService {
           birth_date: row.birth_date ? new Date(row.birth_date) : null,
           outcome: row.outcome ?? null,
           mode_of_delivery: row.mode_of_delivery ?? null,
+          mode_of_delivery_other: row.mode_of_delivery_other ?? null,
           gestational_age_weeks: row.gestational_age_weeks ?? null,
           neonatal_outcome: row.neonatal_outcome ?? null,
+          neonatal_outcome_other: row.neonatal_outcome_other ?? null,
           complications: row.complications ?? null,
           notes: row.notes ?? null,
           created_by_id: profileId,
@@ -407,6 +415,9 @@ export class ObgynHistoryService {
         where: { id: row.id! },
         data: {
           ...(row.method !== undefined && { method: row.method }),
+          ...(row.method_other !== undefined && {
+            method_other: row.method_other,
+          }),
           ...(row.duration !== undefined && { duration: row.duration }),
           ...(row.complications !== undefined && {
             complications: row.complications,
@@ -422,6 +433,7 @@ export class ObgynHistoryService {
           // Column is NOT NULL — coalesce missing values to "" so partial rows
           // (date-only contraceptive, e.g.) still persist.
           method: row.method ?? '',
+          method_other: row.method_other ?? null,
           duration: row.duration ?? null,
           complications: row.complications ?? null,
           notes: row.notes ?? null,
