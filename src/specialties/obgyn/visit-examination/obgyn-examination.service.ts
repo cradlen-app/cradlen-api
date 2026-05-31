@@ -2,7 +2,6 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
-import { assertVersionMatches } from '@common/decorators/if-match.decorator';
 import { splitDiff } from '@common/utils/id-keyed-diff';
 import { EventBus } from '@infrastructure/messaging/event-bus';
 import {
@@ -64,8 +63,11 @@ const VITALS_FIELDS = [
  *   5. Prescription + PrescriptionItem (singleton + id-keyed row diff)
  *   + Visit.follow_up_date + Visit.examination_version bump
  *
- * Optimistic concurrency uses a single token: `Visit.examination_version`,
- * supplied by the client via `If-Match: "version:<n>"`. Per-aggregate
+ * Last-write-wins on open visits: there is no `If-Match` precondition.
+ * `Visit.examination_version` still increments on every save (change/cache
+ * token + FE remount key), but a stale client token never rejects the write —
+ * the surface is edited by a single assigned doctor, and closed visits are
+ * already blocked by `EncounterMutationGuard`. Per-aggregate
  * revision rows are written for the entities that have shadow tables
  * (VisitEncounter, VisitObgynEncounter, Prescription, PrescriptionItem);
  * VisitVitals and VisitInvestigation have no revision table today and
@@ -227,7 +229,6 @@ export class ObgynExaminationService {
   async patch(
     visitId: string,
     dto: UpdateObgynExaminationDto,
-    ifMatchVersion: number,
     user: AuthContext,
   ) {
     await this.access.assertVisitInOrg(visitId, user);
@@ -236,7 +237,12 @@ export class ObgynExaminationService {
       async (tx) => {
         const visit = await tx.visit.findUnique({ where: { id: visitId } });
         if (!visit) throw new NotFoundException(`Visit ${visitId} not found`);
-        assertVersionMatches(ifMatchVersion, visit.examination_version);
+        // Open-visit examination is a single-doctor surface → last-write-wins.
+        // No optimistic-concurrency precondition: `examination_version` still
+        // increments (change/cache token), but a stale client token no longer
+        // rejects the save. Closed visits are blocked upstream by
+        // EncounterMutationGuard (@LocksOnClosedVisit); amendments carry their
+        // own per-row version precondition.
 
         const aggregates: string[] = [];
 
