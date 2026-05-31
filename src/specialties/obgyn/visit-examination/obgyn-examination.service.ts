@@ -232,110 +232,118 @@ export class ObgynExaminationService {
   ) {
     await this.access.assertVisitInOrg(visitId, user);
 
-    await this.prismaService.db.$transaction(async (tx) => {
-      const visit = await tx.visit.findUnique({ where: { id: visitId } });
-      if (!visit) throw new NotFoundException(`Visit ${visitId} not found`);
-      assertVersionMatches(ifMatchVersion, visit.examination_version);
+    await this.prismaService.db.$transaction(
+      async (tx) => {
+        const visit = await tx.visit.findUnique({ where: { id: visitId } });
+        if (!visit) throw new NotFoundException(`Visit ${visitId} not found`);
+        assertVersionMatches(ifMatchVersion, visit.examination_version);
 
-      const aggregates: string[] = [];
+        const aggregates: string[] = [];
 
-      // ---- (0) VisitDiagnosis rows (structured ICD-10 list) ----
-      // Mirror the primary diagnosis onto the encounter scalars so the
-      // free-text `provisional_diagnosis` (completion guard, history summaries)
-      // stays in sync. Runs before the encounter write so the derived values
-      // ride the same upsert + revision.
-      if (dto.diagnoses !== undefined) {
-        await this.diffDiagnoses(tx, visitId, dto.diagnoses, user.profileId);
-        const primary = await this.resolvePrimaryDiagnosis(tx, visitId);
-        const scalars = dto as Record<string, unknown>;
-        scalars.provisional_diagnosis = primary?.description ?? '';
-        scalars.diagnosis_code = primary?.code ?? null;
-        scalars.diagnosis_certainty = primary?.certainty ?? null;
-        aggregates.push('diagnoses');
-      }
+        // ---- (0) VisitDiagnosis rows (structured ICD-10 list) ----
+        // Mirror the primary diagnosis onto the encounter scalars so the
+        // free-text `provisional_diagnosis` (completion guard, history summaries)
+        // stays in sync. Runs before the encounter write so the derived values
+        // ride the same upsert + revision.
+        if (dto.diagnoses !== undefined) {
+          await this.diffDiagnoses(tx, visitId, dto.diagnoses, user.profileId);
+          const primary = await this.resolvePrimaryDiagnosis(tx, visitId);
+          const scalars = dto as Record<string, unknown>;
+          scalars.provisional_diagnosis = primary?.description ?? '';
+          scalars.diagnosis_code = primary?.code ?? null;
+          scalars.diagnosis_certainty = primary?.certainty ?? null;
+          aggregates.push('diagnoses');
+        }
 
-      // ---- (1) VisitEncounter (chief complaint + provisional diagnosis) ----
-      if (this.touchesEncounter(dto)) {
-        await this.upsertEncounter(tx, visitId, dto, user.profileId);
-        aggregates.push('encounter');
-      }
+        // ---- (1) VisitEncounter (chief complaint + provisional diagnosis) ----
+        if (this.touchesEncounter(dto)) {
+          await this.upsertEncounter(tx, visitId, dto, user.profileId);
+          aggregates.push('encounter');
+        }
 
-      // ---- (2) VisitVitals (BMI server-recomputed) ----
-      if (dto.vitals !== undefined) {
-        await this.upsertVitals(tx, visitId, dto.vitals, user.profileId);
-        aggregates.push('vitals');
-      }
+        // ---- (2) VisitVitals (BMI server-recomputed) ----
+        if (dto.vitals !== undefined) {
+          await this.upsertVitals(tx, visitId, dto.vitals, user.profileId);
+          aggregates.push('vitals');
+        }
 
-      // ---- (3) VisitObgynEncounter (all 10 body-system findings sections) ----
-      if (this.touchesObgynEncounter(dto)) {
-        await this.upsertObgynEncounter(tx, visitId, dto, user.profileId);
-        aggregates.push('obgyn_encounter');
-      }
+        // ---- (3) VisitObgynEncounter (all 10 body-system findings sections) ----
+        if (this.touchesObgynEncounter(dto)) {
+          await this.upsertObgynEncounter(tx, visitId, dto, user.profileId);
+          aggregates.push('obgyn_encounter');
+        }
 
-      // ---- (4) VisitInvestigation rows ----
-      if (dto.investigations !== undefined) {
-        await this.diffInvestigations(
-          tx,
-          visitId,
-          dto.investigations,
-          user.profileId,
+        // ---- (4) VisitInvestigation rows ----
+        if (dto.investigations !== undefined) {
+          await this.diffInvestigations(
+            tx,
+            visitId,
+            dto.investigations,
+            user.profileId,
+          );
+          aggregates.push('investigations');
+        }
+
+        // ---- (5) Prescription + PrescriptionItem rows ----
+        if (dto.medications !== undefined) {
+          await this.diffPrescriptionItems(
+            tx,
+            visitId,
+            dto.medications,
+            user.profileId,
+          );
+          aggregates.push('prescription');
+        }
+
+        // ---- (6) Patient-level OB/GYN history (care-path-relevant capture) ----
+        // Routed to PatientObgynHistory (single source of truth) in THIS
+        // transaction. `null` If-Match: the examination's own examination_version
+        // already guards concurrency, so the history write reads + bumps the
+        // current history version in-tx without a separate client precondition.
+        if (dto.obgyn_history !== undefined) {
+          const patientId = await this.resolvePatientId(tx, visitId);
+          await this.obgynHistory.applyPatch(
+            tx,
+            patientId,
+            dto.obgyn_history,
+            null,
+            user.profileId,
+          );
+          aggregates.push('obgyn_history');
+        }
+
+        // ---- Visit-level: follow_up_date + version bump ----
+        const visitData: Prisma.VisitUncheckedUpdateInput = {
+          examination_version: { increment: 1 },
+        };
+        if (dto.follow_up_date !== undefined) {
+          visitData.follow_up_date = dto.follow_up_date
+            ? new Date(dto.follow_up_date)
+            : null;
+          aggregates.push('follow_up_date');
+        }
+        const updatedVisit = await tx.visit.update({
+          where: { id: visitId },
+          data: visitData,
+        });
+
+        this.eventBus.publish<VisitExaminationUpdatedEvent>(
+          CLINICAL_EVENTS.encounter.examinationUpdated,
+          {
+            visit_id: visitId,
+            aggregates,
+            updated_by_id: user.profileId,
+            examination_version: updatedVisit.examination_version,
+          },
         );
-        aggregates.push('investigations');
-      }
-
-      // ---- (5) Prescription + PrescriptionItem rows ----
-      if (dto.medications !== undefined) {
-        await this.diffPrescriptionItems(
-          tx,
-          visitId,
-          dto.medications,
-          user.profileId,
-        );
-        aggregates.push('prescription');
-      }
-
-      // ---- (6) Patient-level OB/GYN history (care-path-relevant capture) ----
-      // Routed to PatientObgynHistory (single source of truth) in THIS
-      // transaction. `null` If-Match: the examination's own examination_version
-      // already guards concurrency, so the history write reads + bumps the
-      // current history version in-tx without a separate client precondition.
-      if (dto.obgyn_history !== undefined) {
-        const patientId = await this.resolvePatientId(tx, visitId);
-        await this.obgynHistory.applyPatch(
-          tx,
-          patientId,
-          dto.obgyn_history,
-          null,
-          user.profileId,
-        );
-        aggregates.push('obgyn_history');
-      }
-
-      // ---- Visit-level: follow_up_date + version bump ----
-      const visitData: Prisma.VisitUncheckedUpdateInput = {
-        examination_version: { increment: 1 },
-      };
-      if (dto.follow_up_date !== undefined) {
-        visitData.follow_up_date = dto.follow_up_date
-          ? new Date(dto.follow_up_date)
-          : null;
-        aggregates.push('follow_up_date');
-      }
-      const updatedVisit = await tx.visit.update({
-        where: { id: visitId },
-        data: visitData,
-      });
-
-      this.eventBus.publish<VisitExaminationUpdatedEvent>(
-        CLINICAL_EVENTS.encounter.examinationUpdated,
-        {
-          visit_id: visitId,
-          aggregates,
-          updated_by_id: user.profileId,
-          examination_version: updatedVisit.examination_version,
-        },
-      );
-    });
+      },
+      // The composite examination write spans many aggregates (encounter,
+      // vitals, 10 findings sections, diagnoses/investigations/prescription
+      // diffs, and the full patient-history diff). On Neon, interactive-tx
+      // queries serialize on one connection, so the legitimate work can exceed
+      // Prisma's 5s default. Give it real headroom.
+      { timeout: 20_000, maxWait: 10_000 },
+    );
 
     return this.composeEnvelope(this.prismaService.db, visitId);
   }
