@@ -111,9 +111,13 @@ export class ObgynHistoryService {
   ) {
     await this.access.assertPatientInOrg(patientId, user);
 
-    return this.prismaService.db.$transaction((tx) =>
+    // Compose the read-back envelope OUTSIDE the write transaction so the
+    // transaction does no extra child-table reads (applyPatch returns just the
+    // singleton row). Keeps this wrapper's public shape unchanged.
+    const singleton = await this.prismaService.db.$transaction((tx) =>
       this.applyPatch(tx, patientId, dto, ifMatchVersion, user.profileId),
     );
+    return this.composeEnvelope(this.prismaService.db, singleton);
   }
 
   /**
@@ -236,7 +240,8 @@ export class ObgynHistoryService {
     }
 
     if (changedSections.length === 0) {
-      return this.composeEnvelope(tx, current);
+      // No envelope read-back inside the tx — callers compose outside it.
+      return current;
     }
 
     const now = new Date().toISOString();
@@ -276,7 +281,9 @@ export class ObgynHistoryService {
       },
     );
 
-    return this.composeEnvelope(tx, updated);
+    // Return the lightweight singleton; callers compose the full envelope
+    // outside the write transaction (the examination flow discards it).
+    return updated;
   }
 
   // ---------------------------------------------------------------------------
