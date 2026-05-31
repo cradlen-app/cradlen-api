@@ -1268,8 +1268,10 @@ model PatientPregnancyHistory {
   birth_date            DateTime? @db.Date
   outcome               String? // LIVE_BIRTH | STILLBIRTH | MISCARRIAGE | ABORTION | ECTOPIC | ONGOING
   mode_of_delivery      String? // VAGINAL | CESAREAN | ASSISTED_VAGINAL | OTHER
+  mode_of_delivery_other String? // free text when mode_of_delivery = OTHER
   gestational_age_weeks Int?
   neonatal_outcome      String?
+  neonatal_outcome_other String? // free text when neonatal_outcome = OTHER
   complications         String?
   notes                 String?
   created_by_id         String?   @db.Uuid
@@ -1288,6 +1290,7 @@ model PatientContraceptiveHistory {
   patient_id    String    @db.Uuid
   patient       Patient   @relation(fields: [patient_id], references: [id], onDelete: Cascade)
   method        String
+  method_other  String? // free text when method = OTHER
   duration      String?
   complications String?
   notes         String?
