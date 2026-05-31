@@ -12,6 +12,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { UpdateObgynHistoryDto } from '../../patient-history/dto/obgyn-history.dto';
 
 /**
  * Chief-complaint metadata sub-shape. Mirrors the JSON column
@@ -131,6 +132,20 @@ export class UpdateObgynExaminationDto {
 
   // Visit-level
   @IsOptional() @IsDateString() follow_up_date?: string;
+
+  /**
+   * Care-path-relevant patient history captured during the encounter. Routed to
+   * the patient-level `PatientObgynHistory` tables (single source of truth) via
+   * `ObgynHistoryService.applyPatch` inside the same transaction — feeds the
+   * read-only full-history tab. Reuses the full history DTO (same id-keyed
+   * child-diff semantics); the frontend assembles only the sections the chosen
+   * care path surfaces.
+   */
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => UpdateObgynHistoryDto)
+  obgyn_history?: UpdateObgynHistoryDto;
 }
 
 export class VisitExaminationEnvelopeDto {
@@ -156,6 +171,13 @@ export class VisitExaminationEnvelopeDto {
   investigations!: unknown[];
   medications!: unknown[];
   follow_up_date!: string | null;
+  /**
+   * The patient's current OB/GYN history envelope (singleton sections + the five
+   * child collections + `version`), or `null` if none yet. Pre-fills the
+   * care-path-relevant `history_*` sections in the examination tab. Same shape
+   * as the patient-history GET.
+   */
+  obgyn_history!: unknown;
   examination_version!: number;
   obgyn_encounter_version!: number;
   @Type(() => Date) updated_at!: Date;

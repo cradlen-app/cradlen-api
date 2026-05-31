@@ -18,4 +18,10 @@ export class CarePathDto {
   description!: string | null;
   order!: number;
   episodes!: CarePathEpisodeDto[];
+  /**
+   * Ordered codes of the patient-history sections relevant to this care path —
+   * the embedded `history_*` sections the OB/GYN examination surfaces once this
+   * path is chosen. Resolved from `CarePathHistorySection`. Empty when none.
+   */
+  history_section_codes!: string[];
 }
