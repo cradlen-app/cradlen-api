@@ -34,7 +34,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import { buildHistorySections } from './obgyn-patient-history.js';
 
 const TEMPLATE_CODE = 'obgyn_examination';
-const TEMPLATE_VERSION = 7;
+const TEMPLATE_VERSION = 8;
 
 // Embedded patient-history sections carry a `history_` prefix so their codes
 // never collide with encounter sections (e.g. history `medications` vs the
@@ -1128,12 +1128,12 @@ const SECTIONS: SectionSpec[] = [
         config: { ui: { placeholder: 'Ex : 2 tab / 8 h', colSpan: 3 } },
       },
       {
-        code: 'duration_days',
+        code: 'duration',
         label: 'Duration',
         type: 'TEXT',
         binding: {
           namespace: 'PRESCRIPTION_ITEM',
-          path: 'duration_days',
+          path: 'duration',
         },
         config: { ui: { placeholder: 'Ex : 3 months', colSpan: 3 } },
       },

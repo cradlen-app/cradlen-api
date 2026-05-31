@@ -276,7 +276,7 @@ export const ALLOWED_PATHS = {
     'custom_drug_name',
     'dose',
     'frequency',
-    'duration_days',
+    'duration',
     'instructions',
   ],
 } as const satisfies Record<BindingNamespace, readonly string[]>;
