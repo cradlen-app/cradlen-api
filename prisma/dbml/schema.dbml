@@ -847,7 +847,7 @@ Table prescription_items {
   dose String [not null]
   route String
   frequency String [not null]
-  duration_days Int
+  duration String
   instructions String
   order Int [not null]
   revisions prescription_item_revisions [not null]
