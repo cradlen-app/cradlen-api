@@ -20,7 +20,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import type { Predicate } from '../../src/builder/rules/predicates.js';
 
 const TEMPLATE_CODE = 'obgyn_book_visit_ext';
-const TEMPLATE_VERSION = 2;
+const TEMPLATE_VERSION = 3;
 const EXTENSION_KEY = 'OBGYN';
 
 interface FieldSpec {
@@ -42,8 +42,8 @@ interface SectionSpec {
 
 const SECTIONS: SectionSpec[] = [
   {
-    code: 'notes',
-    name: 'Notes',
+    code: 'main_complaint',
+    name: 'Main Complaint',
     visibleWhen: { eq: { visitor_type: 'PATIENT' } },
     exclusivityKey: {
       field: 'visitor_type',
@@ -52,27 +52,53 @@ const SECTIONS: SectionSpec[] = [
     },
     fields: [
       {
-        code: 'chief_complaint_categories',
-        label: 'Chief complaint',
-        type: 'MULTISELECT',
-        binding: {
-          namespace: 'INTAKE',
-          path: 'chief_complaint_meta.categories',
-        },
+        code: 'complaint',
+        label: 'Main complaint',
+        type: 'TEXTAREA',
+        binding: { namespace: 'INTAKE', path: 'chief_complaint' },
         config: {
-          ui: {
-            optionsSource:
-              '/v1/chief-complaint-categories?specialty_code={specialty_code}&care_path_code={care_path_code}',
-          },
-          validation: { maxItems: 20 },
+          ui: { placeholder: 'Ex : Complaint', colSpan: 12 },
+          validation: { maxLength: 5000 },
         },
       },
       {
-        code: 'chief_complaint_notes',
-        label: 'Notes',
-        type: 'TEXTAREA',
-        binding: { namespace: 'INTAKE', path: 'chief_complaint' },
-        config: { validation: { maxLength: 5000 } },
+        code: 'onset',
+        label: 'Onset',
+        type: 'SELECT',
+        binding: { namespace: 'INTAKE', path: 'chief_complaint_meta.onset' },
+        config: {
+          ui: { placeholder: 'Ex : Acute', colSpan: 4 },
+          validation: {
+            options: [
+              { code: 'ACUTE', label: 'Acute' },
+              { code: 'SUBACUTE', label: 'Subacute' },
+              { code: 'CHRONIC', label: 'Chronic' },
+            ],
+          },
+        },
+      },
+      {
+        code: 'duration',
+        label: 'Duration',
+        type: 'TEXT',
+        binding: { namespace: 'INTAKE', path: 'chief_complaint_meta.duration' },
+        config: { ui: { placeholder: 'Ex : 5 days', colSpan: 4 } },
+      },
+      {
+        code: 'severity',
+        label: 'Severity',
+        type: 'SELECT',
+        binding: { namespace: 'INTAKE', path: 'chief_complaint_meta.severity' },
+        config: {
+          ui: { placeholder: 'Ex : Moderate', colSpan: 4 },
+          validation: {
+            options: [
+              { code: 'MILD', label: 'Mild' },
+              { code: 'MODERATE', label: 'Moderate' },
+              { code: 'SEVERE', label: 'Severe' },
+            ],
+          },
+        },
       },
     ],
   },
