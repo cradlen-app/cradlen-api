@@ -6,6 +6,7 @@ import { seedObgynPatientHistoryTemplate } from './seeds/obgyn-patient-history.j
 import { seedObgynExaminationTemplate } from './seeds/obgyn-examination.js';
 import { seedChiefComplaintCategories } from './seeds/chief-complaint-categories.js';
 import { seedCarePathHistorySections } from './seeds/care-path-history-sections.js';
+import { seedCarePathClinicalSurfaces } from './seeds/care-path-clinical-surfaces.js';
 
 config({ path: '.env' });
 config({
@@ -386,6 +387,7 @@ async function main() {
 
   await seedChiefComplaintCategories(prisma);
   await seedCarePathHistorySections(prisma);
+  await seedCarePathClinicalSurfaces(prisma);
   await seedBookVisitTemplate(prisma);
   await seedObgynPatientHistoryTemplate(prisma);
   await seedObgynExaminationTemplate(prisma);
