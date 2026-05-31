@@ -28,6 +28,7 @@ import { MedicalRepModule } from '@core/clinical/medical-rep/medical-rep.module'
 import { MedicationsModule } from '@core/clinical/medications/medications.module';
 import { CarePathsModule } from '@core/clinical/care-paths/care-paths.module';
 import { JourneysModule } from '@core/clinical/journeys/journeys.module';
+import { DiagnosisCodesModule } from '@core/clinical/diagnosis-codes/diagnosis-codes.module';
 import { ChiefComplaintsModule } from '@core/clinical/chief-complaints/chief-complaints.module';
 import { CalendarModule } from '@core/calendar/calendar.module';
 import { ProceduresModule } from '@core/org/procedures/procedures.module';
@@ -74,6 +75,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     MedicationsModule,
     CarePathsModule,
     JourneysModule,
+    DiagnosisCodesModule,
     ChiefComplaintsModule,
     CalendarModule,
     ProceduresModule,

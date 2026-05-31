@@ -83,6 +83,19 @@ export const ENTITIES = {
     submitTargetNamespace: 'PATIENT_OBGYN_HISTORY',
     submitTargetPath: 'medications.medication_id',
   },
+  diagnosis: {
+    kind: 'diagnosis',
+    // ICD-10 catalog search. `idKey` is the ICD-10 code itself (a string,
+    // not a UUID) — it's the value stored on the diagnosis row.
+    searchEndpoint: '/v1/diagnosis-codes?search=',
+    resultShape: {
+      idKey: 'code',
+      labelKeys: ['description'],
+      subtitleKeys: ['code', 'chapter'],
+    },
+    submitTargetNamespace: 'VISIT_DIAGNOSIS',
+    submitTargetPath: 'code',
+  },
 } as const satisfies Record<string, EntityDescriptor>;
 
 export type EntityKind = keyof typeof ENTITIES;

@@ -149,6 +149,7 @@ enum BindingNamespace {
   VISIT_VITALS
   VISIT_OBGYN_ENCOUNTER
   VISIT_INVESTIGATION
+  VISIT_DIAGNOSIS
   PRESCRIPTION_ITEM
 }
 
@@ -902,6 +903,7 @@ model Patient {
   pregnancies         PatientPregnancyHistory[]
   contraceptives      PatientContraceptiveHistory[]
   non_gyn_surgeries   PatientNonGynSurgery[]
+  family_history_entries PatientFamilyHistory[]
   current_medications PatientMedication[]
   history_notes       PatientHistoryNote[]
   field_flags         PatientFieldFlag[]
@@ -1011,6 +1013,7 @@ model Visit {
   obgyn_encounter     VisitObgynEncounter?
   pregnancy_record    VisitPregnancyRecord?
   investigations      VisitInvestigation[]
+  diagnoses           VisitDiagnosis[]
   prescription        Prescription?
   invoices            Invoice[]             @relation("VisitInvoices")
   created_at          DateTime              @default(now())
@@ -1190,6 +1193,50 @@ model VisitInvestigation {
   @@map("visit_investigations")
 }
 
+// Structured, ICD-10-coded diagnoses for a visit (repeatable). One primary +
+// any number of secondary diagnoses. Mirrors VisitInvestigation's per-visit
+// id-keyed diff write path. The encounter's `provisional_diagnosis` text is a
+// server-derived mirror of the primary row.
+model VisitDiagnosis {
+  id            String    @id @default(uuid()) @db.Uuid
+  visit_id      String    @db.Uuid
+  visit         Visit     @relation(fields: [visit_id], references: [id], onDelete: Cascade)
+  code          String // ICD-10 code, e.g. "N80.0"
+  description   String
+  is_primary    Boolean   @default(false)
+  certainty     String? // SUSPECTED | PROBABLE | CONFIRMED
+  order         Int       @default(0)
+  created_by_id String?   @db.Uuid
+  is_deleted    Boolean   @default(false)
+  deleted_at    DateTime?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  @@index([visit_id, is_deleted])
+  @@map("visit_diagnoses")
+}
+
+// System-wide ICD-10 diagnosis catalog (seed-managed, like specialties /
+// care paths). Search-only over HTTP; backs the diagnosis type-ahead picker.
+// `code` is the stored value on VisitDiagnosis (no FK — free entry stays valid).
+model DiagnosisCode {
+  id             String    @id @default(uuid()) @db.Uuid
+  code           String // ICD-10-CM code
+  description    String
+  chapter        String? // clinical-concept group (e.g. "Pregnancy", "Gynecology")
+  specialty_code String? // e.g. "OBGYN"
+  billable       Boolean   @default(true)
+  keywords       String? // extra search terms / synonyms
+  is_deleted     Boolean   @default(false)
+  deleted_at     DateTime?
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+
+  @@unique([code])
+  @@index([specialty_code])
+  @@map("diagnosis_codes")
+}
+
 model Prescription {
   id               String                 @id @default(uuid()) @db.Uuid
   visit_id         String                 @unique @db.Uuid
@@ -1272,6 +1319,8 @@ model PatientPregnancyHistory {
   gestational_age_weeks Int?
   neonatal_outcome      String?
   neonatal_outcome_other String? // free text when neonatal_outcome = OTHER
+  baby_weight           String?
+  baby_sex              String? // MALE | FEMALE | OTHER
   complications         String?
   notes                 String?
   created_by_id         String?   @db.Uuid
@@ -1283,6 +1332,27 @@ model PatientPregnancyHistory {
 
   @@index([patient_id, is_deleted])
   @@map("patient_pregnancy_history")
+}
+
+// Structured family history (repeatable) — one row per condition in a relative,
+// matching the Stanford form's "cancer/disease + relative + age of diagnosis"
+// table. Mirrors the other patient-history child tables' id-keyed diff write.
+model PatientFamilyHistory {
+  id               String    @id @default(uuid()) @db.Uuid
+  patient_id       String    @db.Uuid
+  patient          Patient   @relation(fields: [patient_id], references: [id], onDelete: Cascade)
+  condition        String // e.g. BREAST_CANCER, DIABETES, STROKE, GENETIC_DISORDER
+  relative         String? // maternal/paternal + who (free text or code)
+  age_of_diagnosis Int?
+  notes            String?
+  created_by_id    String?   @db.Uuid
+  is_deleted       Boolean   @default(false)
+  deleted_at       DateTime?
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  @@index([patient_id, is_deleted])
+  @@map("patient_family_history")
 }
 
 model PatientContraceptiveHistory {
@@ -1573,6 +1643,8 @@ model PatientObgynHistory {
   revisions                 PatientObgynHistoryRevision[]
   gynecological_baseline    Json?
   gynecologic_procedures    Json?
+  gynecologic_conditions    Json?
+  sexual_history            Json?
   screening_history         Json?
   obstetric_summary         Json?
   medical_chronic_illnesses Json?

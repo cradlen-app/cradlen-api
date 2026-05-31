@@ -42,6 +42,25 @@ export class ScreeningHistoryDto {
   @IsOptional() @IsString() vaccines_other?: string;
   @IsOptional() @IsString() hpv_result?: string;
   @IsOptional() @IsString() bethesda_category?: string;
+  // Health-maintenance dates (Stanford parity)
+  @IsOptional() @IsString() last_colonoscopy?: string;
+  @IsOptional() @IsString() last_bone_density?: string;
+  @IsOptional() @IsString() last_tetanus?: string;
+  @IsOptional() @IsString() last_flu?: string;
+}
+
+export class GynecologicConditionsDto {
+  @IsOptional() @IsArray() @IsString({ each: true }) items?: string[];
+  @IsOptional() @IsString() notes?: string;
+}
+
+export class SexualHistoryDto {
+  @IsOptional() @IsNumber() age_first_intercourse?: number;
+  @IsOptional() @IsString() num_partners?: string;
+  @IsOptional() @IsString() partner_gender?: string;
+  @IsOptional() @IsString() currently_active?: string;
+  @IsOptional() @IsArray() @IsString({ each: true }) sti_history?: string[];
+  @IsOptional() @IsString() sti_history_other?: string;
 }
 
 export class ObstetricSummaryDto {
@@ -82,8 +101,14 @@ export class FertilityHistoryDto {
 
 export class SocialHistoryDto {
   @IsOptional() @IsString() smoking?: string;
+  @IsOptional() @IsString() smoking_status?: string;
+  @IsOptional() @IsString() smoking_detail?: string;
   @IsOptional() @IsString() alcohol?: string;
+  @IsOptional() @IsString() recreational_drugs?: string;
+  @IsOptional() @IsString() exercise?: string;
   @IsOptional() @IsString() occupation?: string;
+  @IsOptional() @IsString() employer?: string;
+  @IsOptional() @IsString() ethnicity?: string;
 }
 
 export class MenopauseHistoryDto {
@@ -111,7 +136,17 @@ export class PregnancyRowDto {
   @IsOptional() @IsInt() gestational_age_weeks?: number;
   @IsOptional() @IsString() neonatal_outcome?: string;
   @IsOptional() @IsString() neonatal_outcome_other?: string;
+  @IsOptional() @IsString() baby_weight?: string;
+  @IsOptional() @IsString() baby_sex?: string;
   @IsOptional() @IsString() complications?: string;
+  @IsOptional() @IsString() notes?: string;
+}
+
+export class FamilyHistoryRowDto {
+  @IsOptional() @IsUUID() id?: string;
+  @IsOptional() @IsString() condition?: string;
+  @IsOptional() @IsString() relative?: string;
+  @IsOptional() @IsInt() age_of_diagnosis?: number;
   @IsOptional() @IsString() notes?: string;
 }
 
@@ -172,6 +207,18 @@ export class UpdateObgynHistoryDto {
   @ValidateNested()
   @Type(() => GynecologicProceduresDto)
   gynecologic_procedures?: GynecologicProceduresDto;
+
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => GynecologicConditionsDto)
+  gynecologic_conditions?: GynecologicConditionsDto;
+
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => SexualHistoryDto)
+  sexual_history?: SexualHistoryDto;
 
   @IsOptional()
   @IsObject()
@@ -240,6 +287,12 @@ export class UpdateObgynHistoryDto {
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
+  @Type(() => FamilyHistoryRowDto)
+  family_members?: FamilyHistoryRowDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
   @Type(() => MedicationRowDto)
   medications?: MedicationRowDto[];
 
@@ -254,6 +307,8 @@ export class PatientObgynHistoryDto {
   patient_id!: string;
   gynecological_baseline!: unknown;
   gynecologic_procedures!: unknown;
+  gynecologic_conditions!: unknown;
+  sexual_history!: unknown;
   screening_history!: unknown;
   obstetric_summary!: unknown;
   medical_chronic_illnesses!: unknown;
@@ -266,6 +321,7 @@ export class PatientObgynHistoryDto {
   pregnancies!: unknown[];
   contraceptives!: unknown[];
   non_gyn_surgeries!: unknown[];
+  family_members!: unknown[];
   medications!: unknown[];
   allergies!: unknown[];
   version!: number;
