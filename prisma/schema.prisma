@@ -1506,6 +1506,27 @@ model ChiefComplaintCategory {
   @@map("chief_complaint_categories")
 }
 
+// Maps a care path to the patient-history sections relevant to it. Drives which
+// embedded `history_*` sections the OB/GYN examination surfaces once the doctor
+// picks a care path (the rest of the full history stays out of the encounter).
+// String-keyed by section_code (the FormSection.code in obgyn_examination), like
+// ChiefComplaintCategory — no FK to FormSection so it is admin/seed editable.
+model CarePathHistorySection {
+  id             String    @id @default(uuid()) @db.Uuid
+  specialty_code String
+  care_path_code String
+  section_code   String
+  order          Int       @default(0)
+  is_deleted     Boolean   @default(false)
+  deleted_at     DateTime?
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+
+  @@unique([specialty_code, care_path_code, section_code])
+  @@index([specialty_code, care_path_code])
+  @@map("care_path_history_sections")
+}
+
 enum BloodGroupRh {
   A_POS
   A_NEG
