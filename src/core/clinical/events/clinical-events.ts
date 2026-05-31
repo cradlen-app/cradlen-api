@@ -26,6 +26,15 @@ export const CLINICAL_EVENTS = {
      * Consumers should clear any cached lookups of the org's patient list.
      */
     cancelledEmpty: 'journey.cancelled_empty',
+    /**
+     * Emitted by a journey clinical-surface PATCH
+     * (PATCH /v1/visits/:visitId/journeys/:journeyId/clinical) — the active
+     * journey's profile + per-visit surveillance. One event per save. The
+     * concrete writer is the (deferred) pregnancy clinical vertical; the name
+     * is declared here so consumers/specialty modules reference it, not an
+     * ad-hoc string.
+     */
+    clinicalUpdated: 'journey.clinical.updated',
   },
   episode: {
     opened: 'episode.opened',
@@ -101,6 +110,21 @@ export interface PregnancyRiskLevelChangedEvent {
 export interface VisitPregnancyRecordUpdatedEvent {
   visit_id: string;
   section: string;
+  updated_by_id: string;
+  version: number;
+}
+
+/**
+ * Payload for `journey.clinical.updated`. Emitted when a care path's journey
+ * clinical surface (journey profile + per-visit surveillance) is saved within a
+ * visit. The concrete writer is the deferred pregnancy clinical vertical.
+ */
+export interface JourneyClinicalUpdatedEvent {
+  journey_id: string;
+  visit_id: string;
+  care_path_code: string;
+  /** Surface scopes touched in this save: 'journey' | 'episode' | 'visit'. */
+  scopes: string[];
   updated_by_id: string;
   version: number;
 }

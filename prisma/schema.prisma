@@ -1527,6 +1527,29 @@ model CarePathHistorySection {
   @@map("care_path_history_sections")
 }
 
+// Declares the optional "journey clinical surface" for a care path: the form
+// template that backs the patient's active-journey tab (e.g. the pregnancy
+// profile + per-visit maternal/fetal surveillance). When a care path has a row
+// here, the visit workspace renders one extra tab for the active journey; when
+// it has none, no extra tab appears. String-keyed (no FK to FormTemplate), like
+// CarePathHistorySection — admin/seed editable. One surface per care path.
+model CarePathClinicalSurface {
+  id             String    @id @default(uuid()) @db.Uuid
+  specialty_code String
+  care_path_code String
+  template_code  String
+  label          String
+  order          Int       @default(0)
+  is_deleted     Boolean   @default(false)
+  deleted_at     DateTime?
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+
+  @@unique([specialty_code, care_path_code])
+  @@index([specialty_code, care_path_code])
+  @@map("care_path_clinical_surfaces")
+}
+
 enum BloodGroupRh {
   A_POS
   A_NEG
