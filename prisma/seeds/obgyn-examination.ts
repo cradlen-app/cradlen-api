@@ -34,7 +34,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import { buildHistorySections } from './obgyn-patient-history.js';
 
 const TEMPLATE_CODE = 'obgyn_examination';
-const TEMPLATE_VERSION = 6;
+const TEMPLATE_VERSION = 7;
 
 // Embedded patient-history sections carry a `history_` prefix so their codes
 // never collide with encounter sections (e.g. history `medications` vs the
@@ -1004,13 +1004,6 @@ const SECTIONS: SectionSpec[] = [
         binding: { namespace: 'VISIT_DIAGNOSIS', path: 'code' },
       },
       {
-        code: 'is_primary',
-        label: 'Primary',
-        type: 'BOOLEAN',
-        binding: { namespace: 'VISIT_DIAGNOSIS', path: 'is_primary' },
-        config: { ui: { colSpan: 2 } },
-      },
-      {
         code: 'certainty',
         label: 'Certainty',
         type: 'SELECT',
@@ -1025,6 +1018,13 @@ const SECTIONS: SectionSpec[] = [
             ],
           },
         },
+      },
+      {
+        code: 'is_primary',
+        label: 'Primary',
+        type: 'BOOLEAN',
+        binding: { namespace: 'VISIT_DIAGNOSIS', path: 'is_primary' },
+        config: { ui: { colSpan: 2 } },
       },
     ],
   },
