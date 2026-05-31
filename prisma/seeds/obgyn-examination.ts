@@ -31,9 +31,16 @@ import { BindingNamespace, PrismaClient } from '@prisma/client';
 import { validateBinding } from '../../src/builder/fields/allowed-paths.js';
 import { assertValidConfig } from '../../src/builder/fields/field-config.schema.js';
 import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
+import { buildHistorySections } from './obgyn-patient-history.js';
 
 const TEMPLATE_CODE = 'obgyn_examination';
-const TEMPLATE_VERSION = 1;
+const TEMPLATE_VERSION = 2;
+
+// Embedded patient-history sections carry a `history_` prefix so their codes
+// never collide with encounter sections (e.g. history `medications` vs the
+// prescription `medications` section). Bindings still target
+// PATIENT_OBGYN_HISTORY.* — identical write path to the history template.
+const HISTORY_SECTION_PREFIX = 'history_';
 
 type FieldType = keyof typeof FIELD_TYPES;
 type SectionConfig = { ui?: any; validation?: any; logic?: any };
@@ -148,7 +155,40 @@ const SECTIONS: SectionSpec[] = [
   },
 
   // ---------------------------------------------------------------------------
-  // 2. Vitals  (VisitVitals)
+  // 2. Care path  (VisitEncounter.case_path)
+  // Picked right after the complaint; drives which embedded `history_*`
+  // sections surface (resolved from CarePathHistorySection →
+  // CarePathDto.history_section_codes). Embedded history sections are spliced
+  // in immediately after this one by `composeSections()`.
+  // ---------------------------------------------------------------------------
+  {
+    code: 'care_path',
+    name: 'Care Path',
+    group: 'Care Path',
+    fields: [
+      {
+        code: 'case_path',
+        label: 'Care path',
+        type: 'SELECT',
+        binding: {
+          namespace: 'VISIT_ENCOUNTER',
+          path: 'case_path',
+        },
+        config: {
+          ui: {
+            variant: 'case-path',
+            specialtyCode: 'OBGYN',
+            optionsSource: '/v1/care-paths?specialtyCode=OBGYN',
+            colSpan: 12,
+          },
+          validation: { options: [] },
+        },
+      },
+    ],
+  },
+
+  // ---------------------------------------------------------------------------
+  // 3. Vitals  (VisitVitals)
   // ---------------------------------------------------------------------------
   {
     code: 'vitals',
@@ -990,29 +1030,11 @@ const SECTIONS: SectionSpec[] = [
         },
         config: { ui: { placeholder: 'Ex : Clinical Reasoning', colSpan: 12 } },
       },
-      {
-        code: 'case_path',
-        label: 'Case path',
-        type: 'SELECT',
-        binding: {
-          namespace: 'VISIT_ENCOUNTER',
-          path: 'case_path',
-        },
-        config: {
-          ui: {
-            variant: 'case-path',
-            specialtyCode: 'OBGYN',
-            optionsSource: '/v1/care-paths?specialtyCode=OBGYN',
-            colSpan: 12,
-          },
-          validation: { options: [] },
-        },
-      },
     ],
   },
 
   // ---------------------------------------------------------------------------
-  // 10. Investigations  (VisitInvestigation — repeatable)
+  // Investigations  (VisitInvestigation — repeatable)
   // ---------------------------------------------------------------------------
   {
     code: 'investigations',
@@ -1134,8 +1156,26 @@ const SECTIONS: SectionSpec[] = [
   },
 ];
 
-function assertAllValid(): void {
+/**
+ * The full ordered section list: encounter sections plus the embedded
+ * patient-history sections spliced in immediately after `care_path`. The
+ * history sections are `history_`-prefixed clones of the canonical
+ * HISTORY_SECTIONS (single source of truth in obgyn-patient-history.ts) and
+ * bind to PATIENT_OBGYN_HISTORY.* — the examination write path routes them to
+ * the patient-level history tables.
+ */
+function composeSections(): SectionSpec[] {
+  const history = buildHistorySections(HISTORY_SECTION_PREFIX);
+  const out: SectionSpec[] = [];
   for (const section of SECTIONS) {
+    out.push(section);
+    if (section.code === 'care_path') out.push(...history);
+  }
+  return out;
+}
+
+function assertAllValid(sections: SectionSpec[]): void {
+  for (const section of sections) {
     assertValidConfig(
       buildSectionConfig(section),
       `section "${section.code}"`,
@@ -1168,7 +1208,8 @@ function buildSectionConfig(section: SectionSpec): SectionConfig {
 }
 
 export async function seedObgynExaminationTemplate(prisma: PrismaClient) {
-  assertAllValid();
+  const sections = composeSections();
+  assertAllValid(sections);
 
   const gynSpecialty = await prisma.specialty.findUnique({
     where: { code: 'OBGYN' },
@@ -1181,7 +1222,7 @@ export async function seedObgynExaminationTemplate(prisma: PrismaClient) {
     update: {
       name: 'OB/GYN Examination',
       description:
-        'Visit-level OB/GYN examination surface. Writes via the unified bulk PATCH /visits/:id/examination.',
+        'Visit-level OB/GYN examination surface ordered as a clinical encounter: main complaint → care path → care-path-relevant patient history → exam findings → provisional diagnosis → treatment plan. Writes via the unified bulk PATCH /visits/:id/examination; embedded history_* sections feed the patient-level OB/GYN history.',
       scope: 'ENCOUNTER',
       specialty_id: gynSpecialty?.id ?? null,
       parent_template_id: null,
@@ -1192,15 +1233,15 @@ export async function seedObgynExaminationTemplate(prisma: PrismaClient) {
       version: TEMPLATE_VERSION,
       name: 'OB/GYN Examination',
       description:
-        'Visit-level OB/GYN examination surface. Writes via the unified bulk PATCH /visits/:id/examination.',
+        'Visit-level OB/GYN examination surface ordered as a clinical encounter: main complaint → care path → care-path-relevant patient history → exam findings → provisional diagnosis → treatment plan. Writes via the unified bulk PATCH /visits/:id/examination; embedded history_* sections feed the patient-level OB/GYN history.',
       scope: 'ENCOUNTER',
       status: 'DRAFT',
       specialty_id: gynSpecialty?.id ?? null,
     },
   });
 
-  for (let i = 0; i < SECTIONS.length; i++) {
-    const sectionSpec = SECTIONS[i];
+  for (let i = 0; i < sections.length; i++) {
+    const sectionSpec = sections[i];
     const section = await prisma.formSection.upsert({
       where: {
         form_template_id_code: {
@@ -1276,6 +1317,6 @@ export async function seedObgynExaminationTemplate(prisma: PrismaClient) {
   ]);
 
   console.log(
-    `Seeded ${TEMPLATE_CODE} v${TEMPLATE_VERSION} (${SECTIONS.length} sections, activated).`,
+    `Seeded ${TEMPLATE_CODE} v${TEMPLATE_VERSION} (${sections.length} sections, activated).`,
   );
 }
