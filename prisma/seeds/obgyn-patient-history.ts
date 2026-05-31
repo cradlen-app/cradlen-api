@@ -32,7 +32,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import type { Predicate } from '../../src/builder/rules/predicates.js';
 
 const TEMPLATE_CODE = 'obgyn_patient_history';
-const TEMPLATE_VERSION = 6;
+const TEMPLATE_VERSION = 7;
 
 export type FieldType = keyof typeof FIELD_TYPES;
 export type SectionConfig = { ui?: any; validation?: any; logic?: any };
@@ -1130,7 +1130,7 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
         config: {
           ui: {
             placeholder: 'Ex : candalkan',
-            colSpan: 4,
+            colSpan: 6,
             searchEntity: {
               kind: 'medication',
               idTarget: 'medication_id',
@@ -1142,10 +1142,9 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
       },
       {
         // Hidden sibling — receives the resolved medication catalog id when
-        // the user picks a suggestion. The renderer hides any field that is
-        // the `idTarget` of another field's `ui.searchEntity`, so this never
-        // shows on the form; the submission builder writes it at the bound
-        // path `medications.medication_id`.
+        // the user picks a suggestion. Never rendered (it's the idTarget of
+        // drug_name's searchEntity); the submission builder writes it at the
+        // bound path `medications.medication_id`.
         code: 'medication_id',
         label: 'Medication id',
         type: 'TEXT',
@@ -1153,26 +1152,6 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'medications.medication_id',
         },
-      },
-      {
-        code: 'indication',
-        label: 'Indication',
-        type: 'TEXT',
-        binding: {
-          namespace: 'PATIENT_OBGYN_HISTORY',
-          path: 'medications.indication',
-        },
-        config: { ui: { placeholder: 'Blood pressure medications', colSpan: 4 } },
-      },
-      {
-        code: 'from_date',
-        label: 'From',
-        type: 'DATE',
-        binding: {
-          namespace: 'PATIENT_OBGYN_HISTORY',
-          path: 'medications.from_date',
-        },
-        config: { ui: { placeholder: 'Ex : 1/1/2026', colSpan: 3 } },
       },
       {
         code: 'dose',
@@ -1195,6 +1174,26 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
         config: { ui: { placeholder: 'Ex : twice daily', colSpan: 3 } },
       },
       {
+        code: 'indication',
+        label: 'Indication',
+        type: 'TEXT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'medications.indication',
+        },
+        config: { ui: { placeholder: 'Blood pressure medications', colSpan: 6 } },
+      },
+      {
+        code: 'from_date',
+        label: 'From',
+        type: 'DATE',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'medications.from_date',
+        },
+        config: { ui: { placeholder: 'Ex : 1/1/2026', colSpan: 3 } },
+      },
+      {
         code: 'to_date',
         label: 'To',
         type: 'DATE',
@@ -1202,7 +1201,15 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'medications.to_date',
         },
-        config: { ui: { placeholder: 'Ex : 1/1/2026', colSpan: 3 } },
+        config: {
+          ui: { placeholder: 'Ex : 1/1/2026', colSpan: 3 },
+          // An ongoing medication has no end date — hide "To" when Ongoing is on.
+          logic: {
+            predicates: [
+              { effect: 'visible', when: { ne: { is_ongoing: true } } },
+            ],
+          },
+        },
       },
       {
         code: 'is_ongoing',
@@ -1212,7 +1219,7 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'medications.is_ongoing',
         },
-        config: { ui: { colSpan: 3 } },
+        config: { ui: { colSpan: 12 } },
       },
     ],
   },
