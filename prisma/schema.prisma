@@ -1269,7 +1269,7 @@ model PrescriptionItem {
   dose             String
   route            String?
   frequency        String
-  duration_days    Int?
+  duration         String?
   instructions     String?
   order            Int
   revisions        PrescriptionItemRevision[]

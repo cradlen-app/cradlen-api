@@ -73,7 +73,7 @@ export class MedicationItemRowDto {
   @IsOptional() @IsString() custom_drug_name?: string;
   @IsOptional() @IsString() dose?: string;
   @IsOptional() @IsString() frequency?: string;
-  @IsOptional() @IsInt() duration_days?: number;
+  @IsOptional() @IsString() duration?: string;
   @IsOptional() @IsString() instructions?: string;
 }
 
