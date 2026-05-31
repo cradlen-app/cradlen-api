@@ -60,7 +60,32 @@ export class ObgynHistoryService {
   }
 
   /**
-   * Bulk PATCH — accept the entire OB/GYN history surface in one request.
+   * Read-only history envelope for EMBEDDING in another surface (the OB/GYN
+   * examination GET pre-fills the care-path-relevant history sections from
+   * this). Performs NO access check — the caller must already have authorized
+   * the patient — and does NOT lazy-create the singleton (returns `null` when
+   * the patient has no history yet, so a read never has a write side-effect).
+   */
+  async readEnvelope(
+    patientId: string,
+    tx: Prisma.TransactionClient | typeof this.prismaService.db = this
+      .prismaService.db,
+  ) {
+    const singleton = await tx.patientObgynHistory.findUnique({
+      where: { patient_id: patientId },
+    });
+    if (!singleton) return null;
+    return this.composeEnvelope(tx, singleton);
+  }
+
+  /**
+   * Bulk write — accept the entire OB/GYN history surface in one call.
+   *
+   * NOTE: This is no longer exposed over HTTP. The patient-history surface is
+   * read-only (GET = the "specialty full history" view). This method is kept
+   * as the canonical internal writer — the OB/GYN examination flow will call
+   * into it to persist patient-level history captured during an encounter
+   * (see plan: history capture relocates to the examination template).
    *
    * Singleton JSON columns + all five child collections (pregnancies,
    * contraceptives, non_gyn_surgeries, medications, allergies) are diffed
@@ -83,142 +108,162 @@ export class ObgynHistoryService {
   ) {
     await this.access.assertPatientInOrg(patientId, user);
 
-    return this.prismaService.db.$transaction(async (tx) => {
-      const current = await this.loadOrCreateSingleton(
+    return this.prismaService.db.$transaction((tx) =>
+      this.applyPatch(tx, patientId, dto, ifMatchVersion, user.profileId),
+    );
+  }
+
+  /**
+   * Transaction-composable core of the history write. Callers own the
+   * transaction so the patient-level write can ride along with other mutations
+   * (e.g. the OB/GYN examination PATCH writing visit-scoped data + history in
+   * one atomic transaction).
+   *
+   * `ifMatchVersion === null` skips the optimistic-concurrency assert — used by
+   * the examination flow, which is already guarded by `examination_version`.
+   * Pass the singleton's current `version` to enforce If-Match (the HTTP path).
+   *
+   * Snapshots the prior state to `patient_obgyn_history_revisions`, bumps
+   * `version`, and emits one `patient.history.updated` event.
+   */
+  async applyPatch(
+    tx: Prisma.TransactionClient,
+    patientId: string,
+    dto: UpdateObgynHistoryDto,
+    ifMatchVersion: number | null,
+    profileId: string,
+  ) {
+    const current = await this.loadOrCreateSingleton(tx, patientId, profileId);
+    if (ifMatchVersion !== null) {
+      assertVersionMatches(ifMatchVersion, current.version);
+    }
+
+    const priorChildren = await this.loadChildren(tx, patientId);
+    const changedSections: string[] = [];
+
+    // ----- Singleton field updates (JSON columns) -----
+    const data: Prisma.PatientObgynHistoryUncheckedUpdateInput = {
+      updated_by_id: profileId,
+    };
+    for (const field of SINGLETON_JSON_FIELDS) {
+      if (!(field in dto)) continue;
+      const value = (dto as Record<string, unknown>)[field];
+      (data as Record<string, unknown>)[field] = value as Prisma.InputJsonValue;
+      changedSections.push(field);
+    }
+
+    if (dto.blood_group_rh !== undefined) {
+      data.blood_group_rh = dto.blood_group_rh;
+      changedSections.push('blood_group_rh');
+    }
+
+    // ----- Child collection diffs -----
+    if (dto.pregnancies !== undefined) {
+      await this.diffPregnancies(
         tx,
         patientId,
-        user.profileId,
+        priorChildren.pregnancies,
+        dto.pregnancies,
+        profileId,
       );
-      assertVersionMatches(ifMatchVersion, current.version);
-
-      const priorChildren = await this.loadChildren(tx, patientId);
-      const changedSections: string[] = [];
-
-      // ----- Singleton field updates (JSON columns) -----
-      const data: Prisma.PatientObgynHistoryUncheckedUpdateInput = {
-        updated_by_id: user.profileId,
-      };
-      for (const field of SINGLETON_JSON_FIELDS) {
-        if (!(field in dto)) continue;
-        const value = (dto as Record<string, unknown>)[field];
-        (data as Record<string, unknown>)[field] =
-          value as Prisma.InputJsonValue;
-        changedSections.push(field);
-      }
-
-      if (dto.blood_group_rh !== undefined) {
-        data.blood_group_rh = dto.blood_group_rh;
-        changedSections.push('blood_group_rh');
-      }
-
-      // ----- Child collection diffs -----
-      if (dto.pregnancies !== undefined) {
-        await this.diffPregnancies(
-          tx,
-          patientId,
-          priorChildren.pregnancies,
-          dto.pregnancies,
-          user.profileId,
-        );
-        changedSections.push('pregnancies');
-      }
-      if (dto.contraceptives !== undefined) {
-        await this.diffContraceptives(
-          tx,
-          patientId,
-          priorChildren.contraceptives,
-          dto.contraceptives,
-          user.profileId,
-        );
-        changedSections.push('contraceptives');
-      }
-      if (dto.non_gyn_surgeries !== undefined) {
-        await this.diffNonGynSurgeries(
-          tx,
-          patientId,
-          priorChildren.non_gyn_surgeries,
-          dto.non_gyn_surgeries,
-          user.profileId,
-        );
-        changedSections.push('non_gyn_surgeries');
-      }
-      if (dto.medications !== undefined) {
-        await this.diffMedications(
-          tx,
-          patientId,
-          priorChildren.medications,
-          dto.medications,
-          user.profileId,
-        );
-        changedSections.push('medications');
-      }
-      if (dto.allergies !== undefined) {
-        await this.diffAllergies(
-          tx,
-          patientId,
-          priorChildren.allergies,
-          dto.allergies,
-          user.profileId,
-        );
-        changedSections.push('allergies');
-      }
-
-      // If pregnancies were touched but user did NOT supply obstetric_summary,
-      // recompute G/P/A from the resulting pregnancy rows so the cached
-      // summary stays in sync with the source of truth.
-      const pregnanciesTouched = dto.pregnancies !== undefined;
-      const summarySupplied = dto.obstetric_summary !== undefined;
-      if (pregnanciesTouched && !summarySupplied) {
-        const recomputed = await this.recomputeObstetricSummary(tx, patientId);
-        data.obstetric_summary = recomputed as unknown as Prisma.InputJsonValue;
-        if (!changedSections.includes('obstetric_summary')) {
-          changedSections.push('obstetric_summary');
-        }
-      }
-
-      if (changedSections.length === 0) {
-        return this.composeEnvelope(tx, current);
-      }
-
-      const now = new Date().toISOString();
-      const existingTimestamps =
-        coerceStringRecord(current.section_timestamps) ?? {};
-      const updatedTimestamps = { ...existingTimestamps };
-      for (const section of changedSections) {
-        updatedTimestamps[section] = now;
-      }
-      data.section_timestamps = updatedTimestamps;
-
-      // Snapshot the full prior state (singleton + all child arrays) before
-      // mutating the singleton. The revision's `version` field is the prior
-      // version — buildRevision handles that.
-      const priorSnapshot = {
-        ...current,
-        ...priorChildren,
-      };
-      await tx.patientObgynHistoryRevision.create({
-        data: buildRevision(priorSnapshot, changedSections, user.profileId),
-      });
-
-      data.version = { increment: 1 };
-      const updated = await tx.patientObgynHistory.update({
-        where: { id: current.id },
-        data,
-      });
-
-      this.eventBus.publish<PatientHistoryUpdatedEvent>(
-        CLINICAL_EVENTS.patient.historyUpdated,
-        {
-          patient_id: patientId,
-          specialty: 'OBGYN',
-          section_codes: changedSections,
-          updated_by_id: user.profileId,
-          version: updated.version,
-        },
+      changedSections.push('pregnancies');
+    }
+    if (dto.contraceptives !== undefined) {
+      await this.diffContraceptives(
+        tx,
+        patientId,
+        priorChildren.contraceptives,
+        dto.contraceptives,
+        profileId,
       );
+      changedSections.push('contraceptives');
+    }
+    if (dto.non_gyn_surgeries !== undefined) {
+      await this.diffNonGynSurgeries(
+        tx,
+        patientId,
+        priorChildren.non_gyn_surgeries,
+        dto.non_gyn_surgeries,
+        profileId,
+      );
+      changedSections.push('non_gyn_surgeries');
+    }
+    if (dto.medications !== undefined) {
+      await this.diffMedications(
+        tx,
+        patientId,
+        priorChildren.medications,
+        dto.medications,
+        profileId,
+      );
+      changedSections.push('medications');
+    }
+    if (dto.allergies !== undefined) {
+      await this.diffAllergies(
+        tx,
+        patientId,
+        priorChildren.allergies,
+        dto.allergies,
+        profileId,
+      );
+      changedSections.push('allergies');
+    }
 
-      return this.composeEnvelope(tx, updated);
+    // If pregnancies were touched but user did NOT supply obstetric_summary,
+    // recompute G/P/A from the resulting pregnancy rows so the cached
+    // summary stays in sync with the source of truth.
+    const pregnanciesTouched = dto.pregnancies !== undefined;
+    const summarySupplied = dto.obstetric_summary !== undefined;
+    if (pregnanciesTouched && !summarySupplied) {
+      const recomputed = await this.recomputeObstetricSummary(tx, patientId);
+      data.obstetric_summary = recomputed as unknown as Prisma.InputJsonValue;
+      if (!changedSections.includes('obstetric_summary')) {
+        changedSections.push('obstetric_summary');
+      }
+    }
+
+    if (changedSections.length === 0) {
+      return this.composeEnvelope(tx, current);
+    }
+
+    const now = new Date().toISOString();
+    const existingTimestamps =
+      coerceStringRecord(current.section_timestamps) ?? {};
+    const updatedTimestamps = { ...existingTimestamps };
+    for (const section of changedSections) {
+      updatedTimestamps[section] = now;
+    }
+    data.section_timestamps = updatedTimestamps;
+
+    // Snapshot the full prior state (singleton + all child arrays) before
+    // mutating the singleton. The revision's `version` field is the prior
+    // version — buildRevision handles that.
+    const priorSnapshot = {
+      ...current,
+      ...priorChildren,
+    };
+    await tx.patientObgynHistoryRevision.create({
+      data: buildRevision(priorSnapshot, changedSections, profileId),
     });
+
+    data.version = { increment: 1 };
+    const updated = await tx.patientObgynHistory.update({
+      where: { id: current.id },
+      data,
+    });
+
+    this.eventBus.publish<PatientHistoryUpdatedEvent>(
+      CLINICAL_EVENTS.patient.historyUpdated,
+      {
+        patient_id: patientId,
+        specialty: 'OBGYN',
+        section_codes: changedSections,
+        updated_by_id: profileId,
+        version: updated.version,
+      },
+    );
+
+    return this.composeEnvelope(tx, updated);
   }
 
   // ---------------------------------------------------------------------------

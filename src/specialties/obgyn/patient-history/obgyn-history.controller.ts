@@ -1,25 +1,21 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  ParseUUIDPipe,
-  Patch,
-} from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { ApiStandardResponse } from '@common/swagger';
-import {
-  ApiIfMatchHeader,
-  CurrentUser,
-  IfMatchVersion,
-} from '@common/decorators';
+import { CurrentUser } from '@common/decorators';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { ObgynHistoryService } from './obgyn-history.service';
-import {
-  PatientObgynHistoryDto,
-  UpdateObgynHistoryDto,
-} from './dto/obgyn-history.dto';
+import { PatientObgynHistoryDto } from './dto/obgyn-history.dto';
 
+/**
+ * OB/GYN patient history is a READ-ONLY surface — the "specialty full history"
+ * view rendered in the frontend. The GET returns the full envelope (singleton
+ * sections + the five child collections + version).
+ *
+ * History is no longer written through a standalone PATCH here; capture
+ * relocates into the OB/GYN examination flow, which calls
+ * `ObgynHistoryService.patch` internally. See the matching display-only form
+ * template (`obgyn_patient_history`, `is_display_only = true`).
+ */
 @ApiTags('OB/GYN — Patient History')
 @Controller('patients/:id/obgyn-history')
 export class ObgynHistoryController {
@@ -32,29 +28,5 @@ export class ObgynHistoryController {
     @CurrentUser() user: AuthContext,
   ) {
     return this.service.get(id, user);
-  }
-
-  /**
-   * Save the entire OB/GYN history tab in one request.
-   *
-   * - Any subset of sections may be present in the body. Unsent fields are
-   *   left untouched on the server.
-   * - `If-Match: "version:N"` echoes the row's current version. Mismatch
-   *   returns 412 STALE_VERSION with a diff hint.
-   * - Server applies all changes atomically, snapshots the prior state to
-   *   `patient_obgyn_history_revisions`, bumps `version`, and emits one
-   *   `patient.history.updated` event listing the section codes that
-   *   actually changed.
-   */
-  @Patch()
-  @ApiIfMatchHeader()
-  @ApiStandardResponse(PatientObgynHistoryDto)
-  patch(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateObgynHistoryDto,
-    @IfMatchVersion() version: number,
-    @CurrentUser() user: AuthContext,
-  ) {
-    return this.service.patch(id, dto, version, user);
   }
 }
