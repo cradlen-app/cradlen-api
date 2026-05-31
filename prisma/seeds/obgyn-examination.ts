@@ -34,7 +34,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import { buildHistorySections } from './obgyn-patient-history.js';
 
 const TEMPLATE_CODE = 'obgyn_examination';
-const TEMPLATE_VERSION = 2;
+const TEMPLATE_VERSION = 4;
 
 // Embedded patient-history sections carry a `history_` prefix so their codes
 // never collide with encounter sections (e.g. history `medications` vs the
@@ -74,24 +74,14 @@ const SECTIONS: SectionSpec[] = [
     group: 'Main Complaint',
     fields: [
       {
-        code: 'complaint_category',
-        label: 'Complaint category',
-        type: 'MULTISELECT',
+        code: 'complaint',
+        label: 'Main complaint',
+        type: 'TEXTAREA',
         binding: {
           namespace: 'VISIT_ENCOUNTER',
-          path: 'chief_complaint_meta.categories',
+          path: 'chief_complaint',
         },
-        config: {
-          ui: { variant: 'checkboxes', colSpan: 12 },
-          validation: {
-            options: [
-              opt('ROUTINE_CHECK', 'Routine check'),
-              opt('PAIN', 'Pain'),
-              opt('BLEEDING', 'Bleeding'),
-              opt('INFERTILITY', 'Infertility'),
-            ],
-          },
-        },
+        config: { ui: { placeholder: 'Ex : Complaint', colSpan: 12 } },
       },
       {
         code: 'onset',
@@ -140,16 +130,6 @@ const SECTIONS: SectionSpec[] = [
             ],
           },
         },
-      },
-      {
-        code: 'complaint',
-        label: 'Complaint',
-        type: 'TEXTAREA',
-        binding: {
-          namespace: 'VISIT_ENCOUNTER',
-          path: 'chief_complaint',
-        },
-        config: { ui: { placeholder: 'Ex : Complaint', colSpan: 12 } },
       },
     ],
   },

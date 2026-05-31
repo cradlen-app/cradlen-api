@@ -1092,11 +1092,16 @@ export class VisitsService {
     if (dto.status === 'COMPLETED') {
       const encounter = await this.prismaService.db.visitEncounter.findUnique({
         where: { visit_id: id },
-        select: { chief_complaint: true },
+        select: { chief_complaint: true, provisional_diagnosis: true },
       });
       if (!encounter || !encounter.chief_complaint?.trim()) {
         throw new BadRequestException(
-          'Cannot complete visit without an encounter and a chief complaint',
+          'Cannot complete visit without an encounter and a main complaint',
+        );
+      }
+      if (!encounter.provisional_diagnosis?.trim()) {
+        throw new BadRequestException(
+          'Cannot complete visit without a provisional diagnosis',
         );
       }
     }

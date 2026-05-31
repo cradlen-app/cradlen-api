@@ -39,6 +39,7 @@ export class ScreeningHistoryDto {
   @IsOptional() @IsString() mammography?: string;
   @IsOptional() @IsString() mammography_date?: string;
   @IsOptional() @IsArray() @IsString({ each: true }) vaccines?: string[];
+  @IsOptional() @IsString() vaccines_other?: string;
   @IsOptional() @IsString() hpv_result?: string;
   @IsOptional() @IsString() bethesda_category?: string;
 }
@@ -61,10 +62,12 @@ export class FamilyHistoryDto {
   @IsArray()
   @IsString({ each: true })
   gynecologic_cancers?: string[];
+  @IsOptional() @IsString() gynecologic_cancers_other?: string;
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
   chronic_illnesses?: string[];
+  @IsOptional() @IsString() chronic_illnesses_other?: string;
   @IsOptional() @IsString() genetic_disorders?: string;
 }
 
@@ -72,6 +75,7 @@ export class FertilityHistoryDto {
   @IsOptional() @IsString() duration_of_infertility?: string;
   @IsOptional() @IsString() partner_fertility_status?: string;
   @IsOptional() @IsArray() @IsString({ each: true }) treatments?: string[];
+  @IsOptional() @IsString() treatments_other?: string;
   @IsOptional() @IsString() menstrual_ovulation_patterns?: string;
   @IsOptional() @IsString() past_pregnancies_outcomes?: string;
 }
@@ -103,8 +107,10 @@ export class PregnancyRowDto {
   @IsOptional() @IsDateString() birth_date?: string;
   @IsOptional() @IsString() outcome?: string;
   @IsOptional() @IsString() mode_of_delivery?: string;
+  @IsOptional() @IsString() mode_of_delivery_other?: string;
   @IsOptional() @IsInt() gestational_age_weeks?: number;
   @IsOptional() @IsString() neonatal_outcome?: string;
+  @IsOptional() @IsString() neonatal_outcome_other?: string;
   @IsOptional() @IsString() complications?: string;
   @IsOptional() @IsString() notes?: string;
 }
@@ -112,6 +118,7 @@ export class PregnancyRowDto {
 export class ContraceptiveRowDto {
   @IsOptional() @IsUUID() id?: string;
   @IsOptional() @IsString() method?: string;
+  @IsOptional() @IsString() method_other?: string;
   @IsOptional() @IsString() duration?: string;
   @IsOptional() @IsString() complications?: string;
   @IsOptional() @IsString() notes?: string;

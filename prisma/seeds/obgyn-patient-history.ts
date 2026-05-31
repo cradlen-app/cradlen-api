@@ -32,7 +32,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import type { Predicate } from '../../src/builder/rules/predicates.js';
 
 const TEMPLATE_CODE = 'obgyn_patient_history';
-const TEMPLATE_VERSION = 4;
+const TEMPLATE_VERSION = 5;
 
 export type FieldType = keyof typeof FIELD_TYPES;
 export type SectionConfig = { ui?: any; validation?: any; logic?: any };
@@ -230,6 +230,23 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
         },
       },
       {
+        code: 'method_other',
+        label: 'Other method',
+        type: 'TEXT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'contraceptives.method_other',
+        },
+        config: {
+          ui: { placeholder: 'Specify other method', colSpan: 4 },
+          logic: {
+            predicates: [
+              { effect: 'visible', when: { eq: { method: 'OTHER' } } },
+            ],
+          },
+        },
+      },
+      {
         code: 'duration',
         label: 'Duration',
         type: 'TEXT',
@@ -325,6 +342,23 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
               opt('HPV', 'HPV'),
               opt('HEP_B', 'Hep B'),
               opt('OTHER', 'Other'),
+            ],
+          },
+        },
+      },
+      {
+        code: 'vaccines_other',
+        label: 'Other vaccine',
+        type: 'TEXT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'screening_history.vaccines_other',
+        },
+        config: {
+          ui: { placeholder: 'Specify other vaccine', colSpan: 12 },
+          logic: {
+            predicates: [
+              { effect: 'visible', when: { contains: { vaccines: 'OTHER' } } },
             ],
           },
         },
@@ -587,6 +621,26 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
         },
       },
       {
+        code: 'mode_of_delivery_other',
+        label: 'Other mode of delivery',
+        type: 'TEXT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'pregnancies.mode_of_delivery_other',
+        },
+        config: {
+          ui: { placeholder: 'Specify other mode', colSpan: 4 },
+          logic: {
+            predicates: [
+              {
+                effect: 'visible',
+                when: { eq: { mode_of_delivery: 'OTHER' } },
+              },
+            ],
+          },
+        },
+      },
+      {
         code: 'gestational_age_weeks',
         label: 'Gestational age at delivery',
         type: 'NUMBER',
@@ -620,6 +674,26 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
           },
         },
       },
+      {
+        code: 'neonatal_outcome_other',
+        label: 'Other neonatal outcome',
+        type: 'TEXT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'pregnancies.neonatal_outcome_other',
+        },
+        config: {
+          ui: { placeholder: 'Specify other outcome', colSpan: 6 },
+          logic: {
+            predicates: [
+              {
+                effect: 'visible',
+                when: { eq: { neonatal_outcome: 'OTHER' } },
+              },
+            ],
+          },
+        },
+      },
     ],
   },
   {
@@ -628,7 +702,9 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
     group: 'Medical History',
     fields: [
       {
-        code: 'items',
+        // Code is unique across the template (not bare `items`, which collides
+        // with gynecologic_procedures.items in the global value map).
+        code: 'chronic_items',
         label: 'Chronic illnesses',
         type: 'MULTISELECT',
         binding: {
@@ -650,12 +726,22 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
         },
       },
       {
-        code: 'notes',
+        code: 'chronic_notes',
         label: 'Other / notes',
         type: 'TEXTAREA',
         binding: {
           namespace: 'PATIENT_OBGYN_HISTORY',
           path: 'medical_chronic_illnesses.notes',
+        },
+        config: {
+          logic: {
+            predicates: [
+              {
+                effect: 'visible',
+                when: { contains: { chronic_items: 'OTHER' } },
+              },
+            ],
+          },
         },
       },
     ],
@@ -846,6 +932,26 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
         },
       },
       {
+        code: 'gynecologic_cancers_other',
+        label: 'Other gynecologic cancer',
+        type: 'TEXT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'family_history.gynecologic_cancers_other',
+        },
+        config: {
+          ui: { placeholder: 'Specify other cancer', colSpan: 12 },
+          logic: {
+            predicates: [
+              {
+                effect: 'visible',
+                when: { contains: { gynecologic_cancers: 'OTHER' } },
+              },
+            ],
+          },
+        },
+      },
+      {
         code: 'chronic_illnesses',
         label: 'Chronic illnesses',
         type: 'MULTISELECT',
@@ -863,6 +969,26 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
               opt('THYROID', 'Thyroid'),
               opt('CARDIAC', 'Cardiac'),
               opt('OTHER', 'Other'),
+            ],
+          },
+        },
+      },
+      {
+        code: 'chronic_illnesses_other',
+        label: 'Other chronic illness',
+        type: 'TEXT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'family_history.chronic_illnesses_other',
+        },
+        config: {
+          ui: { placeholder: 'Specify other illness', colSpan: 12 },
+          logic: {
+            predicates: [
+              {
+                effect: 'visible',
+                when: { contains: { chronic_illnesses: 'OTHER' } },
+              },
             ],
           },
         },
@@ -1015,6 +1141,26 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
               opt('IUI', 'IUI'),
               opt('IVF', 'IVF'),
               opt('OTHER', 'Other'),
+            ],
+          },
+        },
+      },
+      {
+        code: 'treatments_other',
+        label: 'Other fertility treatment',
+        type: 'TEXT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'fertility_history.treatments_other',
+        },
+        config: {
+          ui: { placeholder: 'Specify other treatment', colSpan: 12 },
+          logic: {
+            predicates: [
+              {
+                effect: 'visible',
+                when: { contains: { treatments: 'OTHER' } },
+              },
             ],
           },
         },
