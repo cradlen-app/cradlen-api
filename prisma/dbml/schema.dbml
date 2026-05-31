@@ -851,8 +851,10 @@ Table patient_pregnancy_history {
   birth_date DateTime
   outcome String
   mode_of_delivery String
+  mode_of_delivery_other String
   gestational_age_weeks Int
   neonatal_outcome String
+  neonatal_outcome_other String
   complications String
   notes String
   created_by_id String
@@ -868,6 +870,7 @@ Table patient_contraceptive_history {
   patient_id String [not null]
   patient patients [not null]
   method String [not null]
+  method_other String
   duration String
   complications String
   notes String

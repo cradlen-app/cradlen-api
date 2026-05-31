@@ -448,6 +448,26 @@ describe('VisitsService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
+    it('rejects COMPLETED transition when provisional_diagnosis is empty', async () => {
+      db.visit.findUnique.mockResolvedValue({
+        ...mockVisit,
+        status: 'IN_PROGRESS',
+      });
+      db.visitEncounter.findUnique.mockResolvedValue({
+        chief_complaint: 'Bleeding',
+        provisional_diagnosis: null,
+      });
+      await expect(
+        service.updateStatus(
+          'visit-uuid',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          { status: 'COMPLETED' as any },
+          mockUser,
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(db.visit.update).not.toHaveBeenCalled();
+    });
+
     it('sets completed_at when transitioning to COMPLETED', async () => {
       db.visit.findUnique.mockResolvedValue({
         ...mockVisit,
@@ -455,6 +475,7 @@ describe('VisitsService', () => {
       });
       db.visitEncounter.findUnique.mockResolvedValue({
         chief_complaint: 'Bleeding',
+        provisional_diagnosis: 'Hypertension',
       });
       db.visit.update.mockResolvedValue({
         ...mockVisit,
