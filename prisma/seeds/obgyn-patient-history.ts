@@ -32,7 +32,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import type { Predicate } from '../../src/builder/rules/predicates.js';
 
 const TEMPLATE_CODE = 'obgyn_patient_history';
-const TEMPLATE_VERSION = 5;
+const TEMPLATE_VERSION = 6;
 
 export type FieldType = keyof typeof FIELD_TYPES;
 export type SectionConfig = { ui?: any; validation?: any; logic?: any };
@@ -191,6 +191,154 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
           logic: {
             predicates: [
               { effect: 'visible', when: { contains: { items: 'OTHER' } } },
+            ],
+          },
+        },
+      },
+    ],
+  },
+  {
+    code: 'gynecologic_conditions',
+    name: 'Gynecologic Conditions',
+    group: 'Gynecological History',
+    fields: [
+      {
+        code: 'gyn_conditions',
+        label: 'Conditions',
+        type: 'MULTISELECT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'gynecologic_conditions.items',
+        },
+        config: {
+          ui: { variant: 'checkboxes' },
+          validation: {
+            options: [
+              opt('ABNORMAL_PAP', 'Abnormal pap'),
+              opt('ECTOPIC', 'Ectopic pregnancy'),
+              opt('ENDOMETRIOSIS', 'Endometriosis'),
+              opt('GENITAL_WARTS', 'Genital warts'),
+              opt('INFERTILITY', 'Infertility'),
+              opt('IRREGULAR_PERIODS', 'Irregular periods'),
+              opt('OVARIAN_CYSTS', 'Ovarian cysts'),
+              opt('RECURRENT_MISCARRIAGE', 'Recurrent miscarriage'),
+              opt('FIBROIDS', 'Fibroids'),
+              opt('VAGINAL_DISCHARGE', 'Vaginal discharge'),
+              opt('VAGINAL_INFECTIONS', 'Vaginal infections'),
+              opt('VULVAR_PAIN', 'Vulvar pain'),
+            ],
+          },
+        },
+      },
+      {
+        code: 'gyn_conditions_notes',
+        label: 'Details',
+        type: 'TEXTAREA',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'gynecologic_conditions.notes',
+        },
+        config: { ui: { placeholder: 'Details', colSpan: 12 } },
+      },
+    ],
+  },
+  {
+    code: 'sexual_history',
+    name: 'Sexual History',
+    group: 'Gynecological History',
+    fields: [
+      {
+        code: 'age_first_intercourse',
+        label: 'Age of first sexual encounter',
+        type: 'NUMBER',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'sexual_history.age_first_intercourse',
+        },
+        config: {
+          ui: { placeholder: 'Ex : 18', colSpan: 3 },
+          validation: { min: 0, max: 120 },
+        },
+      },
+      {
+        code: 'num_partners',
+        label: 'Total # of partners',
+        type: 'TEXT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'sexual_history.num_partners',
+        },
+        config: { ui: { placeholder: 'Ex : 2', colSpan: 3 } },
+      },
+      {
+        code: 'partner_gender',
+        label: 'Partner gender',
+        type: 'SELECT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'sexual_history.partner_gender',
+        },
+        config: {
+          ui: { placeholder: 'Ex : Male', colSpan: 3 },
+          validation: {
+            options: [
+              opt('MALE', 'Male'),
+              opt('FEMALE', 'Female'),
+              opt('BOTH', 'Both'),
+            ],
+          },
+        },
+      },
+      {
+        code: 'currently_active',
+        label: 'Currently sexually active?',
+        type: 'SELECT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'sexual_history.currently_active',
+        },
+        config: {
+          ui: { placeholder: 'Ex : Yes', colSpan: 3 },
+          validation: { options: [opt('YES', 'Yes'), opt('NO', 'No')] },
+        },
+      },
+      {
+        code: 'sti_history',
+        label: 'STD history',
+        type: 'MULTISELECT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'sexual_history.sti_history',
+        },
+        config: {
+          ui: { variant: 'checkboxes' },
+          validation: {
+            options: [
+              opt('NONE', 'None'),
+              opt('HERPES', 'Herpes'),
+              opt('CHLAMYDIA', 'Chlamydia'),
+              opt('GONORRHEA', 'Gonorrhea'),
+              opt('HPV', 'HPV'),
+              opt('HIV', 'HIV'),
+              opt('SYPHILIS', 'Syphilis'),
+              opt('OTHER', 'Other'),
+            ],
+          },
+        },
+      },
+      {
+        code: 'sti_history_other',
+        label: 'Other STD',
+        type: 'TEXT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'sexual_history.sti_history_other',
+        },
+        config: {
+          ui: { placeholder: 'Specify other', colSpan: 12 },
+          logic: {
+            predicates: [
+              { effect: 'visible', when: { contains: { sti_history: 'OTHER' } } },
             ],
           },
         },
@@ -408,6 +556,46 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
           },
         },
       },
+      {
+        code: 'last_colonoscopy',
+        label: 'Last colonoscopy',
+        type: 'DATE',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'screening_history.last_colonoscopy',
+        },
+        config: { ui: { colSpan: 6 } },
+      },
+      {
+        code: 'last_bone_density',
+        label: 'Last bone density test',
+        type: 'DATE',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'screening_history.last_bone_density',
+        },
+        config: { ui: { colSpan: 6 } },
+      },
+      {
+        code: 'last_tetanus',
+        label: 'Last tetanus shot',
+        type: 'DATE',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'screening_history.last_tetanus',
+        },
+        config: { ui: { colSpan: 6 } },
+      },
+      {
+        code: 'last_flu',
+        label: 'Last flu shot',
+        type: 'DATE',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'screening_history.last_flu',
+        },
+        config: { ui: { colSpan: 6 } },
+      },
     ],
   },
   {
@@ -455,6 +643,36 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
         },
       },
       {
+        code: 'smoking_detail',
+        label: 'Smoking detail (amount / quit date)',
+        type: 'TEXT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'social_history.smoking_detail',
+        },
+        config: { ui: { placeholder: 'Ex : 5/day; quit 2022', colSpan: 4 } },
+      },
+      {
+        code: 'recreational_drugs',
+        label: 'Recreational drugs',
+        type: 'TEXT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'social_history.recreational_drugs',
+        },
+        config: { ui: { placeholder: 'Ex : None', colSpan: 4 } },
+      },
+      {
+        code: 'exercise',
+        label: 'Exercise (times/week)',
+        type: 'TEXT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'social_history.exercise',
+        },
+        config: { ui: { placeholder: 'Ex : 3', colSpan: 4 } },
+      },
+      {
         code: 'occupation',
         label: 'Occupation',
         type: 'TEXT',
@@ -463,6 +681,26 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
           path: 'social_history.occupation',
         },
         config: { ui: { placeholder: 'Ex : Teacher', colSpan: 4 } },
+      },
+      {
+        code: 'employer',
+        label: 'Employer',
+        type: 'TEXT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'social_history.employer',
+        },
+        config: { ui: { placeholder: 'Ex : —', colSpan: 4 } },
+      },
+      {
+        code: 'ethnicity',
+        label: 'Ethnicity',
+        type: 'TEXT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'social_history.ethnicity',
+        },
+        config: { ui: { placeholder: 'Ex : —', colSpan: 4 } },
       },
       {
         code: 'blood_group_rh',
@@ -694,6 +932,45 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
           },
         },
       },
+      {
+        code: 'baby_weight',
+        label: 'Baby weight',
+        type: 'TEXT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'pregnancies.baby_weight',
+        },
+        config: { ui: { placeholder: 'Ex : 3.2 kg', colSpan: 4 } },
+      },
+      {
+        code: 'baby_sex',
+        label: 'Sex',
+        type: 'SELECT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'pregnancies.baby_sex',
+        },
+        config: {
+          ui: { placeholder: 'Ex : Male', colSpan: 4 },
+          validation: {
+            options: [
+              opt('MALE', 'Male'),
+              opt('FEMALE', 'Female'),
+              opt('OTHER', 'Other'),
+            ],
+          },
+        },
+      },
+      {
+        code: 'complications',
+        label: 'Complications',
+        type: 'TEXT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'pregnancies.complications',
+        },
+        config: { ui: { placeholder: 'Ex : —', colSpan: 4 } },
+      },
     ],
   },
   {
@@ -716,10 +993,44 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
           validation: {
             options: [
               opt('NONE', 'None'),
-              opt('HTN', 'HTN'),
-              opt('DM', 'DM'),
-              opt('THYROID', 'Thyroid'),
-              opt('ASTHMA', 'Asthma'),
+              opt('ANEMIA', 'Anemia'),
+              opt('ANXIETY', 'Anxiety'),
+              opt('DEPRESSION', 'Depression'),
+              opt('POSTPARTUM_DEPRESSION', 'Postpartum depression'),
+              opt('ADHD', 'ADHD'),
+              opt('EATING_DISORDER', 'Eating disorder'),
+              opt('ASTHMA', 'Asthma / lung disease'),
+              opt('CANCER', 'Cancer'),
+              opt('BREAST_PROBLEM', 'Breast problem'),
+              opt('COAGULATION_DEFECT', 'Blood coagulation defect / hemophilia'),
+              opt('BLOOD_TRANSFUSION', 'Blood transfusion'),
+              opt('HEMORRHAGE', 'Hemorrhage'),
+              opt('DM', 'Diabetes (type 1 or 2)'),
+              opt('GESTATIONAL_DIABETES', 'Gestational diabetes'),
+              opt('HTN', 'Hypertension'),
+              opt('HIGH_CHOLESTEROL', 'High cholesterol'),
+              opt('HEART_DISEASE', 'Heart disease'),
+              opt('STROKE', 'Stroke'),
+              opt('HYPERTHYROIDISM', 'Hyperthyroidism'),
+              opt('HYPOTHYROIDISM', 'Hypothyroidism'),
+              opt('HEADACHES', 'Headaches (tension / migraine)'),
+              opt('EPILEPSY', 'Epilepsy'),
+              opt('GERD', 'GERD (reflux)'),
+              opt('GASTRITIS_ULCER', 'Gastritis / ulcer'),
+              opt('IBS', 'Irritable bowel syndrome'),
+              opt('CHANGE_IN_BOWELS', 'Change in bowels'),
+              opt('BLOOD_IN_STOOL', 'Blood in stool'),
+              opt('LIVER_DISEASE', 'Liver disease'),
+              opt('HEPATITIS', 'Hepatitis'),
+              opt('CHOLECYSTITIS', 'Cholecystitis (gall bladder)'),
+              opt('KIDNEY_DISEASE', 'Kidney disease'),
+              opt('KIDNEY_STONES', 'Kidney stones'),
+              opt('BLADDER_INFECTIONS', 'Bladder infections'),
+              opt('URINARY_INCONTINENCE', 'Urinary incontinence'),
+              opt('OSTEOPOROSIS', 'Osteoporosis'),
+              opt('TUBERCULOSIS', 'Tuberculosis'),
+              opt('POSITIVE_TB_SCREEN', 'Positive TB screening'),
+              opt('COUGH', 'Cough'),
               opt('OTHER', 'Other'),
             ],
           },
@@ -906,102 +1217,75 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
     ],
   },
   {
-    code: 'family_history',
+    // Structured family history (repeatable) — one row per condition in a
+    // relative, with age of diagnosis. Replaces the prior flat multiselects
+    // (the `family_history` JSON column is retained but no longer surfaced).
+    code: 'family_members',
     name: 'Family History',
     group: 'Family History',
+    is_repeatable: true,
     fields: [
       {
-        code: 'gynecologic_cancers',
-        label: 'Gynecologic cancers',
-        type: 'MULTISELECT',
+        code: 'condition',
+        label: 'Condition',
+        type: 'SELECT',
         binding: {
           namespace: 'PATIENT_OBGYN_HISTORY',
-          path: 'family_history.gynecologic_cancers',
+          path: 'family_members.condition',
         },
         config: {
-          ui: { variant: 'checkboxes' },
+          ui: { placeholder: 'Ex : Breast cancer', colSpan: 4 },
           validation: {
             options: [
-              opt('NONE', 'None'),
-              opt('BREAST', 'Breast'),
-              opt('OVARIAN', 'Ovarian'),
-              opt('UTERINE', 'Uterine'),
+              opt('BREAST_CANCER', 'Breast cancer'),
+              opt('UTERINE_CANCER', 'Uterine cancer'),
+              opt('OVARIAN_CANCER', 'Ovarian cancer'),
+              opt('CERVICAL_CANCER', 'Cervical cancer'),
+              opt('COLON_CANCER', 'Colon cancer'),
+              opt('OTHER_GI_CANCER', 'Other GI cancer'),
+              opt('OTHER_CANCER', 'Other cancer'),
+              opt('DIABETES', 'Diabetes'),
+              opt('HYPERTENSION', 'Hypertension'),
+              opt('HEART_DISEASE', 'Heart disease'),
+              opt('STROKE', 'Stroke'),
+              opt('GENETIC_DISORDER', 'Genetic disorder'),
               opt('OTHER', 'Other'),
             ],
           },
         },
       },
       {
-        code: 'gynecologic_cancers_other',
-        label: 'Other gynecologic cancer',
+        code: 'relative',
+        label: 'Relative (maternal / paternal)',
         type: 'TEXT',
         binding: {
           namespace: 'PATIENT_OBGYN_HISTORY',
-          path: 'family_history.gynecologic_cancers_other',
+          path: 'family_members.relative',
         },
-        config: {
-          ui: { placeholder: 'Specify other cancer', colSpan: 12 },
-          logic: {
-            predicates: [
-              {
-                effect: 'visible',
-                when: { contains: { gynecologic_cancers: 'OTHER' } },
-              },
-            ],
-          },
-        },
+        config: { ui: { placeholder: 'Ex : Maternal aunt', colSpan: 4 } },
       },
       {
-        code: 'chronic_illnesses',
-        label: 'Chronic illnesses',
-        type: 'MULTISELECT',
+        code: 'age_of_diagnosis',
+        label: 'Age of diagnosis',
+        type: 'NUMBER',
         binding: {
           namespace: 'PATIENT_OBGYN_HISTORY',
-          path: 'family_history.chronic_illnesses',
+          path: 'family_members.age_of_diagnosis',
         },
         config: {
-          ui: { variant: 'checkboxes' },
-          validation: {
-            options: [
-              opt('NONE', 'None'),
-              opt('HTN', 'HTN'),
-              opt('DM', 'DM'),
-              opt('THYROID', 'Thyroid'),
-              opt('CARDIAC', 'Cardiac'),
-              opt('OTHER', 'Other'),
-            ],
-          },
+          ui: { placeholder: 'Ex : 50', colSpan: 4 },
+          validation: { min: 0, max: 120 },
         },
       },
       {
-        code: 'chronic_illnesses_other',
-        label: 'Other chronic illness',
+        code: 'notes',
+        label: 'Notes',
         type: 'TEXT',
         binding: {
           namespace: 'PATIENT_OBGYN_HISTORY',
-          path: 'family_history.chronic_illnesses_other',
+          path: 'family_members.notes',
         },
-        config: {
-          ui: { placeholder: 'Specify other illness', colSpan: 12 },
-          logic: {
-            predicates: [
-              {
-                effect: 'visible',
-                when: { contains: { chronic_illnesses: 'OTHER' } },
-              },
-            ],
-          },
-        },
-      },
-      {
-        code: 'genetic_disorders',
-        label: 'Genetic disorders',
-        type: 'TEXTAREA',
-        binding: {
-          namespace: 'PATIENT_OBGYN_HISTORY',
-          path: 'family_history.genetic_disorders',
-        },
-        config: { ui: { placeholder: 'Ex : Complications' } },
+        config: { ui: { placeholder: 'Ex : —', colSpan: 12 } },
       },
     ],
   },

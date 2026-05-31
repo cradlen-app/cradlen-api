@@ -1,25 +1,24 @@
 import { NotFoundException } from '@nestjs/common';
 import { HistorySummaryService } from './history-summary.service';
+import { AuthContext } from '@common/interfaces/auth-context.interface';
 
 const mockPrismaService = {
   db: {
-    patientObgynHistory: {
-      findUnique: jest.fn(),
-    },
-    patientAllergy: {
-      findMany: jest.fn(),
-    },
-    patientMedication: {
-      findMany: jest.fn(),
-    },
+    patientObgynHistory: { findUnique: jest.fn() },
+    patientPregnancyHistory: { findMany: jest.fn() },
+    patientNonGynSurgery: { findMany: jest.fn() },
+    patientFamilyHistory: { findMany: jest.fn() },
+    patientAllergy: { findMany: jest.fn() },
+    patientMedication: { findMany: jest.fn() },
+    patient: { findUnique: jest.fn() },
+    visitObgynEncounter: { findMany: jest.fn() },
+    formTemplate: { findFirst: jest.fn() },
   },
 };
 
-const mockAccess = {
-  assertPatientInOrg: jest.fn(),
-};
+const mockAccess = { assertPatientInOrg: jest.fn() };
 
-const mockUser = {
+const mockUser: AuthContext = {
   userId: 'user-1',
   profileId: 'profile-1',
   organizationId: 'org-1',
@@ -27,219 +26,159 @@ const mockUser = {
   branchIds: [],
 };
 
+function resetDefaults() {
+  jest.clearAllMocks();
+  mockAccess.assertPatientInOrg.mockResolvedValue(undefined);
+  mockPrismaService.db.patientPregnancyHistory.findMany.mockResolvedValue([]);
+  mockPrismaService.db.patientNonGynSurgery.findMany.mockResolvedValue([]);
+  mockPrismaService.db.patientFamilyHistory.findMany.mockResolvedValue([]);
+  mockPrismaService.db.patientAllergy.findMany.mockResolvedValue([]);
+  mockPrismaService.db.patientMedication.findMany.mockResolvedValue([]);
+  mockPrismaService.db.patient.findUnique.mockResolvedValue({
+    date_of_birth: new Date('1990-01-01'),
+  });
+  mockPrismaService.db.visitObgynEncounter.findMany.mockResolvedValue([]);
+  mockPrismaService.db.formTemplate.findFirst.mockResolvedValue({
+    sections: [
+      {
+        fields: [
+          {
+            binding_path: 'medical_chronic_illnesses.items',
+            config: {
+              validation: { options: [{ code: 'HTN', label: 'Hypertension' }] },
+            },
+          },
+          {
+            binding_path: 'family_members.condition',
+            config: {
+              validation: {
+                options: [{ code: 'BREAST_CANCER', label: 'Breast cancer' }],
+              },
+            },
+          },
+        ],
+      },
+    ],
+  });
+}
+
 describe('HistorySummaryService', () => {
   let service: HistorySummaryService;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    resetDefaults();
     service = new HistorySummaryService(
-      mockPrismaService as any,
-      mockAccess as any,
+      mockPrismaService as unknown as never,
+      mockAccess as unknown as never,
     );
   });
 
-  describe('getObgynHistorySummary', () => {
-    it('calls assertPatientInOrg with patientId and user, then queries with correct patient_id', async () => {
-      mockPrismaService.db.patientObgynHistory.findUnique.mockResolvedValue(
-        null,
-      );
-      mockPrismaService.db.patientAllergy.findMany.mockResolvedValue([]);
-      mockPrismaService.db.patientMedication.findMany.mockResolvedValue([]);
+  it('propagates NotFoundException and skips DB reads', async () => {
+    mockAccess.assertPatientInOrg.mockRejectedValue(new NotFoundException());
+    await expect(
+      service.getObgynHistorySummary('p1', mockUser),
+    ).rejects.toThrow(NotFoundException);
+    expect(
+      mockPrismaService.db.patientObgynHistory.findUnique,
+    ).not.toHaveBeenCalled();
+  });
 
-      await service.getObgynHistorySummary('patient-1', mockUser as any);
+  it('returns history_exists: false when no history row', async () => {
+    mockPrismaService.db.patientObgynHistory.findUnique.mockResolvedValue(null);
+    const r = await service.getObgynHistorySummary('p1', mockUser);
+    expect(r.history_exists).toBe(false);
+    expect(r.identifier.gtpal).toBeNull();
+    expect(r.sections).toEqual([]);
+  });
 
-      expect(mockAccess.assertPatientInOrg).toHaveBeenCalledWith(
-        'patient-1',
-        mockUser,
-      );
-      expect(
-        mockPrismaService.db.patientObgynHistory.findUnique,
-      ).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({ patient_id: 'patient-1' }),
-        }),
-      );
-      expect(mockPrismaService.db.patientAllergy.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({ patient_id: 'patient-1' }),
-        }),
-      );
-      expect(
-        mockPrismaService.db.patientMedication.findMany,
-      ).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            patient_id: 'patient-1',
-            is_ongoing: true,
-          }),
-        }),
-      );
+  it('computes GTPAL from pregnancy rows', async () => {
+    mockPrismaService.db.patientObgynHistory.findUnique.mockResolvedValue({
+      obstetric_summary: { gravida: 3 },
+      gynecological_baseline: null,
+      gynecologic_conditions: null,
+      gynecologic_procedures: null,
+      medical_chronic_illnesses: null,
+      screening_history: null,
+      social_history: null,
+    });
+    mockPrismaService.db.patientPregnancyHistory.findMany.mockResolvedValue([
+      {
+        outcome: 'LIVE_BIRTH',
+        gestational_age_weeks: 40,
+        neonatal_outcome: 'LIVE_BIRTH',
+      },
+      {
+        outcome: 'LIVE_BIRTH',
+        gestational_age_weeks: 34,
+        neonatal_outcome: 'LIVE_BIRTH',
+      },
+      {
+        outcome: 'MISCARRIAGE',
+        gestational_age_weeks: null,
+        neonatal_outcome: null,
+      },
+    ]);
+
+    const r = await service.getObgynHistorySummary('p1', mockUser);
+    expect(r.identifier.gtpal).toEqual({ g: 3, t: 1, p: 1, a: 1, l: 2 });
+    expect(r.identifier.gtpal_label).toBe('G3 T1 P1 A1 L2');
+  });
+
+  it('builds family history from family_members + a gyn-cancer flag', async () => {
+    mockPrismaService.db.patientObgynHistory.findUnique.mockResolvedValue({
+      obstetric_summary: null,
+      gynecological_baseline: null,
+      gynecologic_conditions: null,
+      gynecologic_procedures: null,
+      medical_chronic_illnesses: null,
+      screening_history: null,
+      social_history: null,
+    });
+    mockPrismaService.db.patientFamilyHistory.findMany.mockResolvedValue([
+      { condition: 'BREAST_CANCER', relative: 'Mother' },
+    ]);
+
+    const r = await service.getObgynHistorySummary('p1', mockUser);
+    const fhx = r.sections.find((s) => s.code === 'family_history');
+    expect(fhx?.status).toBe('positive');
+    expect(fhx?.items).toEqual(['Breast cancer (Mother)']);
+    expect(r.flags.some((f) => f.label === 'GYN cancer FH')).toBe(true);
+  });
+
+  it('pulls LMP from the latest visit examination', async () => {
+    mockPrismaService.db.patientObgynHistory.findUnique.mockResolvedValue({
+      obstetric_summary: null,
+      gynecological_baseline: null,
+      gynecologic_conditions: null,
+      gynecologic_procedures: null,
+      medical_chronic_illnesses: null,
+      screening_history: null,
+      social_history: null,
+    });
+    mockPrismaService.db.visitObgynEncounter.findMany.mockResolvedValue([
+      { menstrual_findings: { cycle: 'REGULAR' } },
+      { menstrual_findings: { lmp: '2026-05-01' } },
+    ]);
+
+    const r = await service.getObgynHistorySummary('p1', mockUser);
+    expect(r.identifier.lmp).toBe('2026-05-01');
+  });
+
+  it('emits pertinent negatives for empty clinical sections', async () => {
+    mockPrismaService.db.patientObgynHistory.findUnique.mockResolvedValue({
+      obstetric_summary: null,
+      gynecological_baseline: null,
+      gynecologic_conditions: null,
+      gynecologic_procedures: null,
+      medical_chronic_illnesses: null,
+      screening_history: null,
+      social_history: null,
     });
 
-    it('returns history_exists: false when no history row exists', async () => {
-      mockPrismaService.db.patientObgynHistory.findUnique.mockResolvedValue(
-        null,
-      );
-      mockPrismaService.db.patientAllergy.findMany.mockResolvedValue([]);
-      mockPrismaService.db.patientMedication.findMany.mockResolvedValue([]);
-
-      const result = await service.getObgynHistorySummary(
-        'patient-1',
-        mockUser as any,
-      );
-
-      expect(result.history_exists).toBe(false);
-      expect(result.allergies).toEqual([]);
-      expect(result.current_medications).toEqual([]);
-      expect(result.obstetric_summary).toBeNull();
-      expect(result.gynecological_baseline).toBeNull();
-      expect(result.medical_chronic_illnesses).toBeNull();
-      expect(result.family_history).toBeNull();
-      expect(result.social_history).toBeNull();
-      expect(result.screening_history).toBeNull();
-      expect(result.section_timestamps).toBeNull();
-    });
-
-    it('returns history_exists: true with all fields populated when row exists', async () => {
-      const mockHistory = {
-        obstetric_summary: {
-          gravida: 2,
-          para: 1,
-          abortion: 0,
-          ectopic: 0,
-          stillbirths: 0,
-        },
-        gynecological_baseline: {
-          age_at_menarche: 13,
-          cycle_regularity: 'REGULAR',
-          dysmenorrhea: false,
-        },
-        medical_chronic_illnesses: { items: ['Hypertension'], notes: '' },
-        family_history: {
-          gynecologic_cancers: ['Breast cancer'],
-          chronic_illnesses: [],
-        },
-        social_history: { smoking: 'NEVER', alcohol: 'NEVER' },
-        screening_history: {
-          pap_smear: 'NORMAL',
-          pap_smear_date: '2025-01-01',
-          mammography: null,
-          mammography_date: null,
-        },
-        section_timestamps: {
-          gynecological_baseline: '2025-01-01T00:00:00.000Z',
-        },
-      };
-      const mockAllergies = [
-        {
-          allergy_to: 'Penicillin',
-          severity: 'SEVERE',
-          associated_symptoms: 'Rash',
-        },
-      ];
-      const mockMedications = [
-        { drug_name: 'Metformin', dose: '500mg', frequency: 'TWICE_DAILY' },
-      ];
-
-      mockPrismaService.db.patientObgynHistory.findUnique.mockResolvedValue(
-        mockHistory,
-      );
-      mockPrismaService.db.patientAllergy.findMany.mockResolvedValue(
-        mockAllergies,
-      );
-      mockPrismaService.db.patientMedication.findMany.mockResolvedValue(
-        mockMedications,
-      );
-
-      const result = await service.getObgynHistorySummary(
-        'patient-1',
-        mockUser as any,
-      );
-
-      expect(result.history_exists).toBe(true);
-      expect(result.allergies).toEqual(mockAllergies);
-      expect(result.current_medications).toEqual(mockMedications);
-      expect(result.obstetric_summary).toEqual(mockHistory.obstetric_summary);
-      expect(result.gynecological_baseline).toEqual(
-        mockHistory.gynecological_baseline,
-      );
-      expect(result.medical_chronic_illnesses).toEqual(
-        mockHistory.medical_chronic_illnesses,
-      );
-      expect(result.family_history).toEqual(mockHistory.family_history);
-      expect(result.social_history).toEqual(mockHistory.social_history);
-      expect(result.screening_history).toEqual(mockHistory.screening_history);
-      expect(result.section_timestamps).toEqual(mockHistory.section_timestamps);
-    });
-
-    it('returns empty arrays when history exists but no allergies or medications', async () => {
-      const mockHistory = {
-        obstetric_summary: null,
-        gynecological_baseline: null,
-        medical_chronic_illnesses: null,
-        family_history: null,
-        social_history: null,
-        screening_history: null,
-        section_timestamps: null,
-      };
-      mockPrismaService.db.patientObgynHistory.findUnique.mockResolvedValue(
-        mockHistory,
-      );
-      mockPrismaService.db.patientAllergy.findMany.mockResolvedValue([]);
-      mockPrismaService.db.patientMedication.findMany.mockResolvedValue([]);
-
-      const result = await service.getObgynHistorySummary(
-        'patient-1',
-        mockUser as any,
-      );
-
-      expect(result.history_exists).toBe(true);
-      expect(result.allergies).toEqual([]);
-      expect(result.current_medications).toEqual([]);
-    });
-
-    it('returns section_timestamps: null when DB value is malformed (array or primitive)', async () => {
-      const mockHistory = {
-        obstetric_summary: null,
-        gynecological_baseline: null,
-        medical_chronic_illnesses: null,
-        family_history: null,
-        social_history: null,
-        screening_history: null,
-        section_timestamps: ['bad'],
-      };
-      mockPrismaService.db.patientObgynHistory.findUnique.mockResolvedValue(
-        mockHistory,
-      );
-      mockPrismaService.db.patientAllergy.findMany.mockResolvedValue([]);
-      mockPrismaService.db.patientMedication.findMany.mockResolvedValue([]);
-
-      const result = await service.getObgynHistorySummary(
-        'patient-1',
-        mockUser as any,
-      );
-
-      expect(result.section_timestamps).toBeNull();
-    });
-
-    it('propagates NotFoundException from assertPatientInOrg and skips all DB queries', async () => {
-      mockAccess.assertPatientInOrg.mockRejectedValue(
-        new NotFoundException('Patient patient-1 not found'),
-      );
-
-      await expect(
-        service.getObgynHistorySummary('patient-1', mockUser as any),
-      ).rejects.toThrow(NotFoundException);
-
-      expect(
-        mockPrismaService.db.patientObgynHistory.findUnique,
-      ).not.toHaveBeenCalled();
-      expect(
-        mockPrismaService.db.patientAllergy.findMany,
-      ).not.toHaveBeenCalled();
-      expect(
-        mockPrismaService.db.patientMedication.findMany,
-      ).not.toHaveBeenCalled();
-    });
+    const r = await service.getObgynHistorySummary('p1', mockUser);
+    const allergies = r.sections.find((s) => s.code === 'allergies');
+    expect(allergies?.status).toBe('negative');
+    expect(allergies?.items).toEqual(['No known allergies']);
+    expect(r.flags.some((f) => f.label === 'No known allergies')).toBe(true);
   });
 });

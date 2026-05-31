@@ -551,6 +551,7 @@ Table patients {
   pregnancies patient_pregnancy_history [not null]
   contraceptives patient_contraceptive_history [not null]
   non_gyn_surgeries patient_non_gyn_surgeries [not null]
+  family_history_entries patient_family_history [not null]
   current_medications patient_medications [not null]
   history_notes patient_history_notes [not null]
   field_flags patient_field_flags [not null]
@@ -640,6 +641,7 @@ Table visits {
   obgyn_encounter visit_obgyn_encounters
   pregnancy_record visit_pregnancy_records
   investigations visit_investigations [not null]
+  diagnoses visit_diagnoses [not null]
   prescription prescriptions
   invoices invoices [not null]
   created_at DateTime [default: `now()`, not null]
@@ -786,6 +788,36 @@ Table visit_investigations {
   updated_at DateTime [not null]
 }
 
+Table visit_diagnoses {
+  id String [pk]
+  visit_id String [not null]
+  visit visits [not null]
+  code String [not null]
+  description String [not null]
+  is_primary Boolean [not null, default: false]
+  certainty String
+  order Int [not null, default: 0]
+  created_by_id String
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
+Table diagnosis_codes {
+  id String [pk]
+  code String [unique, not null]
+  description String [not null]
+  chapter String
+  specialty_code String
+  billable Boolean [not null, default: true]
+  keywords String
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
 Table prescriptions {
   id String [pk]
   visit_id String [unique, not null]
@@ -855,10 +887,27 @@ Table patient_pregnancy_history {
   gestational_age_weeks Int
   neonatal_outcome String
   neonatal_outcome_other String
+  baby_weight String
+  baby_sex String
   complications String
   notes String
   created_by_id String
   created_by profiles
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
+Table patient_family_history {
+  id String [pk]
+  patient_id String [not null]
+  patient patients [not null]
+  condition String [not null]
+  relative String
+  age_of_diagnosis Int
+  notes String
+  created_by_id String
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
@@ -1097,6 +1146,8 @@ Table patient_obgyn_histories {
   revisions patient_obgyn_history_revisions [not null]
   gynecological_baseline Json
   gynecologic_procedures Json
+  gynecologic_conditions Json
+  sexual_history Json
   screening_history Json
   obstetric_summary Json
   medical_chronic_illnesses Json
@@ -1917,6 +1968,7 @@ Enum BindingNamespace {
   VISIT_VITALS
   VISIT_OBGYN_ENCOUNTER
   VISIT_INVESTIGATION
+  VISIT_DIAGNOSIS
   PRESCRIPTION_ITEM
 }
 
@@ -2196,6 +2248,8 @@ Ref: visit_investigations.ordered_by_id > profiles.id [delete: Set Null]
 
 Ref: visit_investigations.updated_by_id > profiles.id [delete: Set Null]
 
+Ref: visit_diagnoses.visit_id > visits.id [delete: Cascade]
+
 Ref: prescriptions.visit_id - visits.id [delete: Cascade]
 
 Ref: prescriptions.prescribed_by_id > profiles.id [delete: Cascade]
@@ -2215,6 +2269,8 @@ Ref: patient_allergies.created_by_id > profiles.id [delete: Set Null]
 Ref: patient_pregnancy_history.patient_id > patients.id [delete: Cascade]
 
 Ref: patient_pregnancy_history.created_by_id > profiles.id [delete: Set Null]
+
+Ref: patient_family_history.patient_id > patients.id [delete: Cascade]
 
 Ref: patient_contraceptive_history.patient_id > patients.id [delete: Cascade]
 
