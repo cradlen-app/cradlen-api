@@ -690,8 +690,8 @@ export class ObgynExaminationService {
           // `dose` and `frequency` are NOT NULL on the column; coalesce to "".
           ...(row.dose !== undefined && { dose: row.dose }),
           ...(row.frequency !== undefined && { frequency: row.frequency }),
-          ...(row.duration_days !== undefined && {
-            duration_days: row.duration_days,
+          ...(row.duration !== undefined && {
+            duration: row.duration,
           }),
           ...(row.instructions !== undefined && {
             instructions: row.instructions,
@@ -711,7 +711,7 @@ export class ObgynExaminationService {
           // NOT NULL columns — keep empty string when caller omits.
           dose: row.dose ?? '',
           frequency: row.frequency ?? '',
-          duration_days: row.duration_days ?? null,
+          duration: row.duration ?? null,
           instructions: row.instructions ?? null,
           order: nextOrder++,
         },
