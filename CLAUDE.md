@@ -205,6 +205,15 @@ Two distinct but related structural concepts — do not conflate:
 
 At booking time (`bookVisit`), the service: resolves `specialty_code` → `specialty_id` → picks the correct `CarePath` → finds the matching `JourneyTemplate` by code → creates `PatientJourney` + first `PatientEpisode` if not already active.
 
+### Journey-centric clinical chart
+
+One patient = one chart holding a **sequence** of time-bounded journeys; **exactly one is ACTIVE at a time** (`PatientJourney.status=ACTIVE`, `ended_at` null) — journeys are sequential, never concurrent. A **visit** is an encounter within the active journey and serves two things at once: the **presenting encounter** (Examination tab, visit-scoped, `examination_version`) and the **active journey's surveillance** (the journey tab, with its **own** version token). E.g. a pregnant woman presenting with pelvic pain → one *Examination* entry (pelvic-pain workup) + one *Pregnancy* entry (journey profile + today's maternal/fetal check), both under the single active pregnancy journey.
+
+- **Surface declaration.** A care path may declare a clinical surface via `CarePathClinicalSurface` (template + label). When present, the visit workspace renders **one** dynamic journey tab; when absent, none. Seeded empty today → mechanism dormant.
+- **Descriptor endpoint (live).** `GET /v1/visits/:visitId/journey` → `JourneyDescriptorDto | null` (`JourneysModule`, `src/core/clinical/journeys/`). Resolves the visit's own episode → journey (the active one for a live visit) and folds in the declared surface; gates via `PatientAccessService.assertVisitInOrg`. `clinical_surface` is null when the care path declares none.
+- **Surface read/write (contract; writer deferred to the pregnancy vertical).** `GET`/`PATCH /v1/visits/:visitId/journeys/:journeyId/clinical` — flat envelope `{ journey_id, version, …journey + per-visit fields }`, `If-Match: "version:N"`, composite write across the journey/episode/visit scoped records (`PregnancyJourneyRecord` / `PregnancyEpisodeRecord` / `VisitPregnancyRecord`) in one transaction with `*_revisions` shadows + the `journey.clinical.updated` event (`@core/clinical/events`). The backend demuxes each field into the right scoped record by binding namespace (the surface envelope is flat — no FE namespace containers).
+- Full standard: `cradlen-web/docs/superpowers/specs/journey-centric-clinical-chart.md`.
+
 ### OB/GYN specialty surfaces
 
 `src/specialties/obgyn/` exposes multiple controller groups, each mapping to a UI tab:
@@ -321,6 +330,7 @@ Core entities:
 - **Visit.appointment_type** is `VISIT | FOLLOW_UP`. `MEDICAL_REP` visits live in a separate table — see below.
 - **CarePath** + **CarePathEpisode** — clinical pathway definitions (system or org-specific). Filtered by `specialty_code` + org scope at query time.
 - **CarePathHistorySection** — `(specialty_code, care_path_code, section_code)` lookup mapping a care path to the patient-history sections relevant to it (string-keyed, like `ChiefComplaintCategory` — no FK). Surfaced on `CarePathDto.history_section_codes`; drives which embedded `history_*` sections the OB/GYN examination surfaces. Seeded by `prisma/seeds/care-path-history-sections.ts`.
+- **CarePathClinicalSurface** — `(specialty_code, care_path_code)` → `{ template_code, label, order }` lookup (string-keyed, like `CarePathHistorySection` — no FK). Declares the optional **journey clinical surface** for a care path (the form template backing the active-journey tab). Seeded **empty** today (`prisma/seeds/care-path-clinical-surfaces.ts`) — the pregnancy vertical adds the `OBGYN_PREGNANCY` row. See "Journey-centric clinical chart" below.
 - **JourneyTemplate** — visit/episode blueprint with `code` (unique per specialty) and `scope`. The booking flow resolves template → creates PatientJourney + PatientEpisode.
 - **CalendarEvent** — per-profile calendar entries with `event_type`, `visibility`, optional `branch_id`. Managed by `CalendarModule`; publishes `CALENDAR_EVENTS`.
 - **MedicalRep** + **MedicalRepVisit** + **MedicalRepMedication** + **MedicalRepVisitMedication** — org-scoped pharma rep visits. Booked via `POST /v1/medical-rep-visits/book`; search via `GET /v1/medical-reps?search=`. No patient/episode/journey.
