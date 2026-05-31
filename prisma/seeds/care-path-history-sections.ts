@@ -29,15 +29,25 @@ const OBGYN_CARE_PATH_HISTORY: CarePathHistoryMap[] = [
   {
     specialtyCode: 'OBGYN',
     carePathCode: 'OBGYN_GENERAL',
+    // Full history — a General GYN encounter surfaces every section so the
+    // examination simulates a complete clinical intake.
     sectionCodes: [
       'menstrual_history',
+      'gynecologic_procedures',
       'gynecologic_conditions',
       'sexual_history',
       'contraceptives',
       'screening_vaccinations',
+      'social_history',
+      'obstetric_summary',
+      'pregnancies',
       'medical_chronic_illnesses',
+      'non_gyn_surgeries',
       'allergies',
       'medications',
+      'family_members',
+      'menopause_history',
+      'fertility_history',
     ],
   },
   {
