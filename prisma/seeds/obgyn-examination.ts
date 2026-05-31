@@ -34,7 +34,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import { buildHistorySections } from './obgyn-patient-history.js';
 
 const TEMPLATE_CODE = 'obgyn_examination';
-const TEMPLATE_VERSION = 4;
+const TEMPLATE_VERSION = 6;
 
 // Embedded patient-history sections carry a `history_` prefix so their codes
 // never collide with encounter sections (e.g. history `medications` vs the
@@ -967,28 +967,54 @@ const SECTIONS: SectionSpec[] = [
   // 9. Provisional Diagnosis  (VisitEncounter)
   // ---------------------------------------------------------------------------
   {
-    code: 'provisional_diagnosis',
+    // Structured, ICD-10-coded diagnosis list (repeatable). Each row carries a
+    // searchable ICD-10 code + description, a primary flag, and certainty.
+    // The server mirrors the primary row's description onto
+    // VisitEncounter.provisional_diagnosis (completion guard + summaries).
+    code: 'diagnoses',
     name: 'Provisional Diagnosis',
     group: 'Provisional Diagnosis',
+    is_repeatable: true,
     fields: [
       {
-        code: 'diagnosis',
+        code: 'diagnosis_search',
         label: 'Diagnosis',
-        type: 'TEXT',
-        binding: {
-          namespace: 'VISIT_ENCOUNTER',
-          path: 'provisional_diagnosis',
+        type: 'ENTITY_SEARCH',
+        binding: { namespace: 'VISIT_DIAGNOSIS', path: 'description' },
+        config: {
+          ui: {
+            placeholder: 'Search ICD-10 by name or code',
+            colSpan: 6,
+            searchEntity: {
+              kind: 'diagnosis',
+              idTarget: 'diagnosis_code',
+              allowCreate: true,
+            },
+          },
+          logic: { entity: 'diagnosis' },
         },
-        config: { ui: { placeholder: 'Search', colSpan: 8 } },
+      },
+      {
+        // Hidden sibling — receives the resolved ICD-10 code when the user
+        // picks a suggestion (idTarget of diagnosis_search). Free text without
+        // a pick leaves it empty.
+        code: 'diagnosis_code',
+        label: 'ICD-10 code',
+        type: 'TEXT',
+        binding: { namespace: 'VISIT_DIAGNOSIS', path: 'code' },
+      },
+      {
+        code: 'is_primary',
+        label: 'Primary',
+        type: 'BOOLEAN',
+        binding: { namespace: 'VISIT_DIAGNOSIS', path: 'is_primary' },
+        config: { ui: { colSpan: 2 } },
       },
       {
         code: 'certainty',
         label: 'Certainty',
         type: 'SELECT',
-        binding: {
-          namespace: 'VISIT_ENCOUNTER',
-          path: 'diagnosis_certainty',
-        },
+        binding: { namespace: 'VISIT_DIAGNOSIS', path: 'certainty' },
         config: {
           ui: { placeholder: 'Ex : Confirmed', colSpan: 4 },
           validation: {
@@ -1000,6 +1026,13 @@ const SECTIONS: SectionSpec[] = [
           },
         },
       },
+    ],
+  },
+  {
+    code: 'clinical_reasoning',
+    name: 'Clinical Reasoning',
+    group: 'Provisional Diagnosis',
+    fields: [
       {
         code: 'clinical_reasoning',
         label: 'Clinical Reasoning',

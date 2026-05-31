@@ -15,6 +15,7 @@ import { buildRevision } from '../revisions.helper';
 import {
   AllergyRowDto,
   ContraceptiveRowDto,
+  FamilyHistoryRowDto,
   MedicationRowDto,
   NonGynSurgeryRowDto,
   PregnancyRowDto,
@@ -24,6 +25,8 @@ import {
 const SINGLETON_JSON_FIELDS = [
   'gynecological_baseline',
   'gynecologic_procedures',
+  'gynecologic_conditions',
+  'sexual_history',
   'screening_history',
   'obstetric_summary',
   'medical_chronic_illnesses',
@@ -188,6 +191,16 @@ export class ObgynHistoryService {
       );
       changedSections.push('non_gyn_surgeries');
     }
+    if (dto.family_members !== undefined) {
+      await this.diffFamilyHistory(
+        tx,
+        patientId,
+        priorChildren.family_members,
+        dto.family_members,
+        profileId,
+      );
+      changedSections.push('family_members');
+    }
     if (dto.medications !== undefined) {
       await this.diffMedications(
         tx,
@@ -293,6 +306,7 @@ export class ObgynHistoryService {
       pregnancies,
       contraceptives,
       non_gyn_surgeries,
+      family_members,
       medications,
       allergies,
     ] = await Promise.all([
@@ -308,6 +322,10 @@ export class ObgynHistoryService {
         where,
         orderBy: [{ surgery_date: 'desc' }, { created_at: 'desc' }],
       }),
+      tx.patientFamilyHistory.findMany({
+        where,
+        orderBy: { created_at: 'desc' },
+      }),
       tx.patientMedication.findMany({
         where,
         orderBy: [
@@ -322,6 +340,7 @@ export class ObgynHistoryService {
       pregnancies,
       contraceptives,
       non_gyn_surgeries,
+      family_members,
       medications,
       allergies,
     };
@@ -369,6 +388,10 @@ export class ObgynHistoryService {
           ...(row.neonatal_outcome_other !== undefined && {
             neonatal_outcome_other: row.neonatal_outcome_other,
           }),
+          ...(row.baby_weight !== undefined && {
+            baby_weight: row.baby_weight,
+          }),
+          ...(row.baby_sex !== undefined && { baby_sex: row.baby_sex }),
           ...(row.complications !== undefined && {
             complications: row.complications,
           }),
@@ -387,6 +410,8 @@ export class ObgynHistoryService {
           gestational_age_weeks: row.gestational_age_weeks ?? null,
           neonatal_outcome: row.neonatal_outcome ?? null,
           neonatal_outcome_other: row.neonatal_outcome_other ?? null,
+          baby_weight: row.baby_weight ?? null,
+          baby_sex: row.baby_sex ?? null,
           complications: row.complications ?? null,
           notes: row.notes ?? null,
           created_by_id: profileId,
@@ -487,6 +512,48 @@ export class ObgynHistoryService {
     }
     if (toDelete.length > 0) {
       await tx.patientNonGynSurgery.updateMany({
+        where: { id: { in: toDelete } },
+        data: { is_deleted: true, deleted_at: new Date() },
+      });
+    }
+  }
+
+  private async diffFamilyHistory(
+    tx: Prisma.TransactionClient,
+    patientId: string,
+    prior: Array<{ id: string }>,
+    rows: FamilyHistoryRowDto[],
+    profileId: string,
+  ) {
+    const liveIds = new Set(prior.map((p) => p.id));
+    const { toUpdate, toCreate, toDelete } = splitDiff(rows, liveIds);
+    for (const row of toUpdate) {
+      await tx.patientFamilyHistory.update({
+        where: { id: row.id! },
+        data: {
+          ...(row.condition !== undefined && { condition: row.condition }),
+          ...(row.relative !== undefined && { relative: row.relative }),
+          ...(row.age_of_diagnosis !== undefined && {
+            age_of_diagnosis: row.age_of_diagnosis,
+          }),
+          ...(row.notes !== undefined && { notes: row.notes }),
+        },
+      });
+    }
+    for (const row of toCreate) {
+      await tx.patientFamilyHistory.create({
+        data: {
+          patient_id: patientId,
+          condition: row.condition ?? '',
+          relative: row.relative ?? null,
+          age_of_diagnosis: row.age_of_diagnosis ?? null,
+          notes: row.notes ?? null,
+          created_by_id: profileId,
+        },
+      });
+    }
+    if (toDelete.length > 0) {
+      await tx.patientFamilyHistory.updateMany({
         where: { id: { in: toDelete } },
         data: { is_deleted: true, deleted_at: new Date() },
       });

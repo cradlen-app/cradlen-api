@@ -1,5 +1,6 @@
 import {
   IsArray,
+  IsBoolean,
   IsDateString,
   IsInt,
   IsNumber,
@@ -56,6 +57,14 @@ export class InvestigationRowDto {
   @IsOptional() @IsString() custom_test_name?: string;
   @IsOptional() @IsString() lab_facility?: string;
   @IsOptional() @IsString() notes?: string;
+}
+
+export class DiagnosisRowDto {
+  @IsOptional() @IsUUID() id?: string;
+  @IsOptional() @IsString() code?: string;
+  @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsBoolean() is_primary?: boolean;
+  @IsOptional() @IsString() certainty?: string;
 }
 
 export class MedicationItemRowDto {
@@ -116,6 +125,13 @@ export class UpdateObgynExaminationDto {
   @IsOptional() @IsObject() neurological_findings?: Record<string, unknown>;
   @IsOptional() @IsObject() skin_findings?: Record<string, unknown>;
 
+  // VisitDiagnosis rows (id-keyed diff) — structured ICD-10 diagnosis list
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DiagnosisRowDto)
+  diagnoses?: DiagnosisRowDto[];
+
   // VisitInvestigation rows (id-keyed diff)
   @IsOptional()
   @IsArray()
@@ -168,6 +184,7 @@ export class VisitExaminationEnvelopeDto {
   extremities_findings!: unknown;
   neurological_findings!: unknown;
   skin_findings!: unknown;
+  diagnoses!: unknown[];
   investigations!: unknown[];
   medications!: unknown[];
   follow_up_date!: string | null;

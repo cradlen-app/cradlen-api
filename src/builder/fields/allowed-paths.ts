@@ -82,12 +82,24 @@ export const ALLOWED_PATHS = {
     'gynecological_baseline.dysmenorrhea',
     'gynecologic_procedures.items',
     'gynecologic_procedures.notes',
+    'gynecologic_conditions.items',
+    'gynecologic_conditions.notes',
+    'sexual_history.age_first_intercourse',
+    'sexual_history.num_partners',
+    'sexual_history.partner_gender',
+    'sexual_history.currently_active',
+    'sexual_history.sti_history',
+    'sexual_history.sti_history_other',
     'screening_history.pap_smear',
     'screening_history.pap_smear_date',
     'screening_history.mammography',
     'screening_history.mammography_date',
     'screening_history.vaccines',
     'screening_history.vaccines_other',
+    'screening_history.last_colonoscopy',
+    'screening_history.last_bone_density',
+    'screening_history.last_tetanus',
+    'screening_history.last_flu',
     'obstetric_summary.gravida',
     'obstetric_summary.para',
     'obstetric_summary.abortion',
@@ -113,6 +125,13 @@ export const ALLOWED_PATHS = {
     'pregnancies.gestational_age_weeks',
     'pregnancies.neonatal_outcome',
     'pregnancies.neonatal_outcome_other',
+    'pregnancies.baby_weight',
+    'pregnancies.baby_sex',
+    'pregnancies.complications',
+    'family_members.condition',
+    'family_members.relative',
+    'family_members.age_of_diagnosis',
+    'family_members.notes',
     'contraceptives.method',
     'contraceptives.method_other',
     'contraceptives.duration',
@@ -127,8 +146,14 @@ export const ALLOWED_PATHS = {
     'allergies.associated_symptoms',
     // social_history — column existed but paths were missing
     'social_history.smoking',
+    'social_history.smoking_status',
+    'social_history.smoking_detail',
     'social_history.alcohol',
+    'social_history.recreational_drugs',
+    'social_history.exercise',
     'social_history.occupation',
+    'social_history.employer',
+    'social_history.ethnicity',
     // medications — 4 fields present in DTO but absent from template
     'medications.dose',
     'medications.frequency',
@@ -238,6 +263,11 @@ export const ALLOWED_PATHS = {
     'lab_facility',
     'notes',
   ],
+  // VISIT_DIAGNOSIS targets repeatable rows in `visit_diagnoses` — the
+  // structured ICD-10 diagnosis list. Row diff is id-keyed like
+  // VISIT_INVESTIGATION. `code` holds the ICD-10 code (resolved via the
+  // diagnosis ENTITY_SEARCH); `description` is the human-readable text.
+  VISIT_DIAGNOSIS: ['code', 'description', 'is_primary', 'certainty'],
   // PRESCRIPTION_ITEM targets repeatable rows in `prescription_items` under
   // the visit's `prescriptions` singleton. Row diff semantics identical to
   // VISIT_INVESTIGATION.

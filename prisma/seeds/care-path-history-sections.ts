@@ -31,6 +31,8 @@ const OBGYN_CARE_PATH_HISTORY: CarePathHistoryMap[] = [
     carePathCode: 'OBGYN_GENERAL',
     sectionCodes: [
       'menstrual_history',
+      'gynecologic_conditions',
+      'sexual_history',
       'contraceptives',
       'screening_vaccinations',
       'medical_chronic_illnesses',
@@ -48,7 +50,7 @@ const OBGYN_CARE_PATH_HISTORY: CarePathHistoryMap[] = [
       'medical_chronic_illnesses',
       'allergies',
       'medications',
-      'family_history',
+      'family_members',
     ],
   },
   {
@@ -56,6 +58,7 @@ const OBGYN_CARE_PATH_HISTORY: CarePathHistoryMap[] = [
     carePathCode: 'OBGYN_SURGICAL',
     sectionCodes: [
       'gynecologic_procedures',
+      'gynecologic_conditions',
       'non_gyn_surgeries',
       'medical_chronic_illnesses',
       'allergies',
@@ -67,10 +70,11 @@ const OBGYN_CARE_PATH_HISTORY: CarePathHistoryMap[] = [
     carePathCode: 'OBGYN_INFERTILITY',
     sectionCodes: [
       'fertility_history',
+      'sexual_history',
       'menstrual_history',
       'obstetric_summary',
       'contraceptives',
-      'family_history',
+      'family_members',
     ],
   },
 ];

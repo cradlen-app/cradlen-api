@@ -32,6 +32,7 @@ const ALL_NS: readonly BindingNamespace[] = [
   'VISIT_VITALS',
   'VISIT_OBGYN_ENCOUNTER',
   'VISIT_INVESTIGATION',
+  'VISIT_DIAGNOSIS',
   'PRESCRIPTION_ITEM',
 ];
 
@@ -147,6 +148,7 @@ export const FIELD_TYPES: Record<FormFieldType, FieldTypeDescriptor> = {
       'MEDICAL_REP',
       'PATIENT_OBGYN_HISTORY',
       'VISIT_INVESTIGATION',
+      'VISIT_DIAGNOSIS',
       'PRESCRIPTION_ITEM',
       'VISIT_ENCOUNTER',
     ]),
