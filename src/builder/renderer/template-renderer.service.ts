@@ -24,6 +24,11 @@ export interface RenderedTemplate {
   scope: FormScope;
   version: number;
   activated_at: Date | null;
+  /**
+   * Display-only templates render read-only in the frontend (no input controls)
+   * and are never a write target. e.g. the OB/GYN patient-history surface.
+   */
+  is_display_only: boolean;
   specialty_id: string | null;
   sections: SectionDescriptor[];
 }
@@ -43,6 +48,7 @@ export class TemplateRendererService {
       scope: template.scope,
       version: template.version,
       activated_at: template.activated_at,
+      is_display_only: template.is_display_only,
       specialty_id: template.specialty_id,
       sections: [...template.sections]
         .sort((a, b) => a.order - b.order)

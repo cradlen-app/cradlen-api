@@ -11,6 +11,7 @@ import {
 } from '@core/clinical/events/events.public';
 import { PatientAccessService } from '@core/patient/patient-access/patient-access.public';
 import { buildRevision } from '../revisions.helper';
+import { ObgynHistoryService } from '../patient-history/obgyn-history.service';
 import {
   InvestigationRowDto,
   MedicationItemRowDto,
@@ -75,7 +76,26 @@ export class ObgynExaminationService {
     private readonly prismaService: PrismaService,
     private readonly access: PatientAccessService,
     private readonly eventBus: EventBus,
+    private readonly obgynHistory: ObgynHistoryService,
   ) {}
+
+  /** Resolve the patient that owns a visit via episode → journey. */
+  private async resolvePatientId(
+    tx: Prisma.TransactionClient | typeof this.prismaService.db,
+    visitId: string,
+  ): Promise<string> {
+    const visit = await tx.visit.findUnique({
+      where: { id: visitId },
+      select: {
+        episode: { select: { journey: { select: { patient_id: true } } } },
+      },
+    });
+    const patientId = visit?.episode?.journey?.patient_id;
+    if (!patientId) {
+      throw new NotFoundException(`Patient for visit ${visitId} not found`);
+    }
+    return patientId;
+  }
 
   // ---------------------------------------------------------------------------
   // GET — combined envelope
@@ -92,7 +112,21 @@ export class ObgynExaminationService {
   ) {
     const [visit, encounter, vitals, obgyn, investigations, prescription] =
       await Promise.all([
-        tx.visit.findUnique({ where: { id: visitId } }),
+        tx.visit.findUnique({
+          where: { id: visitId },
+          include: {
+            episode: {
+              select: {
+                journey: {
+                  select: {
+                    patient_id: true,
+                    care_path: { select: { code: true } },
+                  },
+                },
+              },
+            },
+          },
+        }),
         tx.visitEncounter.findUnique({ where: { visit_id: visitId } }),
         tx.visitVitals.findUnique({ where: { visit_id: visitId } }),
         tx.visitObgynEncounter.findUnique({ where: { visit_id: visitId } }),
@@ -111,6 +145,16 @@ export class ObgynExaminationService {
         }),
       ]);
 
+    // Patient-level history (for pre-filling the care-path-relevant `history_*`
+    // sections) + the journey's care path so the picker defaults to where
+    // booking left off when the encounter hasn't set its own `case_path` yet.
+    const patientId = visit?.episode?.journey?.patient_id ?? null;
+    const obgynHistory = patientId
+      ? await this.obgynHistory.readEnvelope(patientId, tx)
+      : null;
+    const journeyCarePathCode =
+      visit?.episode?.journey?.care_path?.code ?? null;
+
     return {
       visit_id: visitId,
       // VisitEncounter scalars
@@ -120,7 +164,7 @@ export class ObgynExaminationService {
       diagnosis_code: encounter?.diagnosis_code ?? null,
       diagnosis_certainty: encounter?.diagnosis_certainty ?? null,
       clinical_reasoning: encounter?.clinical_reasoning ?? null,
-      case_path: encounter?.case_path ?? null,
+      case_path: encounter?.case_path ?? journeyCarePathCode,
       // Vitals (column-wise, not nested) so FE bindings can read each field by name
       vitals: vitals
         ? {
@@ -150,6 +194,8 @@ export class ObgynExaminationService {
       // Repeatable rows
       investigations: investigations,
       medications: prescription?.items ?? [],
+      // Patient-level OB/GYN history envelope (pre-fills care-path history sections)
+      obgyn_history: obgynHistory,
       // Visit-level
       follow_up_date: visit?.follow_up_date ?? null,
       examination_version: visit?.examination_version ?? 1,
@@ -218,6 +264,23 @@ export class ObgynExaminationService {
           user.profileId,
         );
         aggregates.push('prescription');
+      }
+
+      // ---- (6) Patient-level OB/GYN history (care-path-relevant capture) ----
+      // Routed to PatientObgynHistory (single source of truth) in THIS
+      // transaction. `null` If-Match: the examination's own examination_version
+      // already guards concurrency, so the history write reads + bumps the
+      // current history version in-tx without a separate client precondition.
+      if (dto.obgyn_history !== undefined) {
+        const patientId = await this.resolvePatientId(tx, visitId);
+        await this.obgynHistory.applyPatch(
+          tx,
+          patientId,
+          dto.obgyn_history,
+          null,
+          user.profileId,
+        );
+        aggregates.push('obgyn_history');
       }
 
       // ---- Visit-level: follow_up_date + version bump ----

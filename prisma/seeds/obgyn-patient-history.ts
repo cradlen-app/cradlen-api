@@ -34,10 +34,10 @@ import type { Predicate } from '../../src/builder/rules/predicates.js';
 const TEMPLATE_CODE = 'obgyn_patient_history';
 const TEMPLATE_VERSION = 4;
 
-type FieldType = keyof typeof FIELD_TYPES;
-type SectionConfig = { ui?: any; validation?: any; logic?: any };
+export type FieldType = keyof typeof FIELD_TYPES;
+export type SectionConfig = { ui?: any; validation?: any; logic?: any };
 
-interface FieldSpec {
+export interface FieldSpec {
   code: string;
   label: string;
   type: FieldType;
@@ -46,7 +46,7 @@ interface FieldSpec {
   config?: SectionConfig;
 }
 
-interface SectionSpec {
+export interface SectionSpec {
   code: string;
   name: string;
   /**
@@ -59,9 +59,15 @@ interface SectionSpec {
   fields: FieldSpec[];
 }
 
-const opt = (code: string, label: string) => ({ code, label });
+export const opt = (code: string, label: string) => ({ code, label });
 
-const SECTIONS: SectionSpec[] = [
+/**
+ * Canonical OB/GYN patient-history section catalog — the single source of truth
+ * for history fields. Consumed by this template seed AND embedded (code-prefixed)
+ * into the examination template via {@link buildHistorySections}. Never mutate
+ * this array directly; clone through {@link buildHistorySections}.
+ */
+export const HISTORY_SECTIONS: SectionSpec[] = [
   {
     code: 'menstrual_history',
     name: 'Menstrual History',
@@ -1043,8 +1049,8 @@ const SECTIONS: SectionSpec[] = [
  * predicate is the field's full binding path so the predicate evaluator
  * can look it up on the unified payload.
  */
-function emitNoneExclusivityPredicates(): void {
-  for (const section of SECTIONS) {
+export function emitNoneExclusivityPredicates(sections: SectionSpec[]): void {
+  for (const section of sections) {
     for (const f of section.fields) {
       if (f.type !== 'MULTISELECT') continue;
       const options = f.config?.validation?.options as
@@ -1073,8 +1079,8 @@ function emitNoneExclusivityPredicates(): void {
   }
 }
 
-function assertAllValid(): void {
-  for (const section of SECTIONS) {
+export function assertHistorySectionsValid(sections: SectionSpec[]): void {
+  for (const section of sections) {
     assertValidConfig(
       buildSectionConfig(section),
       `section "${section.code}"`,
@@ -1098,7 +1104,7 @@ function assertAllValid(): void {
   }
 }
 
-function buildSectionConfig(section: SectionSpec): SectionConfig {
+export function buildSectionConfig(section: SectionSpec): SectionConfig {
   return {
     ui: { group: section.group },
     validation: {},
@@ -1106,9 +1112,23 @@ function buildSectionConfig(section: SectionSpec): SectionConfig {
   };
 }
 
+/**
+ * Returns a fresh deep clone of {@link HISTORY_SECTIONS} (optionally with every
+ * section `code` prefixed) with none-exclusivity predicates applied. A new clone
+ * per call keeps the canonical array immutable when both the history and
+ * examination seeds run in the same process.
+ */
+export function buildHistorySections(codePrefix = ''): SectionSpec[] {
+  const cloned: SectionSpec[] = structuredClone(HISTORY_SECTIONS).map((s) =>
+    codePrefix ? { ...s, code: `${codePrefix}${s.code}` } : s,
+  );
+  emitNoneExclusivityPredicates(cloned);
+  return cloned;
+}
+
 export async function seedObgynPatientHistoryTemplate(prisma: PrismaClient) {
-  emitNoneExclusivityPredicates();
-  assertAllValid();
+  const sections = buildHistorySections();
+  assertHistorySectionsValid(sections);
 
   const gynSpecialty = await prisma.specialty.findUnique({
     where: { code: 'OBGYN' },
@@ -1121,8 +1141,9 @@ export async function seedObgynPatientHistoryTemplate(prisma: PrismaClient) {
     update: {
       name: 'OB/GYN Patient History',
       description:
-        'Patient-level OB/GYN history surface. Writes via the unified bulk PATCH /patients/:id/obgyn-history.',
+        'Read-only patient-level OB/GYN history surface (the "specialty full history" view, GET /patients/:id/obgyn-history). Display-only — capture happens in the examination flow.',
       scope: 'PATIENT_HISTORY',
+      is_display_only: true,
       specialty_id: gynSpecialty?.id ?? null,
       parent_template_id: null,
       extension_key: null,
@@ -1132,15 +1153,16 @@ export async function seedObgynPatientHistoryTemplate(prisma: PrismaClient) {
       version: TEMPLATE_VERSION,
       name: 'OB/GYN Patient History',
       description:
-        'Patient-level OB/GYN history surface. Writes via the unified bulk PATCH /patients/:id/obgyn-history.',
+        'Read-only patient-level OB/GYN history surface (the "specialty full history" view, GET /patients/:id/obgyn-history). Display-only — capture happens in the examination flow.',
       scope: 'PATIENT_HISTORY',
       status: 'DRAFT',
+      is_display_only: true,
       specialty_id: gynSpecialty?.id ?? null,
     },
   });
 
-  for (let i = 0; i < SECTIONS.length; i++) {
-    const sectionSpec = SECTIONS[i];
+  for (let i = 0; i < sections.length; i++) {
+    const sectionSpec = sections[i];
     const section = await prisma.formSection.upsert({
       where: {
         form_template_id_code: {
@@ -1216,6 +1238,6 @@ export async function seedObgynPatientHistoryTemplate(prisma: PrismaClient) {
   ]);
 
   console.log(
-    `Seeded ${TEMPLATE_CODE} v${TEMPLATE_VERSION} (${SECTIONS.length} sections, activated).`,
+    `Seeded ${TEMPLATE_CODE} v${TEMPLATE_VERSION} (${sections.length} sections, activated).`,
   );
 }

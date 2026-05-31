@@ -66,6 +66,31 @@ export class TemplateValidator {
     const ctx = new TemplateExecutionContext(rendered.sections, payload);
     const errors: ValidationError[] = [];
 
+    // Display-only templates (e.g. the OB/GYN patient-history surface) are never
+    // a write target. If a caller submits any field value against one, reject
+    // outright — forward-looking guard for flows that compose such a template.
+    if (rendered.is_display_only) {
+      const hasAnyValue = rendered.sections.some((section) =>
+        section.fields.some((field) => {
+          const value = ctx.values[field.code];
+          return !(value === undefined || value === null || value === '');
+        }),
+      );
+      if (hasAnyValue) {
+        return {
+          ok: false,
+          errors: [
+            {
+              fieldCode: '*',
+              code: 'FORBIDDEN',
+              message: `template "${templateCode}" is display-only and cannot be submitted`,
+            },
+          ],
+        };
+      }
+      return { ok: true };
+    }
+
     for (const section of rendered.sections) {
       for (const field of section.fields) {
         this.evaluateField(ctx, field, options.sparse === true, errors);
