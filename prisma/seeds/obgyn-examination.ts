@@ -34,7 +34,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import { buildHistorySections } from './obgyn-patient-history.js';
 
 const TEMPLATE_CODE = 'obgyn_examination';
-const TEMPLATE_VERSION = 11;
+const TEMPLATE_VERSION = 12;
 
 // Embedded patient-history sections carry a `history_` prefix so their codes
 // never collide with encounter sections (e.g. history `medications` vs the
@@ -1061,24 +1061,58 @@ const SECTIONS: SectionSpec[] = [
     is_repeatable: true,
     fields: [
       {
-        code: 'custom_test_name',
+        code: 'test_category',
         label: 'Type',
-        type: 'TEXT',
+        type: 'SELECT',
+        binding: {
+          namespace: 'VISIT_INVESTIGATION',
+          path: 'test_category',
+        },
+        config: {
+          ui: { placeholder: 'Ex : Lab', colSpan: 4 },
+          validation: {
+            options: [
+              opt('LAB', 'Lab'),
+              opt('IMAGING', 'Imaging'),
+              opt('OTHER', 'Other'),
+            ],
+          },
+        },
+      },
+      {
+        code: 'custom_test_name',
+        label: 'Name',
+        type: 'ENTITY_SEARCH',
         binding: {
           namespace: 'VISIT_INVESTIGATION',
           path: 'custom_test_name',
         },
-        config: { ui: { placeholder: 'Ex : Laboratory test', colSpan: 4 } },
+        config: {
+          ui: {
+            placeholder: 'Search test by name or code',
+            colSpan: 4,
+            searchEntity: {
+              kind: 'lab_test',
+              idTarget: 'lab_test_id',
+              allowCreate: true,
+              // On pick, auto-fill the Type dropdown from the catalog category.
+              fillFields: { test_category: 'category' },
+            },
+          },
+          logic: { entity: 'lab_test' },
+        },
       },
       {
+        // Hidden sibling — receives the resolved LabTest id when a catalog test
+        // is picked (idTarget of the Name search). Free text leaves it empty;
+        // the service then resolves-or-creates a catalog row from the name.
         code: 'lab_test_id',
-        label: 'Name',
+        label: 'Lab test',
         type: 'TEXT',
         binding: {
           namespace: 'VISIT_INVESTIGATION',
           path: 'lab_test_id',
         },
-        config: { ui: { placeholder: 'Ex : CBC test', colSpan: 4 } },
       },
       {
         code: 'lab_facility',
@@ -1088,7 +1122,7 @@ const SECTIONS: SectionSpec[] = [
           namespace: 'VISIT_INVESTIGATION',
           path: 'lab_facility',
         },
-        config: { ui: { placeholder: 'Ex : CBC test', colSpan: 4 } },
+        config: { ui: { placeholder: 'Ex : Lab name', colSpan: 4 } },
       },
       {
         code: 'notes',
