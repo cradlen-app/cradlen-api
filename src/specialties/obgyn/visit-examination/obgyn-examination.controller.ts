@@ -9,12 +9,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { ApiStandardResponse } from '@common/swagger';
-import {
-  ApiIfMatchHeader,
-  CurrentUser,
-  IfMatchVersion,
-  LocksOnClosedVisit,
-} from '@common/decorators';
+import { CurrentUser, LocksOnClosedVisit } from '@common/decorators';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { EncounterMutationGuard } from '@core/clinical/visits/visits.public';
 import { ObgynExaminationService } from './obgyn-examination.service';
@@ -26,7 +21,9 @@ import {
 /**
  * Unified Examination tab. Single GET / PATCH pair orchestrating five
  * underlying aggregates inside one transaction (see service for details).
- * Optimistic concurrency uses a single `Visit.examination_version` token.
+ * The PATCH is last-write-wins on open visits (no `If-Match` precondition);
+ * `Visit.examination_version` still increments as a change/cache token.
+ * Closed visits are blocked by `EncounterMutationGuard` (edits go via amendments).
  */
 @ApiTags('OB/GYN — Visit Examination')
 @Controller('visits/:id/examination')
@@ -45,16 +42,12 @@ export class ObgynExaminationController {
 
   @Patch()
   @LocksOnClosedVisit('id')
-  @ApiIfMatchHeader(
-    'Optimistic concurrency token. Echo `Visit.examination_version` as `"version:N"`.',
-  )
   @ApiStandardResponse(VisitExaminationEnvelopeDto)
   patch(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateObgynExaminationDto,
-    @IfMatchVersion() version: number,
     @CurrentUser() user: AuthContext,
   ) {
-    return this.service.patch(id, dto, version, user);
+    return this.service.patch(id, dto, user);
   }
 }
