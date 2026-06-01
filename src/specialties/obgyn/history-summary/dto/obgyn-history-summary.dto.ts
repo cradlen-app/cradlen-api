@@ -17,6 +17,8 @@ export class HistorySummaryIdentifierDto {
   @ApiProperty({ nullable: true, example: 'G3 T2 P0 A1 L2' })
   gtpal_label!: string | null;
   @ApiProperty({ nullable: true }) lmp!: string | null;
+  @ApiProperty({ nullable: true, example: 'A+' })
+  blood_group_rh!: string | null;
 }
 
 export class HistorySummarySectionDto {
