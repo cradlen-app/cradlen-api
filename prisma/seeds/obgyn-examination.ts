@@ -34,7 +34,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import { buildHistorySections } from './obgyn-patient-history.js';
 
 const TEMPLATE_CODE = 'obgyn_examination';
-const TEMPLATE_VERSION = 8;
+const TEMPLATE_VERSION = 10;
 
 // Embedded patient-history sections carry a `history_` prefix so their codes
 // never collide with encounter sections (e.g. history `medications` vs the
@@ -984,10 +984,12 @@ const SECTIONS: SectionSpec[] = [
         config: {
           ui: {
             placeholder: 'Search ICD-10 by name or code',
-            colSpan: 6,
+            colSpan: 5,
             searchEntity: {
               kind: 'diagnosis',
-              idTarget: 'diagnosis_code',
+              // On pick, copy the resolved row's ICD-10 code into the visible
+              // `diagnosis_code` field; allowCreate keeps free-typed text.
+              fillFields: { diagnosis_code: 'code' },
               allowCreate: true,
             },
           },
@@ -995,13 +997,14 @@ const SECTIONS: SectionSpec[] = [
         },
       },
       {
-        // Hidden sibling — receives the resolved ICD-10 code when the user
-        // picks a suggestion (idTarget of diagnosis_search). Free text without
-        // a pick leaves it empty.
+        // Visible ICD-10 code box: auto-filled when the doctor picks a
+        // suggestion (via diagnosis_search.fillFields) and manually editable
+        // for codes not in the catalog.
         code: 'diagnosis_code',
         label: 'ICD-10 code',
         type: 'TEXT',
         binding: { namespace: 'VISIT_DIAGNOSIS', path: 'code' },
+        config: { ui: { placeholder: 'ICD-10 code', colSpan: 2 } },
       },
       {
         code: 'certainty',
@@ -1009,7 +1012,7 @@ const SECTIONS: SectionSpec[] = [
         type: 'SELECT',
         binding: { namespace: 'VISIT_DIAGNOSIS', path: 'certainty' },
         config: {
-          ui: { placeholder: 'Ex : Confirmed', colSpan: 4 },
+          ui: { placeholder: 'Ex : Confirmed', colSpan: 3 },
           validation: {
             options: [
               opt('SUSPECTED', 'Suspected'),
@@ -1108,14 +1111,36 @@ const SECTIONS: SectionSpec[] = [
     is_repeatable: true,
     fields: [
       {
-        code: 'custom_drug_name',
+        code: 'drug_search',
         label: 'Drug',
-        type: 'TEXT',
+        type: 'ENTITY_SEARCH',
         binding: {
           namespace: 'PRESCRIPTION_ITEM',
           path: 'custom_drug_name',
         },
-        config: { ui: { placeholder: 'Ex : Hiblotic - 500mg', colSpan: 3 } },
+        config: {
+          ui: {
+            placeholder: 'Search drug by name or code',
+            colSpan: 3,
+            searchEntity: {
+              kind: 'medication',
+              idTarget: 'medication_id',
+              allowCreate: true,
+              // On pick, auto-fill the line from the catalog medication.
+              fillFields: { frequency: 'default_dose', instructions: 'notes' },
+            },
+          },
+          logic: { entity: 'medication' },
+        },
+      },
+      {
+        // Hidden sibling — receives the resolved Medication id when a catalog
+        // drug is picked (idTarget of drug_search). Free text leaves it empty;
+        // the drug is then saved on the visit only (custom_drug_name).
+        code: 'medication_id',
+        label: 'Medication',
+        type: 'TEXT',
+        binding: { namespace: 'PRESCRIPTION_ITEM', path: 'medication_id' },
       },
       {
         code: 'frequency',

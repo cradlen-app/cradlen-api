@@ -138,6 +138,7 @@ export async function seedObgynDiagnosisCodes(
         specialty_code: SPECIALTY,
         billable: c.billable ?? true,
         keywords: c.keywords ?? null,
+        source: 'SYSTEM',
         is_deleted: false,
         deleted_at: null,
       },
@@ -148,6 +149,7 @@ export async function seedObgynDiagnosisCodes(
         specialty_code: SPECIALTY,
         billable: c.billable ?? true,
         keywords: c.keywords ?? null,
+        source: 'SYSTEM',
       },
     });
   }
