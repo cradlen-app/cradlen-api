@@ -64,7 +64,7 @@ src/
 │   ├── org/                  # organizations, branches, profiles, staff, invitations, roles, job-functions, specialty-catalog (the Specialty lookup — distinct from the src/specialties/ vertical layer), procedures, subscriptions
 │   ├── patient/              # patients/ (records, cross-org via PatientJourney; OverdueVisitSweepService marks past-due, never-checked-in visits NO_SHOW nightly), guardians/
 │   ├── calendar/             # Per-profile calendar events; publishes CALENDAR_EVENTS (created/updated/deleted) — see calendar.events.ts
-│   ├── clinical/             # visits/ (booking + intake write path; + encounter-mutation guard), care-paths/, medications/, chief-complaints/, medical-rep/, events/ (domain-events catalog). Visit clinical data is written via booking intake (visits.service.applyIntake) and the OB/GYN examination tab — there is no generic clinical CRUD module. (The journeys/, journey-templates/, and lab-tests/ read/CRUD API modules were removed as unused — their tables remain and the booking flow still resolves templates and creates journeys/episodes internally.)
+│   ├── clinical/             # visits/ (booking + intake write path; + encounter-mutation guard), care-paths/, medications/ (drug catalog search), diagnosis-codes/ (ICD-10 catalog search), chief-complaints/, medical-rep/, journeys/ (read-only journey descriptor), events/ (domain-events catalog). Visit clinical data is written via booking intake (visits.service.applyIntake) and the OB/GYN examination tab — there is no generic clinical CRUD module. (The journey-templates/ and lab-tests/ read/CRUD API modules were removed as unused — their tables remain and the booking flow still resolves templates and creates journeys/episodes internally.)
 │   ├── financial/            # services/ (billable-service catalog), pricing/ (price lists, provider services/overrides, 3-tier price resolver), invoices/ (invoice + items + payments lifecycle)
 │   ├── notifications/        # In-app notifications + listener that maps invitation events → notifications
 │   └── health/               # DB connectivity probe
@@ -224,6 +224,13 @@ One patient = one chart holding a **sequence** of time-bounded journeys; **exact
 - **`history-summary/`** — read-only aggregation of the patient's OB/GYN history, allergies, and medications into a single envelope for the sidebar/summary panel.
 - **`amendments/`** — the only legal write path for closed visits. The `If-Match` precondition echoes the *target row's* own `version`: for `obgyn_encounter` read it from the examination GET's `obgyn_encounter_version` field.
 
+### Clinical reference catalogs (entity-search backed)
+
+Two seed-managed catalogs back the form-builder `ENTITY_SEARCH` pickers in the examination (each `kind` is registered on the API `ENTITIES` registry and mirrored by the FE entity registry; the resolved id lands in the field's `idTarget`/`fillFields`):
+
+- **`DiagnosisCode`** (`diagnosis-codes/`) — system-wide ICD-10 catalog. `GET /v1/diagnosis-codes?search=` (`@Public()`) matches code/description/keywords with optional `specialty_code`; seeded by `prisma/seeds/diagnosis-codes-obgyn.ts`. `source` is `SYSTEM | USER`: a doctor-entered code not yet in the catalog is inserted as a `USER` row (with `created_by_id`) by the examination PATCH (`diffDiagnoses` → `registerNovelDiagnosisCodes`). `VisitDiagnosis.code` stores the value by string (no FK — free entry stays valid).
+- **`Medication`** (`medications/`) — org-scoped drug catalog (global `organization_id = null` rows + per-org rows; `added_by_id` = authoring profile). `GET /v1/medications?search=` (auth-gated, paginated) matches name/generic_name/code via `orgScopedReadFilter` (global ∪ caller's org); seeded in `prisma/seed.ts`. The examination drug picker auto-fills the prescription line's dose/frequency + instructions from the catalog medication's defaults/notes; a free-typed drug persists on the visit only (`PrescriptionItem.custom_drug_name`, `medication_id` null — no catalog write).
+
 ### Clinical write-path: immutability, amendments, revisions
 
 Closed-visit clinical data is treated as a legal record. Three complementary mechanisms enforce that:
@@ -334,6 +341,8 @@ Core entities:
 - **JourneyTemplate** — visit/episode blueprint with `code` (unique per specialty) and `scope`. The booking flow resolves template → creates PatientJourney + PatientEpisode.
 - **CalendarEvent** — per-profile calendar entries with `event_type`, `visibility`, optional `branch_id`. Managed by `CalendarModule`; publishes `CALENDAR_EVENTS`.
 - **MedicalRep** + **MedicalRepVisit** + **MedicalRepMedication** + **MedicalRepVisitMedication** — org-scoped pharma rep visits. Booked via `POST /v1/medical-rep-visits/book`; search via `GET /v1/medical-reps?search=`. No patient/episode/journey.
+- **DiagnosisCode** — system-wide ICD-10 catalog (`@@unique(code)`, `source SYSTEM|USER`, `created_by_id`). Search-only over HTTP; `VisitDiagnosis.code` references it by value (no FK). See "Clinical reference catalogs".
+- **Medication** — drug catalog, global or per-org (partial unique `(organization_id, code)` on live rows; `added_by_id`). Backs the `PrescriptionItem.medication_id` FK and the examination drug picker.
 - **Service** + **ServiceSpecialty** — billable-service catalog (org-scoped, `ServiceType`), optionally specialty-linked. See "Financial / billing" above.
 - **PriceList** + **PriceListItem** + **ProviderService** + **ProviderPriceOverride** — pricing tiers resolved by `PricingResolverService` (provider override → branch → org). Prices are `Decimal`.
 - **Invoice** + **InvoiceItem** + **Payment** + **InvoiceSequence** + **InvoiceInsuranceClaim** — invoicing lifecycle; `InvoiceSequence (organization_id, year)` backs `INV-<year>-<seq>` numbering.
@@ -346,7 +355,7 @@ All models have UUID primary keys, `created_at` / `updated_at`, and soft-delete 
 
 `prisma/seeds/` holds self-contained per-feature seed modules called by `prisma/seed.ts`. Convention: each module is idempotent (upserts keyed on natural keys), validates its own input shape via the builder validators before any DB write, and ends with an activation transaction when relevant (e.g. flipping `FormTemplate.is_active`). See `prisma/seeds/obgyn-book-visit.ts` for the canonical example. Ordering matters: `prisma/seed.ts` runs lookup seeds (roles, job functions, plans, specialties, procedures) before feature seeds — register new seed modules there so dependencies resolve.
 
-Current seed modules: `book-visit.ts` (general visit template), `book-visit-shell.ts` (shell template), `obgyn-book-visit.ts` (OB/GYN booking form — canonical template example), `obgyn-examination.ts` (examination tab template), `obgyn-patient-history.ts` (patient history template), `chief-complaint-categories.ts` (lookup categories).
+Current seed modules: `book-visit.ts` (general visit template), `book-visit-shell.ts` (shell template), `obgyn-book-visit.ts` (OB/GYN booking form — canonical template example), `obgyn-examination.ts` (examination tab template), `obgyn-patient-history.ts` (patient history template), `chief-complaint-categories.ts` (lookup categories), `diagnosis-codes-obgyn.ts` (OB/GYN ICD-10 diagnosis catalog), `care-path-history-sections.ts`, `care-path-clinical-surfaces.ts`.
 
 `prisma/seed-fixtures.ts` builds three demo organizations (jasmin, janah, amshag) with cross-org doctors. Idempotent. Refuses to run when `NODE_ENV=production`.
 
