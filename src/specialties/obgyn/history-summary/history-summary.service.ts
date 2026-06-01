@@ -141,6 +141,7 @@ export class HistorySummaryService {
           medical_chronic_illnesses: true,
           screening_history: true,
           social_history: true,
+          blood_group_rh: true,
         },
       }),
       db.patientPregnancyHistory.findMany({
@@ -189,6 +190,9 @@ export class HistorySummaryService {
     ]);
 
     const age = ageFromDob(patient?.date_of_birth ?? null);
+    const bloodGroupRh = history?.blood_group_rh
+      ? this.resolveOne(history.blood_group_rh, 'blood_group_rh', labels)
+      : null;
     const lmpFromVisit =
       lmpEncounters
         .map(
@@ -200,7 +204,13 @@ export class HistorySummaryService {
     if (!history) {
       return {
         history_exists: false,
-        identifier: { age, gtpal: null, gtpal_label: null, lmp: lmpFromVisit },
+        identifier: {
+          age,
+          gtpal: null,
+          gtpal_label: null,
+          lmp: lmpFromVisit,
+          blood_group_rh: bloodGroupRh,
+        },
         sections: [],
         flags: [],
         narrative: '',
@@ -236,7 +246,13 @@ export class HistorySummaryService {
 
     return {
       history_exists: true,
-      identifier: { age, gtpal, gtpal_label: gtpalLabel, lmp },
+      identifier: {
+        age,
+        gtpal,
+        gtpal_label: gtpalLabel,
+        lmp,
+        blood_group_rh: bloodGroupRh,
+      },
       sections,
       flags,
       narrative,
