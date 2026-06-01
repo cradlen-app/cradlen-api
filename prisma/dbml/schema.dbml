@@ -812,6 +812,8 @@ Table diagnosis_codes {
   specialty_code String
   billable Boolean [not null, default: true]
   keywords String
+  source DiagnosisCodeSource [not null, default: 'SYSTEM']
+  created_by_id String
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
@@ -2093,6 +2095,11 @@ Enum RefundStatus {
   COMPLETED
   FAILED
   VOID
+}
+
+Enum DiagnosisCodeSource {
+  SYSTEM
+  USER
 }
 
 Enum BloodGroupRh {
