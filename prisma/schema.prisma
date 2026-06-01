@@ -1216,21 +1216,31 @@ model VisitDiagnosis {
   @@map("visit_diagnoses")
 }
 
+enum DiagnosisCodeSource {
+  SYSTEM
+  USER
+}
+
 // System-wide ICD-10 diagnosis catalog (seed-managed, like specialties /
 // care paths). Search-only over HTTP; backs the diagnosis type-ahead picker.
 // `code` is the stored value on VisitDiagnosis (no FK — free entry stays valid).
+// Rows are either SYSTEM (seeded) or USER (added at examination time when a
+// doctor enters a code not yet in the catalog); `created_by_id` records the
+// authoring profile for USER rows (plain column, no FK — same convention).
 model DiagnosisCode {
-  id             String    @id @default(uuid()) @db.Uuid
+  id             String              @id @default(uuid()) @db.Uuid
   code           String // ICD-10-CM code
   description    String
   chapter        String? // clinical-concept group (e.g. "Pregnancy", "Gynecology")
   specialty_code String? // e.g. "OBGYN"
-  billable       Boolean   @default(true)
+  billable       Boolean             @default(true)
   keywords       String? // extra search terms / synonyms
-  is_deleted     Boolean   @default(false)
+  source         DiagnosisCodeSource @default(SYSTEM)
+  created_by_id  String?             @db.Uuid // authoring profile for USER rows
+  is_deleted     Boolean             @default(false)
   deleted_at     DateTime?
-  created_at     DateTime  @default(now())
-  updated_at     DateTime  @updatedAt
+  created_at     DateTime            @default(now())
+  updated_at     DateTime            @updatedAt
 
   @@unique([code])
   @@index([specialty_code])
