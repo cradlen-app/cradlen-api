@@ -52,6 +52,16 @@ const VITALS_FIELDS = [
   'rbs_mmol_l',
 ] as const;
 
+/** Derive a stable upper-snake catalog code from a free-typed name. */
+function slugifyCode(name: string): string {
+  return name
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 60);
+}
+
 /**
  * Unified PATCH service for the Examination tab.
  *
@@ -292,6 +302,7 @@ export class ObgynExaminationService {
             visitId,
             dto.investigations,
             user.profileId,
+            user.organizationId,
           );
           aggregates.push('investigations');
         }
@@ -660,7 +671,12 @@ export class ObgynExaminationService {
     visitId: string,
     rows: InvestigationRowDto[],
     profileId: string,
+    orgId: string,
   ) {
+    // Free-typed tests (no picked lab_test_id) are registered in the catalog
+    // and linked back, so future searches find them. Mutates row.lab_test_id.
+    await this.linkNovelLabTests(tx, rows, profileId, orgId);
+
     const prior = await tx.visitInvestigation.findMany({
       where: { visit_id: visitId, is_deleted: false },
       select: { id: true },
@@ -678,6 +694,9 @@ export class ObgynExaminationService {
           ...(row.custom_test_name !== undefined && {
             custom_test_name: row.custom_test_name,
           }),
+          ...(row.test_category !== undefined && {
+            test_category: row.test_category,
+          }),
           ...(row.lab_facility !== undefined && {
             lab_facility: row.lab_facility,
           }),
@@ -693,6 +712,7 @@ export class ObgynExaminationService {
           visit_id: visitId,
           lab_test_id: row.lab_test_id ?? null,
           custom_test_name: row.custom_test_name ?? null,
+          test_category: row.test_category ?? null,
           lab_facility: row.lab_facility ?? null,
           notes: row.notes ?? null,
           ordered_by_id: profileId,
@@ -704,6 +724,80 @@ export class ObgynExaminationService {
         where: { id: { in: toDelete } },
         data: { is_deleted: true, deleted_at: new Date() },
       });
+    }
+  }
+
+  /**
+   * For each row the doctor typed by hand (a test name with no picked
+   * `lab_test_id`), resolve-or-create an org-scoped `LabTest` (tagged with the
+   * authoring profile) and write its id back onto the row so the investigation
+   * links to the catalog. Reuses an existing global/org row with the same code
+   * or name; never clobbers it. Skips rows already linked to a catalog test.
+   */
+  private async linkNovelLabTests(
+    tx: Prisma.TransactionClient,
+    rows: InvestigationRowDto[],
+    profileId: string,
+    orgId: string,
+  ) {
+    const cache = new Map<string, string>(); // code → resolved LabTest id
+    for (const row of rows) {
+      if (row.lab_test_id) continue;
+      const name = row.custom_test_name?.trim();
+      if (!name) continue;
+      const code = slugifyCode(name);
+      if (!code) continue;
+
+      const cached = cache.get(code);
+      if (cached) {
+        row.lab_test_id = cached;
+        continue;
+      }
+
+      const existing = await tx.labTest.findFirst({
+        where: {
+          is_deleted: false,
+          AND: [
+            { OR: [{ organization_id: null }, { organization_id: orgId }] },
+            { OR: [{ code }, { name: { equals: name, mode: 'insensitive' } }] },
+          ],
+        },
+        select: { id: true },
+      });
+      let id = existing?.id;
+      if (!id) {
+        try {
+          const created = await tx.labTest.create({
+            data: {
+              organization_id: orgId,
+              code,
+              name,
+              category: row.test_category ?? 'OTHER',
+              added_by_id: profileId,
+            },
+            select: { id: true },
+          });
+          id = created.id;
+        } catch (err) {
+          // Concurrent create on the (organization_id, code) unique → refetch.
+          if (
+            err instanceof Prisma.PrismaClientKnownRequestError &&
+            err.code === 'P2002'
+          ) {
+            const refetched = await tx.labTest.findFirst({
+              where: { organization_id: orgId, code },
+              select: { id: true },
+            });
+            id = refetched?.id;
+          } else {
+            throw err;
+          }
+        }
+      }
+      if (id) {
+        cache.set(code, id);
+        row.lab_test_id = id;
+      }
     }
   }
 

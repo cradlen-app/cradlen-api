@@ -1161,6 +1161,7 @@ model VisitInvestigation {
   lab_test_id           String?                   @db.Uuid
   lab_test              LabTest?                  @relation(fields: [lab_test_id], references: [id], onDelete: SetNull)
   custom_test_name      String?
+  test_category         LabTestCategory?
   notes                 String?
   lab_facility          String?
   status                InvestigationStatus       @default(ORDERED)

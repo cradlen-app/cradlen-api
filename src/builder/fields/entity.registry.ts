@@ -96,6 +96,19 @@ export const ENTITIES = {
     submitTargetNamespace: 'VISIT_DIAGNOSIS',
     submitTargetPath: 'code',
   },
+  lab_test: {
+    kind: 'lab_test',
+    // Lab-test / investigation catalog search. The picked UUID lands in the
+    // investigation row's `lab_test_id`; free text falls back to custom_test_name.
+    searchEndpoint: '/v1/lab-tests?search=',
+    resultShape: {
+      idKey: 'id',
+      labelKeys: ['name'],
+      subtitleKeys: ['code', 'category'],
+    },
+    submitTargetNamespace: 'VISIT_INVESTIGATION',
+    submitTargetPath: 'lab_test_id',
+  },
 } as const satisfies Record<string, EntityDescriptor>;
 
 export type EntityKind = keyof typeof ENTITIES;
