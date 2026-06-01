@@ -260,6 +260,7 @@ export const ALLOWED_PATHS = {
   VISIT_INVESTIGATION: [
     'lab_test_id',
     'custom_test_name',
+    'test_category',
     'lab_facility',
     'notes',
   ],

@@ -762,6 +762,7 @@ Table visit_investigations {
   lab_test_id String
   lab_test lab_tests
   custom_test_name String
+  test_category LabTestCategory
   notes String
   lab_facility String
   status InvestigationStatus [not null, default: 'ORDERED']
