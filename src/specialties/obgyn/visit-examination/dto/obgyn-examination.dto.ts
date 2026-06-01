@@ -2,6 +2,7 @@ import {
   IsArray,
   IsBoolean,
   IsDateString,
+  IsEnum,
   IsInt,
   IsNumber,
   IsObject,
@@ -13,6 +14,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { LabTestCategory } from '@prisma/client';
 import { UpdateObgynHistoryDto } from '../../patient-history/dto/obgyn-history.dto';
 
 /**
@@ -55,6 +57,7 @@ export class InvestigationRowDto {
   @IsOptional() @IsUUID() id?: string;
   @IsOptional() @IsUUID() lab_test_id?: string;
   @IsOptional() @IsString() custom_test_name?: string;
+  @IsOptional() @IsEnum(LabTestCategory) test_category?: LabTestCategory;
   @IsOptional() @IsString() lab_facility?: string;
   @IsOptional() @IsString() notes?: string;
 }
