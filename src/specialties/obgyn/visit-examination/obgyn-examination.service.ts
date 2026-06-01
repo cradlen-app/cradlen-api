@@ -252,7 +252,13 @@ export class ObgynExaminationService {
         // stays in sync. Runs before the encounter write so the derived values
         // ride the same upsert + revision.
         if (dto.diagnoses !== undefined) {
-          await this.diffDiagnoses(tx, visitId, dto.diagnoses, user.profileId);
+          await this.diffDiagnoses(
+            tx,
+            visitId,
+            dto.diagnoses,
+            user.profileId,
+            visit.specialty_code,
+          );
           const primary = await this.resolvePrimaryDiagnosis(tx, visitId);
           const scalars = dto as Record<string, unknown>;
           scalars.provisional_diagnosis = primary?.description ?? '';
@@ -560,6 +566,7 @@ export class ObgynExaminationService {
     visitId: string,
     rows: DiagnosisRowDto[],
     profileId: string,
+    specialtyCode: string | null,
   ) {
     const prior = await tx.visitDiagnosis.findMany({
       where: { visit_id: visitId, is_deleted: false },
@@ -601,6 +608,51 @@ export class ObgynExaminationService {
         data: { is_deleted: true, deleted_at: new Date() },
       });
     }
+
+    await this.registerNovelDiagnosisCodes(tx, rows, profileId, specialtyCode);
+  }
+
+  /**
+   * Add any diagnosis the doctor typed by hand (a code + description not yet in
+   * the catalog) to the shared `diagnosis_codes` table, tagged USER + the
+   * authoring profile. Picked-from-catalog codes already exist and are skipped;
+   * existing SYSTEM rows are never clobbered (we only create missing codes).
+   * Free text without a code stays visit-only (the catalog is keyed by `code`).
+   */
+  private async registerNovelDiagnosisCodes(
+    tx: Prisma.TransactionClient,
+    rows: DiagnosisRowDto[],
+    profileId: string,
+    specialtyCode: string | null,
+  ) {
+    const candidates = new Map<string, string>(); // code → description
+    for (const row of rows) {
+      const code = row.code?.trim();
+      const description = row.description?.trim();
+      if (code && description && !candidates.has(code)) {
+        candidates.set(code, description);
+      }
+    }
+    if (candidates.size === 0) return;
+
+    const existing = await tx.diagnosisCode.findMany({
+      where: { code: { in: [...candidates.keys()] } },
+      select: { code: true },
+    });
+    for (const e of existing) candidates.delete(e.code);
+    if (candidates.size === 0) return;
+
+    await tx.diagnosisCode.createMany({
+      data: [...candidates.entries()].map(([code, description]) => ({
+        code,
+        description,
+        specialty_code: specialtyCode,
+        source: 'USER' as const,
+        created_by_id: profileId,
+        billable: true,
+      })),
+      skipDuplicates: true,
+    });
   }
 
   private async diffInvestigations(
