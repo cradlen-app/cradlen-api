@@ -32,6 +32,7 @@ import {
 import { UpdateMedicalRepVisitDto } from './dto/update-medical-rep-visit.dto';
 import { UpdateMedicalRepVisitStatusDto } from './dto/update-medical-rep-visit-status.dto';
 import { ListMedicalRepVisitsQueryDto } from './dto/list-medical-rep-visits.query';
+import { MedicalRepVisitHistoryItemDto } from './dto/medical-rep-visit-history.dto';
 
 @ApiTags('medical-reps')
 @Controller({ version: '1' })
@@ -153,6 +154,16 @@ export class MedicalRepController {
     @CurrentUser() user: AuthContext,
   ) {
     return this.visitService.findBranchInProgress(branchId, query, user);
+  }
+
+  @Get('medical-rep-visits/:id/history')
+  @ApiPaginatedResponse(MedicalRepVisitHistoryItemDto)
+  async visitHistory(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: ListMedicalRepVisitsQueryDto,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.visitService.listVisitHistory(id, query, user);
   }
 
   @Get('medical-rep-visits/:id')
