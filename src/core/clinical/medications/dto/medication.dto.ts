@@ -29,8 +29,16 @@ export class MedicationPrescriberDto {
   @ApiProperty() count!: number;
 }
 
+export class MedicationRepSummaryDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() full_name!: string;
+  @ApiProperty() company_name!: string;
+}
+
 export class MedicationWithStatsDto extends MedicationDto {
   @ApiProperty() total_prescriptions!: number;
   @ApiProperty({ type: [MedicationPrescriberDto] })
   top_prescribers!: MedicationPrescriberDto[];
+  @ApiProperty({ type: [MedicationRepSummaryDto] })
+  medical_reps!: MedicationRepSummaryDto[];
 }
