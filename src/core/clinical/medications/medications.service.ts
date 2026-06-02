@@ -6,6 +6,7 @@ import {
 import { Medication, Prisma } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service';
+import { MedicalRepService } from '@core/clinical/medical-rep/medical-rep.service';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { paginated } from '@common/utils/pagination.utils';
 import { CreateMedicationDto } from './dto/create-medication.dto';
@@ -28,6 +29,7 @@ export class MedicationsService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly authorizationService: AuthorizationService,
+    private readonly medicalRepService: MedicalRepService,
   ) {}
 
   async findAll(query: ListMedicationsQueryDto, user: AuthContext) {
@@ -81,8 +83,10 @@ export class MedicationsService {
     ]);
     if (items.length === 0) return paginated([], { page, limit, total });
 
-    const stats = await this.gatherStats(
-      items.map((m) => m.id),
+    const ids = items.map((m) => m.id);
+    const stats = await this.gatherStats(ids, user.organizationId);
+    const repsByMed = await this.medicalRepService.findRepsByMedicationIds(
+      ids,
       user.organizationId,
     );
 
@@ -90,6 +94,7 @@ export class MedicationsService {
       ...m,
       total_prescriptions: stats.get(m.id)?.total_prescriptions ?? 0,
       top_prescribers: stats.get(m.id)?.top_prescribers ?? [],
+      medical_reps: repsByMed.get(m.id) ?? [],
     }));
 
     return paginated(enriched, { page, limit, total });
@@ -109,7 +114,7 @@ export class MedicationsService {
       );
     }
 
-    return this.prismaService.db.medication.create({
+    const medication = await this.prismaService.db.medication.create({
       data: {
         organization_id: user.organizationId,
         code: dto.code,
@@ -127,6 +132,14 @@ export class MedicationsService {
         added_by_id: user.profileId,
       },
     });
+    if (dto.medical_rep_id) {
+      await this.medicalRepService.setMedicationRep(
+        medication.id,
+        dto.medical_rep_id,
+        user.organizationId,
+      );
+    }
+    return medication;
   }
 
   async update(id: string, dto: UpdateMedicationDto, user: AuthContext) {
@@ -140,13 +153,24 @@ export class MedicationsService {
         'Only the OWNER or the original creator can edit this medication',
       );
     }
-    // ValidationPipe runs with whitelist + forbidNonWhitelisted, so `dto`
+    // `medical_rep_id` is not a Medication column — it routes to the
+    // MedicalRepMedication join table. Strip it before the Prisma update.
+    const { medical_rep_id, ...scalars } = dto;
+    // ValidationPipe runs with whitelist + forbidNonWhitelisted, so `scalars`
     // only contains declared keys. Prisma treats `undefined` as "skip" and
     // `null` as "clear", which matches the DTO's intent — pass through.
-    return this.prismaService.db.medication.update({
+    const medication = await this.prismaService.db.medication.update({
       where: { id },
-      data: dto,
+      data: scalars,
     });
+    if (medical_rep_id !== undefined) {
+      await this.medicalRepService.setMedicationRep(
+        id,
+        medical_rep_id,
+        user.organizationId,
+      );
+    }
+    return medication;
   }
 
   async remove(id: string, user: AuthContext) {
