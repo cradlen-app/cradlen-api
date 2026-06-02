@@ -4,10 +4,12 @@ import {
   IsBoolean,
   IsDateString,
   IsEnum,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
   MaxLength,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -15,8 +17,9 @@ import { MedicalRepVisitOutcome, MedicalRepVisitPurpose } from '@prisma/client';
 
 /**
  * One "product discussed" row. `medication_id` present = picked from the
- * catalog; absent = a drug the doctor typed — the server resolves-or-creates it
- * in the org medication catalog (with `added_by_id` provenance).
+ * catalog (detail fields ignored). Absent = a drug the doctor typed — the
+ * server resolves-or-creates it in the org medication catalog (with
+ * `added_by_id` provenance), persisting the supplied detail fields.
  */
 export class ProductDiscussedDto {
   @IsUUID()
@@ -26,6 +29,16 @@ export class ProductDiscussedDto {
   @IsString()
   @MaxLength(200)
   name!: string;
+
+  // Detail fields — used only when creating a brand-new catalog medication.
+  @IsString() @IsOptional() @MaxLength(200) generic_name?: string;
+  @IsString() @IsOptional() @MaxLength(100) form?: string;
+  @IsString() @IsOptional() @MaxLength(100) strength?: string;
+  @IsString() @IsOptional() @MaxLength(200) company?: string;
+  @IsNumber() @IsOptional() @Min(0) default_dose_amount?: number;
+  @IsString() @IsOptional() @MaxLength(50) default_dose_unit?: string;
+  @IsString() @IsOptional() @MaxLength(100) default_dose_frequency?: string;
+  @IsString() @IsOptional() @MaxLength(100) default_dose_route?: string;
 }
 
 /**
