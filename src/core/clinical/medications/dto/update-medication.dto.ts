@@ -2,6 +2,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -77,4 +78,11 @@ export class UpdateMedicationDto {
   @IsOptional()
   @MaxLength(64)
   default_dose_route?: string | null;
+
+  // Links/clears the single supplier rep. Not a Medication column — the service
+  // routes it to the MedicalRepMedication join table.
+  @ValidateIf((o: UpdateMedicationDto) => o.medical_rep_id !== null)
+  @IsUUID()
+  @IsOptional()
+  medical_rep_id?: string | null;
 }
