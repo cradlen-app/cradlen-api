@@ -103,6 +103,16 @@ export class MedicalRepController {
     return this.repService.unlinkMedicationFromRep(repId, medicationId, user);
   }
 
+  @Get('medical-reps/:repId/visit-history')
+  @ApiPaginatedResponse(MedicalRepVisitHistoryItemDto)
+  async repVisitHistory(
+    @Param('repId', ParseUUIDPipe) repId: string,
+    @Query() query: ListMedicalRepVisitsQueryDto,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.visitService.listRepVisitHistory(repId, query, user);
+  }
+
   @Post('medical-rep-visits/book')
   @ApiStandardResponse(MedicalRepDto)
   async bookVisit(
