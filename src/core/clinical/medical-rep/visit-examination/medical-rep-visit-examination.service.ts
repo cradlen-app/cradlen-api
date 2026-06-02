@@ -122,6 +122,7 @@ export class MedicalRepVisitExaminationService {
       overview: {
         full_name: visit.medical_rep.full_name,
         company_name: visit.medical_rep.company_name,
+        phone_number: visit.medical_rep.phone_number,
         specialty_focus: visit.medical_rep.specialty_focus,
         last_visit_at: lastVisit?.completed_at?.toISOString() ?? null,
         promoted_medications: promotedMeds.map((m) => m.name),
