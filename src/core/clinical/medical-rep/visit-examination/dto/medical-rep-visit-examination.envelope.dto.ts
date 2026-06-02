@@ -1,6 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { MedicalRepVisitOutcome, MedicalRepVisitPurpose } from '@prisma/client';
 
+/** A discussed-medication chip (id + readable name). */
+export class DiscussedMedicationDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() name!: string;
+}
+
 /** Read-only rep context shown in the visit's Overview panel. */
 export class MedicalRepVisitOverviewDto {
   @ApiProperty() full_name!: string;
@@ -28,5 +34,6 @@ export class MedicalRepVisitExaminationEnvelopeDto {
   outcome!: MedicalRepVisitOutcome | null;
   @ApiPropertyOptional({ nullable: true }) follow_up_date!: string | null;
   @ApiPropertyOptional({ nullable: true }) notes!: string | null;
-  @ApiProperty({ type: [String] }) medication_ids!: string[];
+  @ApiProperty({ type: [DiscussedMedicationDto] })
+  discussed_medications!: DiscussedMedicationDto[];
 }
