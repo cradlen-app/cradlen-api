@@ -58,6 +58,7 @@ export const ALLOWED_PATHS = {
     'rep_phone_number',
     'email',
     'company_name',
+    'specialty_focus',
     'scheduled_at',
     'priority',
     'assigned_doctor_id',
@@ -279,6 +280,18 @@ export const ALLOWED_PATHS = {
     'frequency',
     'duration',
     'instructions',
+  ],
+  // MEDICAL_REP_VISIT targets the editable "Visit" fields of a booked medical-rep
+  // visit, written via the unified bulk PATCH `/medical-rep-visits/:id/examination`
+  // (UpdateMedicalRepVisitExaminationDto). `medication_ids` replaces the visit's
+  // MedicalRepVisitMedication set (the "Products discussed" multi-picker).
+  MEDICAL_REP_VISIT: [
+    'purpose',
+    'samples_received',
+    'outcome',
+    'follow_up_date',
+    'notes',
+    'medication_ids',
   ],
 } as const satisfies Record<BindingNamespace, readonly string[]>;
 

@@ -9,6 +9,7 @@ import { seedCarePathHistorySections } from './seeds/care-path-history-sections.
 import { seedCarePathClinicalSurfaces } from './seeds/care-path-clinical-surfaces.js';
 import { seedObgynDiagnosisCodes } from './seeds/diagnosis-codes-obgyn.js';
 import { seedObgynLabTests } from './seeds/lab-tests-obgyn.js';
+import { seedMedicalRepVisitTemplate } from './seeds/medical-rep-visit.js';
 
 config({ path: '.env' });
 config({
@@ -395,6 +396,7 @@ async function main() {
   await seedBookVisitTemplate(prisma);
   await seedObgynPatientHistoryTemplate(prisma);
   await seedObgynExaminationTemplate(prisma);
+  await seedMedicalRepVisitTemplate(prisma);
 
   console.log('Seed complete.');
 }

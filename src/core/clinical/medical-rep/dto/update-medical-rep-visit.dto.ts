@@ -24,6 +24,7 @@ export class UpdateMedicalRepVisitDto {
   @IsString() @IsOptional() @MaxLength(30) rep_phone_number?: string;
   @IsEmail() @IsOptional() @MaxLength(200) email?: string;
   @IsString() @IsOptional() @MaxLength(200) company_name?: string;
+  @IsString() @IsOptional() @MaxLength(120) specialty_focus?: string;
 
   @IsArray()
   @IsUUID('all', { each: true })
