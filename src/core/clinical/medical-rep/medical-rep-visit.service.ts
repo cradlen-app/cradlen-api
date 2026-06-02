@@ -20,14 +20,6 @@ import { assertBookVisitPayloadValid } from '../shared/book-visit-validation.js'
 import { nextQueueNumber } from '../shared/queue-number.js';
 import { assertMedicationsExistInOrg } from './medical-rep.helpers.js';
 
-const IDENTITY_FIELDS = [
-  'rep_full_name',
-  'rep_national_id',
-  'rep_phone_number',
-  'email',
-  'company_name',
-] as const;
-
 const MED_REP_TERMINAL: MedicalRepVisitStatus[] = [
   'COMPLETED',
   'CANCELLED',
@@ -101,14 +93,9 @@ export class MedicalRepVisitService {
     }
     await this.assertBranchInOrg(branchId, user.organizationId);
 
-    const hasIdentityField = IDENTITY_FIELDS.some(
-      (f) => dto[f] !== undefined && dto[f] !== null,
-    );
-    if (dto.medical_rep_id && hasIdentityField) {
-      throw new BadRequestException(
-        'When medical_rep_id is supplied, identity fields (rep_full_name, rep_national_id, rep_phone_number, email, company_name) must be omitted',
-      );
-    }
+    // `medical_rep_id` wins: when an existing rep is selected, identity fields
+    // are ignored (loadExistingRep loads the rep by id and never reads them),
+    // so a stray identity field on the payload no longer rejects the booking.
     if (!dto.medical_rep_id && (!dto.rep_full_name || !dto.company_name)) {
       throw new BadRequestException(
         'Either medical_rep_id or both rep_full_name and company_name must be provided',
