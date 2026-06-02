@@ -11,6 +11,7 @@ export class DiscussedMedicationDto {
 export class MedicalRepVisitOverviewDto {
   @ApiProperty() full_name!: string;
   @ApiProperty() company_name!: string;
+  @ApiPropertyOptional({ nullable: true }) phone_number!: string | null;
   @ApiPropertyOptional({ nullable: true }) specialty_focus!: string | null;
   @ApiPropertyOptional({ nullable: true }) last_visit_at!: string | null;
   @ApiProperty({ type: [String] }) promoted_medications!: string[];
