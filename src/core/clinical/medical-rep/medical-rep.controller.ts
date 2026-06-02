@@ -24,7 +24,7 @@ import { MedicalRepService } from './medical-rep.service';
 import { MedicalRepVisitService } from './medical-rep-visit.service';
 import { BookMedicalRepVisitDto } from './dto/book-medical-rep-visit.dto';
 import { ListMedicalRepsQueryDto } from './dto/list-medical-reps.query';
-import { MedicalRepDto, MedicalRepSummaryDto } from './dto/medical-rep.dto';
+import { MedicalRepDto, MedicalRepListItemDto } from './dto/medical-rep.dto';
 import {
   MedicalRepMedicationLinkDto,
   ReplaceMedicalRepMedicationsDto,
@@ -42,7 +42,7 @@ export class MedicalRepController {
   ) {}
 
   @Get('medical-reps')
-  @ApiPaginatedResponse(MedicalRepSummaryDto)
+  @ApiPaginatedResponse(MedicalRepListItemDto)
   async search(
     @Query() query: ListMedicalRepsQueryDto,
     @CurrentUser() user: AuthContext,
