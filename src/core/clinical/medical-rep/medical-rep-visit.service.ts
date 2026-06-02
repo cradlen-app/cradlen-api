@@ -170,7 +170,12 @@ export class MedicalRepVisitService {
 
   async listVisits(
     user: AuthContext,
-    query: { page?: number; limit?: number; branch_id?: string },
+    query: {
+      page?: number;
+      limit?: number;
+      branch_id?: string;
+      medical_rep_id?: string;
+    },
   ) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
@@ -178,6 +183,7 @@ export class MedicalRepVisitService {
       organization_id: user.organizationId,
       is_deleted: false,
       ...(query.branch_id ? { branch_id: query.branch_id } : {}),
+      ...(query.medical_rep_id ? { medical_rep_id: query.medical_rep_id } : {}),
     };
     const [visits, total] = await this.prismaService.db.$transaction([
       this.prismaService.db.medicalRepVisit.findMany({
@@ -346,6 +352,9 @@ export class MedicalRepVisitService {
         ...(dto.company_name !== undefined && {
           company_name: dto.company_name,
         }),
+        ...(dto.specialty_focus !== undefined && {
+          specialty_focus: dto.specialty_focus,
+        }),
       };
       if (Object.keys(repUpdates).length > 0) {
         await tx.medicalRep.update({
@@ -481,6 +490,7 @@ export class MedicalRepVisitService {
         phone_number: dto.rep_phone_number ?? null,
         email: dto.email ?? null,
         company_name: dto.company_name!,
+        specialty_focus: dto.specialty_focus ?? null,
       },
     });
   }

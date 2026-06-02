@@ -8,6 +8,7 @@ export class MedicalRepDto {
   @ApiPropertyOptional({ nullable: true }) phone_number!: string | null;
   @ApiPropertyOptional({ nullable: true }) email!: string | null;
   @ApiProperty() company_name!: string;
+  @ApiPropertyOptional({ nullable: true }) specialty_focus!: string | null;
   @ApiPropertyOptional({ nullable: true }) notes!: string | null;
   @ApiProperty() created_at!: Date;
 }
