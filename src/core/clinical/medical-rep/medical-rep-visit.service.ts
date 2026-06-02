@@ -210,15 +210,46 @@ export class MedicalRepVisitService {
     user: AuthContext,
   ) {
     const current = await this.loadVisitForUser(visitId, user);
+    return this.queryCompletedVisitHistory(
+      {
+        organization_id: user.organizationId,
+        medical_rep_id: current.medical_rep_id,
+        id: { not: visitId },
+        status: 'COMPLETED',
+        is_deleted: false,
+      },
+      query,
+    );
+  }
+
+  /**
+   * All COMPLETED visits for a rep, most recent first — backs the standalone
+   * rep overview page's "Visits History" timeline (rep-scoped, not tied to a
+   * single visit). Includes product names per visit.
+   */
+  async listRepVisitHistory(
+    repId: string,
+    query: { page?: number; limit?: number },
+    user: AuthContext,
+  ) {
+    return this.queryCompletedVisitHistory(
+      {
+        organization_id: user.organizationId,
+        medical_rep_id: repId,
+        status: 'COMPLETED',
+        is_deleted: false,
+      },
+      query,
+    );
+  }
+
+  /** Shared paginated query + rich mapping for the visit-history timelines. */
+  private async queryCompletedVisitHistory(
+    where: Prisma.MedicalRepVisitWhereInput,
+    query: { page?: number; limit?: number },
+  ) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 3;
-    const where: Prisma.MedicalRepVisitWhereInput = {
-      organization_id: user.organizationId,
-      medical_rep_id: current.medical_rep_id,
-      id: { not: visitId },
-      status: 'COMPLETED',
-      is_deleted: false,
-    };
     const [visits, total] = await this.prismaService.db.$transaction([
       this.prismaService.db.medicalRepVisit.findMany({
         where,
