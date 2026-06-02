@@ -8,6 +8,7 @@ import {
 import { MedicationsService } from './medications.service';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service';
+import { MedicalRepService } from '@core/clinical/medical-rep/medical-rep.service';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { MedicationWithStatsDto } from './dto/medication.dto';
 
@@ -37,6 +38,10 @@ describe('MedicationsService', () => {
     $transaction: jest.Mock;
   };
   let auth: { isOwner: jest.Mock; assertOwnerOnly: jest.Mock };
+  let medicalRep: {
+    findRepsByMedicationIds: jest.Mock;
+    setMedicationRep: jest.Mock;
+  };
 
   beforeEach(async () => {
     db = {
@@ -61,11 +66,16 @@ describe('MedicationsService', () => {
       isOwner: jest.fn().mockResolvedValue(true),
       assertOwnerOnly: jest.fn(),
     };
+    medicalRep = {
+      findRepsByMedicationIds: jest.fn().mockResolvedValue(new Map()),
+      setMedicationRep: jest.fn().mockResolvedValue(undefined),
+    };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MedicationsService,
         { provide: PrismaService, useValue: { db } },
         { provide: AuthorizationService, useValue: auth },
+        { provide: MedicalRepService, useValue: medicalRep },
       ],
     }).compile();
     service = module.get<MedicationsService>(MedicationsService);
