@@ -80,7 +80,7 @@ export class MedicalRepService {
         full_name: rep.full_name,
         company_name: rep.company_name,
         national_id: rep.national_id,
-        phone: rep.phone_number,
+        phone_number: rep.phone_number,
         specialty_focus: rep.specialty_focus,
         products: rep.medications.map((m) => m.medication.name),
         last_visit_date: stat?._max.scheduled_at?.toISOString() ?? null,
@@ -171,6 +171,39 @@ export class MedicalRepService {
     await this.assertRepInOrg(repId, user.organizationId);
     await this.prismaService.db.medicalRepMedication.deleteMany({
       where: { medical_rep_id: repId, medication_id: medicationId },
+    });
+  }
+
+  /**
+   * Sets the single supplier rep for a medication (medication-side of the
+   * `MedicalRepMedication` link). Replaces any existing links for the
+   * medication; a `null` rep clears the link. Validates the rep is in the org.
+   */
+  async setMedicationRep(
+    medicationId: string,
+    medicalRepId: string | null,
+    organizationId: string,
+  ) {
+    await this.prismaService.db.$transaction(async (tx) => {
+      await tx.medicalRepMedication.deleteMany({
+        where: { medication_id: medicationId },
+      });
+      if (medicalRepId) {
+        const rep = await tx.medicalRep.findFirst({
+          where: {
+            id: medicalRepId,
+            organization_id: organizationId,
+            is_deleted: false,
+          },
+          select: { id: true },
+        });
+        if (!rep) {
+          throw new NotFoundException(`Medical rep ${medicalRepId} not found`);
+        }
+        await tx.medicalRepMedication.create({
+          data: { medical_rep_id: medicalRepId, medication_id: medicationId },
+        });
+      }
     });
   }
 
