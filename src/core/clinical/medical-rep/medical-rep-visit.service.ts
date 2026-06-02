@@ -199,6 +199,58 @@ export class MedicalRepVisitService {
     return visit;
   }
 
+  /**
+   * Past visits for the same rep as `visitId`, most recent first — backs the
+   * Overview "Visits History" timeline. Only COMPLETED visits (a true history),
+   * excluding the visit being viewed. Includes product names per visit.
+   */
+  async listVisitHistory(
+    visitId: string,
+    query: { page?: number; limit?: number },
+    user: AuthContext,
+  ) {
+    const current = await this.loadVisitForUser(visitId, user);
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 3;
+    const where: Prisma.MedicalRepVisitWhereInput = {
+      organization_id: user.organizationId,
+      medical_rep_id: current.medical_rep_id,
+      id: { not: visitId },
+      status: 'COMPLETED',
+      is_deleted: false,
+    };
+    const [visits, total] = await this.prismaService.db.$transaction([
+      this.prismaService.db.medicalRepVisit.findMany({
+        where,
+        orderBy: { scheduled_at: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          medications: {
+            include: { medication: { select: { id: true, name: true } } },
+          },
+        },
+      }),
+      this.prismaService.db.medicalRepVisit.count({ where }),
+    ]);
+    const items = visits.map((v) => ({
+      id: v.id,
+      scheduled_at: v.scheduled_at.toISOString(),
+      completed_at: v.completed_at?.toISOString() ?? null,
+      status: v.status,
+      purpose: v.purpose,
+      outcome: v.outcome,
+      samples_received: v.samples_received,
+      follow_up_date: v.follow_up_date?.toISOString() ?? null,
+      notes: v.notes,
+      products: v.medications.map((m) => ({
+        id: m.medication.id,
+        name: m.medication.name,
+      })),
+    }));
+    return paginated(items, { page, limit, total });
+  }
+
   async findBranchWaitingList(
     branchId: string,
     query: { page?: number; limit?: number },
