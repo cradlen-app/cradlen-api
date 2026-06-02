@@ -281,17 +281,17 @@ export const ALLOWED_PATHS = {
     'duration',
     'instructions',
   ],
-  // MEDICAL_REP_VISIT targets the editable "Visit" fields of a booked medical-rep
-  // visit, written via the unified bulk PATCH `/medical-rep-visits/:id/examination`
-  // (UpdateMedicalRepVisitExaminationDto). `medication_ids` replaces the visit's
-  // MedicalRepVisitMedication set (the "Products discussed" multi-picker).
+  // MEDICAL_REP_VISIT targets the editable "Visit" scalar fields of a booked
+  // medical-rep visit, written via the unified bulk PATCH
+  // `/medical-rep-visits/:id/examination` (UpdateMedicalRepVisitExaminationDto).
+  // "Products discussed" is NOT a template-bound field — it's a bespoke picker
+  // that sends `products[]` on the same PATCH (resolve-or-create + auto-promote).
   MEDICAL_REP_VISIT: [
     'purpose',
     'samples_received',
     'outcome',
     'follow_up_date',
     'notes',
-    'medication_ids',
   ],
 } as const satisfies Record<BindingNamespace, readonly string[]>;
 

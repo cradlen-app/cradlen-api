@@ -1,6 +1,5 @@
 import {
   ArrayMaxSize,
-  ArrayUnique,
   IsArray,
   IsBoolean,
   IsDateString,
@@ -9,17 +8,34 @@ import {
   IsString,
   IsUUID,
   MaxLength,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { MedicalRepVisitOutcome, MedicalRepVisitPurpose } from '@prisma/client';
 
 /**
+ * One "product discussed" row. `medication_id` present = picked from the
+ * catalog; absent = a drug the doctor typed — the server resolves-or-creates it
+ * in the org medication catalog (with `added_by_id` provenance).
+ */
+export class ProductDiscussedDto {
+  @IsUUID()
+  @IsOptional()
+  medication_id?: string;
+
+  @IsString()
+  @MaxLength(200)
+  name!: string;
+}
+
+/**
  * Bulk PATCH body for the medical-rep visit "examination" surface
- * (`PATCH /v1/medical-rep-visits/:id/examination`). Thin by design — the
- * template (`medical_rep_visit`) owns any conditional logic via predicates.
+ * (`PATCH /v1/medical-rep-visits/:id/examination`). Thin by design.
  *
- * `medication_ids` REPLACES the visit's `MedicalRepVisitMedication` set (the
- * "Products discussed" multi-picker). Bindings land here flat (the FE maps the
- * `MEDICAL_REP_VISIT` namespace to the body root).
+ * `products` REPLACES the visit's discussed-medication set and each med is also
+ * auto-added to the rep's promoted list (additive). Bindings for the scalar
+ * fields land here flat (the FE maps the `MEDICAL_REP_VISIT` namespace to the
+ * body root); `products` is supplied by the bespoke FE picker.
  */
 export class UpdateMedicalRepVisitExaminationDto {
   @IsEnum(MedicalRepVisitPurpose)
@@ -44,9 +60,9 @@ export class UpdateMedicalRepVisitExaminationDto {
   notes?: string;
 
   @IsArray()
-  @IsUUID('all', { each: true })
-  @ArrayUnique()
-  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => ProductDiscussedDto)
+  @ArrayMaxSize(100)
   @IsOptional()
-  medication_ids?: string[];
+  products?: ProductDiscussedDto[];
 }
