@@ -53,11 +53,41 @@ export class MedicalRepService {
           phone_number: true,
           company_name: true,
           specialty_focus: true,
+          medications: {
+            where: { medication: { is_deleted: false } },
+            select: { medication: { select: { name: true } } },
+          },
         },
       }),
       this.prismaService.db.medicalRep.count({ where }),
     ]);
-    return paginated(reps, { page, limit, total });
+    // Visit count + latest visit date in one aggregate instead of a per-row
+    // relation read plus a separate _count.
+    const repIds = reps.map((r) => r.id);
+    const visitStats = repIds.length
+      ? await this.prismaService.db.medicalRepVisit.groupBy({
+          by: ['medical_rep_id'],
+          where: { medical_rep_id: { in: repIds }, is_deleted: false },
+          _count: { _all: true },
+          _max: { scheduled_at: true },
+        })
+      : [];
+    const statsByRep = new Map(visitStats.map((s) => [s.medical_rep_id, s]));
+    const items = reps.map((rep) => {
+      const stat = statsByRep.get(rep.id);
+      return {
+        id: rep.id,
+        full_name: rep.full_name,
+        company_name: rep.company_name,
+        national_id: rep.national_id,
+        phone: rep.phone_number,
+        specialty_focus: rep.specialty_focus,
+        products: rep.medications.map((m) => m.medication.name),
+        last_visit_date: stat?._max.scheduled_at?.toISOString() ?? null,
+        visits_count: stat?._count._all ?? 0,
+      };
+    });
+    return paginated(items, { page, limit, total });
   }
 
   async findCompanies(
