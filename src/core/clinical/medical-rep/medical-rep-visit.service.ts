@@ -298,12 +298,17 @@ export class MedicalRepVisitService {
   }
 
   async findMyCurrent(user: AuthContext) {
+    // Bound to visits started TODAY — mirrors VisitsService.findMyCurrent so a
+    // rep visit started on a prior day (and never completed) doesn't linger as
+    // the doctor's "current visit" indefinitely.
+    const { start, end } = todayBounds();
     const visit = await this.prismaService.db.medicalRepVisit.findFirst({
       where: {
         organization_id: user.organizationId,
         assigned_doctor_id: user.profileId,
         status: 'IN_PROGRESS',
         is_deleted: false,
+        started_at: { gte: start, lte: end },
       },
       orderBy: { started_at: 'desc' },
       include: MED_REP_VISIT_INCLUDE,
