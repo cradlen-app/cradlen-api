@@ -34,6 +34,7 @@ const ALL_NS: readonly BindingNamespace[] = [
   'VISIT_INVESTIGATION',
   'VISIT_DIAGNOSIS',
   'PRESCRIPTION_ITEM',
+  'MEDICAL_REP_VISIT',
 ];
 
 function assertSelectOptions(config: ConfigShape, label: string) {

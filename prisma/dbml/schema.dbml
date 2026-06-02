@@ -1464,6 +1464,7 @@ Table medical_reps {
   phone_number String
   email String
   company_name String [not null]
+  specialty_focus String
   notes String
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
@@ -1506,6 +1507,11 @@ Table medical_rep_visits {
   status MedicalRepVisitStatus [not null, default: 'SCHEDULED']
   priority VisitPriority [not null, default: 'NORMAL']
   queue_number Int
+  purpose MedicalRepVisitPurpose
+  samples_received Boolean [not null, default: false]
+  outcome MedicalRepVisitOutcome
+  follow_up_date DateTime
+  examination_version Int [not null, default: 1]
   notes String
   form_template_id String
   form_template form_templates
@@ -1973,6 +1979,7 @@ Enum BindingNamespace {
   VISIT_INVESTIGATION
   VISIT_DIAGNOSIS
   PRESCRIPTION_ITEM
+  MEDICAL_REP_VISIT
 }
 
 Enum MedicalRepVisitStatus {
@@ -1982,6 +1989,23 @@ Enum MedicalRepVisitStatus {
   COMPLETED
   CANCELLED
   NO_SHOW
+}
+
+Enum MedicalRepVisitPurpose {
+  PRODUCT_DETAILING
+  SAMPLE_DROP
+  CONFERENCE_INVITE
+  PRICE_UPDATE
+  FOLLOW_UP
+  COURTESY
+  OTHER
+}
+
+Enum MedicalRepVisitOutcome {
+  NONE
+  SCHEDULE_FOLLOWUP
+  SHARE_MATERIALS
+  NOT_INTERESTED
 }
 
 Enum VisitPriority {

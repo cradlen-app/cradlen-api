@@ -21,6 +21,7 @@ import { getMetadataStorage } from 'class-validator';
 import { ALLOWED_PATHS } from './allowed-paths';
 import { BookVisitDto } from '../../core/clinical/visits/dto/book-visit.dto';
 import { BookMedicalRepVisitDto } from '../../core/clinical/medical-rep/dto/book-medical-rep-visit.dto';
+import { UpdateMedicalRepVisitExaminationDto } from '../../core/clinical/medical-rep/visit-examination/dto/update-medical-rep-visit-examination.dto';
 import { VisitIntakeFieldsDto } from '../../core/clinical/visits/dto/visit-intake.dto';
 import { UpsertVitalsDto } from '../../core/clinical/visits/dto/vitals.dto';
 import { ChiefComplaintMetaDto } from '../../core/clinical/visits/dto/chief-complaint-meta.dto';
@@ -74,6 +75,7 @@ describe('ALLOWED_PATHS ↔ DTO contract', () => {
 
   void BookVisitDto;
   void BookMedicalRepVisitDto;
+  void UpdateMedicalRepVisitExaminationDto;
   void VisitIntakeFieldsDto;
 
   void UpsertVitalsDto;
@@ -81,6 +83,9 @@ describe('ALLOWED_PATHS ↔ DTO contract', () => {
 
   const bookVisitProps = decoratedPropsIncludingAncestors(BookVisitDto);
   const bookRepProps = decoratedPropsIncludingAncestors(BookMedicalRepVisitDto);
+  const repExamProps = decoratedPropsIncludingAncestors(
+    UpdateMedicalRepVisitExaminationDto,
+  );
 
   // INTAKE paths drill into nested DTOs — record each nested DTO's properties
   // so we can verify the second segment too (catches renames inside
@@ -172,6 +177,14 @@ describe('ALLOWED_PATHS ↔ DTO contract', () => {
     it('MEDICAL_REP paths land on BookMedicalRepVisitDto properties', () => {
       for (const path of ALLOWED_PATHS.MEDICAL_REP) {
         assertPathLandsOnDto(path, bookRepProps, `MEDICAL_REP.${path}`);
+      }
+    });
+  });
+
+  describe('UpdateMedicalRepVisitExaminationDto namespace', () => {
+    it('MEDICAL_REP_VISIT paths land on UpdateMedicalRepVisitExaminationDto properties', () => {
+      for (const path of ALLOWED_PATHS.MEDICAL_REP_VISIT) {
+        assertPathLandsOnDto(path, repExamProps, `MEDICAL_REP_VISIT.${path}`);
       }
     });
   });

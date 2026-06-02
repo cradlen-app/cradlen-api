@@ -16,7 +16,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import type { Predicate } from '../../src/builder/rules/predicates.js';
 
 const TEMPLATE_CODE = 'book_visit';
-const TEMPLATE_VERSION = 9;
+const TEMPLATE_VERSION = 10;
 
 interface FieldSpec {
   code: string;
@@ -465,6 +465,16 @@ const SECTIONS: SectionSpec[] = [
         config: {
           ui: { autocompleteEndpoint: '/v1/medical-reps/companies' },
           validation: { maxLength: 200 },
+        },
+      },
+      {
+        code: 'specialty_focus',
+        label: 'Specialty focus',
+        type: 'TEXT',
+        binding: { namespace: 'MEDICAL_REP', path: 'specialty_focus' },
+        config: {
+          ui: { placeholder: 'Ex : General, OB-GYN, Pediatrics' },
+          validation: { maxLength: 120 },
         },
       },
     ],
