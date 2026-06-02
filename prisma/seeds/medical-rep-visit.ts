@@ -10,9 +10,9 @@
  * medicines promoted) is rendered by the frontend from the GET envelope — it is
  * NOT part of this template.
  *
- * `products_discussed` is a MULTISELECT sourced from the org medication catalog
- * (`/v1/medications`); the submitted value is the array of medication ids, which
- * the PATCH replaces the visit's MedicalRepVisitMedication set with.
+ * "Products discussed" is intentionally NOT a template field — it's a bespoke
+ * search/chips picker in the rep-visit workspace (catalog search + create-new +
+ * auto-promote to the rep's medicines), sent as `products[]` on the same PATCH.
  *
  * Activation: ends with a $transaction that deactivates prior active rows for
  * code='medical_rep_visit' and flips this one to active + PUBLISHED. Idempotent
@@ -25,7 +25,7 @@ import { assertValidConfig } from '../../src/builder/fields/field-config.schema.
 import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 
 const TEMPLATE_CODE = 'medical_rep_visit';
-const TEMPLATE_VERSION = 1;
+const TEMPLATE_VERSION = 2;
 
 type FieldType = keyof typeof FIELD_TYPES;
 type SectionConfig = { ui?: any; validation?: any; logic?: any };
@@ -89,19 +89,9 @@ const SECTIONS: SectionSpec[] = [
         binding: { namespace: 'MEDICAL_REP_VISIT', path: 'follow_up_date' },
         config: { ui: { colSpan: 4 } },
       },
-      {
-        code: 'products_discussed',
-        label: 'Products discussed',
-        type: 'MULTISELECT',
-        binding: { namespace: 'MEDICAL_REP_VISIT', path: 'medication_ids' },
-        config: {
-          ui: {
-            colSpan: 12,
-            variant: 'checkboxes',
-            optionsSource: '/v1/medications',
-          },
-        },
-      },
+      // "Products discussed" is NOT a template field — it's a bespoke search/chips
+      // picker in the rep visit workspace (catalog search + create-new + auto-promote
+      // to the rep's medicines), sent as `products[]` on the same examination PATCH.
       {
         code: 'outcome',
         label: 'Outcome / next step',

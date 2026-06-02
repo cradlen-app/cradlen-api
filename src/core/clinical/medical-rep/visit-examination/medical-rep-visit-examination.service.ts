@@ -9,7 +9,10 @@ import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { EventBus } from '@infrastructure/messaging/event-bus';
 import { ERROR_CODES } from '@common/constant/error-codes';
 import { assertMedicationsExistInOrg } from '../medical-rep.helpers.js';
-import { UpdateMedicalRepVisitExaminationDto } from './dto/update-medical-rep-visit-examination.dto';
+import {
+  ProductDiscussedDto,
+  UpdateMedicalRepVisitExaminationDto,
+} from './dto/update-medical-rep-visit-examination.dto';
 
 /** Closed statuses where the examination surface is read-only (edit blocked). */
 const LOCKED_STATUSES = new Set<MedicalRepVisitStatus>([
@@ -17,6 +20,16 @@ const LOCKED_STATUSES = new Set<MedicalRepVisitStatus>([
   'CANCELLED',
   'NO_SHOW',
 ]);
+
+/** Derive a stable upper-snake catalog code from a free-typed name. */
+function slugifyCode(name: string): string {
+  return name
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 60);
+}
 
 const VISIT_INCLUDE = {
   medical_rep: {
@@ -26,7 +39,9 @@ const VISIT_INCLUDE = {
       },
     },
   },
-  medications: { select: { medication_id: true } },
+  medications: {
+    include: { medication: { select: { name: true } } },
+  },
 } as const;
 
 type VisitWithRel = Prisma.MedicalRepVisitGetPayload<{
@@ -82,18 +97,22 @@ export class MedicalRepVisitExaminationService {
       select: { completed_at: true },
     });
 
-    const visitMedIds = visit.medications.map((m) => m.medication_id);
-    const promotedMedIds = visit.medical_rep.medications.map(
-      (m) => m.medication_id,
-    );
+    const visitMeds = visit.medications.map((m) => ({
+      id: m.medication_id,
+      name: m.medication.name,
+    }));
+    const promotedMeds = visit.medical_rep.medications.map((m) => ({
+      id: m.medication_id,
+      name: m.medication.name,
+    }));
     // On a never-edited visit (version 1, no products yet) default the
     // "Products discussed" selection to the rep's promoted medicines, so the
     // doctor starts from the rep's catalog and trims down. Once edited (or
     // explicitly cleared), the stored set is authoritative.
-    const medicationIds =
-      visit.examination_version === 1 && visitMedIds.length === 0
-        ? promotedMedIds
-        : visitMedIds;
+    const discussedMedications =
+      visit.examination_version === 1 && visitMeds.length === 0
+        ? promotedMeds
+        : visitMeds;
 
     return {
       visit_id: visit.id,
@@ -105,17 +124,100 @@ export class MedicalRepVisitExaminationService {
         company_name: visit.medical_rep.company_name,
         specialty_focus: visit.medical_rep.specialty_focus,
         last_visit_at: lastVisit?.completed_at?.toISOString() ?? null,
-        promoted_medications: visit.medical_rep.medications.map(
-          (m) => m.medication.name,
-        ),
+        promoted_medications: promotedMeds.map((m) => m.name),
       },
       purpose: visit.purpose,
       samples_received: visit.samples_received,
       outcome: visit.outcome,
       follow_up_date: visit.follow_up_date?.toISOString() ?? null,
       notes: visit.notes,
-      medication_ids: medicationIds,
+      discussed_medications: discussedMedications,
     };
+  }
+
+  /**
+   * Resolve each "product discussed" row to a Medication id: use the supplied
+   * `medication_id` when present (verified in-org), otherwise resolve-or-create
+   * an org-scoped catalog Medication from the typed name (slug `code`, tagged
+   * with `added_by_id`). Mirrors `linkNovelLabTests` in the OB/GYN examination.
+   * Returns deduped ids.
+   */
+  private async resolveProductMedicationIds(
+    tx: Prisma.TransactionClient,
+    products: ProductDiscussedDto[],
+    orgId: string,
+    profileId: string,
+  ): Promise<string[]> {
+    const ids = new Set<string>();
+    const providedIds: string[] = [];
+    const cache = new Map<string, string>(); // code → resolved id
+
+    for (const product of products) {
+      if (product.medication_id) {
+        providedIds.push(product.medication_id);
+        ids.add(product.medication_id);
+        continue;
+      }
+      const name = product.name?.trim();
+      if (!name) continue;
+      const code = slugifyCode(name);
+      if (!code) continue;
+
+      const cached = cache.get(code);
+      if (cached) {
+        ids.add(cached);
+        continue;
+      }
+
+      const existing = await tx.medication.findFirst({
+        where: {
+          is_deleted: false,
+          AND: [
+            { OR: [{ organization_id: null }, { organization_id: orgId }] },
+            { OR: [{ code }, { name: { equals: name, mode: 'insensitive' } }] },
+          ],
+        },
+        select: { id: true },
+      });
+      let mid = existing?.id;
+      if (!mid) {
+        try {
+          const created = await tx.medication.create({
+            data: {
+              organization_id: orgId,
+              code,
+              name,
+              added_by_id: profileId,
+            },
+            select: { id: true },
+          });
+          mid = created.id;
+        } catch (err) {
+          // Concurrent create on the (organization_id, code) unique → refetch.
+          if (
+            err instanceof Prisma.PrismaClientKnownRequestError &&
+            err.code === 'P2002'
+          ) {
+            const refetched = await tx.medication.findFirst({
+              where: { organization_id: orgId, code },
+              select: { id: true },
+            });
+            mid = refetched?.id;
+          } else {
+            throw err;
+          }
+        }
+      }
+      if (mid) {
+        cache.set(code, mid);
+        ids.add(mid);
+      }
+    }
+
+    if (providedIds.length) {
+      await assertMedicationsExistInOrg(tx, providedIds, orgId);
+    }
+    return [...ids];
   }
 
   async patch(
@@ -133,24 +235,31 @@ export class MedicalRepVisitExaminationService {
     }
 
     await this.prismaService.db.$transaction(async (tx) => {
-      // Products discussed — replace the visit's medication set.
-      if (dto.medication_ids !== undefined) {
-        if (dto.medication_ids.length) {
-          await assertMedicationsExistInOrg(
-            tx,
-            dto.medication_ids,
-            user.organizationId,
-          );
-        }
+      // Products discussed — resolve/create the meds, replace the visit's set,
+      // and auto-add them to the rep's promoted list (additive).
+      if (dto.products !== undefined) {
+        const medIds = await this.resolveProductMedicationIds(
+          tx,
+          dto.products,
+          user.organizationId,
+          user.profileId,
+        );
         await tx.medicalRepVisitMedication.deleteMany({
           where: { medical_rep_visit_id: id },
         });
-        if (dto.medication_ids.length) {
+        if (medIds.length) {
           await tx.medicalRepVisitMedication.createMany({
-            data: dto.medication_ids.map((mid) => ({
+            data: medIds.map((mid) => ({
               medical_rep_visit_id: id,
               medication_id: mid,
             })),
+          });
+          await tx.medicalRepMedication.createMany({
+            data: medIds.map((mid) => ({
+              medical_rep_id: visit.medical_rep_id,
+              medication_id: mid,
+            })),
+            skipDuplicates: true,
           });
         }
       }
