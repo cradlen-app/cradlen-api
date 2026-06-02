@@ -52,6 +52,7 @@ export class MedicalRepService {
           national_id: true,
           phone_number: true,
           company_name: true,
+          specialty_focus: true,
         },
       }),
       this.prismaService.db.medicalRep.count({ where }),

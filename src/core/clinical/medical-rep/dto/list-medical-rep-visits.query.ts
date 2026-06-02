@@ -6,4 +6,5 @@ export class ListMedicalRepVisitsQueryDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit?: number =
     20;
   @IsOptional() @IsUUID() branch_id?: string;
+  @IsOptional() @IsUUID() medical_rep_id?: string;
 }
