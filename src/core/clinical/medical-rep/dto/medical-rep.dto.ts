@@ -26,7 +26,7 @@ export class MedicalRepListItemDto {
   @ApiProperty() full_name!: string;
   @ApiProperty() company_name!: string;
   @ApiPropertyOptional({ nullable: true }) national_id!: string | null;
-  @ApiPropertyOptional({ nullable: true }) phone!: string | null;
+  @ApiPropertyOptional({ nullable: true }) phone_number!: string | null;
   @ApiPropertyOptional({ nullable: true }) specialty_focus!: string | null;
   @ApiProperty({ type: [String] }) products!: string[];
   @ApiPropertyOptional({ nullable: true }) last_visit_date!: string | null;
