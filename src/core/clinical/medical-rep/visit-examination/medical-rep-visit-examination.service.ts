@@ -116,6 +116,7 @@ export class MedicalRepVisitExaminationService {
 
     return {
       visit_id: visit.id,
+      medical_rep_id: visit.medical_rep_id,
       examination_version: visit.examination_version,
       status: visit.status,
       updated_at: visit.updated_at,
