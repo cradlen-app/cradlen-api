@@ -23,6 +23,7 @@ export class MedicalRepVisitOverviewDto {
  */
 export class MedicalRepVisitExaminationEnvelopeDto {
   @ApiProperty() visit_id!: string;
+  @ApiProperty() medical_rep_id!: string;
   @ApiProperty() examination_version!: number;
   @ApiProperty() status!: string;
   @ApiProperty() updated_at!: Date;
