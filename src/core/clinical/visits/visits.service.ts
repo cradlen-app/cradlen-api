@@ -463,7 +463,16 @@ export class VisitsService {
         skipDuplicates: true,
       });
 
-      return { visit, episode: episode, journey, patient };
+      return {
+        visit: {
+          ...visit,
+          chief_complaint: dto.chief_complaint ?? null,
+          chief_complaint_meta: dto.chief_complaint_meta ?? null,
+        },
+        episode: episode,
+        journey,
+        patient,
+      };
     });
 
     this.eventBus.publish('visit.booked', {
@@ -791,12 +800,18 @@ export class VisitsService {
               },
             },
           },
+          encounter: {
+            select: { chief_complaint: true, chief_complaint_meta: true },
+          },
         },
       }),
       this.prismaService.db.visit.count({ where }),
     ]);
 
-    return paginated(visits, { page, limit, total });
+    return paginated(
+      visits.map((v) => this.flattenVisit(v)),
+      { page, limit, total },
+    );
   }
 
   private listInclude = {
@@ -818,7 +833,32 @@ export class VisitsService {
         },
       },
     },
+    encounter: {
+      select: { chief_complaint: true, chief_complaint_meta: true },
+    },
   } as const;
+
+  /**
+   * Lift the visit's encounter scalars (`chief_complaint`,
+   * `chief_complaint_meta`) onto the visit object and drop the nested
+   * `encounter` key. The frontend (`mapApiVisitToVisit`) reads these flat at
+   * the visit root, so list/detail/booking responses present a single shape.
+   */
+  private flattenVisit<
+    T extends {
+      encounter?: {
+        chief_complaint: string | null;
+        chief_complaint_meta: Prisma.JsonValue | null;
+      } | null;
+    },
+  >(visit: T) {
+    const { encounter, ...rest } = visit;
+    return {
+      ...rest,
+      chief_complaint: encounter?.chief_complaint ?? null,
+      chief_complaint_meta: encounter?.chief_complaint_meta ?? null,
+    };
+  }
 
   private async assertBranchAccess(branchId: string, user: AuthContext) {
     const branch = await this.prismaService.db.branch.findFirst({
@@ -868,7 +908,10 @@ export class VisitsService {
       }),
       this.prismaService.db.visit.count({ where }),
     ]);
-    return paginated(visits, { page, limit, total });
+    return paginated(
+      visits.map((v) => this.flattenVisit(v)),
+      { page, limit, total },
+    );
   }
 
   async findBranchInProgress(
@@ -897,7 +940,10 @@ export class VisitsService {
       }),
       this.prismaService.db.visit.count({ where }),
     ]);
-    return paginated(visits, { page, limit, total });
+    return paginated(
+      visits.map((v) => this.flattenVisit(v)),
+      { page, limit, total },
+    );
   }
 
   async findMyWaitingList(
@@ -928,7 +974,10 @@ export class VisitsService {
       }),
       this.prismaService.db.visit.count({ where }),
     ]);
-    return paginated(visits, { page, limit, total });
+    return paginated(
+      visits.map((v) => this.flattenVisit(v)),
+      { page, limit, total },
+    );
   }
 
   async findMyCurrent(user: AuthContext) {
@@ -943,7 +992,7 @@ export class VisitsService {
       orderBy: { started_at: 'desc' },
       include: this.listInclude,
     });
-    return { data: visit };
+    return { data: visit ? this.flattenVisit(visit) : null };
   }
 
   async findOne(id: string, user: AuthContext) {
@@ -958,7 +1007,7 @@ export class VisitsService {
     ) {
       throw new NotFoundException(`Visit ${id} not found`);
     }
-    return visit;
+    return this.flattenVisit(visit);
   }
 
   async update(id: string, dto: UpdateVisitDto, user: AuthContext) {
