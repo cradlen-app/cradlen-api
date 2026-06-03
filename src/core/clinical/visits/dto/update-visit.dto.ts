@@ -1,4 +1,5 @@
 import {
+  Equals,
   IsDateString,
   IsEnum,
   IsOptional,
@@ -10,6 +11,15 @@ import { AppointmentType, MaritalStatus, VisitPriority } from '@prisma/client';
 import { VisitIntakeFieldsDto } from './visit-intake.dto';
 
 export class UpdateVisitDto extends VisitIntakeFieldsDto {
+  /**
+   * SYSTEM discriminator. Immutable per visit, but the booking form template
+   * the FE reuses for edit resubmits it. Accept-and-pin so the global
+   * ValidationPipe (whitelist + forbidNonWhitelisted) doesn't 400 on it;
+   * VisitsService.update re-injects 'PATIENT' for the template validator
+   * regardless, so the value is never persisted from the patch.
+   */
+  @Equals('PATIENT') @IsOptional() visitor_type?: 'PATIENT';
+
   /**
    * SYSTEM discriminator. Optional on update because a visit cannot change
    * visitor_type after booking, but specialty may change if the assigned
