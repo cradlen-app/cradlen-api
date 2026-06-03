@@ -442,8 +442,9 @@ const SECTIONS: SectionSpec[] = [
               idTarget: 'medical_rep_id',
               allowCreate: true,
               fillFields: {
-                phone_number: 'rep_phone_number',
+                rep_phone_number: 'phone_number',
                 company_name: 'company_name',
+                specialty_focus: 'specialty_focus',
               },
             },
           },
