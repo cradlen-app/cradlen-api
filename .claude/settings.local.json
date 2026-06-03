@@ -116,7 +116,11 @@
       "PowerShell(npx eslint src/core/auth/services/sessions.service.spec.ts --fix 2>&1 | Out-String; npx jest src/core/auth/services/sessions.service.spec.ts -t 'batches branch lookups' 2>&1 | Select-Object -Last 30)",
       "PowerShell(npx eslint src/core/auth/services/sessions.service.spec.ts --fix 2>&1 | Out-String; npx jest src/core/auth/services/sessions.service.spec.ts 2>&1 | Select-Object -Last 10)",
       "PowerShell(npx eslint src/core/auth --fix 2>&1 | Out-String; npx jest src/core/auth 2>&1 | Select-Object -Last 8)",
-      "PowerShell(npx eslint src/core/auth/strategies --fix 2>&1 | Out-String; npx jest src/core/auth 2>&1 | Select-Object -Last 10)"
+      "PowerShell(npx eslint src/core/auth/strategies --fix 2>&1 | Out-String; npx jest src/core/auth 2>&1 | Select-Object -Last 10)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/v1/care-paths)",
+      "Bash(echo 'health: http __TRACKED_VAR__')",
+      "Bash(echo \"--- server tail ---\")",
+      "Bash(tail -8 \"C:\\\\Users\\\\ibrah\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\F--Cradlen-cradlen-api\\\\ab496445-dcd0-49a3-a31d-6c77274a7db0\\\\tasks\\\\bykwf8awz.output\")"
     ],
     "additionalDirectories": [
       "\\tmp",
