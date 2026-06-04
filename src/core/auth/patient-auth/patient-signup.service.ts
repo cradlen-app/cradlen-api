@@ -13,6 +13,8 @@ import type { PatientSignupStartResponseDto } from './dto/patient-signup-start-r
 import type { PatientSignupCompleteDto } from './dto/patient-signup-complete.dto.js';
 import type { PatientLoginDto } from './dto/patient-login.dto.js';
 import type { RefreshDto } from '../dto/refresh.dto.js';
+import type { PatientMeResponseDto } from './dto/patient-me-response.dto.js';
+import type { PatientAuthContext } from '@common/interfaces/patient-auth-context.interface.js';
 
 const PASSWORD_BCRYPT_ROUNDS = 12;
 
@@ -205,6 +207,66 @@ export class PatientSignupService {
 
   logout(refreshToken: string): Promise<void> {
     return this.tokensService.revokeRefreshToken(refreshToken);
+  }
+
+  /**
+   * Resolves the request-scoped identity into a display name plus the
+   * demographics of every patient the account may act on. Patient tokens can't
+   * read the staff `GET /patients/:id`, so this is the portal's only source of
+   * names. `relation` is "SELF" for the holder's own record, otherwise the
+   * guardian→patient link's relation.
+   */
+  async me(ctx: PatientAuthContext): Promise<PatientMeResponseDto> {
+    let displayName = '';
+    if (ctx.patientId) {
+      const patient = await this.prismaService.db.patient.findFirst({
+        where: { id: ctx.patientId, is_deleted: false },
+        select: { full_name: true },
+      });
+      displayName = patient?.full_name ?? '';
+    } else if (ctx.guardianId) {
+      const guardian = await this.prismaService.db.guardian.findFirst({
+        where: { id: ctx.guardianId, is_deleted: false },
+        select: { full_name: true },
+      });
+      displayName = guardian?.full_name ?? '';
+    }
+
+    const patients = ctx.accessiblePatientIds.length
+      ? await this.prismaService.db.patient.findMany({
+          where: { id: { in: ctx.accessiblePatientIds }, is_deleted: false },
+          select: {
+            id: true,
+            full_name: true,
+            date_of_birth: true,
+            guardian_links: ctx.guardianId
+              ? {
+                  where: { guardian_id: ctx.guardianId },
+                  select: { relation_to_patient: true },
+                }
+              : false,
+          },
+        })
+      : [];
+
+    const accessible_patients = patients.map((p) => ({
+      id: p.id,
+      full_name: p.full_name,
+      date_of_birth: this.normalizeDob(p.date_of_birth.toISOString()),
+      relation:
+        p.id === ctx.patientId
+          ? 'SELF'
+          : (p.guardian_links?.[0]?.relation_to_patient ?? 'OTHER'),
+    }));
+
+    return {
+      user_id: ctx.userId,
+      patient_id: ctx.patientId ?? null,
+      guardian_id: ctx.guardianId ?? null,
+      accessible_patient_ids: ctx.accessiblePatientIds,
+      display_name: displayName,
+      accessible_patients,
+    };
   }
 
   private createUser(data: {

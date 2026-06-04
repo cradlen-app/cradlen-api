@@ -89,12 +89,9 @@ export class PatientAuthController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get the current patient/guardian identity' })
   @ApiStandardResponse(PatientMeResponseDto)
-  me(@CurrentPatient() patient: PatientAuthContext): PatientMeResponseDto {
-    return {
-      user_id: patient.userId,
-      patient_id: patient.patientId ?? null,
-      guardian_id: patient.guardianId ?? null,
-      accessible_patient_ids: patient.accessiblePatientIds,
-    };
+  me(
+    @CurrentPatient() patient: PatientAuthContext,
+  ): Promise<PatientMeResponseDto> {
+    return this.patientSignupService.me(patient);
   }
 }
