@@ -16,8 +16,11 @@ import type { AuthTokensDto } from '../dto/auth-tokens.dto.js';
 import type { ResetTokenResponseDto } from '../dto/reset-token-response.dto.js';
 import type {
   JwtAccessPayload,
+  JwtPatientAccessPayload,
+  JwtPatientRefreshPayload,
   JwtRefreshPayload,
   PasswordResetTokenPayload,
+  PatientSignupTokenPayload,
   SignupTokenPayload,
 } from '../interfaces/jwt-payload.interface.js';
 import {
@@ -48,6 +51,17 @@ export interface IssueTokenPairArgs {
    * revoked in the same transaction as the new refresh-token issuance.
    * A guarded updateMany rejects the rotation if the row is already revoked,
    * preventing two parallel refreshes from producing two valid sessions.
+   */
+  revokeJti?: string;
+}
+
+export interface IssuePatientTokenPairArgs {
+  userId: string;
+  patientId?: string;
+  guardianId?: string;
+  /**
+   * When set, the existing patient refresh-token row with this jti is
+   * atomically revoked in the same transaction as the new issuance (rotation).
    */
   revokeJti?: string;
 }
@@ -94,6 +108,40 @@ export class TokensService {
     if (payload.type !== expectedType)
       throw new UnauthorizedException('Invalid token type');
     return payload.userId;
+  }
+
+  issuePatientSignupToken(
+    subjectType: 'PATIENT' | 'GUARDIAN',
+    subjectId: string,
+  ): { patient_signup_token: string; expires_in: number } {
+    const payload: PatientSignupTokenPayload = {
+      subjectType,
+      subjectId,
+      type: 'patient_signup',
+    };
+    const expires_in = this.parseDurationToSeconds(
+      this.authConfig.jwt.registrationExpiration,
+    );
+    const patient_signup_token = this.jwtService.sign(payload, {
+      secret: this.authConfig.jwt.accessSecret,
+      audience: JWT_AUDIENCE,
+      issuer: JWT_ISSUER,
+      expiresIn: expires_in,
+    });
+    return { patient_signup_token, expires_in };
+  }
+
+  decodePatientSignupToken(token: string): {
+    subjectType: 'PATIENT' | 'GUARDIAN';
+    subjectId: string;
+  } {
+    const payload = this.verifyWithGrace<PatientSignupTokenPayload>(token, {
+      secret: this.authConfig.jwt.accessSecret,
+      errorMessage: 'Invalid or expired token',
+    });
+    if (payload.type !== 'patient_signup')
+      throw new UnauthorizedException('Invalid token type');
+    return { subjectType: payload.subjectType, subjectId: payload.subjectId };
   }
 
   tryDecodeAccessToken(authorization?: string): string | null {
@@ -290,14 +338,111 @@ export class TokensService {
     };
   }
 
+  /**
+   * Issues an access + refresh pair for a self-registered patient/guardian.
+   * The refresh row is persisted with only `user_id` set (profile/org/branch
+   * are null) so a future patient-refresh endpoint can rotate it. Unlike the
+   * staff path there is no profile to assert against.
+   */
+  async issuePatientTokenPair(
+    args: IssuePatientTokenPairArgs,
+  ): Promise<AuthTokensDto> {
+    const jti = randomUUID();
+    const accessExpiresIn = this.parseDurationToSeconds(
+      this.authConfig.jwt.accessExpiration,
+    );
+    const refreshExpiresIn = this.parseDurationToSeconds(
+      this.authConfig.jwt.refreshExpiration,
+    );
+    const accessPayload: JwtPatientAccessPayload = {
+      userId: args.userId,
+      ...(args.patientId && { patientId: args.patientId }),
+      ...(args.guardianId && { guardianId: args.guardianId }),
+      type: 'patient_access',
+    };
+    const refreshPayload: JwtPatientRefreshPayload = {
+      userId: args.userId,
+      ...(args.patientId && { patientId: args.patientId }),
+      ...(args.guardianId && { guardianId: args.guardianId }),
+      jti,
+      type: 'patient_refresh',
+    };
+    const access_token = this.jwtService.sign(accessPayload, {
+      secret: this.authConfig.jwt.accessSecret,
+      audience: JWT_AUDIENCE,
+      issuer: JWT_ISSUER,
+      expiresIn: accessExpiresIn,
+    });
+    const refresh_token = this.jwtService.sign(refreshPayload, {
+      secret: this.authConfig.jwt.refreshSecret,
+      audience: JWT_AUDIENCE,
+      issuer: JWT_ISSUER,
+      expiresIn: refreshExpiresIn,
+    });
+    const token_hash = await bcrypt.hash(refresh_token, BCRYPT_ROUNDS);
+
+    // Same atomic rotation guard as issueTokenPair: when rotating, the old
+    // jti is revoked in the same transaction as the new-row create, and a
+    // count check rejects a double-rotate.
+    await this.prismaService.db.$transaction(async (tx) => {
+      if (args.revokeJti) {
+        const revoked = await tx.refreshToken.updateMany({
+          where: { jti: args.revokeJti, is_revoked: false },
+          data: { is_revoked: true, revoked_at: new Date() },
+        });
+        if (revoked.count !== 1) {
+          throw new UnauthorizedException(
+            'Refresh token already rotated or revoked',
+          );
+        }
+      }
+      await tx.refreshToken.create({
+        data: {
+          jti,
+          token_hash,
+          user_id: args.userId,
+          profile_id: null,
+          organization_id: null,
+          active_branch_id: null,
+          expires_at: new Date(Date.now() + refreshExpiresIn * 1000),
+        },
+      });
+    });
+
+    return {
+      type: 'tokens',
+      access_token,
+      refresh_token,
+      token_type: 'Bearer',
+      expires_in: accessExpiresIn,
+    };
+  }
+
+  decodePatientRefreshToken(token: string): JwtPatientRefreshPayload {
+    const payload = this.verifyWithGrace<JwtPatientRefreshPayload>(token, {
+      secret: this.authConfig.jwt.refreshSecret,
+      errorMessage: 'Invalid or expired refresh token',
+    });
+    if (payload.type !== 'patient_refresh') {
+      throw new UnauthorizedException('Invalid token type');
+    }
+    return payload;
+  }
+
   async revokeRefreshToken(rawRefreshToken: string): Promise<void> {
     try {
-      const payload = this.verifyWithGrace<JwtRefreshPayload>(rawRefreshToken, {
+      const payload = this.verifyWithGrace<
+        JwtRefreshPayload | JwtPatientRefreshPayload
+      >(rawRefreshToken, {
         secret: this.authConfig.jwt.refreshSecret,
         ignoreExpiration: true,
         errorMessage: 'Invalid token',
       });
-      if (payload.type !== 'refresh') return;
+      // Both staff (`refresh`) and patient (`patient_refresh`) tokens are
+      // revoked by jti — the lookup is type-agnostic.
+      if (payload.type !== 'refresh' && payload.type !== 'patient_refresh') {
+        return;
+      }
       await this.prismaService.db.refreshToken.updateMany({
         where: { jti: payload.jti, is_revoked: false },
         data: { is_revoked: true, revoked_at: new Date() },
