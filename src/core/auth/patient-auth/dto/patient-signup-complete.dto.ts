@@ -1,20 +1,20 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsString, MaxLength } from 'class-validator';
 import { MatchesField } from '@common/validators/matches-field.validator.js';
 import { IsStrongPassword } from '@common/validators/strong-password.validator.js';
 
-export class ResetPasswordDto {
-  @ApiProperty()
+export class PatientSignupCompleteDto {
+  @ApiProperty({ description: 'Token issued by signup/start' })
   @IsString()
-  @IsNotEmpty()
-  reset_token!: string;
+  patient_signup_token!: string;
 
-  @ApiProperty({ example: 'NewSecurePass123!' })
+  @ApiProperty({ example: 'Password1!' })
   @IsStrongPassword()
   password!: string;
 
-  @ApiProperty({ example: 'NewSecurePass123!' })
+  @ApiProperty({ example: 'Password1!' })
   @IsString()
+  @MaxLength(128)
   @MatchesField('password')
   confirm_password!: string;
 }

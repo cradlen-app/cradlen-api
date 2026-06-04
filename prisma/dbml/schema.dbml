@@ -91,6 +91,10 @@ Table users {
   onboarding_completed Boolean [not null, default: false]
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
+  patient_id String [unique]
+  guardian_id String [unique]
+  patient patients
+  guardian guardians
   profiles profiles [not null]
   refreshTokens refresh_tokens [not null]
   verificationCodes verification_codes [not null]
@@ -557,6 +561,7 @@ Table patients {
   field_flags patient_field_flags [not null]
   guardian_links patient_guardians [not null]
   guardian_record guardians
+  user users
   obgyn_history patient_obgyn_histories
   calendar_events calendar_events [not null]
   enrollments patient_org_enrollments [not null]
@@ -1015,9 +1020,11 @@ Table guardians {
   national_id String [unique]
   full_name String [not null]
   phone_number String
+  date_of_birth DateTime
   patient_id String [unique]
   patient patients
   patient_links patient_guardians [not null]
+  user users
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
@@ -2151,6 +2158,10 @@ Enum CalendarVisibility {
 }
 
 Ref: branches.organization_id > organizations.id [delete: Cascade]
+
+Ref: users.patient_id - patients.id [delete: Set Null]
+
+Ref: users.guardian_id - guardians.id [delete: Set Null]
 
 Ref: profile_job_functions.profile_id > profiles.id [delete: Cascade]
 
