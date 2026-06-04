@@ -50,7 +50,10 @@ function makeRow(o: RowOverrides = {}) {
       prescribed_by: { user: { first_name: 'Sara', last_name: 'Mansour' } },
       visit: {
         scheduled_at: o.prescribedAt ?? new Date(Date.now() - 2 * DAY),
-        branch: { name: 'Cradlen Maadi' },
+        branch: {
+          name: 'Cradlen Maadi',
+          organization: { name: 'Jasmin Clinic' },
+        },
       },
     },
   };
@@ -115,6 +118,7 @@ describe('PatientMedicationsService', () => {
       instructions: 'after meals',
       doctor_name: 'Dr. Sara Mansour',
       clinic_name: 'Cradlen Maadi',
+      organization_name: 'Jasmin Clinic',
     });
   });
 
