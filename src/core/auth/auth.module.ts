@@ -35,5 +35,6 @@ import { AuthAuditListener } from './events/auth-audit.listener.js';
     RegistrationCleanupService,
     AuthAuditListener,
   ],
+  exports: [TokensService],
 })
 export class AuthModule {}

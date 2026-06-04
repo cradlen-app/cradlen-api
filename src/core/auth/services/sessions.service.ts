@@ -59,7 +59,15 @@ export class SessionsService {
     dto: LoginDto,
   ): Promise<ProfileSelectionResponse | OnboardingRequiredResponse> {
     const user = await this.prismaService.db.user.findFirst({
-      where: { email: dto.email, is_deleted: false },
+      // Staff login only — patient/guardian accounts authenticate via
+      // /v1/patient-auth/login. (They have email=null today, so this is
+      // defensive, but keeps the two identity spaces strictly separate.)
+      where: {
+        email: dto.email,
+        is_deleted: false,
+        patient_id: null,
+        guardian_id: null,
+      },
     });
     if (!user?.password_hashed) {
       this.publishLoginFailure(dto.email, 'not_found');

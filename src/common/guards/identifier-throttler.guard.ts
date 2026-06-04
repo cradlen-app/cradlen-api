@@ -36,7 +36,13 @@ export class IdentifierThrottlerGuard extends ThrottlerGuard {
     if (!body) return 'no-identifier';
 
     const lowerCased = new Set(['email', 'target']);
-    for (const key of ['email', 'phone', 'phone_number', 'target']) {
+    for (const key of [
+      'email',
+      'phone',
+      'phone_number',
+      'national_id',
+      'target',
+    ]) {
       const value = body[key];
       if (typeof value === 'string') {
         return lowerCased.has(key) ? value.toLowerCase() : value;
