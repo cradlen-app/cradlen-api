@@ -54,6 +54,9 @@ export class PatientMedicationItemDto {
 
   @ApiPropertyOptional({ nullable: true })
   clinic_name!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  organization_name!: string | null;
 }
 
 export class PatientMedicationsResponseDto {
