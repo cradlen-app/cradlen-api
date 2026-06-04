@@ -23,6 +23,7 @@ import { NotificationsModule } from '@core/notifications/notifications.module.js
 import { SpecialtyCatalogModule } from '@core/org/specialty-catalog/specialty-catalog.module';
 import { JobFunctionsModule } from '@core/org/job-functions/job-functions.module';
 import { PatientsModule } from '@core/patient/patients/patients.module';
+import { PatientPortalModule } from '@core/patient/patient-portal/patient-portal.module.js';
 import { GuardiansModule } from '@core/patient/guardians/guardians.module';
 import { VisitsModule } from '@core/clinical/visits/visits.module';
 import { MedicalRepModule } from '@core/clinical/medical-rep/medical-rep.module';
@@ -72,6 +73,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     SpecialtyCatalogModule,
     JobFunctionsModule,
     PatientsModule,
+    PatientPortalModule,
     GuardiansModule,
     VisitsModule,
     MedicalRepModule,
