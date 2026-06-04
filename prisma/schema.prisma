@@ -388,6 +388,13 @@ model User {
   onboarding_completed Boolean              @default(false)
   created_at           DateTime             @default(now())
   updated_at           DateTime             @updatedAt
+  // Patient-facing identity link. A self-registered patient/guardian gets a
+  // User with exactly one of these set and NO Profile. @unique enforces one
+  // account per patient/guardian (also closes the double-signup race -> P2002).
+  patient_id           String?              @unique @db.Uuid
+  guardian_id          String?              @unique @db.Uuid
+  patient              Patient?             @relation("PatientUser", fields: [patient_id], references: [id], onDelete: SetNull)
+  guardian             Guardian?            @relation("GuardianUser", fields: [guardian_id], references: [id], onDelete: SetNull)
   profiles             Profile[]
   refreshTokens        RefreshToken[]
   verificationCodes    VerificationCode[]
@@ -927,6 +934,7 @@ model Patient {
   field_flags         PatientFieldFlag[]
   guardian_links      PatientGuardian[]
   guardian_record     Guardian?                     @relation("PatientGuardianRecord")
+  user                User?                         @relation("PatientUser")
   obgyn_history       PatientObgynHistory?
   calendar_events     CalendarEvent[]
   enrollments         PatientOrgEnrollment[]
@@ -1504,9 +1512,11 @@ model Guardian {
   national_id   String?           @unique
   full_name     String
   phone_number  String?
+  date_of_birth DateTime?         @db.Date
   patient_id    String?           @unique @db.Uuid
   patient       Patient?          @relation("PatientGuardianRecord", fields: [patient_id], references: [id], onDelete: SetNull)
   patient_links PatientGuardian[]
+  user          User?             @relation("GuardianUser")
   is_deleted    Boolean           @default(false)
   deleted_at    DateTime?
   created_at    DateTime          @default(now())

@@ -9,6 +9,7 @@ import {
   MinLength,
 } from 'class-validator';
 import { MatchesField } from '@common/validators/matches-field.validator.js';
+import { IsStrongPassword } from '@common/validators/strong-password.validator.js';
 
 export class SignupStartDto {
   @ApiProperty()
@@ -42,13 +43,11 @@ export class SignupStartDto {
   @IsPhoneNumber()
   phone_number?: string;
 
-  @ApiProperty()
-  @IsString()
-  @MinLength(8)
-  @MaxLength(128)
+  @ApiProperty({ example: 'Password1!' })
+  @IsStrongPassword()
   password!: string;
 
-  @ApiProperty()
+  @ApiProperty({ example: 'Password1!' })
   @IsString()
   @MaxLength(128)
   @MatchesField('password')
