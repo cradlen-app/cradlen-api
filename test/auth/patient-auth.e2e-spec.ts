@@ -113,6 +113,15 @@ describe('Patient self-signup and login (E2E)', () => {
       patient_id: patient.id,
       guardian_id: null,
       accessible_patient_ids: [patient.id],
+      display_name: 'Sara Ali',
+      accessible_patients: [
+        {
+          id: patient.id,
+          full_name: 'Sara Ali',
+          date_of_birth: DOB,
+          relation: 'SELF',
+        },
+      ],
     });
 
     // The patient token must NOT authenticate a staff route (wrong type).
@@ -256,6 +265,15 @@ describe('Patient self-signup and login (E2E)', () => {
     expect(me.body.data.guardian_id).toBe(guardian.id);
     expect(me.body.data.patient_id).toBeNull();
     expect(me.body.data.accessible_patient_ids).toEqual([patient.id]);
+    expect(me.body.data.display_name).toBe('Omar Ali');
+    expect(me.body.data.accessible_patients).toEqual([
+      {
+        id: patient.id,
+        full_name: 'Sara Ali',
+        date_of_birth: DOB,
+        relation: 'SPOUSE',
+      },
+    ]);
   });
 
   it('login with a well-formed but unknown national_id returns a generic 401', async () => {
