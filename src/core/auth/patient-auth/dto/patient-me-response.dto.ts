@@ -1,5 +1,22 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
+export class PatientSummaryDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  full_name!: string;
+
+  @ApiProperty({ description: 'ISO date (YYYY-MM-DD)' })
+  date_of_birth!: string;
+
+  @ApiProperty({
+    description:
+      '"SELF" for the account holder\'s own record, otherwise the GuardianRelation value (PARENT, CHILD, …).',
+  })
+  relation!: string;
+}
+
 export class PatientMeResponseDto {
   @ApiProperty()
   user_id!: string;
@@ -12,4 +29,10 @@ export class PatientMeResponseDto {
 
   @ApiProperty({ type: [String] })
   accessible_patient_ids!: string[];
+
+  @ApiProperty({ description: "The account holder's full name." })
+  display_name!: string;
+
+  @ApiProperty({ type: [PatientSummaryDto] })
+  accessible_patients!: PatientSummaryDto[];
 }
