@@ -40,7 +40,7 @@ export class PatientMedicationsService {
         prescription: {
           include: {
             prescribed_by: { include: { user: true } },
-            visit: { include: { branch: true } },
+            visit: { include: { branch: { include: { organization: true } } } },
           },
         },
       },
@@ -112,6 +112,7 @@ export class PatientMedicationsService {
         ? `Dr. ${prescriber.first_name} ${prescriber.last_name}`.trim()
         : null,
       clinic_name: visit.branch?.name ?? null,
+      organization_name: visit.branch?.organization?.name ?? null,
     };
   }
 }
@@ -126,7 +127,11 @@ type PrescriptionItemWithRelations =
           })
         | null;
       visit: import('@prisma/client').Visit & {
-        branch: import('@prisma/client').Branch | null;
+        branch:
+          | (import('@prisma/client').Branch & {
+              organization: import('@prisma/client').Organization | null;
+            })
+          | null;
       };
     };
   };
