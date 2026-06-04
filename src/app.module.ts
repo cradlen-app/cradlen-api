@@ -11,6 +11,7 @@ import { DatabaseModule } from '@infrastructure/database/database.module';
 import { MessagingModule } from '@infrastructure/messaging/messaging.module';
 import { HealthModule } from '@core/health/health.module';
 import { AuthModule } from '@core/auth/auth.module';
+import { PatientAuthModule } from '@core/auth/patient-auth/patient-auth.module.js';
 import { RolesModule } from '@core/org/roles/roles.module';
 import { OrganizationsModule } from '@core/org/organizations/organizations.module.js';
 import { BranchesModule } from '@core/org/branches/branches.module.js';
@@ -58,6 +59,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     DatabaseModule,
     HealthModule,
     AuthModule,
+    PatientAuthModule,
     RolesModule,
     OrganizationsModule,
     ProfilesModule,

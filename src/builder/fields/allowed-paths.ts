@@ -51,7 +51,7 @@ export const ALLOWED_PATHS = {
     // vitals.bmi is COMPUTED — listed under COMPUTED namespace, never sent on wire.
     // vitals.rbs_mmol_l exists on visit_vitals table but no DTO exposes it yet; add here once it does.
   ],
-  GUARDIAN: ['full_name', 'national_id', 'phone_number'],
+  GUARDIAN: ['full_name', 'national_id', 'phone_number', 'date_of_birth'],
   MEDICAL_REP: [
     'rep_full_name',
     'rep_national_id',
