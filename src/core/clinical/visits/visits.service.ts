@@ -1310,8 +1310,12 @@ export class VisitsService {
       spouse_national_id?: string;
       spouse_full_name?: string;
       spouse_phone_number?: string;
+      spouse_date_of_birth?: string;
     },
   ) {
+    const spouseDob = dto.spouse_date_of_birth
+      ? new Date(dto.spouse_date_of_birth)
+      : undefined;
     let spouseGuardianId: string | null = null;
     if (dto.spouse_guardian_id) {
       const picked = await tx.guardian.findFirst({
@@ -1330,12 +1334,14 @@ export class VisitsService {
           national_id: dto.spouse_national_id,
           full_name: dto.spouse_full_name,
           phone_number: dto.spouse_phone_number ?? null,
+          date_of_birth: spouseDob ?? null,
         },
         update: {
           full_name: dto.spouse_full_name,
           ...(dto.spouse_phone_number !== undefined && {
             phone_number: dto.spouse_phone_number,
           }),
+          ...(spouseDob !== undefined && { date_of_birth: spouseDob }),
         },
       });
       spouseGuardianId = spouse.id;
@@ -1356,6 +1362,7 @@ export class VisitsService {
             ...(dto.spouse_phone_number !== undefined && {
               phone_number: dto.spouse_phone_number,
             }),
+            ...(spouseDob !== undefined && { date_of_birth: spouseDob }),
           },
         });
         spouseGuardianId = existingSpouseLink.guardian_id;
@@ -1364,6 +1371,7 @@ export class VisitsService {
           data: {
             full_name: dto.spouse_full_name,
             phone_number: dto.spouse_phone_number ?? null,
+            date_of_birth: spouseDob ?? null,
           },
         });
         spouseGuardianId = spouse.id;
