@@ -1,8 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { StorageService } from '@infrastructure/storage/storage.service.js';
+import { EventBus } from '@infrastructure/messaging/event-bus.js';
 import { PatientAccessService } from '@core/patient/patient-access/patient-access.service.js';
+import {
+  CLINICAL_EVENTS,
+  type InvestigationReviewedEvent,
+} from '@core/clinical/events/events.public.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import {
   InvestigationReviewDto,
@@ -24,7 +29,12 @@ const investigationReviewSelect = {
     select: {
       episode: {
         select: {
-          journey: { select: { patient: { select: { full_name: true } } } },
+          journey: {
+            select: {
+              organization_id: true,
+              patient: { select: { id: true, full_name: true } },
+            },
+          },
         },
       },
     },
@@ -47,10 +57,13 @@ type InvestigationReviewRow = Prisma.VisitInvestigationGetPayload<{
  */
 @Injectable()
 export class InvestigationsService {
+  private readonly logger = new Logger(InvestigationsService.name);
+
   constructor(
     private readonly prismaService: PrismaService,
     private readonly storageService: StorageService,
     private readonly patientAccess: PatientAccessService,
+    private readonly eventBus: EventBus,
   ) {}
 
   async getReview(
@@ -77,7 +90,7 @@ export class InvestigationsService {
   ): Promise<InvestigationReviewDto> {
     const existing = await this.prismaService.db.visitInvestigation.findFirst({
       where: { id, is_deleted: false },
-      select: { id: true, visit_id: true },
+      select: { id: true, visit_id: true, status: true },
     });
     if (!existing) {
       throw new NotFoundException('Investigation not found');
@@ -96,7 +109,35 @@ export class InvestigationsService {
       select: investigationReviewSelect,
     });
 
+    // Notify the patient once, on the transition into REVIEWED (re-saving notes
+    // on an already-reviewed row doesn't re-notify). Best-effort.
+    if (existing.status !== 'REVIEWED') {
+      this.publishReviewed(id, updated);
+    }
+
     return this.toDto(updated);
+  }
+
+  /** Publishes `investigation.reviewed` for the patient "result ready" notification. */
+  private publishReviewed(id: string, inv: InvestigationReviewRow): void {
+    try {
+      const journey = inv.visit.episode?.journey;
+      if (!journey) return;
+      this.eventBus.publish<InvestigationReviewedEvent>(
+        CLINICAL_EVENTS.investigation.reviewed,
+        {
+          investigation_id: id,
+          visit_id: inv.visit_id,
+          patient_id: journey.patient.id,
+          organization_id: journey.organization_id,
+          test_name: inv.lab_test?.name ?? inv.custom_test_name ?? 'your test',
+        },
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Failed to publish investigation.reviewed (id=${id}): ${String(err)}`,
+      );
+    }
   }
 
   private async toDto(
