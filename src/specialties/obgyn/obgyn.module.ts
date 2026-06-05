@@ -9,6 +9,8 @@ import { AmendmentsController } from './amendments/amendments.controller';
 import { AmendmentsService } from './amendments/amendments.service';
 import { HistorySummaryController } from './history-summary/history-summary.controller';
 import { HistorySummaryService } from './history-summary/history-summary.service';
+import { ObgynPortalHistoryController } from './patient-portal/obgyn-portal-history.controller';
+import { ObgynPortalHistoryService } from './patient-portal/obgyn-portal-history.service';
 
 @Module({
   imports: [VisitsModule, PatientAccessModule],
@@ -17,12 +19,14 @@ import { HistorySummaryService } from './history-summary/history-summary.service
     ObgynExaminationController,
     AmendmentsController,
     HistorySummaryController,
+    ObgynPortalHistoryController,
   ],
   providers: [
     ObgynHistoryService,
     ObgynExaminationService,
     AmendmentsService,
     HistorySummaryService,
+    ObgynPortalHistoryService,
   ],
 })
 export class ObgynModule {}
