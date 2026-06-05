@@ -6,4 +6,5 @@ export {
   type PregnancyRiskLevelChangedEvent,
   type VisitPregnancyRecordUpdatedEvent,
   type VisitExaminationUpdatedEvent,
+  type InvestigationResultUploadedEvent,
 } from './clinical-events';
