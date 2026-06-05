@@ -1,0 +1,268 @@
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+
+/** Max result files a patient may attach to a single investigation. */
+const MAX_ATTACHMENTS = 10;
+import { PrismaService } from '@infrastructure/database/prisma.service.js';
+import { StorageService } from '@infrastructure/storage/storage.service.js';
+import type { PatientAuthContext } from '@common/interfaces/patient-auth-context.interface.js';
+import { resolveAccessiblePatientIds } from './accessible-patients.util.js';
+import {
+  patientInvestigationInclude,
+  mapPatientInvestigation,
+} from './patient-investigations.service.js';
+import { PatientInvestigationItemDto } from './dto/patient-investigation.dto.js';
+import {
+  ConfirmResultDto,
+  CreateResultUploadDto,
+  ResultUploadUrlDto,
+} from './dto/investigation-result.dto.js';
+
+/**
+ * Patient-uploaded investigation results. The patient uploads a result file
+ * (PDF/image) for an investigation ordered for them, directly to R2 via a
+ * presigned PUT, then confirms the object key. Provenance is `result_source =
+ * PATIENT` (a patient is not a Profile, so `resulted_by_id` stays null).
+ */
+@Injectable()
+export class PatientInvestigationResultsService {
+  private readonly logger = new Logger(PatientInvestigationResultsService.name);
+
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly storageService: StorageService,
+  ) {}
+
+  /** Object-key prefix that scopes a result file to one investigation. */
+  private resultPrefix(investigationId: string): string {
+    return `investigations/${investigationId}/results/`;
+  }
+
+  /**
+   * Loads an investigation the caller may access (cross-org via the patient's
+   * journeys), or throws a generic 404 — never reveal another patient's record.
+   */
+  private async assertAccessibleInvestigation(
+    ctx: PatientAuthContext,
+    investigationId: string,
+  ): Promise<{ id: string; status: string; result_source: string }> {
+    const targetIds = resolveAccessiblePatientIds(ctx);
+    if (targetIds.length === 0) {
+      throw new NotFoundException('No matching record found');
+    }
+
+    const investigation =
+      await this.prismaService.db.visitInvestigation.findFirst({
+        where: {
+          id: investigationId,
+          is_deleted: false,
+          visit: {
+            is_deleted: false,
+            episode: { journey: { patient_id: { in: targetIds } } },
+          },
+        },
+        select: { id: true, status: true, result_source: true },
+      });
+
+    if (!investigation) {
+      throw new NotFoundException('No matching record found');
+    }
+    return investigation;
+  }
+
+  /**
+   * A patient may only attach a result while the investigation is still awaiting
+   * one (`ORDERED`), or replace their OWN not-yet-reviewed upload
+   * (`RESULTED` + `result_source = PATIENT`). A clinic-recorded result, or a
+   * `REVIEWED`/`CANCELLED` row, is closed — never let a patient overwrite it.
+   */
+  private assertOpenForPatientResult(existing: {
+    status: string;
+    result_source: string;
+  }): void {
+    const open =
+      existing.status === 'ORDERED' ||
+      (existing.status === 'RESULTED' && existing.result_source === 'PATIENT');
+    if (!open) {
+      throw new ConflictException(
+        'A result has already been recorded for this investigation',
+      );
+    }
+  }
+
+  /**
+   * Issues a short-lived presigned PUT URL for a result file. The key is
+   * server-derived and scoped to the investigation; the caller uploads the bytes
+   * directly to R2, then calls `confirmResult` with the returned key.
+   */
+  async createUploadUrl(
+    ctx: PatientAuthContext,
+    investigationId: string,
+    dto: CreateResultUploadDto,
+  ): Promise<ResultUploadUrlDto> {
+    const existing = await this.assertAccessibleInvestigation(
+      ctx,
+      investigationId,
+    );
+    this.assertOpenForPatientResult(existing);
+
+    this.storageService.assertAllowedContentType(dto.content_type);
+    this.storageService.assertWithinSizeLimit(dto.size_bytes);
+
+    const ext = this.storageService.extensionFor(dto.content_type);
+    const key = `${this.resultPrefix(investigationId)}${randomUUID()}.${ext}`;
+
+    const { url, expiresIn } =
+      await this.storageService.createPresignedUploadUrl({
+        key,
+        contentType: dto.content_type,
+      });
+
+    return {
+      key,
+      upload_url: url,
+      expires_in: expiresIn,
+      content_type: dto.content_type,
+    };
+  }
+
+  /**
+   * Confirms an uploaded result: validates the key belongs to this investigation
+   * and the object actually landed in R2, then appends it as an attachment and
+   * marks the investigation RESULTED (patient-sourced) inside a transaction.
+   */
+  async confirmResult(
+    ctx: PatientAuthContext,
+    investigationId: string,
+    dto: ConfirmResultDto,
+  ): Promise<PatientInvestigationItemDto> {
+    const existing = await this.assertAccessibleInvestigation(
+      ctx,
+      investigationId,
+    );
+    this.assertOpenForPatientResult(existing);
+
+    // Security: the key must be one we issued for THIS investigation, so a
+    // patient can't point their record at an arbitrary or someone else's object.
+    if (!dto.key.startsWith(this.resultPrefix(investigationId))) {
+      throw new BadRequestException('Invalid result key');
+    }
+
+    const head = await this.storageService.headObject(dto.key);
+    if (!head) {
+      throw new BadRequestException('Uploaded file not found');
+    }
+    if (head.contentType) {
+      this.storageService.assertAllowedContentType(head.contentType);
+    }
+    if (typeof head.contentLength === 'number') {
+      this.storageService.assertWithinSizeLimit(head.contentLength);
+    }
+
+    const liveCount =
+      await this.prismaService.db.visitInvestigationAttachment.count({
+        where: { investigation_id: investigationId, is_deleted: false },
+      });
+    if (liveCount >= MAX_ATTACHMENTS) {
+      throw new ConflictException(
+        'Attachment limit reached for this investigation',
+      );
+    }
+
+    // Advance ORDERED → RESULTED; never downgrade a REVIEWED/CANCELLED row.
+    const nextStatus = existing.status === 'ORDERED' ? 'RESULTED' : undefined;
+
+    const updated = await this.prismaService.db.$transaction(async (tx) => {
+      await tx.visitInvestigationAttachment.create({
+        data: {
+          investigation_id: investigationId,
+          object_key: dto.key,
+          content_type: head.contentType ?? null,
+          size_bytes:
+            typeof head.contentLength === 'number' ? head.contentLength : null,
+          source: 'PATIENT',
+        },
+      });
+      return tx.visitInvestigation.update({
+        where: { id: investigationId },
+        data: {
+          result_source: 'PATIENT',
+          resulted_at: new Date(),
+          ...(dto.result_text !== undefined
+            ? { result_text: dto.result_text }
+            : {}),
+          ...(nextStatus ? { status: nextStatus } : {}),
+          version: { increment: 1 },
+        },
+        include: patientInvestigationInclude,
+      });
+    });
+
+    return mapPatientInvestigation(updated, this.storageService);
+  }
+
+  /**
+   * Removes a result file the patient uploaded, while the investigation is still
+   * open (not REVIEWED/CANCELLED). Soft-deletes the attachment row and best-effort
+   * deletes the R2 object. Only the patient's own (`source = PATIENT`) attachments
+   * are removable.
+   */
+  async removeAttachment(
+    ctx: PatientAuthContext,
+    investigationId: string,
+    attachmentId: string,
+  ): Promise<PatientInvestigationItemDto> {
+    const existing = await this.assertAccessibleInvestigation(
+      ctx,
+      investigationId,
+    );
+    if (existing.status === 'REVIEWED' || existing.status === 'CANCELLED') {
+      throw new ConflictException(
+        'This investigation can no longer be modified',
+      );
+    }
+
+    const attachment =
+      await this.prismaService.db.visitInvestigationAttachment.findFirst({
+        where: {
+          id: attachmentId,
+          investigation_id: investigationId,
+          source: 'PATIENT',
+          is_deleted: false,
+        },
+        select: { id: true, object_key: true },
+      });
+    if (!attachment) {
+      throw new NotFoundException('No matching record found');
+    }
+
+    const updated = await this.prismaService.db.$transaction(async (tx) => {
+      await tx.visitInvestigationAttachment.update({
+        where: { id: attachment.id },
+        data: { is_deleted: true, deleted_at: new Date() },
+      });
+      return tx.visitInvestigation.update({
+        where: { id: investigationId },
+        data: { version: { increment: 1 } },
+        include: patientInvestigationInclude,
+      });
+    });
+
+    // Best-effort: the row is already gone, so a storage hiccup shouldn't 500.
+    try {
+      await this.storageService.deleteObject(attachment.object_key);
+    } catch {
+      this.logger.warn(
+        `Failed to delete R2 object for removed attachment ${attachment.id}`,
+      );
+    }
+
+    return mapPatientInvestigation(updated, this.storageService);
+  }
+}
