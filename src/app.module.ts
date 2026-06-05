@@ -7,7 +7,9 @@ import { SentryModule } from '@sentry/nestjs/setup';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
 import authConfig from './config/auth.config';
+import storageConfig from './config/storage.config';
 import { DatabaseModule } from '@infrastructure/database/database.module';
+import { StorageModule } from '@infrastructure/storage/storage.module.js';
 import { MessagingModule } from '@infrastructure/messaging/messaging.module';
 import { HealthModule } from '@core/health/health.module';
 import { AuthModule } from '@core/auth/auth.module';
@@ -45,10 +47,11 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     SentryModule.forRoot(),
     ScheduleModule.forRoot(),
     MessagingModule,
+    StorageModule,
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: [`.env.${process.env.NODE_ENV ?? 'development'}`, '.env'],
-      load: [appConfig, databaseConfig, authConfig],
+      load: [appConfig, databaseConfig, authConfig, storageConfig],
     }),
     ThrottlerModule.forRootAsync({
       inject: [appConfig.KEY],

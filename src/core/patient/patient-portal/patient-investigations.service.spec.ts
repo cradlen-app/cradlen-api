@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import type { PrismaService } from '@infrastructure/database/prisma.service.js';
+import type { StorageService } from '@infrastructure/storage/storage.service.js';
 import type { PatientAuthContext } from '@common/interfaces/patient-auth-context.interface.js';
 import { PatientInvestigationsService } from './patient-investigations.service.js';
 
@@ -7,6 +8,7 @@ describe('PatientInvestigationsService', () => {
   let service: PatientInvestigationsService;
   let findMany: jest.Mock;
   let count: jest.Mock;
+  let createPresignedDownloadUrl: jest.Mock;
 
   const guardianCtx: PatientAuthContext = {
     userId: 'u1',
@@ -21,8 +23,9 @@ describe('PatientInvestigationsService', () => {
     test_category: 'LAB',
     notes: 'Fast for 8 hours',
     status: 'REVIEWED',
+    result_source: 'CLINIC',
     result_text: 'Hb 12.1',
-    result_attachment_url: 'https://files/result.pdf',
+    result_attachment_url: 'investigations/i1/results/abc.pdf',
     reviewed_at: new Date('2026-02-01T10:00:00Z'),
     ordered_at: new Date('2026-01-30T09:00:00Z'),
     lab_test: { name: 'CBC' },
@@ -39,13 +42,19 @@ describe('PatientInvestigationsService', () => {
   beforeEach(() => {
     findMany = jest.fn().mockReturnValue([]);
     count = jest.fn().mockReturnValue(0);
+    createPresignedDownloadUrl = jest
+      .fn()
+      .mockImplementation((key: string) => Promise.resolve(`signed:${key}`));
     const prisma = {
       db: {
         visitInvestigation: { findMany, count },
         $transaction: (ops: unknown[]) => Promise.all(ops),
       },
     } as unknown as PrismaService;
-    service = new PatientInvestigationsService(prisma);
+    const storage = {
+      createPresignedDownloadUrl,
+    } as unknown as StorageService;
+    service = new PatientInvestigationsService(prisma, storage);
   });
 
   it('throws 404 when a guardian targets an un-linked patient', async () => {
@@ -102,7 +111,7 @@ describe('PatientInvestigationsService', () => {
     });
   });
 
-  it('exposes the result and reviewing doctor for a REVIEWED investigation', async () => {
+  it('exposes a presigned result url and the reviewing doctor for a REVIEWED row', async () => {
     findMany.mockReturnValue([baseRow]);
     count.mockReturnValue(1);
 
@@ -117,19 +126,19 @@ describe('PatientInvestigationsService', () => {
       test_name: 'CBC',
       type: 'LAB',
       status: 'REVIEWED',
-      instructions: 'Fast for 8 hours',
-      ordered_by_name: 'Dr. Aya Hassan',
       reviewed_by_name: 'Dr. Omar Saleh',
       result_text: 'Hb 12.1',
-      result_attachment_url: 'https://files/result.pdf',
-      visit_id: 'v1',
-      organization_name: 'Jasmin Clinic',
-      branch_name: 'Main Branch',
+      result_attachment_url: 'signed:investigations/i1/results/abc.pdf',
     });
+    expect(createPresignedDownloadUrl).toHaveBeenCalledWith(
+      'investigations/i1/results/abc.pdf',
+    );
   });
 
-  it('withholds result content until the investigation is REVIEWED', async () => {
-    findMany.mockReturnValue([{ ...baseRow, status: 'RESULTED' }]);
+  it('withholds a CLINIC result until REVIEWED', async () => {
+    findMany.mockReturnValue([
+      { ...baseRow, status: 'RESULTED', result_source: 'CLINIC' },
+    ]);
     count.mockReturnValue(1);
 
     const result = await service.listInvestigations(
@@ -142,10 +151,24 @@ describe('PatientInvestigationsService', () => {
       result_text: null,
       result_attachment_url: null,
       reviewed_by_name: null,
-      // non-gated metadata still present
-      test_name: 'CBC',
-      ordered_by_name: 'Dr. Aya Hassan',
     });
+    expect(createPresignedDownloadUrl).not.toHaveBeenCalled();
+  });
+
+  it('shows a PATIENT-uploaded result even before review', async () => {
+    findMany.mockReturnValue([
+      { ...baseRow, status: 'RESULTED', result_source: 'PATIENT' },
+    ]);
+    count.mockReturnValue(1);
+
+    const result = await service.listInvestigations(
+      { userId: 'u1', patientId: 'p1', accessiblePatientIds: ['p1'] },
+      { page: 1, limit: 10 },
+    );
+
+    expect(result.items[0].result_attachment_url).toBe(
+      'signed:investigations/i1/results/abc.pdf',
+    );
   });
 
   it('falls back to custom_test_name when there is no catalog lab test', async () => {

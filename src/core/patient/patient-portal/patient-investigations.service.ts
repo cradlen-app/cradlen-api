@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
+import { StorageService } from '@infrastructure/storage/storage.service.js';
 import type { PatientAuthContext } from '@common/interfaces/patient-auth-context.interface.js';
 import type { PaginatedPayload } from '@common/dto/api-response.dto.js';
 import { paginated } from '@common/utils/pagination.utils.js';
@@ -9,7 +10,7 @@ import { ListPatientInvestigationsQueryDto } from './dto/list-patient-investigat
 import { PatientInvestigationItemDto } from './dto/patient-investigation.dto.js';
 
 /** Prisma `include` for a patient-portal investigation row. */
-const patientInvestigationInclude = {
+export const patientInvestigationInclude = {
   lab_test: { select: { name: true } },
   ordered_by: {
     select: { user: { select: { first_name: true, last_name: true } } },
@@ -31,20 +32,69 @@ const patientInvestigationInclude = {
   },
 } satisfies Prisma.VisitInvestigationInclude;
 
-type PatientInvestigationRow = Prisma.VisitInvestigationGetPayload<{
+export type PatientInvestigationRow = Prisma.VisitInvestigationGetPayload<{
   include: typeof patientInvestigationInclude;
 }>;
 
+/**
+ * Maps an investigation row to the patient-facing DTO. Result content is exposed
+ * when the row is REVIEWED (clinic-published, clinically gated) OR was uploaded
+ * by the patient themselves (`result_source = PATIENT`). When exposed, the stored
+ * object key in `result_attachment_url` is converted to a short-lived presigned
+ * GET URL (the R2 bucket is private). Async because signing the URL is awaited.
+ */
+export async function mapPatientInvestigation(
+  inv: PatientInvestigationRow,
+  storage: StorageService,
+): Promise<PatientInvestigationItemDto> {
+  const reviewed = inv.status === 'REVIEWED';
+  const showResult = reviewed || inv.result_source === 'PATIENT';
+  const orderedBy = inv.ordered_by?.user ?? null;
+  const reviewedBy = inv.reviewed_by?.user ?? null;
+
+  const resultUrl =
+    showResult && inv.result_attachment_url
+      ? await storage.createPresignedDownloadUrl(inv.result_attachment_url)
+      : null;
+
+  return {
+    id: inv.id,
+    test_name: inv.lab_test?.name ?? inv.custom_test_name ?? '',
+    type: inv.test_category ?? null,
+    status: inv.status,
+    ordered_at: inv.ordered_at,
+    instructions: inv.notes ?? null,
+    ordered_by_name: orderedBy
+      ? `Dr. ${orderedBy.first_name} ${orderedBy.last_name}`.trim()
+      : null,
+    reviewed_at: inv.reviewed_at ?? null,
+    reviewed_by_name:
+      reviewed && reviewedBy
+        ? `Dr. ${reviewedBy.first_name} ${reviewedBy.last_name}`.trim()
+        : null,
+    result_text: showResult ? (inv.result_text ?? null) : null,
+    result_attachment_url: resultUrl,
+    visit_id: inv.visit_id,
+    visit_date: inv.visit.scheduled_at,
+    organization_name: inv.visit.episode?.journey?.organization?.name ?? null,
+    branch_name: inv.visit.branch?.name ?? null,
+  };
+}
+
 @Injectable()
 export class PatientInvestigationsService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly storageService: StorageService,
+  ) {}
 
   /**
    * Lists the caller's investigations (lab tests & imaging) across all visits,
    * newest first (by order date). Cancelled orders are hidden unless explicitly
    * requested via the status filter. Result content is withheld until a doctor
-   * has REVIEWED the investigation (clinical-safety gate). Cross-org (traverses
-   * the patient's journeys) and scoped to the patients the caller may access.
+   * has REVIEWED the investigation (clinical-safety gate) — except results the
+   * patient uploaded themselves, which are always visible to them. Cross-org
+   * (traverses the patient's journeys) and scoped to the accessible patients.
    */
   async listInvestigations(
     ctx: PatientAuthContext,
@@ -84,38 +134,9 @@ export class PatientInvestigationsService {
       this.prismaService.db.visitInvestigation.count({ where }),
     ]);
 
-    const items = rows.map((row) => this.toDto(row));
+    const items = await Promise.all(
+      rows.map((row) => mapPatientInvestigation(row, this.storageService)),
+    );
     return paginated(items, { page, limit, total });
-  }
-
-  private toDto(inv: PatientInvestigationRow): PatientInvestigationItemDto {
-    const reviewed = inv.status === 'REVIEWED';
-    const orderedBy = inv.ordered_by?.user ?? null;
-    const reviewedBy = inv.reviewed_by?.user ?? null;
-
-    return {
-      id: inv.id,
-      test_name: inv.lab_test?.name ?? inv.custom_test_name ?? '',
-      type: inv.test_category ?? null,
-      status: inv.status,
-      ordered_at: inv.ordered_at,
-      instructions: inv.notes ?? null,
-      ordered_by_name: orderedBy
-        ? `Dr. ${orderedBy.first_name} ${orderedBy.last_name}`.trim()
-        : null,
-      reviewed_at: inv.reviewed_at ?? null,
-      reviewed_by_name:
-        reviewed && reviewedBy
-          ? `Dr. ${reviewedBy.first_name} ${reviewedBy.last_name}`.trim()
-          : null,
-      result_text: reviewed ? (inv.result_text ?? null) : null,
-      result_attachment_url: reviewed
-        ? (inv.result_attachment_url ?? null)
-        : null,
-      visit_id: inv.visit_id,
-      visit_date: inv.visit.scheduled_at,
-      organization_name: inv.visit.episode?.journey?.organization?.name ?? null,
-      branch_name: inv.visit.branch?.name ?? null,
-    };
   }
 }

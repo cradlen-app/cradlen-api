@@ -23,6 +23,8 @@
     "seed:fixtures": "tsx prisma/seed-fixtures.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1062.0",
+    "@aws-sdk/s3-request-presigner": "^3.1062.0",
     "@neondatabase/serverless": "^1.1.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.4",
@@ -110,7 +112,7 @@
     },
     "moduleNameMapper": {
       "^(\\.{1,2}/.*)\\.js$": "$1",
-"^@common/(.*?)(\\.js)?$": "<rootDir>/common/$1",
+      "^@common/(.*?)(\\.js)?$": "<rootDir>/common/$1",
       "^@infrastructure/(.*?)(\\.js)?$": "<rootDir>/infrastructure/$1",
       "^@builder/(.*?)(\\.js)?$": "<rootDir>/builder/$1",
       "^@core/(.*?)(\\.js)?$": "<rootDir>/core/$1",
