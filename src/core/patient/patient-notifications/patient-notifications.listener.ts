@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
+import {
+  CLINICAL_EVENTS,
+  type InvestigationReviewedEvent,
+} from '@core/clinical/events/events.public.js';
 import { PatientNotificationsService } from './patient-notifications.service.js';
 import { PATIENT_NOTIFICATION_CODES } from './patient-notification-codes.js';
 
@@ -99,6 +103,35 @@ export class PatientNotificationsListener {
     } catch (err) {
       this.logger.error(
         `Failed to create patient notifications for completed visit (visitId=${visitId})`,
+        err,
+      );
+    }
+  }
+
+  /**
+   * When a doctor reviews an investigation, notify the patient that their result
+   * is ready (deep-links to the Tests screen, where the now-REVIEWED result is
+   * visible). Best-effort — never breaks the review.
+   */
+  @OnEvent(CLINICAL_EVENTS.investigation.reviewed)
+  async handleInvestigationReviewed(event: InvestigationReviewedEvent) {
+    try {
+      await this.patientNotifications.create({
+        patientId: event.patient_id,
+        organizationId: event.organization_id,
+        code: PATIENT_NOTIFICATION_CODES.INVESTIGATION_REVIEWED.code,
+        category: PATIENT_NOTIFICATION_CODES.INVESTIGATION_REVIEWED.category,
+        title: PATIENT_NOTIFICATION_CODES.INVESTIGATION_REVIEWED.defaultTitle,
+        description: `Your ${event.test_name} result has been reviewed.`,
+        navigateTo: '/tests',
+        metadata: {
+          investigationId: event.investigation_id,
+          visitId: event.visit_id,
+        },
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to create patient notification for investigation.reviewed (investigationId=${event.investigation_id})`,
         err,
       );
     }
