@@ -11,6 +11,11 @@ import { randomUUID } from 'node:crypto';
 const MAX_ATTACHMENTS = 10;
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { StorageService } from '@infrastructure/storage/storage.service.js';
+import { EventBus } from '@infrastructure/messaging/event-bus.js';
+import {
+  CLINICAL_EVENTS,
+  type InvestigationResultUploadedEvent,
+} from '@core/clinical/events/events.public.js';
 import type { PatientAuthContext } from '@common/interfaces/patient-auth-context.interface.js';
 import { resolveAccessiblePatientIds } from './accessible-patients.util.js';
 import {
@@ -37,6 +42,7 @@ export class PatientInvestigationResultsService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly storageService: StorageService,
+    private readonly eventBus: EventBus,
   ) {}
 
   /** Object-key prefix that scopes a result file to one investigation. */
@@ -204,7 +210,64 @@ export class PatientInvestigationResultsService {
       });
     });
 
+    // Notify the ordering doctor once, on the first upload (ORDERED → RESULTED) —
+    // not per file. A failure here must not fail the (already committed) upload.
+    if (nextStatus === 'RESULTED') {
+      try {
+        await this.publishResultUploaded(investigationId);
+      } catch (err) {
+        this.logger.warn(
+          `Failed to publish investigation.result_uploaded (investigationId=${investigationId}): ${String(err)}`,
+        );
+      }
+    }
+
     return mapPatientInvestigation(updated, this.storageService);
+  }
+
+  /** Builds and publishes the `investigation.result_uploaded` event. */
+  private async publishResultUploaded(investigationId: string): Promise<void> {
+    const meta = await this.prismaService.db.visitInvestigation.findUnique({
+      where: { id: investigationId },
+      select: {
+        ordered_by_id: true,
+        visit_id: true,
+        custom_test_name: true,
+        lab_test: { select: { name: true } },
+        visit: {
+          select: {
+            branch_id: true,
+            episode: {
+              select: {
+                journey: {
+                  select: {
+                    organization_id: true,
+                    patient: { select: { id: true, full_name: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const journey = meta?.visit.episode?.journey;
+    if (!meta || !journey) return;
+
+    this.eventBus.publish<InvestigationResultUploadedEvent>(
+      CLINICAL_EVENTS.investigation.resultUploaded,
+      {
+        investigation_id: investigationId,
+        visit_id: meta.visit_id,
+        ordered_by_id: meta.ordered_by_id,
+        organization_id: journey.organization_id,
+        branch_id: meta.visit.branch_id ?? null,
+        patient_id: journey.patient.id,
+        patient_name: journey.patient.full_name,
+        test_name: meta.lab_test?.name ?? meta.custom_test_name ?? 'a test',
+      },
+    );
   }
 
   /**
