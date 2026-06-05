@@ -21,6 +21,11 @@ export const PATIENT_NOTIFICATION_CODES = def({
     category: 'report',
     defaultTitle: 'New tests ordered',
   },
+  INVESTIGATION_REVIEWED: {
+    code: 'investigation.reviewed',
+    category: 'report',
+    defaultTitle: 'Test result ready',
+  },
 });
 
 export type PatientNotificationCodeKey =
