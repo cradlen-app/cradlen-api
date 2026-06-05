@@ -59,6 +59,12 @@ export const CLINICAL_EVENTS = {
   investigation: {
     ordered: 'investigation.ordered',
     resulted: 'investigation.resulted',
+    /**
+     * Emitted once when a patient uploads the first result file for an
+     * investigation (the ORDERED → RESULTED transition). Drives the "patient
+     * uploaded a result" notification to the ordering doctor.
+     */
+    resultUploaded: 'investigation.result_uploaded',
   },
   prescription: {
     issued: 'prescription.issued',
@@ -138,4 +144,20 @@ export interface VisitExaminationUpdatedEvent {
   aggregates: string[];
   updated_by_id: string;
   examination_version: number;
+}
+
+/**
+ * Payload for `investigation.result_uploaded`. Emitted when a patient uploads
+ * the first result file for an investigation. `ordered_by_id` is the ordering
+ * doctor's profile — the notification recipient.
+ */
+export interface InvestigationResultUploadedEvent {
+  investigation_id: string;
+  visit_id: string;
+  ordered_by_id: string;
+  organization_id: string;
+  branch_id: string | null;
+  patient_id: string;
+  patient_name: string;
+  test_name: string;
 }

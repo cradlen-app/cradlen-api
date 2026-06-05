@@ -5,17 +5,20 @@ import {
 } from '@nestjs/common';
 import type { PrismaService } from '@infrastructure/database/prisma.service.js';
 import type { StorageService } from '@infrastructure/storage/storage.service.js';
+import type { EventBus } from '@infrastructure/messaging/event-bus.js';
 import type { PatientAuthContext } from '@common/interfaces/patient-auth-context.interface.js';
 import { PatientInvestigationResultsService } from './patient-investigation-results.service.js';
 
 describe('PatientInvestigationResultsService', () => {
   let service: PatientInvestigationResultsService;
   let findFirst: jest.Mock; // visitInvestigation.findFirst (access check)
+  let findUnique: jest.Mock; // visitInvestigation.findUnique (event payload)
   let attachmentCount: jest.Mock;
   let attachmentFindFirst: jest.Mock;
   let txAttachmentCreate: jest.Mock;
   let txAttachmentUpdate: jest.Mock;
   let txInvestigationUpdate: jest.Mock;
+  let publish: jest.Mock;
   let storage: {
     assertAllowedContentType: jest.Mock;
     assertWithinSizeLimit: jest.Mock;
@@ -78,6 +81,22 @@ describe('PatientInvestigationResultsService', () => {
     txAttachmentCreate = jest.fn().mockResolvedValue({});
     txAttachmentUpdate = jest.fn().mockResolvedValue({});
     txInvestigationUpdate = jest.fn().mockResolvedValue(investigationRow());
+    findUnique = jest.fn().mockResolvedValue({
+      ordered_by_id: 'doc-1',
+      visit_id: 'v1',
+      custom_test_name: null,
+      lab_test: { name: 'CBC' },
+      visit: {
+        branch_id: 'b1',
+        episode: {
+          journey: {
+            organization_id: 'org-1',
+            patient: { id: 'p1', full_name: 'Ebtesam Alaa' },
+          },
+        },
+      },
+    });
+    publish = jest.fn();
     storage = {
       assertAllowedContentType: jest.fn(),
       assertWithinSizeLimit: jest.fn(),
@@ -103,7 +122,7 @@ describe('PatientInvestigationResultsService', () => {
     };
     const prisma = {
       db: {
-        visitInvestigation: { findFirst },
+        visitInvestigation: { findFirst, findUnique },
         visitInvestigationAttachment: {
           count: attachmentCount,
           findFirst: attachmentFindFirst,
@@ -114,6 +133,7 @@ describe('PatientInvestigationResultsService', () => {
     service = new PatientInvestigationResultsService(
       prisma,
       storage as unknown as StorageService,
+      { publish } as unknown as EventBus,
     );
   });
 
@@ -226,6 +246,18 @@ describe('PatientInvestigationResultsService', () => {
 
       // Returned dto carries a presigned attachment URL.
       expect(dto.result_attachments[0].url).toBe(`signed:${validKey}`);
+
+      // Notifies the ordering doctor once on the first upload.
+      expect(publish).toHaveBeenCalledWith(
+        'investigation.result_uploaded',
+        expect.objectContaining({
+          ordered_by_id: 'doc-1',
+          patient_name: 'Ebtesam Alaa',
+          test_name: 'CBC',
+          visit_id: 'v1',
+          organization_id: 'org-1',
+        }),
+      );
     });
 
     it('rejects (409) overwriting an already-REVIEWED result', async () => {
@@ -243,7 +275,7 @@ describe('PatientInvestigationResultsService', () => {
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
-    it("allows adding to the patient's own not-yet-reviewed result without re-setting status", async () => {
+    it("allows adding to the patient's own not-yet-reviewed result without re-setting status, and does not re-notify", async () => {
       findFirst.mockResolvedValue(accessibleRow('RESULTED', 'PATIENT'));
       await service.confirmResult(ctx, 'inv-1', { key: validKey });
       const invData = txInvestigationUpdate.mock.calls[0][0].data as Record<
@@ -251,6 +283,8 @@ describe('PatientInvestigationResultsService', () => {
         unknown
       >;
       expect(invData.status).toBeUndefined();
+      // Subsequent files (already RESULTED) don't re-notify the doctor.
+      expect(publish).not.toHaveBeenCalled();
     });
   });
 
