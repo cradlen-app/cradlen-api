@@ -26,6 +26,11 @@ export const NOTIFICATION_CODES = def({
     category: 'staff',
     defaultTitle: 'Invitation Declined',
   },
+  INVESTIGATION_RESULT_UPLOADED: {
+    code: 'investigation.result_uploaded',
+    category: 'report',
+    defaultTitle: 'Test result uploaded',
+  },
 });
 
 export type NotificationCodeKey = keyof typeof NOTIFICATION_CODES;
