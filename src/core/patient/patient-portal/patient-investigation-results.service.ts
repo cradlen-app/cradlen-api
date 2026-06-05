@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -44,7 +45,7 @@ export class PatientInvestigationResultsService {
   private async assertAccessibleInvestigation(
     ctx: PatientAuthContext,
     investigationId: string,
-  ): Promise<{ id: string; status: string }> {
+  ): Promise<{ id: string; status: string; result_source: string }> {
     const targetIds = resolveAccessiblePatientIds(ctx);
     if (targetIds.length === 0) {
       throw new NotFoundException('No matching record found');
@@ -60,13 +61,33 @@ export class PatientInvestigationResultsService {
             episode: { journey: { patient_id: { in: targetIds } } },
           },
         },
-        select: { id: true, status: true },
+        select: { id: true, status: true, result_source: true },
       });
 
     if (!investigation) {
       throw new NotFoundException('No matching record found');
     }
     return investigation;
+  }
+
+  /**
+   * A patient may only attach a result while the investigation is still awaiting
+   * one (`ORDERED`), or replace their OWN not-yet-reviewed upload
+   * (`RESULTED` + `result_source = PATIENT`). A clinic-recorded result, or a
+   * `REVIEWED`/`CANCELLED` row, is closed — never let a patient overwrite it.
+   */
+  private assertOpenForPatientResult(existing: {
+    status: string;
+    result_source: string;
+  }): void {
+    const open =
+      existing.status === 'ORDERED' ||
+      (existing.status === 'RESULTED' && existing.result_source === 'PATIENT');
+    if (!open) {
+      throw new ConflictException(
+        'A result has already been recorded for this investigation',
+      );
+    }
   }
 
   /**
@@ -79,7 +100,11 @@ export class PatientInvestigationResultsService {
     investigationId: string,
     dto: CreateResultUploadDto,
   ): Promise<ResultUploadUrlDto> {
-    await this.assertAccessibleInvestigation(ctx, investigationId);
+    const existing = await this.assertAccessibleInvestigation(
+      ctx,
+      investigationId,
+    );
+    this.assertOpenForPatientResult(existing);
 
     this.storageService.assertAllowedContentType(dto.content_type);
     this.storageService.assertWithinSizeLimit(dto.size_bytes);
@@ -115,6 +140,7 @@ export class PatientInvestigationResultsService {
       ctx,
       investigationId,
     );
+    this.assertOpenForPatientResult(existing);
 
     // Security: the key must be one we issued for THIS investigation, so a
     // patient can't point their record at an arbitrary or someone else's object.
