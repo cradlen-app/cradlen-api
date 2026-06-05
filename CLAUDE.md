@@ -58,7 +58,8 @@ src/
 │   ├── email/                # Resend wrapper (EmailService, EmailModule @Global)
 │   ├── logging/              # Pino logger
 │   ├── monitoring/           # Sentry init (sentry.ts; preloaded via main.ts first import)
-│   └── cache, queue, sms, storage/   # Stub READMEs — no consumer yet
+│   ├── storage/              # Cloudflare R2 (S3-compatible) wrapper (StorageService, StorageModule @Global) — presigned PUT/GET, private bucket
+│   └── cache, queue, sms/    # Stub READMEs — no consumer yet
 ├── core/                     # Domain layer
 │   ├── auth/                 # auth (3-step signup, login, OTP, password reset) + authorization/ (role/branch checks)
 │   ├── org/                  # organizations, branches, profiles, staff, invitations, roles, job-functions, specialty-catalog (the Specialty lookup — distinct from the src/specialties/ vertical layer), procedures, subscriptions
@@ -385,6 +386,13 @@ Copy `.env.example` to `.env`. `ConfigModule` loads `.env.{NODE_ENV}` then `.env
 | `RESEND_API_KEY`                     | Resend API key for transactional email          |
 | `RESEND_FROM_EMAIL`                  | Sender address (default `noreply@example.com`)  |
 | `FREE_TRIAL_DAYS`                    | Days before free-trial subscription expires (default `14`) |
+| `R2_ACCOUNT_ID`                      | Cloudflare R2 account id (object storage)       |
+| `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | R2 S3 API credentials                    |
+| `R2_BUCKET`                          | R2 bucket name (private)                        |
+| `R2_ENDPOINT`                        | Optional. Defaults to `https://<account>.r2.cloudflarestorage.com` |
+| `R2_PRESIGN_PUT_TTL_SECONDS` / `R2_PRESIGN_GET_TTL_SECONDS` | Presigned URL TTLs (default `300`) |
+| `R2_MAX_UPLOAD_BYTES`                | Max upload size (default `15000000`)            |
+| `R2_ALLOWED_CONTENT_TYPES`           | Comma-separated MIME allowlist (default pdf/png/jpeg/webp) |
 | `SENTRY_DSN`                         | Optional. Sentry DSN; absent = local dev no-op. |
 
 Always load:
