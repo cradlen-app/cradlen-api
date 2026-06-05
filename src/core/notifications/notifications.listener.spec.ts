@@ -61,6 +61,35 @@ describe('NotificationsListener', () => {
     );
   });
 
+  it('notifies the ordering doctor on investigation.result_uploaded', async () => {
+    await listener.handleInvestigationResultUploaded({
+      investigation_id: 'inv-9',
+      visit_id: 'visit-9',
+      ordered_by_id: 'doctor-1',
+      organization_id: 'org-1',
+      branch_id: 'branch-1',
+      patient_id: 'pat-1',
+      patient_name: 'Ebtesam Alaa',
+      test_name: 'Complete blood count (CBC)',
+    });
+
+    expect(service.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        profileId: 'doctor-1',
+        code: NOTIFICATION_CODES.INVESTIGATION_RESULT_UPLOADED.code,
+        category: NOTIFICATION_CODES.INVESTIGATION_RESULT_UPLOADED.category,
+        description:
+          'Ebtesam Alaa uploaded a result for Complete blood count (CBC).',
+        navigateTo: '/org-1/branch-1/dashboard/visits/visit-9',
+        metadata: {
+          investigationId: 'inv-9',
+          visitId: 'visit-9',
+          patientId: 'pat-1',
+        },
+      }),
+    );
+  });
+
   it('swallows and logs a create failure so the invite flow is unaffected', async () => {
     const logSpy = jest
       .spyOn(Logger.prototype, 'error')
