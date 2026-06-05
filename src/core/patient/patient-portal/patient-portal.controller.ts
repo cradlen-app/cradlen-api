@@ -3,16 +3,25 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '@common/decorators/public.decorator.js';
 import { CurrentPatient } from '@common/decorators/current-patient.decorator.js';
 import { PatientJwtAuthGuard } from '@common/guards/patient-jwt-auth.guard.js';
-import { ApiStandardResponse } from '@common/swagger/index.js';
+import {
+  ApiPaginatedResponse,
+  ApiStandardResponse,
+} from '@common/swagger/index.js';
 import type { PatientAuthContext } from '@common/interfaces/patient-auth-context.interface.js';
 import { PatientMedicationsService } from './patient-medications.service.js';
+import { PatientVisitsService } from './patient-visits.service.js';
 import { PatientMedicationsResponseDto } from './dto/patient-medication.dto.js';
 import { ListPatientMedicationsQueryDto } from './dto/list-patient-medications.query.dto.js';
+import { PatientVisitItemDto } from './dto/patient-visit.dto.js';
+import { ListPatientVisitsQueryDto } from './dto/list-patient-visits.query.dto.js';
 
 @ApiTags('Patient Portal')
 @Controller({ path: 'patient-portal', version: '1' })
 export class PatientPortalController {
-  constructor(private readonly medicationsService: PatientMedicationsService) {}
+  constructor(
+    private readonly medicationsService: PatientMedicationsService,
+    private readonly visitsService: PatientVisitsService,
+  ) {}
 
   @Get('medications')
   @Public()
@@ -27,5 +36,20 @@ export class PatientPortalController {
     @Query() query: ListPatientMedicationsQueryDto,
   ) {
     return this.medicationsService.listMedications(patient, query.patient_id);
+  }
+
+  @Get('visits')
+  @Public()
+  @UseGuards(PatientJwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: "List the patient's completed visit history (paginated)",
+  })
+  @ApiPaginatedResponse(PatientVisitItemDto)
+  visits(
+    @CurrentPatient() patient: PatientAuthContext,
+    @Query() query: ListPatientVisitsQueryDto,
+  ) {
+    return this.visitsService.listVisits(patient, query);
   }
 }

@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import type { PatientAuthContext } from '@common/interfaces/patient-auth-context.interface.js';
 import { computeMedicationEndDate } from './medication-duration.util.js';
+import { resolveAccessiblePatientIds } from './accessible-patients.util.js';
 import {
   PatientMedicationItemDto,
   PatientMedicationsResponseDto,
@@ -21,7 +22,7 @@ export class PatientMedicationsService {
     ctx: PatientAuthContext,
     patientId?: string,
   ): Promise<PatientMedicationsResponseDto> {
-    const targetIds = this.resolveTargetPatientIds(ctx, patientId);
+    const targetIds = resolveAccessiblePatientIds(ctx, patientId);
     if (targetIds.length === 0) return { current: [], past: [] };
 
     const items = await this.prismaService.db.prescriptionItem.findMany({
@@ -69,18 +70,6 @@ export class PatientMedicationsService {
     past.sort(byPrescribedDesc);
 
     return { current, past };
-  }
-
-  private resolveTargetPatientIds(
-    ctx: PatientAuthContext,
-    patientId?: string,
-  ): string[] {
-    if (!patientId) return ctx.accessiblePatientIds;
-    if (!ctx.accessiblePatientIds.includes(patientId)) {
-      // Generic 404 — never reveal another patient's existence.
-      throw new NotFoundException('No matching record found');
-    }
-    return [patientId];
   }
 
   private toDto(
