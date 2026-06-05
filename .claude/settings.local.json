@@ -120,7 +120,8 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/v1/care-paths)",
       "Bash(echo 'health: http __TRACKED_VAR__')",
       "Bash(echo \"--- server tail ---\")",
-      "Bash(tail -8 \"C:\\\\Users\\\\ibrah\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\F--Cradlen-cradlen-api\\\\ab496445-dcd0-49a3-a31d-6c77274a7db0\\\\tasks\\\\bykwf8awz.output\")"
+      "Bash(tail -8 \"C:\\\\Users\\\\ibrah\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\F--Cradlen-cradlen-api\\\\ab496445-dcd0-49a3-a31d-6c77274a7db0\\\\tasks\\\\bykwf8awz.output\")",
+      "Bash(git --no-pager grep -n \"accessible_patient_ids\\\\|display_name\\\\|accessible_patients\" -- src/core/auth/patient-auth/)"
     ],
     "additionalDirectories": [
       "\\tmp",
