@@ -1208,6 +1208,7 @@ model VisitInvestigation {
   version               Int                       @default(1)
   updated_by_id         String?                   @db.Uuid
   updated_by            Profile?                  @relation("VisitInvestigationUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
+  result_attachments    VisitInvestigationAttachment[]
   is_deleted            Boolean                   @default(false)
   deleted_at            DateTime?
   created_at            DateTime                  @default(now())
@@ -1218,6 +1219,27 @@ model VisitInvestigation {
   @@index([status, is_deleted])
   @@index([ordered_by_id])
   @@map("visit_investigations")
+}
+
+// Result files/images attached to an investigation. Multiple per investigation
+// (patient-uploaded scans, lab PDFs, …). `source` distinguishes who uploaded it;
+// patient uploads have no Profile so there is no uploader FK. The object lives in
+// R2 (private) — `object_key` is the bucket key, read via a presigned GET URL.
+model VisitInvestigationAttachment {
+  id               String                    @id @default(uuid()) @db.Uuid
+  investigation_id String                    @db.Uuid
+  investigation    VisitInvestigation        @relation(fields: [investigation_id], references: [id], onDelete: Cascade)
+  object_key       String
+  content_type     String?
+  size_bytes       Int?
+  source           InvestigationResultSource @default(PATIENT)
+  is_deleted       Boolean                   @default(false)
+  deleted_at       DateTime?
+  created_at       DateTime                  @default(now())
+  updated_at       DateTime                  @updatedAt
+
+  @@index([investigation_id, is_deleted])
+  @@map("visit_investigation_attachments")
 }
 
 // Structured, ICD-10-coded diagnoses for a visit (repeatable). One primary +
