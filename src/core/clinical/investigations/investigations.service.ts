@@ -1,0 +1,126 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '@infrastructure/database/prisma.service.js';
+import { StorageService } from '@infrastructure/storage/storage.service.js';
+import { PatientAccessService } from '@core/patient/patient-access/patient-access.service.js';
+import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
+import {
+  InvestigationReviewDto,
+  ReviewInvestigationDto,
+} from './dto/investigation-review.dto.js';
+
+/** Prisma `include`/`select` for the doctor review view of an investigation. */
+const investigationReviewSelect = {
+  id: true,
+  status: true,
+  test_category: true,
+  custom_test_name: true,
+  notes: true,
+  result_text: true,
+  updated_at: true,
+  visit_id: true,
+  lab_test: { select: { name: true } },
+  visit: {
+    select: {
+      episode: {
+        select: {
+          journey: { select: { patient: { select: { full_name: true } } } },
+        },
+      },
+    },
+  },
+  result_attachments: {
+    where: { is_deleted: false },
+    orderBy: { created_at: 'asc' },
+    select: { id: true, object_key: true, content_type: true },
+  },
+} satisfies Prisma.VisitInvestigationSelect;
+
+type InvestigationReviewRow = Prisma.VisitInvestigationGetPayload<{
+  select: typeof investigationReviewSelect;
+}>;
+
+/**
+ * Doctor-side investigation review: load a single investigation (with the
+ * patient-uploaded result files, presigned) and record the doctor's review
+ * (mark REVIEWED + notes). Org-gated via `PatientAccessService.assertVisitInOrg`.
+ */
+@Injectable()
+export class InvestigationsService {
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly storageService: StorageService,
+    private readonly patientAccess: PatientAccessService,
+  ) {}
+
+  async getReview(
+    id: string,
+    user: AuthContext,
+  ): Promise<InvestigationReviewDto> {
+    const investigation =
+      await this.prismaService.db.visitInvestigation.findFirst({
+        where: { id, is_deleted: false },
+        select: investigationReviewSelect,
+      });
+    if (!investigation) {
+      throw new NotFoundException('Investigation not found');
+    }
+    await this.patientAccess.assertVisitInOrg(investigation.visit_id, user);
+
+    return this.toDto(investigation);
+  }
+
+  async review(
+    id: string,
+    user: AuthContext,
+    dto: ReviewInvestigationDto,
+  ): Promise<InvestigationReviewDto> {
+    const existing = await this.prismaService.db.visitInvestigation.findFirst({
+      where: { id, is_deleted: false },
+      select: { id: true, visit_id: true },
+    });
+    if (!existing) {
+      throw new NotFoundException('Investigation not found');
+    }
+    await this.patientAccess.assertVisitInOrg(existing.visit_id, user);
+
+    const updated = await this.prismaService.db.visitInvestigation.update({
+      where: { id },
+      data: {
+        status: 'REVIEWED',
+        reviewed_by_id: user.profileId,
+        reviewed_at: new Date(),
+        result_text: dto.notes ?? null,
+        version: { increment: 1 },
+      },
+      select: investigationReviewSelect,
+    });
+
+    return this.toDto(updated);
+  }
+
+  private async toDto(
+    inv: InvestigationReviewRow,
+  ): Promise<InvestigationReviewDto> {
+    const result_attachments = await Promise.all(
+      inv.result_attachments.map(async (a) => ({
+        id: a.id,
+        url: await this.storageService.createPresignedDownloadUrl(a.object_key),
+        content_type: a.content_type ?? null,
+      })),
+    );
+
+    return {
+      id: inv.id,
+      patient_name: inv.visit.episode?.journey?.patient?.full_name ?? '',
+      visit_id: inv.visit_id,
+      status: inv.status,
+      type: inv.test_category ?? null,
+      test_name: inv.lab_test?.name ?? inv.custom_test_name ?? '',
+      reason: inv.notes ?? null,
+      updated_at: inv.updated_at,
+      doctor_notes: inv.result_text ?? null,
+      result_attachments,
+    };
+  }
+}
