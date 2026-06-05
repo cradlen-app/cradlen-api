@@ -1,5 +1,22 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
+export class PatientInvestigationAttachmentDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty({ description: 'Short-lived presigned GET URL for the file' })
+  url!: string;
+
+  @ApiPropertyOptional({ nullable: true, description: 'e.g. application/pdf' })
+  content_type!: string | null;
+
+  @ApiProperty({ description: 'When the file was uploaded' })
+  uploaded_at!: Date;
+
+  @ApiProperty({ description: 'PATIENT | CLINIC | EXTERNAL_LAB' })
+  source!: string;
+}
+
 export class PatientInvestigationItemDto {
   @ApiProperty()
   id!: string;
@@ -48,12 +65,13 @@ export class PatientInvestigationItemDto {
   })
   result_text!: string | null;
 
-  @ApiPropertyOptional({
-    nullable: true,
+  @ApiProperty({
+    type: [PatientInvestigationAttachmentDto],
     description:
-      'Result attachment URL; null until the result is REVIEWED by a doctor',
+      'Visible result files. Patient-uploaded files are always shown to the ' +
+      'patient; clinic files appear only once the result is REVIEWED.',
   })
-  result_attachment_url!: string | null;
+  result_attachments!: PatientInvestigationAttachmentDto[];
 
   @ApiProperty()
   visit_id!: string;

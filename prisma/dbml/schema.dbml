@@ -788,6 +788,21 @@ Table visit_investigations {
   version Int [not null, default: 1]
   updated_by_id String
   updated_by profiles
+  result_attachments visit_investigation_attachments [not null]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
+Table visit_investigation_attachments {
+  id String [pk]
+  investigation_id String [not null]
+  investigation visit_investigations [not null]
+  object_key String [not null]
+  content_type String
+  size_bytes Int
+  source InvestigationResultSource [not null, default: 'PATIENT']
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
@@ -2290,6 +2305,8 @@ Ref: visit_investigations.reviewed_by_id > profiles.id [delete: Set Null]
 Ref: visit_investigations.ordered_by_id > profiles.id [delete: Set Null]
 
 Ref: visit_investigations.updated_by_id > profiles.id [delete: Set Null]
+
+Ref: visit_investigation_attachments.investigation_id > visit_investigations.id [delete: Cascade]
 
 Ref: visit_diagnoses.visit_id > visits.id [delete: Cascade]
 
