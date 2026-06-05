@@ -25,7 +25,15 @@ describe('PatientInvestigationsService', () => {
     status: 'REVIEWED',
     result_source: 'CLINIC',
     result_text: 'Hb 12.1',
-    result_attachment_url: 'investigations/i1/results/abc.pdf',
+    result_attachments: [
+      {
+        id: 'att-1',
+        object_key: 'investigations/i1/results/abc.pdf',
+        content_type: 'application/pdf',
+        created_at: new Date('2026-02-01T10:00:00Z'),
+        source: 'CLINIC',
+      },
+    ],
     reviewed_at: new Date('2026-02-01T10:00:00Z'),
     ordered_at: new Date('2026-01-30T09:00:00Z'),
     lab_test: { name: 'CBC' },
@@ -128,14 +136,16 @@ describe('PatientInvestigationsService', () => {
       status: 'REVIEWED',
       reviewed_by_name: 'Dr. Omar Saleh',
       result_text: 'Hb 12.1',
-      result_attachment_url: 'signed:investigations/i1/results/abc.pdf',
     });
+    expect(result.items[0].result_attachments[0].url).toBe(
+      'signed:investigations/i1/results/abc.pdf',
+    );
     expect(createPresignedDownloadUrl).toHaveBeenCalledWith(
       'investigations/i1/results/abc.pdf',
     );
   });
 
-  it('withholds a CLINIC result until REVIEWED', async () => {
+  it('withholds a CLINIC result (text + files) until REVIEWED', async () => {
     findMany.mockReturnValue([
       { ...baseRow, status: 'RESULTED', result_source: 'CLINIC' },
     ]);
@@ -149,15 +159,28 @@ describe('PatientInvestigationsService', () => {
     expect(result.items[0]).toMatchObject({
       status: 'RESULTED',
       result_text: null,
-      result_attachment_url: null,
       reviewed_by_name: null,
     });
+    expect(result.items[0].result_attachments).toEqual([]);
     expect(createPresignedDownloadUrl).not.toHaveBeenCalled();
   });
 
-  it('shows a PATIENT-uploaded result even before review', async () => {
+  it('shows a PATIENT-uploaded result file even before review', async () => {
     findMany.mockReturnValue([
-      { ...baseRow, status: 'RESULTED', result_source: 'PATIENT' },
+      {
+        ...baseRow,
+        status: 'RESULTED',
+        result_source: 'PATIENT',
+        result_attachments: [
+          {
+            id: 'att-1',
+            object_key: 'investigations/i1/results/abc.pdf',
+            content_type: 'application/pdf',
+            created_at: new Date('2026-02-01T10:00:00Z'),
+            source: 'PATIENT',
+          },
+        ],
+      },
     ]);
     count.mockReturnValue(1);
 
@@ -166,7 +189,7 @@ describe('PatientInvestigationsService', () => {
       { page: 1, limit: 10 },
     );
 
-    expect(result.items[0].result_attachment_url).toBe(
+    expect(result.items[0].result_attachments[0].url).toBe(
       'signed:investigations/i1/results/abc.pdf',
     );
   });

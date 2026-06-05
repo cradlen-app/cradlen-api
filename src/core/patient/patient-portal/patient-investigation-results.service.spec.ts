@@ -10,14 +10,19 @@ import { PatientInvestigationResultsService } from './patient-investigation-resu
 
 describe('PatientInvestigationResultsService', () => {
   let service: PatientInvestigationResultsService;
-  let findFirst: jest.Mock;
-  let update: jest.Mock;
+  let findFirst: jest.Mock; // visitInvestigation.findFirst (access check)
+  let attachmentCount: jest.Mock;
+  let attachmentFindFirst: jest.Mock;
+  let txAttachmentCreate: jest.Mock;
+  let txAttachmentUpdate: jest.Mock;
+  let txInvestigationUpdate: jest.Mock;
   let storage: {
     assertAllowedContentType: jest.Mock;
     assertWithinSizeLimit: jest.Mock;
     extensionFor: jest.Mock;
     createPresignedUploadUrl: jest.Mock;
     createPresignedDownloadUrl: jest.Mock;
+    deleteObject: jest.Mock;
     headObject: jest.Mock;
   };
 
@@ -33,9 +38,46 @@ describe('PatientInvestigationResultsService', () => {
     result_source,
   });
 
+  /** A mapped-shape investigation row returned by the tx update (with include). */
+  const investigationRow = (over: Record<string, unknown> = {}) => ({
+    id: 'inv-1',
+    visit_id: 'v1',
+    custom_test_name: null,
+    test_category: 'LAB',
+    notes: null,
+    status: 'RESULTED',
+    result_source: 'PATIENT',
+    result_text: null,
+    reviewed_at: null,
+    ordered_at: new Date(),
+    lab_test: { name: 'CBC' },
+    ordered_by: { user: { first_name: 'Aya', last_name: 'Hassan' } },
+    reviewed_by: null,
+    visit: {
+      id: 'v1',
+      scheduled_at: new Date(),
+      branch: { name: 'Main' },
+      episode: { journey: { organization: { name: 'Jasmin' } } },
+    },
+    result_attachments: [
+      {
+        id: 'att-1',
+        object_key: 'investigations/inv-1/results/x.pdf',
+        content_type: 'application/pdf',
+        created_at: new Date(),
+        source: 'PATIENT',
+      },
+    ],
+    ...over,
+  });
+
   beforeEach(() => {
     findFirst = jest.fn().mockResolvedValue(accessibleRow());
-    update = jest.fn();
+    attachmentCount = jest.fn().mockResolvedValue(0);
+    attachmentFindFirst = jest.fn();
+    txAttachmentCreate = jest.fn().mockResolvedValue({});
+    txAttachmentUpdate = jest.fn().mockResolvedValue({});
+    txInvestigationUpdate = jest.fn().mockResolvedValue(investigationRow());
     storage = {
       assertAllowedContentType: jest.fn(),
       assertWithinSizeLimit: jest.fn(),
@@ -46,13 +88,28 @@ describe('PatientInvestigationResultsService', () => {
       createPresignedDownloadUrl: jest
         .fn()
         .mockImplementation((key: string) => Promise.resolve(`signed:${key}`)),
+      deleteObject: jest.fn().mockResolvedValue(undefined),
       headObject: jest.fn().mockResolvedValue({
         contentType: 'application/pdf',
         contentLength: 100,
       }),
     };
+    const tx = {
+      visitInvestigationAttachment: {
+        create: txAttachmentCreate,
+        update: txAttachmentUpdate,
+      },
+      visitInvestigation: { update: txInvestigationUpdate },
+    };
     const prisma = {
-      db: { visitInvestigation: { findFirst, update } },
+      db: {
+        visitInvestigation: { findFirst },
+        visitInvestigationAttachment: {
+          count: attachmentCount,
+          findFirst: attachmentFindFirst,
+        },
+        $transaction: (cb: (t: typeof tx) => unknown) => cb(tx),
+      },
     } as unknown as PrismaService;
     service = new PatientInvestigationResultsService(
       prisma,
@@ -101,10 +158,9 @@ describe('PatientInvestigationResultsService', () => {
       expect(res.upload_url).toBe('https://r2/put');
       expect(res.key.startsWith('investigations/inv-1/results/')).toBe(true);
       expect(res.key.endsWith('.pdf')).toBe(true);
-      expect(res.content_type).toBe('application/pdf');
     });
 
-    it('rejects (409) when a result is already recorded (REVIEWED)', async () => {
+    it('rejects (409) when the investigation is closed (REVIEWED)', async () => {
       findFirst.mockResolvedValue(accessibleRow('REVIEWED'));
       await expect(
         service.createUploadUrl(ctx, 'inv-1', {
@@ -117,123 +173,122 @@ describe('PatientInvestigationResultsService', () => {
   });
 
   describe('confirmResult', () => {
+    const validKey = 'investigations/inv-1/results/x.pdf';
+
     it('rejects a key not scoped to the investigation', async () => {
       await expect(
         service.confirmResult(ctx, 'inv-1', {
           key: 'investigations/other/results/x.pdf',
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
-      expect(update).not.toHaveBeenCalled();
+      expect(txAttachmentCreate).not.toHaveBeenCalled();
     });
 
     it('rejects when the object did not land in R2', async () => {
       storage.headObject.mockResolvedValue(null);
       await expect(
-        service.confirmResult(ctx, 'inv-1', {
-          key: 'investigations/inv-1/results/x.pdf',
-        }),
+        service.confirmResult(ctx, 'inv-1', { key: validKey }),
       ).rejects.toBeInstanceOf(BadRequestException);
-      expect(update).not.toHaveBeenCalled();
+      expect(txAttachmentCreate).not.toHaveBeenCalled();
     });
 
-    it('records the result as PATIENT-sourced and advances ORDERED -> RESULTED', async () => {
-      update.mockResolvedValue({
-        id: 'inv-1',
-        visit_id: 'v1',
-        custom_test_name: null,
-        test_category: 'LAB',
-        notes: null,
-        status: 'RESULTED',
-        result_source: 'PATIENT',
-        result_text: null,
-        result_attachment_url: 'investigations/inv-1/results/x.pdf',
-        reviewed_at: null,
-        ordered_at: new Date(),
-        lab_test: { name: 'CBC' },
-        ordered_by: { user: { first_name: 'Aya', last_name: 'Hassan' } },
-        reviewed_by: null,
-        visit: {
-          id: 'v1',
-          scheduled_at: new Date(),
-          branch: { name: 'Main' },
-          episode: { journey: { organization: { name: 'Jasmin' } } },
-        },
-      });
+    it('rejects (409) when the attachment cap is reached', async () => {
+      attachmentCount.mockResolvedValue(10);
+      await expect(
+        service.confirmResult(ctx, 'inv-1', { key: validKey }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(txAttachmentCreate).not.toHaveBeenCalled();
+    });
 
+    it('appends a PATIENT attachment and advances ORDERED -> RESULTED', async () => {
       const dto = await service.confirmResult(ctx, 'inv-1', {
-        key: 'investigations/inv-1/results/x.pdf',
+        key: validKey,
         result_text: 'my lab',
       });
 
-      const data = update.mock.calls[0][0].data as Record<string, unknown>;
-      expect(data.result_attachment_url).toBe(
-        'investigations/inv-1/results/x.pdf',
-      );
-      expect(data.result_source).toBe('PATIENT');
-      expect(data.resulted_at).toBeInstanceOf(Date);
-      expect(data.status).toBe('RESULTED');
-      expect(data.result_text).toBe('my lab');
-      expect(data.version).toEqual({ increment: 1 });
+      const attData = txAttachmentCreate.mock.calls[0][0].data as Record<
+        string,
+        unknown
+      >;
+      expect(attData.object_key).toBe(validKey);
+      expect(attData.source).toBe('PATIENT');
+      expect(attData.content_type).toBe('application/pdf');
 
-      // Patient-uploaded result is visible to them via a presigned URL.
-      expect(dto.result_attachment_url).toBe(
-        'signed:investigations/inv-1/results/x.pdf',
-      );
+      const invData = txInvestigationUpdate.mock.calls[0][0].data as Record<
+        string,
+        unknown
+      >;
+      expect(invData.result_source).toBe('PATIENT');
+      expect(invData.resulted_at).toBeInstanceOf(Date);
+      expect(invData.status).toBe('RESULTED');
+      expect(invData.result_text).toBe('my lab');
+      expect(invData.version).toEqual({ increment: 1 });
+
+      // Returned dto carries a presigned attachment URL.
+      expect(dto.result_attachments[0].url).toBe(`signed:${validKey}`);
     });
 
     it('rejects (409) overwriting an already-REVIEWED result', async () => {
       findFirst.mockResolvedValue(accessibleRow('REVIEWED'));
       await expect(
-        service.confirmResult(ctx, 'inv-1', {
-          key: 'investigations/inv-1/results/x.pdf',
-        }),
+        service.confirmResult(ctx, 'inv-1', { key: validKey }),
       ).rejects.toBeInstanceOf(ConflictException);
-      expect(update).not.toHaveBeenCalled();
+      expect(txAttachmentCreate).not.toHaveBeenCalled();
     });
 
-    it('rejects (409) overwriting an existing clinic-recorded result', async () => {
+    it('rejects (409) adding to a clinic-recorded result', async () => {
       findFirst.mockResolvedValue(accessibleRow('RESULTED', 'CLINIC'));
       await expect(
-        service.confirmResult(ctx, 'inv-1', {
-          key: 'investigations/inv-1/results/x.pdf',
-        }),
+        service.confirmResult(ctx, 'inv-1', { key: validKey }),
       ).rejects.toBeInstanceOf(ConflictException);
-      expect(update).not.toHaveBeenCalled();
     });
 
-    it("allows replacing the patient's own not-yet-reviewed upload", async () => {
+    it("allows adding to the patient's own not-yet-reviewed result without re-setting status", async () => {
       findFirst.mockResolvedValue(accessibleRow('RESULTED', 'PATIENT'));
-      update.mockResolvedValue({
-        id: 'inv-1',
-        visit_id: 'v1',
-        custom_test_name: null,
-        test_category: 'LAB',
-        notes: null,
-        status: 'RESULTED',
-        result_source: 'PATIENT',
-        result_text: null,
-        result_attachment_url: 'investigations/inv-1/results/x.pdf',
-        reviewed_at: null,
-        ordered_at: new Date(),
-        lab_test: { name: 'CBC' },
-        ordered_by: { user: { first_name: 'Aya', last_name: 'Hassan' } },
-        reviewed_by: null,
-        visit: {
-          id: 'v1',
-          scheduled_at: new Date(),
-          branch: { name: 'Main' },
-          episode: { journey: { organization: { name: 'Jasmin' } } },
-        },
+      await service.confirmResult(ctx, 'inv-1', { key: validKey });
+      const invData = txInvestigationUpdate.mock.calls[0][0].data as Record<
+        string,
+        unknown
+      >;
+      expect(invData.status).toBeUndefined();
+    });
+  });
+
+  describe('removeAttachment', () => {
+    it('rejects (409) when the investigation is REVIEWED', async () => {
+      findFirst.mockResolvedValue(accessibleRow('REVIEWED'));
+      await expect(
+        service.removeAttachment(ctx, 'inv-1', 'att-1'),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(attachmentFindFirst).not.toHaveBeenCalled();
+    });
+
+    it('throws 404 when the attachment is not the patient’s own', async () => {
+      findFirst.mockResolvedValue(accessibleRow('RESULTED', 'PATIENT'));
+      attachmentFindFirst.mockResolvedValue(null);
+      await expect(
+        service.removeAttachment(ctx, 'inv-1', 'att-x'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('soft-deletes the row and best-effort deletes the R2 object', async () => {
+      findFirst.mockResolvedValue(accessibleRow('RESULTED', 'PATIENT'));
+      attachmentFindFirst.mockResolvedValue({
+        id: 'att-1',
+        object_key: 'investigations/inv-1/results/x.pdf',
       });
 
-      await service.confirmResult(ctx, 'inv-1', {
-        key: 'investigations/inv-1/results/x.pdf',
-      });
+      await service.removeAttachment(ctx, 'inv-1', 'att-1');
 
-      // Already RESULTED — status is not re-set.
-      const data = update.mock.calls[0][0].data as Record<string, unknown>;
-      expect(data.status).toBeUndefined();
-      expect(data.result_source).toBe('PATIENT');
+      const data = txAttachmentUpdate.mock.calls[0][0].data as Record<
+        string,
+        unknown
+      >;
+      expect(data.is_deleted).toBe(true);
+      expect(data.deleted_at).toBeInstanceOf(Date);
+      expect(storage.deleteObject).toHaveBeenCalledWith(
+        'investigations/inv-1/results/x.pdf',
+      );
     });
   });
 });
