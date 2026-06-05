@@ -1,6 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import type { PrismaService } from '@infrastructure/database/prisma.service.js';
 import type { StorageService } from '@infrastructure/storage/storage.service.js';
+import type { EventBus } from '@infrastructure/messaging/event-bus.js';
 import type { PatientAccessService } from '@core/patient/patient-access/patient-access.service.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import { InvestigationsService } from './investigations.service.js';
@@ -11,6 +12,7 @@ describe('InvestigationsService', () => {
   let update: jest.Mock;
   let assertVisitInOrg: jest.Mock;
   let createPresignedDownloadUrl: jest.Mock;
+  let publish: jest.Mock;
 
   const user: AuthContext = {
     userId: 'u1',
@@ -31,7 +33,12 @@ describe('InvestigationsService', () => {
     visit_id: 'v1',
     lab_test: { name: 'CBC' },
     visit: {
-      episode: { journey: { patient: { full_name: 'Asmaa Mohamed Ali' } } },
+      episode: {
+        journey: {
+          organization_id: 'org-1',
+          patient: { id: 'p1', full_name: 'Asmaa Mohamed Ali' },
+        },
+      },
     },
     result_attachments: [
       {
@@ -50,6 +57,7 @@ describe('InvestigationsService', () => {
     createPresignedDownloadUrl = jest
       .fn()
       .mockImplementation((key: string) => Promise.resolve(`signed:${key}`));
+    publish = jest.fn();
     const prisma = {
       db: { visitInvestigation: { findFirst, update } },
     } as unknown as PrismaService;
@@ -57,6 +65,7 @@ describe('InvestigationsService', () => {
       prisma,
       { createPresignedDownloadUrl } as unknown as StorageService,
       { assertVisitInOrg } as unknown as PatientAccessService,
+      { publish } as unknown as EventBus,
     );
   });
 
@@ -102,8 +111,12 @@ describe('InvestigationsService', () => {
   });
 
   describe('review', () => {
-    it('marks REVIEWED, records the doctor + notes, and bumps version', async () => {
-      findFirst.mockResolvedValue({ id: 'inv-1', visit_id: 'v1' });
+    it('marks REVIEWED, records the doctor + notes, bumps version, and notifies the patient', async () => {
+      findFirst.mockResolvedValue({
+        id: 'inv-1',
+        visit_id: 'v1',
+        status: 'RESULTED',
+      });
       update.mockResolvedValue(
         fullRow({ status: 'REVIEWED', result_text: 'Looks normal.' }),
       );
@@ -122,6 +135,31 @@ describe('InvestigationsService', () => {
 
       expect(dto.status).toBe('REVIEWED');
       expect(dto.doctor_notes).toBe('Looks normal.');
+
+      // Publishes the patient "result ready" event on the REVIEWED transition.
+      expect(publish).toHaveBeenCalledWith(
+        'investigation.reviewed',
+        expect.objectContaining({
+          investigation_id: 'inv-1',
+          visit_id: 'v1',
+          patient_id: 'p1',
+          organization_id: 'org-1',
+          test_name: 'CBC',
+        }),
+      );
+    });
+
+    it('does not re-notify when the investigation was already REVIEWED', async () => {
+      findFirst.mockResolvedValue({
+        id: 'inv-1',
+        visit_id: 'v1',
+        status: 'REVIEWED',
+      });
+      update.mockResolvedValue(fullRow({ status: 'REVIEWED' }));
+
+      await service.review('inv-1', user, { notes: 'updated note' });
+
+      expect(publish).not.toHaveBeenCalled();
     });
 
     it('throws 404 when the investigation does not exist', async () => {
