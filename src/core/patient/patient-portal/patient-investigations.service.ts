@@ -30,6 +30,17 @@ export const patientInvestigationInclude = {
       },
     },
   },
+  result_attachments: {
+    where: { is_deleted: false },
+    orderBy: { created_at: 'asc' },
+    select: {
+      id: true,
+      object_key: true,
+      content_type: true,
+      created_at: true,
+      source: true,
+    },
+  },
 } satisfies Prisma.VisitInvestigationInclude;
 
 export type PatientInvestigationRow = Prisma.VisitInvestigationGetPayload<{
@@ -39,9 +50,10 @@ export type PatientInvestigationRow = Prisma.VisitInvestigationGetPayload<{
 /**
  * Maps an investigation row to the patient-facing DTO. Result content is exposed
  * when the row is REVIEWED (clinic-published, clinically gated) OR was uploaded
- * by the patient themselves (`result_source = PATIENT`). When exposed, the stored
- * object key in `result_attachment_url` is converted to a short-lived presigned
- * GET URL (the R2 bucket is private). Async because signing the URL is awaited.
+ * by the patient themselves (`result_source = PATIENT`). Each visible attachment's
+ * stored object key is converted to a short-lived presigned GET URL (the R2 bucket
+ * is private) — patient-uploaded files are always visible to the patient; clinic
+ * files only once REVIEWED. Async because signing the URLs is awaited.
  */
 export async function mapPatientInvestigation(
   inv: PatientInvestigationRow,
@@ -52,10 +64,18 @@ export async function mapPatientInvestigation(
   const orderedBy = inv.ordered_by?.user ?? null;
   const reviewedBy = inv.reviewed_by?.user ?? null;
 
-  const resultUrl =
-    showResult && inv.result_attachment_url
-      ? await storage.createPresignedDownloadUrl(inv.result_attachment_url)
-      : null;
+  const visibleAttachments = inv.result_attachments.filter(
+    (a) => a.source === 'PATIENT' || reviewed,
+  );
+  const result_attachments = await Promise.all(
+    visibleAttachments.map(async (a) => ({
+      id: a.id,
+      url: await storage.createPresignedDownloadUrl(a.object_key),
+      content_type: a.content_type ?? null,
+      uploaded_at: a.created_at,
+      source: a.source,
+    })),
+  );
 
   return {
     id: inv.id,
@@ -73,7 +93,7 @@ export async function mapPatientInvestigation(
         ? `Dr. ${reviewedBy.first_name} ${reviewedBy.last_name}`.trim()
         : null,
     result_text: showResult ? (inv.result_text ?? null) : null,
-    result_attachment_url: resultUrl,
+    result_attachments,
     visit_id: inv.visit_id,
     visit_date: inv.visit.scheduled_at,
     organization_name: inv.visit.episode?.journey?.organization?.name ?? null,

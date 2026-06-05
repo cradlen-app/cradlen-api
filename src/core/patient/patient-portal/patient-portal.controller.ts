@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -126,6 +127,26 @@ export class PatientPortalController {
       patient,
       investigationId,
       dto,
+    );
+  }
+
+  @Delete('investigations/:investigationId/result/:attachmentId')
+  @Public()
+  @UseGuards(PatientJwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Remove a result file the patient uploaded (before review)',
+  })
+  @ApiStandardResponse(PatientInvestigationItemDto)
+  removeResultAttachment(
+    @CurrentPatient() patient: PatientAuthContext,
+    @Param('investigationId', ParseUUIDPipe) investigationId: string,
+    @Param('attachmentId', ParseUUIDPipe) attachmentId: string,
+  ) {
+    return this.investigationResultsService.removeAttachment(
+      patient,
+      investigationId,
+      attachmentId,
     );
   }
 }
