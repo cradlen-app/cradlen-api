@@ -1,4 +1,8 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import type { PrismaService } from '@infrastructure/database/prisma.service.js';
 import type { StorageService } from '@infrastructure/storage/storage.service.js';
 import type { PatientAuthContext } from '@common/interfaces/patient-auth-context.interface.js';
@@ -23,7 +27,11 @@ describe('PatientInvestigationResultsService', () => {
     accessiblePatientIds: ['p1'],
   };
 
-  const accessibleRow = (status = 'ORDERED') => ({ id: 'inv-1', status });
+  const accessibleRow = (status = 'ORDERED', result_source = 'CLINIC') => ({
+    id: 'inv-1',
+    status,
+    result_source,
+  });
 
   beforeEach(() => {
     findFirst = jest.fn().mockResolvedValue(accessibleRow());
@@ -95,6 +103,17 @@ describe('PatientInvestigationResultsService', () => {
       expect(res.key.endsWith('.pdf')).toBe(true);
       expect(res.content_type).toBe('application/pdf');
     });
+
+    it('rejects (409) when a result is already recorded (REVIEWED)', async () => {
+      findFirst.mockResolvedValue(accessibleRow('REVIEWED'));
+      await expect(
+        service.createUploadUrl(ctx, 'inv-1', {
+          content_type: 'application/pdf',
+          size_bytes: 100,
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(storage.createPresignedUploadUrl).not.toHaveBeenCalled();
+    });
   });
 
   describe('confirmResult', () => {
@@ -162,19 +181,39 @@ describe('PatientInvestigationResultsService', () => {
       );
     });
 
-    it('does not change status when already REVIEWED', async () => {
+    it('rejects (409) overwriting an already-REVIEWED result', async () => {
       findFirst.mockResolvedValue(accessibleRow('REVIEWED'));
+      await expect(
+        service.confirmResult(ctx, 'inv-1', {
+          key: 'investigations/inv-1/results/x.pdf',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('rejects (409) overwriting an existing clinic-recorded result', async () => {
+      findFirst.mockResolvedValue(accessibleRow('RESULTED', 'CLINIC'));
+      await expect(
+        service.confirmResult(ctx, 'inv-1', {
+          key: 'investigations/inv-1/results/x.pdf',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it("allows replacing the patient's own not-yet-reviewed upload", async () => {
+      findFirst.mockResolvedValue(accessibleRow('RESULTED', 'PATIENT'));
       update.mockResolvedValue({
         id: 'inv-1',
         visit_id: 'v1',
         custom_test_name: null,
         test_category: 'LAB',
         notes: null,
-        status: 'REVIEWED',
+        status: 'RESULTED',
         result_source: 'PATIENT',
         result_text: null,
         result_attachment_url: 'investigations/inv-1/results/x.pdf',
-        reviewed_at: new Date(),
+        reviewed_at: null,
         ordered_at: new Date(),
         lab_test: { name: 'CBC' },
         ordered_by: { user: { first_name: 'Aya', last_name: 'Hassan' } },
@@ -191,8 +230,10 @@ describe('PatientInvestigationResultsService', () => {
         key: 'investigations/inv-1/results/x.pdf',
       });
 
+      // Already RESULTED — status is not re-set.
       const data = update.mock.calls[0][0].data as Record<string, unknown>;
       expect(data.status).toBeUndefined();
+      expect(data.result_source).toBe('PATIENT');
     });
   });
 });
