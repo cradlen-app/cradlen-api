@@ -65,6 +65,12 @@ export const CLINICAL_EVENTS = {
      * uploaded a result" notification to the ordering doctor.
      */
     resultUploaded: 'investigation.result_uploaded',
+    /**
+     * Emitted when a doctor reviews an investigation (status → REVIEWED). Drives
+     * the "your result is ready" notification to the patient. Fires once per
+     * review transition (re-saving notes on an already-REVIEWED row does not).
+     */
+    reviewed: 'investigation.reviewed',
   },
   prescription: {
     issued: 'prescription.issued',
@@ -159,5 +165,17 @@ export interface InvestigationResultUploadedEvent {
   branch_id: string | null;
   patient_id: string;
   patient_name: string;
+  test_name: string;
+}
+
+/**
+ * Payload for `investigation.reviewed`. Emitted when a doctor reviews an
+ * investigation; drives the "your result is ready" patient notification.
+ */
+export interface InvestigationReviewedEvent {
+  investigation_id: string;
+  visit_id: string;
+  patient_id: string;
+  organization_id: string;
   test_name: string;
 }

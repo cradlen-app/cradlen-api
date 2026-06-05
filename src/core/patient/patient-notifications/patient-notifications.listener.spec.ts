@@ -36,6 +36,26 @@ describe('PatientNotificationsListener', () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  it('notifies the patient when their investigation is reviewed', async () => {
+    await listener.handleInvestigationReviewed({
+      investigation_id: 'inv-1',
+      visit_id: 'v1',
+      patient_id: 'p1',
+      organization_id: 'org-1',
+      test_name: 'CBC',
+    });
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        patientId: 'p1',
+        organizationId: 'org-1',
+        code: PATIENT_NOTIFICATION_CODES.INVESTIGATION_REVIEWED.code,
+        navigateTo: '/tests',
+        metadata: { investigationId: 'inv-1', visitId: 'v1' },
+      }),
+    );
+  });
+
   it('notifies the patient about a new prescription', async () => {
     findUnique.mockResolvedValue(
       visitWith({ prescription: { items: [{ id: 'i1' }] } }),

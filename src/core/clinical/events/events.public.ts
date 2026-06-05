@@ -7,4 +7,5 @@ export {
   type VisitPregnancyRecordUpdatedEvent,
   type VisitExaminationUpdatedEvent,
   type InvestigationResultUploadedEvent,
+  type InvestigationReviewedEvent,
 } from './clinical-events';
