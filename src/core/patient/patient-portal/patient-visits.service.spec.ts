@@ -156,4 +156,83 @@ describe('PatientVisitsService', () => {
     ]);
     expect(item.investigations).toEqual([{ name: 'CBC', status: 'RESULTED' }]);
   });
+
+  describe('listUpcoming', () => {
+    it('throws 404 when a guardian targets an un-linked patient', async () => {
+      await expect(
+        service.listUpcoming(guardianCtx, {
+          patient_id: 'p9',
+          page: 1,
+          limit: 10,
+        }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(findMany).not.toHaveBeenCalled();
+    });
+
+    it('returns an empty page without querying when no accessible patients', async () => {
+      const result = await service.listUpcoming(
+        { userId: 'u1', accessiblePatientIds: [] },
+        { page: 1, limit: 10 },
+      );
+      expect(findMany).not.toHaveBeenCalled();
+      expect(result.items).toEqual([]);
+      expect(result.meta).toMatchObject({ page: 1, limit: 10, total: 0 });
+    });
+
+    it('filters to future follow-ups on COMPLETED visits, soonest first', async () => {
+      await service.listUpcoming(guardianCtx, { page: 2, limit: 10 });
+
+      expect(findMany).toHaveBeenCalledTimes(1);
+      const arg = findMany.mock.calls[0][0] as Record<string, unknown>;
+      const where = arg.where as Record<string, unknown>;
+      expect(where).toMatchObject({
+        is_deleted: false,
+        status: 'COMPLETED',
+        episode: { journey: { patient_id: { in: ['p1', 'p2'] } } },
+      });
+      expect((where.follow_up_date as { gte: Date }).gte).toBeInstanceOf(Date);
+      expect(arg.orderBy).toEqual({ follow_up_date: 'asc' });
+      expect(arg.skip).toBe(10);
+      expect(arg.take).toBe(10);
+    });
+
+    it('maps a row into the upcoming follow-up shape', async () => {
+      const scheduledAt = new Date('2026-01-01T09:00:00Z');
+      const followUpDate = new Date('2026-07-01T00:00:00Z');
+      const row = {
+        id: 'v1',
+        scheduled_at: scheduledAt,
+        follow_up_date: followUpDate,
+        follow_up_notes: 'Recheck in 6 months',
+        specialty_code: 'OBGYN',
+        assigned_doctor: { user: { first_name: 'Aya', last_name: 'Hassan' } },
+        branch: { name: 'Main Branch' },
+        episode: { journey: { organization: { name: 'Jasmin Clinic' } } },
+      };
+      findMany.mockReturnValue([row]);
+      count.mockReturnValue(1);
+
+      const result = await service.listUpcoming(
+        { userId: 'u1', patientId: 'p1', accessiblePatientIds: ['p1'] },
+        { page: 1, limit: 10 },
+      );
+
+      expect(result.meta).toMatchObject({
+        page: 1,
+        limit: 10,
+        total: 1,
+        totalPages: 1,
+      });
+      expect(result.items[0]).toEqual({
+        id: 'v1',
+        follow_up_date: followUpDate,
+        follow_up_notes: 'Recheck in 6 months',
+        source_visit_date: scheduledAt,
+        specialty_code: 'OBGYN',
+        doctor_name: 'Dr. Aya Hassan',
+        organization_name: 'Jasmin Clinic',
+        branch_name: 'Main Branch',
+      });
+    });
+  });
 });

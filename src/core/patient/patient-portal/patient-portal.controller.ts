@@ -25,6 +25,7 @@ import { PatientInvestigationResultsService } from './patient-investigation-resu
 import { PatientMedicationsResponseDto } from './dto/patient-medication.dto.js';
 import { ListPatientMedicationsQueryDto } from './dto/list-patient-medications.query.dto.js';
 import { PatientVisitItemDto } from './dto/patient-visit.dto.js';
+import { PatientUpcomingVisitItemDto } from './dto/patient-upcoming-visit.dto.js';
 import { ListPatientVisitsQueryDto } from './dto/list-patient-visits.query.dto.js';
 import { PatientInvestigationItemDto } from './dto/patient-investigation.dto.js';
 import { ListPatientInvestigationsQueryDto } from './dto/list-patient-investigations.query.dto.js';
@@ -72,6 +73,21 @@ export class PatientPortalController {
     @Query() query: ListPatientVisitsQueryDto,
   ) {
     return this.visitsService.listVisits(patient, query);
+  }
+
+  @Get('visits/upcoming')
+  @Public()
+  @UseGuards(PatientJwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: "List the patient's upcoming recommended follow-ups (paginated)",
+  })
+  @ApiPaginatedResponse(PatientUpcomingVisitItemDto)
+  upcoming(
+    @CurrentPatient() patient: PatientAuthContext,
+    @Query() query: ListPatientVisitsQueryDto,
+  ) {
+    return this.visitsService.listUpcoming(patient, query);
   }
 
   @Get('investigations')
