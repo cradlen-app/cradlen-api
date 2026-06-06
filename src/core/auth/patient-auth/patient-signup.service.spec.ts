@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   NotFoundException,
   UnauthorizedException,
@@ -7,6 +8,7 @@ import * as bcrypt from 'bcryptjs';
 import { PatientSignupService } from './patient-signup.service.js';
 import type { PrismaService } from '@infrastructure/database/prisma.service.js';
 import type { TokensService } from '../services/tokens.service.js';
+import type { PatientAuthContext } from '@common/interfaces/patient-auth-context.interface.js';
 
 type Fn = jest.Mock;
 
@@ -362,6 +364,77 @@ describe('PatientSignupService', () => {
       await service.logout('refresh-tok');
 
       expect(mocks.revokeRefreshToken).toHaveBeenCalledWith('refresh-tok');
+    });
+  });
+
+  describe('changePassword', () => {
+    const ctx: PatientAuthContext = {
+      userId: 'user-1',
+      patientId: 'patient-1',
+      accessiblePatientIds: ['patient-1'],
+    };
+    const currentHash = bcrypt.hashSync('OldPass123', 4);
+
+    function env() {
+      const userFindFirst = jest
+        .fn()
+        .mockResolvedValue({ id: 'user-1', password_hashed: currentHash });
+      const userUpdate = jest.fn().mockResolvedValue({});
+      const prisma = {
+        db: { user: { findFirst: userFindFirst, update: userUpdate } },
+      } as unknown as PrismaService;
+      const service = new PatientSignupService(
+        prisma,
+        {} as unknown as TokensService,
+      );
+      return { service, userFindFirst, userUpdate };
+    }
+
+    it('rejects (401) when the account is not found', async () => {
+      const { service, userFindFirst, userUpdate } = env();
+      userFindFirst.mockResolvedValue(null);
+      await expect(
+        service.changePassword(ctx, {
+          current_password: 'OldPass123',
+          new_password: 'NewPass456',
+        }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(userUpdate).not.toHaveBeenCalled();
+    });
+
+    it('rejects (401) when the current password is wrong', async () => {
+      const { service, userUpdate } = env();
+      await expect(
+        service.changePassword(ctx, {
+          current_password: 'WrongPass',
+          new_password: 'NewPass456',
+        }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(userUpdate).not.toHaveBeenCalled();
+    });
+
+    it('rejects (400) when the new password equals the current', async () => {
+      const { service, userUpdate } = env();
+      await expect(
+        service.changePassword(ctx, {
+          current_password: 'OldPass123',
+          new_password: 'OldPass123',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(userUpdate).not.toHaveBeenCalled();
+    });
+
+    it('hashes and stores a new, different password', async () => {
+      const { service, userUpdate } = env();
+      await service.changePassword(ctx, {
+        current_password: 'OldPass123',
+        new_password: 'NewPass456',
+      });
+      const data = userUpdate.mock.calls[0][0].data as {
+        password_hashed: string;
+      };
+      expect(data.password_hashed).not.toBe(currentHash);
+      expect(bcrypt.compareSync('NewPass456', data.password_hashed)).toBe(true);
     });
   });
 });

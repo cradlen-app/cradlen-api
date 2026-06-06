@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -12,6 +13,7 @@ import type { PatientSignupStartDto } from './dto/patient-signup-start.dto.js';
 import type { PatientSignupStartResponseDto } from './dto/patient-signup-start-response.dto.js';
 import type { PatientSignupCompleteDto } from './dto/patient-signup-complete.dto.js';
 import type { PatientLoginDto } from './dto/patient-login.dto.js';
+import type { ChangePasswordDto } from './dto/change-password.dto.js';
 import type { RefreshDto } from '../dto/refresh.dto.js';
 import type { PatientMeResponseDto } from './dto/patient-me-response.dto.js';
 import type { PatientAuthContext } from '@common/interfaces/patient-auth-context.interface.js';
@@ -207,6 +209,44 @@ export class PatientSignupService {
 
   logout(refreshToken: string): Promise<void> {
     return this.tokensService.revokeRefreshToken(refreshToken);
+  }
+
+  /**
+   * Changes the logged-in account's password. The current password is verified
+   * against the stored hash before the new one (which must differ) is written.
+   * Keyed on the authenticated `userId` — works for both patient and guardian
+   * accounts (a guardian has its own User credential).
+   */
+  async changePassword(
+    ctx: PatientAuthContext,
+    dto: ChangePasswordDto,
+  ): Promise<void> {
+    const user = await this.prismaService.db.user.findFirst({
+      where: { id: ctx.userId, is_active: true, is_deleted: false },
+      select: { id: true, password_hashed: true },
+    });
+    if (!user || !user.password_hashed) {
+      throw this.invalidCredentials();
+    }
+
+    const ok = await bcrypt.compare(dto.current_password, user.password_hashed);
+    if (!ok) throw this.invalidCredentials();
+
+    const same = await bcrypt.compare(dto.new_password, user.password_hashed);
+    if (same) {
+      throw new BadRequestException(
+        'New password must differ from the current password',
+      );
+    }
+
+    const password_hashed = await bcrypt.hash(
+      dto.new_password,
+      PASSWORD_BCRYPT_ROUNDS,
+    );
+    await this.prismaService.db.user.update({
+      where: { id: user.id },
+      data: { password_hashed },
+    });
   }
 
   /**
