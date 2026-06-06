@@ -919,6 +919,10 @@ model Patient {
   address        String
   marital_status MaritalStatus @default(UNKNOWN)
 
+  // Patient-uploaded profile image (R2 object key; served via short-lived
+  // presigned GET). Null when no avatar has been set.
+  profile_image_object_key String?
+
   // History snapshot fields and `husband_name` previously lived here and were
   // backfilled into PatientObgynHistory in the `patient_history_to_obgyn_history_only`
   // migration. PatientObgynHistory is now the only home — see @specialties/obgyn/patient-history.

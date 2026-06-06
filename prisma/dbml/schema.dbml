@@ -550,6 +550,7 @@ Table patients {
   phone_number String [not null]
   address String [not null]
   marital_status MaritalStatus [not null, default: 'UNKNOWN']
+  profile_image_object_key String
   journeys patient_journeys [not null]
   allergies patient_allergies [not null]
   pregnancies patient_pregnancy_history [not null]
