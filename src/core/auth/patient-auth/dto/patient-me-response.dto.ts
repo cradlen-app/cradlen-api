@@ -15,6 +15,12 @@ export class PatientSummaryDto {
       '"SELF" for the account holder\'s own record, otherwise the GuardianRelation value (PARENT, CHILD, …).',
   })
   relation!: string;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: "Short-lived presigned GET URL for the patient's avatar, or null.",
+  })
+  profile_image_url!: string | null;
 }
 
 export class PatientMeResponseDto {
