@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -22,6 +23,7 @@ import { PatientMedicationsService } from './patient-medications.service.js';
 import { PatientVisitsService } from './patient-visits.service.js';
 import { PatientInvestigationsService } from './patient-investigations.service.js';
 import { PatientInvestigationResultsService } from './patient-investigation-results.service.js';
+import { PatientProfileService } from './patient-profile.service.js';
 import { PatientMedicationsResponseDto } from './dto/patient-medication.dto.js';
 import { ListPatientMedicationsQueryDto } from './dto/list-patient-medications.query.dto.js';
 import { PatientVisitItemDto } from './dto/patient-visit.dto.js';
@@ -34,6 +36,15 @@ import {
   CreateResultUploadDto,
   ResultUploadUrlDto,
 } from './dto/investigation-result.dto.js';
+import {
+  PatientProfileDto,
+  UpdatePatientProfileDto,
+} from './dto/patient-profile.dto.js';
+import {
+  ConfirmProfileImageDto,
+  ProfileImageUploadDto,
+  ProfileImageUploadUrlDto,
+} from './dto/profile-image.dto.js';
 
 @ApiTags('Patient Portal')
 @Controller({ path: 'patient-portal', version: '1' })
@@ -43,7 +54,87 @@ export class PatientPortalController {
     private readonly visitsService: PatientVisitsService,
     private readonly investigationsService: PatientInvestigationsService,
     private readonly investigationResultsService: PatientInvestigationResultsService,
+    private readonly profileService: PatientProfileService,
   ) {}
+
+  @Get('profile')
+  @Public()
+  @UseGuards(PatientJwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: "Get the patient's profile (demographics + avatar)",
+  })
+  @ApiStandardResponse(PatientProfileDto)
+  getProfile(
+    @CurrentPatient() patient: PatientAuthContext,
+    @Query('patient_id', new ParseUUIDPipe({ optional: true }))
+    patientId?: string,
+  ) {
+    return this.profileService.getProfile(patient, patientId);
+  }
+
+  @Patch('profile')
+  @Public()
+  @UseGuards(PatientJwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Update the patient's demographics" })
+  @ApiStandardResponse(PatientProfileDto)
+  updateProfile(
+    @CurrentPatient() patient: PatientAuthContext,
+    @Body() dto: UpdatePatientProfileDto,
+    @Query('patient_id', new ParseUUIDPipe({ optional: true }))
+    patientId?: string,
+  ) {
+    return this.profileService.updateProfile(patient, patientId, dto);
+  }
+
+  @Post('profile/image-upload-url')
+  @Public()
+  @UseGuards(PatientJwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get a presigned URL to upload a profile image',
+  })
+  @ApiStandardResponse(ProfileImageUploadUrlDto)
+  profileImageUploadUrl(
+    @CurrentPatient() patient: PatientAuthContext,
+    @Body() dto: ProfileImageUploadDto,
+    @Query('patient_id', new ParseUUIDPipe({ optional: true }))
+    patientId?: string,
+  ) {
+    return this.profileService.createImageUploadUrl(patient, patientId, dto);
+  }
+
+  @Post('profile/image')
+  @Public()
+  @UseGuards(PatientJwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Confirm an uploaded profile image and set it on the patient',
+  })
+  @ApiStandardResponse(PatientProfileDto)
+  confirmProfileImage(
+    @CurrentPatient() patient: PatientAuthContext,
+    @Body() dto: ConfirmProfileImageDto,
+    @Query('patient_id', new ParseUUIDPipe({ optional: true }))
+    patientId?: string,
+  ) {
+    return this.profileService.confirmImage(patient, patientId, dto);
+  }
+
+  @Delete('profile/image')
+  @Public()
+  @UseGuards(PatientJwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Remove the patient's profile image" })
+  @ApiStandardResponse(PatientProfileDto)
+  removeProfileImage(
+    @CurrentPatient() patient: PatientAuthContext,
+    @Query('patient_id', new ParseUUIDPipe({ optional: true }))
+    patientId?: string,
+  ) {
+    return this.profileService.removeImage(patient, patientId);
+  }
 
   @Get('medications')
   @Public()
