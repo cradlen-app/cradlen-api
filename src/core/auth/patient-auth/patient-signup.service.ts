@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
+import { StorageService } from '@infrastructure/storage/storage.service.js';
 import type { AuthTokensDto } from '../dto/auth-tokens.dto.js';
 import { TokensService } from '../services/tokens.service.js';
 import type { PatientSignupStartDto } from './dto/patient-signup-start.dto.js';
@@ -33,6 +34,7 @@ export class PatientSignupService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly tokensService: TokensService,
+    private readonly storageService: StorageService,
   ) {}
 
   async start(
@@ -279,6 +281,7 @@ export class PatientSignupService {
             id: true,
             full_name: true,
             date_of_birth: true,
+            profile_image_object_key: true,
             guardian_links: ctx.guardianId
               ? {
                   where: { guardian_id: ctx.guardianId },
@@ -289,15 +292,22 @@ export class PatientSignupService {
         })
       : [];
 
-    const accessible_patients = patients.map((p) => ({
-      id: p.id,
-      full_name: p.full_name,
-      date_of_birth: this.normalizeDob(p.date_of_birth.toISOString()),
-      relation:
-        p.id === ctx.patientId
-          ? 'SELF'
-          : (p.guardian_links?.[0]?.relation_to_patient ?? 'OTHER'),
-    }));
+    const accessible_patients = await Promise.all(
+      patients.map(async (p) => ({
+        id: p.id,
+        full_name: p.full_name,
+        date_of_birth: this.normalizeDob(p.date_of_birth.toISOString()),
+        relation:
+          p.id === ctx.patientId
+            ? 'SELF'
+            : (p.guardian_links?.[0]?.relation_to_patient ?? 'OTHER'),
+        profile_image_url: p.profile_image_object_key
+          ? await this.storageService.createPresignedDownloadUrl(
+              p.profile_image_object_key,
+            )
+          : null,
+      })),
+    );
 
     return {
       user_id: ctx.userId,
