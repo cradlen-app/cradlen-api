@@ -7,6 +7,7 @@ import { paginated } from '@common/utils/pagination.utils.js';
 import { resolveAccessiblePatientIds } from './accessible-patients.util.js';
 import { ListPatientVisitsQueryDto } from './dto/list-patient-visits.query.dto.js';
 import { PatientVisitItemDto } from './dto/patient-visit.dto.js';
+import { PatientUpcomingVisitItemDto } from './dto/patient-upcoming-visit.dto.js';
 
 /** Prisma `include` for a patient-portal visit-history row. */
 const patientVisitInclude = {
@@ -42,6 +43,23 @@ const patientVisitInclude = {
 
 type PatientVisitRow = Prisma.VisitGetPayload<{
   include: typeof patientVisitInclude;
+}>;
+
+/** Lighter `include` for an upcoming follow-up row (no clinical sub-records). */
+const upcomingVisitInclude = {
+  assigned_doctor: {
+    select: { user: { select: { first_name: true, last_name: true } } },
+  },
+  branch: { select: { name: true } },
+  episode: {
+    select: {
+      journey: { select: { organization: { select: { name: true } } } },
+    },
+  },
+} satisfies Prisma.VisitInclude;
+
+type UpcomingVisitRow = Prisma.VisitGetPayload<{
+  include: typeof upcomingVisitInclude;
 }>;
 
 @Injectable()
@@ -87,6 +105,55 @@ export class PatientVisitsService {
     return paginated(items, { page, limit, total });
   }
 
+  /**
+   * Lists the caller's upcoming recommended follow-ups (soonest first). Each
+   * item is derived from a COMPLETED visit carrying a future `follow_up_date`
+   * (a "come back by date X" recommendation) — not from a separately booked
+   * future appointment row. Past-due recommendations are excluded. Cross-org
+   * and scoped to the patients the caller may access.
+   */
+  async listUpcoming(
+    ctx: PatientAuthContext,
+    query: ListPatientVisitsQueryDto,
+  ): Promise<PaginatedPayload<PatientUpcomingVisitItemDto>> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 10;
+
+    const targetIds = resolveAccessiblePatientIds(ctx, query.patient_id);
+    if (targetIds.length === 0) {
+      return paginated<PatientUpcomingVisitItemDto>([], {
+        page,
+        limit,
+        total: 0,
+      });
+    }
+
+    // Start of today (server/UTC) so a follow-up dated today still surfaces.
+    const startOfToday = new Date();
+    startOfToday.setUTCHours(0, 0, 0, 0);
+
+    const where: Prisma.VisitWhereInput = {
+      is_deleted: false,
+      status: 'COMPLETED',
+      follow_up_date: { gte: startOfToday },
+      episode: { journey: { patient_id: { in: targetIds } } },
+    };
+
+    const [visits, total] = await this.prismaService.db.$transaction([
+      this.prismaService.db.visit.findMany({
+        where,
+        orderBy: { follow_up_date: 'asc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: upcomingVisitInclude,
+      }),
+      this.prismaService.db.visit.count({ where }),
+    ]);
+
+    const items = visits.map((v) => this.toUpcomingDto(v));
+    return paginated(items, { page, limit, total });
+  }
+
   private toDto(v: PatientVisitRow): PatientVisitItemDto {
     const doctor = v.assigned_doctor?.user ?? null;
 
@@ -122,6 +189,23 @@ export class PatientVisitsService {
           status: inv.status,
         }))
         .filter((inv) => inv.name),
+    };
+  }
+
+  private toUpcomingDto(v: UpcomingVisitRow): PatientUpcomingVisitItemDto {
+    const doctor = v.assigned_doctor?.user ?? null;
+
+    return {
+      id: v.id,
+      follow_up_date: v.follow_up_date!,
+      follow_up_notes: v.follow_up_notes ?? null,
+      source_visit_date: v.scheduled_at,
+      specialty_code: v.specialty_code ?? null,
+      doctor_name: doctor
+        ? `Dr. ${doctor.first_name} ${doctor.last_name}`.trim()
+        : null,
+      organization_name: v.episode?.journey?.organization?.name ?? null,
+      branch_name: v.branch?.name ?? null,
     };
   }
 }
