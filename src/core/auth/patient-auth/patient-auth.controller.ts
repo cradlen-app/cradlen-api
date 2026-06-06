@@ -24,6 +24,7 @@ import { PatientSignupStartResponseDto } from './dto/patient-signup-start-respon
 import { PatientSignupCompleteDto } from './dto/patient-signup-complete.dto.js';
 import { PatientLoginDto } from './dto/patient-login.dto.js';
 import { PatientMeResponseDto } from './dto/patient-me-response.dto.js';
+import { ChangePasswordDto } from './dto/change-password.dto.js';
 
 @ApiTags('Patient Auth')
 @Controller({ path: 'patient-auth', version: '1' })
@@ -93,5 +94,20 @@ export class PatientAuthController {
     @CurrentPatient() patient: PatientAuthContext,
   ): Promise<PatientMeResponseDto> {
     return this.patientSignupService.me(patient);
+  }
+
+  @Post('change-password')
+  @Public()
+  @UseGuards(PatientJwtAuthGuard)
+  @Throttle({ default: { limit: 5, ttl: 600000 } })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Change the current account's password" })
+  @ApiVoidResponse()
+  async changePassword(
+    @CurrentPatient() patient: PatientAuthContext,
+    @Body() dto: ChangePasswordDto,
+  ): Promise<void> {
+    await this.patientSignupService.changePassword(patient, dto);
   }
 }
