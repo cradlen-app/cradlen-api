@@ -43,6 +43,15 @@ export class PatientsController {
     return this.patientsService.findAll(query, user);
   }
 
+  @Get('/patients/directory')
+  @ApiPaginatedResponse(BranchPatientDto)
+  findAllForOrg(
+    @Query() query: ListBranchPatientsQueryDto,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.patientsService.findAllForOrg(query, user);
+  }
+
   @Get('/patients/:id')
   @ApiStandardResponse(PatientDto)
   findOne(
