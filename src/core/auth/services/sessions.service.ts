@@ -48,6 +48,13 @@ export interface OnboardingRequiredResponse {
 
 @Injectable()
 export class SessionsService {
+  /**
+   * How long after a refresh token is rotated it may still be redeemed once
+   * more, to absorb concurrent refresh requests racing the same token (see
+   * `refresh`). Short enough to keep single-use rotation meaningful.
+   */
+  private static readonly REFRESH_REUSE_GRACE_MS = 60_000;
+
   constructor(
     private readonly prismaService: PrismaService,
     private readonly authorizationService: AuthorizationService,
@@ -159,9 +166,27 @@ export class SessionsService {
       where: { jti: payload.jti },
       include: { user: true },
     });
-    if (!stored || stored.is_revoked || stored.expires_at < new Date()) {
+    if (!stored || stored.expires_at < new Date()) {
       throw new UnauthorizedException('Refresh token revoked or expired');
     }
+
+    // Rotation-race grace: when a page makes several authenticated calls at
+    // once after the access token expired, each tries to rotate the *same*
+    // refresh token. The first wins and revokes it; without a grace window the
+    // losers present a now-revoked token and get logged out. A token revoked
+    // *by rotation* (replaced_by_jti set) is honored once more within a short
+    // window. Logout-revoked tokens (replaced_by_jti null) are never honored.
+    const rotatedWithinGrace =
+      stored.is_revoked &&
+      !!stored.replaced_by_jti &&
+      !!stored.revoked_at &&
+      Date.now() - stored.revoked_at.getTime() <=
+        SessionsService.REFRESH_REUSE_GRACE_MS;
+
+    if (stored.is_revoked && !rotatedWithinGrace) {
+      throw new UnauthorizedException('Refresh token revoked or expired');
+    }
+
     const matches = await bcrypt.compare(dto.refresh_token, stored.token_hash);
     if (!matches) throw new UnauthorizedException('Refresh token mismatch');
     if (!stored.profile_id || !stored.organization_id) {
@@ -173,7 +198,9 @@ export class SessionsService {
       profileId: stored.profile_id,
       organizationId: stored.organization_id,
       activeBranchId: stored.active_branch_id ?? undefined,
-      revokeJti: stored.jti,
+      // Already revoked by the winning rotation — issue a fresh pair off the
+      // same context without trying to revoke it again.
+      ...(rotatedWithinGrace ? {} : { revokeJti: stored.jti }),
     });
   }
 

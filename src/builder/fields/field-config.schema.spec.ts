@@ -46,4 +46,36 @@ describe('field-config.schema', () => {
     expect(() => assertValidConfig('hi', 'field')).toThrow(InvalidConfigError);
     expect(() => assertValidConfig([], 'field')).toThrow(InvalidConfigError);
   });
+
+  it('rejects a validation.pattern that does not compile to a RegExp', () => {
+    expect(() =>
+      assertValidConfig(
+        { validation: { pattern: '[unterminated' } },
+        'field "national_id"',
+      ),
+    ).toThrow(InvalidConfigError);
+  });
+
+  it('rejects a non-string validation.pattern', () => {
+    expect(() =>
+      assertValidConfig({ validation: { pattern: 123 as any } }, 'field "x"'),
+    ).toThrow(InvalidConfigError);
+  });
+
+  it('accepts a valid pattern plus the new length/date validation keys', () => {
+    expect(() =>
+      assertValidConfig(
+        {
+          validation: {
+            minLength: 8,
+            maxLength: 20,
+            pattern: '^[0-9]{8,20}$',
+            notInFuture: true,
+            maxAgeYears: 120,
+          },
+        },
+        'field "national_id"',
+      ),
+    ).not.toThrow();
+  });
 });

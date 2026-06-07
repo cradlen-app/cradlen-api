@@ -254,45 +254,6 @@ export class VisitsService {
     }
   }
 
-  /**
-   * Marital ↔ spouse consistency checks shared by bookVisit and update.
-   *
-   * The form-template's predicates can't enforce these today because the
-   * GUARDIAN namespace's binding paths (`full_name`, `national_id`,
-   * `phone_number`) collide with PATIENT's at the validator's path-only
-   * lookup — `spouse_*` is on the wire DTO but the binding stays abstract.
-   * Until the GUARDIAN namespace renames are landed, these stay hand-coded.
-   */
-  private assertSpouseConsistency(
-    dto: BookVisitDto | UpdateVisitDto,
-    resolvedMaritalStatus: MaritalStatus | undefined,
-  ) {
-    const hasSpouseFields = !!(
-      dto.spouse_full_name ||
-      dto.spouse_national_id ||
-      dto.spouse_phone_number ||
-      dto.spouse_guardian_id
-    );
-    if (
-      !dto.spouse_full_name &&
-      !dto.spouse_guardian_id &&
-      (dto.spouse_national_id || dto.spouse_phone_number)
-    ) {
-      throw new BadRequestException(
-        'spouse_full_name is required when other spouse fields are supplied',
-      );
-    }
-    if (
-      resolvedMaritalStatus &&
-      resolvedMaritalStatus !== 'MARRIED' &&
-      hasSpouseFields
-    ) {
-      throw new BadRequestException(
-        'Spouse fields may only be supplied when marital_status is MARRIED',
-      );
-    }
-  }
-
   private async assertEpisodeInOrg(episodeId: string, organizationId: string) {
     const episode = await this.prismaService.db.patientEpisode.findUnique({
       where: { id: episodeId, is_deleted: false },
@@ -368,7 +329,6 @@ export class VisitsService {
       }
     }
     const resolvedMaritalStatus = dto.marital_status;
-    this.assertSpouseConsistency(dto, resolvedMaritalStatus);
 
     const branchId = dto.branch_id ?? user.activeBranchId;
     if (!branchId) throw new BadRequestException('branch_id is required');
@@ -410,11 +370,6 @@ export class VisitsService {
         dto,
         resolvedMaritalStatus,
       );
-
-      // SPOUSE link (three input paths) — shared with the update flow.
-      if (resolvedMaritalStatus === 'MARRIED') {
-        await this.applySpouseLink(tx, patient.id, dto);
-      }
 
       const { episode, journey } = await this.resolveJourneyAndEpisode(tx, {
         patientId: patient.id,
@@ -1043,13 +998,6 @@ export class VisitsService {
     }
 
     const resolvedMaritalStatus = dto.marital_status;
-    this.assertSpouseConsistency(dto, resolvedMaritalStatus);
-    const hasSpouseFields = !!(
-      dto.spouse_full_name ||
-      dto.spouse_national_id ||
-      dto.spouse_phone_number ||
-      dto.spouse_guardian_id
-    );
 
     const updated = await this.prismaService.db.$transaction(async (tx) => {
       const patientUpdates: Prisma.PatientUpdateInput = {
@@ -1072,10 +1020,6 @@ export class VisitsService {
           where: { id: patientId },
           data: patientUpdates,
         });
-      }
-
-      if (resolvedMaritalStatus === 'MARRIED' && hasSpouseFields) {
-        await this.applySpouseLink(tx, patientId, dto);
       }
 
       // If the (doctor, branch, day) bucket changes, re-issue queue_number
@@ -1293,133 +1237,6 @@ export class VisitsService {
       payload: updatedVisit,
     });
     return updatedVisit;
-  }
-
-  /**
-   * Resolves the spouse Guardian for a patient (three input paths: picked id,
-   * upsert-by-national-id, or name-only) and makes it the single primary SPOUSE
-   * link — demoting any other primary SPOUSE link first to respect the partial
-   * unique index. Shared by bookVisit and update; only called when the patient
-   * is MARRIED.
-   */
-  private async applySpouseLink(
-    tx: Prisma.TransactionClient,
-    patientId: string,
-    dto: {
-      spouse_guardian_id?: string;
-      spouse_national_id?: string;
-      spouse_full_name?: string;
-      spouse_phone_number?: string;
-      spouse_date_of_birth?: string;
-    },
-  ) {
-    const spouseDob = dto.spouse_date_of_birth
-      ? new Date(dto.spouse_date_of_birth)
-      : undefined;
-    let spouseGuardianId: string | null = null;
-    if (dto.spouse_guardian_id) {
-      const picked = await tx.guardian.findFirst({
-        where: { id: dto.spouse_guardian_id, is_deleted: false },
-      });
-      if (!picked) {
-        throw new NotFoundException(
-          `Guardian ${dto.spouse_guardian_id} not found`,
-        );
-      }
-      spouseGuardianId = picked.id;
-    } else if (dto.spouse_full_name && dto.spouse_national_id) {
-      const spouse = await tx.guardian.upsert({
-        where: { national_id: dto.spouse_national_id },
-        create: {
-          national_id: dto.spouse_national_id,
-          full_name: dto.spouse_full_name,
-          phone_number: dto.spouse_phone_number ?? null,
-          date_of_birth: spouseDob ?? null,
-        },
-        update: {
-          full_name: dto.spouse_full_name,
-          ...(dto.spouse_phone_number !== undefined && {
-            phone_number: dto.spouse_phone_number,
-          }),
-          ...(spouseDob !== undefined && { date_of_birth: spouseDob }),
-        },
-      });
-      spouseGuardianId = spouse.id;
-    } else if (dto.spouse_full_name) {
-      const existingSpouseLink = await tx.patientGuardian.findFirst({
-        where: {
-          patient_id: patientId,
-          relation_to_patient: 'SPOUSE',
-          is_primary: true,
-          is_deleted: false,
-        },
-      });
-      if (existingSpouseLink) {
-        await tx.guardian.update({
-          where: { id: existingSpouseLink.guardian_id },
-          data: {
-            full_name: dto.spouse_full_name,
-            ...(dto.spouse_phone_number !== undefined && {
-              phone_number: dto.spouse_phone_number,
-            }),
-            ...(spouseDob !== undefined && { date_of_birth: spouseDob }),
-          },
-        });
-        spouseGuardianId = existingSpouseLink.guardian_id;
-      } else {
-        const spouse = await tx.guardian.create({
-          data: {
-            full_name: dto.spouse_full_name,
-            phone_number: dto.spouse_phone_number ?? null,
-            date_of_birth: spouseDob ?? null,
-          },
-        });
-        spouseGuardianId = spouse.id;
-      }
-    }
-
-    if (spouseGuardianId) {
-      // Demote any existing primary SPOUSE link to a different guardian before
-      // promoting this one — the partial unique index
-      // `patient_guardians_one_primary_per_relation_unique` allows only one.
-      await tx.patientGuardian.updateMany({
-        where: {
-          patient_id: patientId,
-          relation_to_patient: 'SPOUSE',
-          is_primary: true,
-          is_deleted: false,
-          NOT: { guardian_id: spouseGuardianId },
-        },
-        data: { is_primary: false },
-      });
-
-      const existingLink = await tx.patientGuardian.findUnique({
-        where: {
-          patient_id_guardian_id: {
-            patient_id: patientId,
-            guardian_id: spouseGuardianId,
-          },
-        },
-      });
-      if (!existingLink) {
-        await tx.patientGuardian.create({
-          data: {
-            patient_id: patientId,
-            guardian_id: spouseGuardianId,
-            relation_to_patient: 'SPOUSE',
-            is_primary: true,
-          },
-        });
-      } else if (
-        existingLink.relation_to_patient !== 'SPOUSE' ||
-        !existingLink.is_primary
-      ) {
-        await tx.patientGuardian.update({
-          where: { id: existingLink.id },
-          data: { relation_to_patient: 'SPOUSE', is_primary: true },
-        });
-      }
-    }
   }
 
   async setFollowUp(id: string, dto: SetFollowUpDto, user: AuthContext) {

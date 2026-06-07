@@ -267,6 +267,7 @@ Table refresh_tokens {
   expires_at DateTime [not null]
   is_revoked Boolean [not null, default: false]
   revoked_at DateTime
+  replaced_by_jti String
   created_at DateTime [default: `now()`, not null]
   user users [not null]
 }

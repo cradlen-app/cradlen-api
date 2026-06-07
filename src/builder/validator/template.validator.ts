@@ -8,7 +8,14 @@ import { FieldDescriptor } from '../sections/section.descriptor.js';
 
 export interface ValidationError {
   fieldCode: string;
-  code: 'REQUIRED' | 'FORBIDDEN';
+  code:
+    | 'REQUIRED'
+    | 'FORBIDDEN'
+    | 'TOO_SHORT'
+    | 'TOO_LONG'
+    | 'INVALID_FORMAT'
+    | 'OUT_OF_RANGE'
+    | 'INVALID_DATE';
   message: string;
 }
 
@@ -32,10 +39,13 @@ export interface ValidatePayloadOptions {
 }
 
 /**
- * Server-side template-aware validator. Reads only the server-relevant
- * predicate effects (`required`, `forbidden`) and enforces them against the
- * submitted payload. `visible` and `enabled` predicates are ignored on the
- * server — Comment-9 invariant.
+ * Server-side template-aware validator. Enforces, against the submitted payload:
+ *   - the server-relevant predicate effects (`required`, `forbidden`) —
+ *     `visible`/`enabled` are ignored on the server (Comment-9 invariant); and
+ *   - the `config.validation` constraints of each field that carries a value
+ *     (`minLength`/`maxLength`/`pattern` for strings, `min`/`max` for numbers,
+ *     `notInFuture`/`maxAgeYears` for dates). Like `forbidden`, these run even
+ *     under `sparse` (PATCH) so a malformed value can't slip through an update.
  *
  * Endpoints invoke this after class-validator finishes type-shape checks:
  *
@@ -144,6 +154,101 @@ export class TemplateValidator {
             triggered.message ??
             `${field.code} must not be present under current selection`,
         });
+      }
+
+      // VALUE CONSTRAINTS — `config.validation` is enforced whenever a value is
+      // present, regardless of sparse (a malformed value is invalid on PATCH
+      // too). At most one constraint error per field.
+      this.enforceValueConstraints(field, value, out);
+    }
+  }
+
+  /**
+   * Enforces the field's `config.validation` constraints against a present
+   * value. String fields check `minLength`/`maxLength`/`pattern`; numeric
+   * fields check `min`/`max`; DATE/DATETIME fields check `notInFuture`/
+   * `maxAgeYears`. Pushes the first failure (at most one per field). A
+   * non-compiling `pattern` is ignored here — `assertValidConfig` rejects those
+   * at seed time.
+   */
+  private enforceValueConstraints(
+    field: FieldDescriptor,
+    value: unknown,
+    out: ValidationError[],
+  ): void {
+    const v = field.config?.validation;
+    if (!v) return;
+    const push = (code: ValidationError['code'], message: string): void => {
+      out.push({ fieldCode: field.code, code, message });
+    };
+
+    // String constraints.
+    if (typeof value === 'string') {
+      if (typeof v.minLength === 'number' && value.length < v.minLength) {
+        return push(
+          'TOO_SHORT',
+          `${field.code} must be at least ${v.minLength} characters`,
+        );
+      }
+      if (typeof v.maxLength === 'number' && value.length > v.maxLength) {
+        return push(
+          'TOO_LONG',
+          `${field.code} must be at most ${v.maxLength} characters`,
+        );
+      }
+      if (typeof v.pattern === 'string') {
+        let re: RegExp | null = null;
+        try {
+          re = new RegExp(v.pattern);
+        } catch {
+          re = null;
+        }
+        if (re && !re.test(value)) {
+          return push('INVALID_FORMAT', `${field.code} has an invalid format`);
+        }
+      }
+    }
+
+    // Date constraints (DATE / DATETIME fields).
+    if (
+      (field.type === 'DATE' || field.type === 'DATETIME') &&
+      (v.notInFuture === true || typeof v.maxAgeYears === 'number')
+    ) {
+      const date = new Date(value as string);
+      if (Number.isNaN(date.getTime())) {
+        return push('INVALID_DATE', `${field.code} is not a valid date`);
+      }
+      const now = new Date();
+      if (v.notInFuture === true && date.getTime() > now.getTime()) {
+        return push('INVALID_DATE', `${field.code} must not be in the future`);
+      }
+      if (typeof v.maxAgeYears === 'number') {
+        const earliest = new Date(now);
+        earliest.setFullYear(earliest.getFullYear() - v.maxAgeYears);
+        if (date.getTime() < earliest.getTime()) {
+          return push(
+            'INVALID_DATE',
+            `${field.code} exceeds the maximum allowed age of ${v.maxAgeYears} years`,
+          );
+        }
+      }
+    }
+
+    // Numeric range constraints.
+    const numeric =
+      typeof value === 'number'
+        ? value
+        : typeof value === 'string' &&
+            value.trim() !== '' &&
+            !isNaN(Number(value))
+          ? Number(value)
+          : null;
+    if (numeric !== null && Number.isFinite(numeric)) {
+      if (typeof v.min === 'number' && numeric < v.min) {
+        return push('OUT_OF_RANGE', `${field.code} must be at least ${v.min}`);
+      }
+      if (typeof v.max === 'number' && numeric > v.max) {
+        return push('OUT_OF_RANGE', `${field.code} must be at most ${v.max}`);
       }
     }
   }
