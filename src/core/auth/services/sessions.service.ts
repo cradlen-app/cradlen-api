@@ -316,6 +316,7 @@ export class SessionsService {
         })),
         branches: branches.map((b) => ({
           id: b.id,
+          name: b.name,
           address: b.address,
           city: b.city,
           governorate: b.governorate,

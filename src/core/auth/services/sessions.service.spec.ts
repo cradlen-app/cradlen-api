@@ -284,6 +284,7 @@ describe('SessionsService', () => {
     mocks.branchFindMany.mockResolvedValue([
       {
         id: 'branch-1',
+        name: 'HQ Branch',
         address: '123 Main St',
         city: 'Cairo',
         governorate: 'Cairo',
@@ -313,6 +314,7 @@ describe('SessionsService', () => {
           branches: [
             {
               id: 'branch-1',
+              name: 'HQ Branch',
               city: 'Cairo',
               is_main: true,
             },
