@@ -66,29 +66,33 @@ export class VisitsController {
     return this.visitsService.bookVisit(dto, user);
   }
 
-  @Get('visits/my-waiting-list')
+  @Get('branches/:branchId/visits/my-waiting-list')
   @ApiBearerAuth()
   @ApiOperation({
     summary:
-      "Today's SCHEDULED + CHECKED_IN visits assigned to the current doctor",
+      "Today's SCHEDULED + CHECKED_IN visits assigned to the current doctor at this branch",
   })
   @ApiPaginatedResponse(VisitDto)
   findMyWaitingList(
+    @Param('branchId', ParseUUIDPipe) branchId: string,
     @Query() query: ListVisitsQueryDto,
     @CurrentUser() user: AuthContext,
   ) {
-    return this.visitsService.findMyWaitingList(query, user);
+    return this.visitsService.findMyWaitingList(branchId, query, user);
   }
 
-  @Get('visits/my-current')
+  @Get('branches/:branchId/visits/my-current')
   @ApiBearerAuth()
   @ApiOperation({
     summary:
-      'Current IN_PROGRESS visit assigned to the doctor (data may be null)',
+      'Current IN_PROGRESS visit assigned to the doctor at this branch (data may be null)',
   })
   @ApiStandardResponse(VisitDto)
-  findMyCurrent(@CurrentUser() user: AuthContext) {
-    return this.visitsService.findMyCurrent(user);
+  findMyCurrent(
+    @Param('branchId', ParseUUIDPipe) branchId: string,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.visitsService.findMyCurrent(branchId, user);
   }
 
   @Get('visits/:id')
