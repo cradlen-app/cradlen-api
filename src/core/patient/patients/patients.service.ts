@@ -235,15 +235,93 @@ export class PatientsService {
     return paginated(shaped, { page, limit, total });
   }
 
+  /**
+   * OWNER-only org-wide directory: every patient with a journey in the org,
+   * across all branches. Returns the same {@link BranchPatientDto} shape as
+   * {@link findAllForBranch} (journey + last_visit_date) so the frontend list
+   * reuses one mapper; `last_visit_date` is the most recent COMPLETED visit at
+   * any branch.
+   */
+  async findAllForOrg(query: ListBranchPatientsQueryDto, user: AuthContext) {
+    await this.authorizationService.assertCanManageOrganization(
+      user.profileId,
+      user.organizationId,
+    );
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? DEFAULT_PATIENT_PAGE_SIZE;
+
+    const journeyWhere = {
+      organization_id: user.organizationId,
+      is_deleted: false,
+      ...(query.journey_status && { status: query.journey_status }),
+      ...(query.journey_type && {
+        journey_template: { type: query.journey_type },
+      }),
+    };
+
+    const where = {
+      is_deleted: false,
+      journeys: { some: journeyWhere },
+      ...(query.search && {
+        OR: [
+          {
+            full_name: {
+              contains: query.search,
+              mode: 'insensitive' as const,
+            },
+          },
+          { national_id: { contains: query.search } },
+        ],
+      }),
+    };
+
+    const [patients, total] = await this.prismaService.db.$transaction([
+      this.prismaService.db.patient.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { created_at: 'desc' },
+        include: {
+          journeys: {
+            where: journeyWhere,
+            take: 1,
+            orderBy: { started_at: 'desc' },
+            include: { journey_template: { select: { type: true } } },
+          },
+        },
+      }),
+      this.prismaService.db.patient.count({ where }),
+    ]);
+
+    const lastVisitMap = await this.getLastVisitDates(
+      patients.map((p) => p.id),
+      null,
+    );
+
+    const shaped = patients.map(({ journeys, ...rest }) => {
+      const j = journeys[0] ?? null;
+      return {
+        ...rest,
+        journey: j
+          ? { id: j.id, type: j.journey_template.type, status: j.status }
+          : null,
+        last_visit_date: lastVisitMap.get(rest.id) ?? null,
+      };
+    });
+
+    return paginated(shaped, { page, limit, total });
+  }
+
   private async getLastVisitDates(
     patientIds: string[],
-    branchId: string,
+    branchId: string | null,
   ): Promise<Map<string, Date>> {
     if (patientIds.length === 0) return new Map();
 
     const visits = await this.prismaService.db.visit.findMany({
       where: {
-        branch_id: branchId,
+        ...(branchId ? { branch_id: branchId } : {}),
         is_deleted: false,
         status: 'COMPLETED',
         episode: {
@@ -267,7 +345,7 @@ export class PatientsService {
   }
 
   async findOne(id: string, user: AuthContext) {
-    await this.patientAccessService.assertPatientInOrg(id, user);
+    await this.patientAccessService.assertPatientAccessible(id, user);
     const patient = await this.prismaService.db.patient.findUnique({
       where: { id, is_deleted: false },
     });

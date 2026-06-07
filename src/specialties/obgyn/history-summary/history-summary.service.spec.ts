@@ -16,7 +16,7 @@ const mockPrismaService = {
   },
 };
 
-const mockAccess = { assertPatientInOrg: jest.fn() };
+const mockAccess = { assertPatientAccessible: jest.fn() };
 
 const mockUser: AuthContext = {
   userId: 'user-1',
@@ -28,7 +28,7 @@ const mockUser: AuthContext = {
 
 function resetDefaults() {
   jest.clearAllMocks();
-  mockAccess.assertPatientInOrg.mockResolvedValue(undefined);
+  mockAccess.assertPatientAccessible.mockResolvedValue(undefined);
   mockPrismaService.db.patientPregnancyHistory.findMany.mockResolvedValue([]);
   mockPrismaService.db.patientNonGynSurgery.findMany.mockResolvedValue([]);
   mockPrismaService.db.patientFamilyHistory.findMany.mockResolvedValue([]);
@@ -74,7 +74,9 @@ describe('HistorySummaryService', () => {
   });
 
   it('propagates NotFoundException and skips DB reads', async () => {
-    mockAccess.assertPatientInOrg.mockRejectedValue(new NotFoundException());
+    mockAccess.assertPatientAccessible.mockRejectedValue(
+      new NotFoundException(),
+    );
     await expect(
       service.getObgynHistorySummary('p1', mockUser),
     ).rejects.toThrow(NotFoundException);

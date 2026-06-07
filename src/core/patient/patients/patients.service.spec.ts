@@ -41,7 +41,7 @@ describe('PatientsService', () => {
     $transaction: jest.Mock;
   };
   let authMock: { assertCanAccessBranch: jest.Mock };
-  let accessMock: { assertPatientInOrg: jest.Mock };
+  let accessMock: { assertPatientAccessible: jest.Mock };
 
   beforeEach(async () => {
     db = {
@@ -58,7 +58,9 @@ describe('PatientsService', () => {
       $transaction: jest.fn(),
     };
     authMock = { assertCanAccessBranch: jest.fn() };
-    accessMock = { assertPatientInOrg: jest.fn().mockResolvedValue(undefined) };
+    accessMock = {
+      assertPatientAccessible: jest.fn().mockResolvedValue(undefined),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -197,10 +199,10 @@ describe('PatientsService', () => {
   });
 
   describe('findOne', () => {
-    it('asserts org access before returning the patient', async () => {
+    it('asserts branch-gated access before returning the patient', async () => {
       db.patient.findUnique.mockResolvedValue({ ...mockPatient });
       await service.findOne('patient-uuid', mockUser);
-      expect(accessMock.assertPatientInOrg).toHaveBeenCalledWith(
+      expect(accessMock.assertPatientAccessible).toHaveBeenCalledWith(
         'patient-uuid',
         mockUser,
       );
@@ -215,8 +217,8 @@ describe('PatientsService', () => {
       });
     });
 
-    it('propagates NotFoundException for a patient outside the caller org', async () => {
-      accessMock.assertPatientInOrg.mockRejectedValue(
+    it('propagates NotFoundException for a patient the caller cannot access', async () => {
+      accessMock.assertPatientAccessible.mockRejectedValue(
         new NotFoundException('Patient bad-id not found'),
       );
       await expect(service.findOne('bad-id', mockUser)).rejects.toThrow(
@@ -234,8 +236,8 @@ describe('PatientsService', () => {
   });
 
   describe('update', () => {
-    it('asserts org access before updating', async () => {
-      accessMock.assertPatientInOrg.mockRejectedValue(
+    it('asserts branch-gated access before updating', async () => {
+      accessMock.assertPatientAccessible.mockRejectedValue(
         new NotFoundException('Patient bad-id not found'),
       );
       await expect(
