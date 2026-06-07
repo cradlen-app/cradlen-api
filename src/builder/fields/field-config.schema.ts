@@ -60,11 +60,23 @@ export interface ConfigShape {
     prefillFrom?: string;
     [k: string]: unknown;
   };
+  /**
+   * Validation constraints. These are **server-enforced** by `TemplateValidator`
+   * (in addition to being frontend rendering hints): when a field carries a
+   * value, each present constraint is checked and a failure surfaces as a 400.
+   * `min`/`max` apply to numeric fields, `minLength`/`maxLength`/`pattern` to
+   * strings, and `notInFuture`/`maxAgeYears` to DATE/DATETIME fields.
+   */
   validation?: {
     min?: number;
     max?: number;
+    minLength?: number;
     maxLength?: number;
     pattern?: string;
+    /** DATE/DATETIME: reject values after "now". */
+    notInFuture?: boolean;
+    /** DATE/DATETIME: reject values older than this many years before "now". */
+    maxAgeYears?: number;
     options?: Array<{ code: string; label: string }>;
     [k: string]: unknown;
   };
@@ -121,6 +133,24 @@ export function assertValidConfig(
     throw new InvalidConfigError(
       `${contextLabel}: config.logic.predicates must be an array`,
     );
+  }
+
+  // A `validation.pattern` must compile to a RegExp — catch authoring typos at
+  // seed time so a malformed regex can never reach the request-time validator.
+  const pattern = (config as ConfigShape).validation?.pattern;
+  if (pattern !== undefined) {
+    if (typeof pattern !== 'string') {
+      throw new InvalidConfigError(
+        `${contextLabel}: config.validation.pattern must be a string`,
+      );
+    }
+    try {
+      new RegExp(pattern);
+    } catch {
+      throw new InvalidConfigError(
+        `${contextLabel}: config.validation.pattern is not a valid regular expression: "${pattern}"`,
+      );
+    }
   }
 }
 

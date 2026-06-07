@@ -16,7 +16,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import type { Predicate } from '../../src/builder/rules/predicates.js';
 
 const TEMPLATE_CODE = 'book_visit';
-const TEMPLATE_VERSION = 12;
+const TEMPLATE_VERSION = 13;
 
 interface FieldSpec {
   code: string;
@@ -264,7 +264,7 @@ const SECTIONS: SectionSpec[] = [
               },
             },
           },
-          validation: { maxLength: 200 },
+          validation: { minLength: 2, maxLength: 200 },
         },
       },
       {
@@ -272,20 +272,38 @@ const SECTIONS: SectionSpec[] = [
         label: 'National ID',
         type: 'TEXT',
         binding: { namespace: 'PATIENT', path: 'national_id' },
-        config: { validation: { maxLength: 50 } },
+        // Digits only, 8–20 long. Tolerant across countries (Egyptian 14,
+        // Saudi 10, passports/iqama, …) — the pattern enforces digits + range.
+        config: {
+          validation: {
+            minLength: 8,
+            maxLength: 20,
+            pattern: '^[0-9]{8,20}$',
+          },
+        },
       },
       {
         code: 'date_of_birth',
         label: 'Date of birth',
         type: 'DATE',
         binding: { namespace: 'PATIENT', path: 'date_of_birth' },
+        // Must be a real past date within a human lifespan.
+        config: { validation: { notInFuture: true, maxAgeYears: 120 } },
       },
       {
         code: 'phone_number',
         label: 'Phone number',
         type: 'TEXT',
         binding: { namespace: 'PATIENT', path: 'phone_number' },
-        config: { validation: { maxLength: 30 } },
+        // Lenient international: optional leading +, digits with spaces/dashes,
+        // 7–20 chars total.
+        config: {
+          validation: {
+            minLength: 7,
+            maxLength: 20,
+            pattern: '^\\+?[0-9\\s\\-]{7,20}$',
+          },
+        },
       },
       {
         code: 'address',
