@@ -87,6 +87,24 @@ export interface ConfigShape {
     entity?: string;
     [k: string]: unknown;
   };
+  /**
+   * Per-locale translations overlaid by the renderer based on the request
+   * locale. English is the base (the top-level `label`/`name`/`ui.placeholder`/
+   * option labels); other locales supply overrides here. The renderer strips
+   * this block from the wire — it never reaches the frontend.
+   *
+   * Field: `{ label?, placeholder?, helpText?, options?: { [optionCode]: string } }`.
+   * Section: `{ name? }`.
+   */
+  i18n?: {
+    [locale: string]: {
+      label?: string;
+      name?: string;
+      placeholder?: string;
+      helpText?: string;
+      options?: Record<string, string>;
+    };
+  };
 }
 
 export class InvalidConfigError extends Error {
@@ -110,7 +128,7 @@ export function assertValidConfig(
       `${contextLabel}: config must be an object, got ${describe(config)}`,
     );
   }
-  const ALLOWED_TOP_KEYS = new Set(['ui', 'validation', 'logic']);
+  const ALLOWED_TOP_KEYS = new Set(['ui', 'validation', 'logic', 'i18n']);
   for (const key of Object.keys(config)) {
     if (!ALLOWED_TOP_KEYS.has(key)) {
       throw new InvalidConfigError(

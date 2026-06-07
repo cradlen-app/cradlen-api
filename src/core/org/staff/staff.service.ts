@@ -62,12 +62,20 @@ export class StaffService {
   async createStaff(
     profileId: string,
     organizationId: string,
+    branchId: string,
     dto: CreateStaffDto,
   ) {
     const uniqueRoleIds = [...new Set(dto.role_ids)];
     const uniqueBranchIds = [...new Set(dto.branch_ids)];
     const jobFunctionCodes = [...new Set(dto.job_function_codes ?? [])];
     const specialtyCodes = [...new Set(dto.specialty_codes ?? [])];
+
+    // The staff must be assigned to the branch in the path (mirrors invitations).
+    if (!uniqueBranchIds.includes(branchId)) {
+      throw new BadRequestException(
+        'branch_ids must include the path branchId',
+      );
+    }
 
     await this.authorizationService.assertCanManageStaffOnBranches(
       profileId,
@@ -165,12 +173,11 @@ export class StaffService {
   async listStaff(
     profileId: string,
     organizationId: string,
+    branchId: string,
     query: ListStaffQueryDto = {},
   ) {
     const {
-      branch_id: branchId,
       role,
-      scope,
       clinical,
       doctors_only: doctorsOnly,
       specialty_code: specialtyCode,
@@ -186,6 +193,13 @@ export class StaffService {
       profileId,
       organizationId,
     );
+    // Branch-scoped: caller may only list branches they can reach. OWNER passes
+    // for all branches; BRANCH_MANAGER only their own.
+    await this.authorizationService.assertCanAccessBranch(
+      profileId,
+      organizationId,
+      branchId,
+    );
 
     if (
       role !== undefined &&
@@ -198,33 +212,12 @@ export class StaffService {
       );
     }
 
-    const isOwner = await this.authorizationService.isOwner(
-      profileId,
-      organizationId,
-    );
-    // Non-OWNERs are implicitly scoped to their own branches.
-    // ?scope=org is OWNER-only; for everyone else it silently degrades to "mine".
-    const effectiveScope: 'org' | 'mine' =
-      isOwner && scope === 'org' ? 'org' : isOwner ? (scope ?? 'org') : 'mine';
-
     const where: Prisma.ProfileWhereInput = {
       organization_id: organizationId,
       is_deleted: false,
       is_active: true,
+      branches: { some: { branch_id: branchId } },
     };
-    if (branchId) {
-      where.branches = { some: { branch_id: branchId } };
-    } else if (effectiveScope === 'mine') {
-      const callerBranches =
-        await this.authorizationService.getEffectiveBranchIds(
-          profileId,
-          organizationId,
-        );
-      if (!callerBranches.length) {
-        return paginated([], { page, limit, total: 0 });
-      }
-      where.branches = { some: { branch_id: { in: callerBranches } } };
-    }
     if (role) {
       where.roles = { some: { role: { code: role.toUpperCase() } } };
     }
@@ -293,9 +286,17 @@ export class StaffService {
   async updateStaff(
     callerProfileId: string,
     organizationId: string,
+    branchId: string,
     staffProfileId: string,
     dto: UpdateStaffDto,
   ) {
+    // Branch-scoped: caller must manage this branch, and the target must be
+    // assigned to it.
+    await this.authorizationService.assertCanManageStaffOnBranches(
+      callerProfileId,
+      organizationId,
+      [branchId],
+    );
     await this.authorizationService.assertCanManageStaffForTarget(
       callerProfileId,
       organizationId,
@@ -307,6 +308,7 @@ export class StaffService {
         id: staffProfileId,
         organization_id: organizationId,
         is_deleted: false,
+        branches: { some: { branch_id: branchId } },
       },
       include: {
         user: true,
@@ -463,42 +465,11 @@ export class StaffService {
     });
   }
 
-  async deleteStaff(
+  async removeStaffFromBranch(
     callerProfileId: string,
     organizationId: string,
-    staffProfileId: string,
-  ) {
-    // Full profile delete is OWNER-only. BRANCH_MANAGER can only unassign
-    // staff from a branch (DELETE /staff/:id/branches/:branchId).
-    await this.authorizationService.assertOwnerOnly(
-      callerProfileId,
-      organizationId,
-    );
-
-    const profile = await this.prismaService.db.profile.findFirst({
-      where: {
-        id: staffProfileId,
-        organization_id: organizationId,
-        is_deleted: false,
-      },
-    });
-    if (!profile) throw new NotFoundException('Staff member not found');
-
-    if (staffProfileId === callerProfileId) {
-      throw new BadRequestException('Cannot delete your own staff profile');
-    }
-
-    await this.prismaService.db.profile.update({
-      where: { id: staffProfileId },
-      data: { is_deleted: true, deleted_at: new Date() },
-    });
-  }
-
-  async unassignStaffFromBranch(
-    callerProfileId: string,
-    organizationId: string,
-    staffProfileId: string,
     branchId: string,
+    staffProfileId: string,
   ) {
     // Caller must be able to manage staff on this specific branch.
     await this.authorizationService.assertCanManageStaffOnBranches(
@@ -529,12 +500,32 @@ export class StaffService {
       throw new NotFoundException('Staff is not assigned to this branch');
     }
 
+    // Count remaining branches to decide whether this is the last one.
+    const branchCount = await this.prismaService.db.profileBranch.count({
+      where: { profile_id: staffProfileId, organization_id: organizationId },
+    });
+    const isLastBranch = branchCount <= 1;
+
+    // Removing a staff from their last branch soft-deletes the profile, so
+    // guard against a caller orphaning (and deleting) themselves.
+    if (isLastBranch && staffProfileId === callerProfileId) {
+      throw new BadRequestException('Cannot delete your own staff profile');
+    }
+
     await this.prismaService.db.$transaction(async (tx) => {
       await tx.profileBranch.delete({ where: { id: link.id } });
       // Drop schedule rows for this branch since they're now meaningless.
       await tx.workingSchedule.deleteMany({
         where: { profile_id: staffProfileId, branch_id: branchId },
       });
+      // No branches left → the profile is no longer reachable anywhere, so
+      // soft-delete it rather than leave an invisible orphan.
+      if (isLastBranch) {
+        await tx.profile.update({
+          where: { id: staffProfileId },
+          data: { is_deleted: true, deleted_at: new Date() },
+        });
+      }
     });
   }
 }

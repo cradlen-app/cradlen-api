@@ -1,6 +1,7 @@
 import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
 import { ApiQuery, ApiTags } from '@nestjs/swagger';
 import { ApiStandardResponse } from '@common/swagger';
+import { CurrentLocale } from '@common/decorators';
 import { TemplatesService } from './templates.service.js';
 import { TemplateRendererService } from '../renderer/template-renderer.service.js';
 import {
@@ -35,13 +36,14 @@ export class TemplatesController {
   })
   async getActive(
     @Param('code') code: string,
+    @CurrentLocale() locale: string,
     @Query('extension') extension?: string,
   ) {
     const row = await this.templates.findActiveComposed(
       code,
       extension ?? null,
     );
-    return this.renderer.render(row);
+    return this.renderer.render(row, locale);
   }
 
   @Get(':code/versions/:version')
@@ -49,8 +51,9 @@ export class TemplatesController {
   async getVersion(
     @Param('code') code: string,
     @Param('version', ParseIntPipe) version: number,
+    @CurrentLocale() locale: string,
   ) {
     const row = await this.templates.findVersion(code, version);
-    return this.renderer.render(row);
+    return this.renderer.render(row, locale);
   }
 }
