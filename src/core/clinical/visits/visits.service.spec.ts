@@ -273,56 +273,6 @@ describe('VisitsService', () => {
         service.update('visit-uuid', { chief_complaint: 'changed' }, mockUser),
       ).rejects.toThrow(BadRequestException);
     });
-
-    it('demotes any other primary spouse link before promoting the new one (applySpouseLink)', async () => {
-      db.visit.findUnique.mockResolvedValue({
-        ...mockVisit,
-        status: 'SCHEDULED',
-        episode: {
-          journey: {
-            organization_id: 'org-uuid',
-            patient: { id: 'patient-uuid' },
-          },
-        },
-      });
-      db.$transaction.mockImplementation(
-        async (cb: (tx: typeof db) => Promise<unknown>) => cb(db),
-      );
-      db.guardian.upsert.mockResolvedValue({ id: 'spouse-guardian-uuid' });
-      db.patientGuardian.updateMany.mockResolvedValue({ count: 1 });
-      db.patientGuardian.findUnique.mockResolvedValue(null);
-      db.visit.update.mockResolvedValue(mockVisit);
-
-      await service.update(
-        'visit-uuid',
-        {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          marital_status: 'MARRIED' as any,
-          spouse_full_name: 'John Doe',
-          spouse_national_id: '99999',
-        },
-        mockUser,
-      );
-
-      expect(db.patientGuardian.updateMany).toHaveBeenCalledWith({
-        where: {
-          patient_id: 'patient-uuid',
-          relation_to_patient: 'SPOUSE',
-          is_primary: true,
-          is_deleted: false,
-          NOT: { guardian_id: 'spouse-guardian-uuid' },
-        },
-        data: { is_primary: false },
-      });
-      expect(db.patientGuardian.create).toHaveBeenCalledWith({
-        data: {
-          patient_id: 'patient-uuid',
-          guardian_id: 'spouse-guardian-uuid',
-          relation_to_patient: 'SPOUSE',
-          is_primary: true,
-        },
-      });
-    });
   });
 
   describe('updateStatus', () => {

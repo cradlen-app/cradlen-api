@@ -163,14 +163,6 @@ describe('ALLOWED_PATHS ↔ DTO contract', () => {
         assertPathLandsOnDto(path, intakeProps, `INTAKE.${path}`);
       }
     });
-
-    it('GUARDIAN paths land on BookVisitDto.spouse_<field> properties', () => {
-      // GUARDIAN maps to spouse_* fields on BookVisitDto — the test asserts
-      // the spouse_<path> form is declared.
-      for (const path of ALLOWED_PATHS.GUARDIAN) {
-        expect(bookVisitProps.has(`spouse_${path}`)).toBe(true);
-      }
-    });
   });
 
   describe('BookMedicalRepVisitDto namespace', () => {
@@ -193,8 +185,6 @@ describe('ALLOWED_PATHS ↔ DTO contract', () => {
     it('LOOKUP paths are submitted as top-level DTO properties (resolved IDs)', () => {
       expect(bookVisitProps.has('patient_id')).toBe(true);
       expect(bookRepProps.has('medical_rep_id')).toBe(true);
-      // spouse_guardian_id is the LOOKUP-resolved id for the spouse picker.
-      expect(bookVisitProps.has('spouse_guardian_id')).toBe(true);
     });
 
     it('SYSTEM paths land on both wire DTOs (pinned discriminator values)', () => {

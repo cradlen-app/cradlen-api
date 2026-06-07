@@ -26,15 +26,15 @@ submitted-or-not status:
 | `PATIENT`     | yes        | `BookVisitDto.<path>`                                    | `POST /v1/visits/book` → Patient row                                                 |
 | `VISIT`       | yes        | `BookVisitDto.<path>`                                    | `POST /v1/visits/book` → Visit row                                                   |
 | `INTAKE`      | yes        | `BookVisitDto.<path>` (under `chief_complaint*`/`vitals.*`) | `POST /v1/visits/book` → VisitEncounter + VisitVitals                                |
-| `GUARDIAN`    | yes        | `BookVisitDto.spouse_<path>`                             | `POST /v1/visits/book` → Guardian + PatientGuardian (SPOUSE)                         |
+| `GUARDIAN`    | (unused)   | — (no bound fields; spouse capture removed from booking) | reserved namespace — re-populate `ALLOWED_PATHS.GUARDIAN` if a guardian surface returns |
 | `MEDICAL_REP` | yes        | `BookMedicalRepVisitDto.<path>`                          | `POST /v1/medical-rep-visits/book` → MedicalRep + MedicalRepVisit                    |
 | `LOOKUP`      | yes (id)   | `BookVisitDto.patient_id` / `BookMedicalRepVisitDto.medical_rep_id` | server resolves the ID; sibling identity fields become forbidden                     |
 | `SYSTEM`      | **no**     | client memory only (drives predicates + endpoint choice) | not persisted, never in any DTO                                                      |
 | `COMPUTED`    | sent but ignored | computed in UI for display                          | server recomputes on persist (BMI from weight/height)                                |
 
 Endpoint routing: the frontend reads `visitor_type` (the `SYSTEM`-bound
-discriminator). PATIENT → `/v1/visits/book` with the PATIENT/VISIT/INTAKE/
-GUARDIAN/LOOKUP→patient_id fields. MEDICAL_REP → `/v1/medical-rep-visits/book`
+discriminator). PATIENT → `/v1/visits/book` with the
+PATIENT/VISIT/INTAKE/LOOKUP→patient_id fields. MEDICAL_REP → `/v1/medical-rep-visits/book`
 with the MEDICAL_REP/LOOKUP→medical_rep_id fields.
 
 ## Search-field lifecycle

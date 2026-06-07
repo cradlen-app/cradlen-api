@@ -106,12 +106,10 @@ describe('PatientsService', () => {
     const patientWithJourney = {
       ...mockPatient,
       journeys: [mockJourney],
-      guardian_links: [],
     };
     const patientNoJourney = {
       ...mockPatient,
       journeys: [],
-      guardian_links: [],
     };
 
     it('passes enrollment filter (ACTIVE/DISCHARGED) to findMany and count', async () => {
@@ -200,10 +198,7 @@ describe('PatientsService', () => {
 
   describe('findOne', () => {
     it('asserts org access before returning the patient', async () => {
-      db.patient.findUnique.mockResolvedValue({
-        ...mockPatient,
-        guardian_links: [],
-      });
+      db.patient.findUnique.mockResolvedValue({ ...mockPatient });
       await service.findOne('patient-uuid', mockUser);
       expect(accessMock.assertPatientInOrg).toHaveBeenCalledWith(
         'patient-uuid',
@@ -211,35 +206,12 @@ describe('PatientsService', () => {
       );
     });
 
-    it('returns patient when found (no spouse)', async () => {
-      db.patient.findUnique.mockResolvedValue({
-        ...mockPatient,
-        guardian_links: [],
-      });
+    it('returns patient when found', async () => {
+      db.patient.findUnique.mockResolvedValue({ ...mockPatient });
       const result = await service.findOne('patient-uuid', mockUser);
       expect(result).toMatchObject({
         id: mockPatient.id,
         full_name: mockPatient.full_name,
-      });
-    });
-
-    it('returns patient with flat spouse fields when spouse linked', async () => {
-      const spouseGuardian = {
-        id: 'guardian-uuid',
-        full_name: 'Ahmed Ali',
-        national_id: '99999',
-        phone_number: '0101',
-      };
-      db.patient.findUnique.mockResolvedValue({
-        ...mockPatient,
-        guardian_links: [{ guardian: spouseGuardian }],
-      });
-      const result = await service.findOne('patient-uuid', mockUser);
-      expect(result).toMatchObject({
-        spouse_guardian_id: spouseGuardian.id,
-        spouse_full_name: spouseGuardian.full_name,
-        spouse_national_id: spouseGuardian.national_id,
-        spouse_phone_number: spouseGuardian.phone_number,
       });
     });
 
@@ -283,12 +255,10 @@ describe('PatientsService', () => {
     const patientWithJourney = {
       ...mockPatient,
       journeys: [mockJourney],
-      guardian_links: [],
     };
     const patientNoJourney = {
       ...mockPatient,
       journeys: [],
-      guardian_links: [],
     };
 
     it('throws ForbiddenException when assertCanAccessBranch rejects', async () => {
