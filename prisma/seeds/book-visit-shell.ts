@@ -16,7 +16,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import type { Predicate } from '../../src/builder/rules/predicates.js';
 
 const TEMPLATE_CODE = 'book_visit';
-const TEMPLATE_VERSION = 13;
+const TEMPLATE_VERSION = 15;
 
 interface FieldSpec {
   code: string;
@@ -24,12 +24,14 @@ interface FieldSpec {
   type: keyof typeof FIELD_TYPES;
   required?: boolean;
   binding?: { namespace: string; path: string | null };
-  config?: { ui?: any; validation?: any; logic?: any };
+  config?: { ui?: any; validation?: any; logic?: any; i18n?: any };
 }
 
 interface SectionSpec {
   code: string;
   name: string;
+  /** Per-locale section-name overrides, e.g. `{ ar: { name: '…' } }`. */
+  i18n?: Record<string, { name?: string }>;
   visibleWhen?: { eq: Record<string, unknown> };
   exclusivityKey?: { field: string; thisValue: string; otherValues: string[] };
   fields: FieldSpec[];
@@ -39,6 +41,7 @@ const SECTIONS: SectionSpec[] = [
   {
     code: 'visit_metadata',
     name: 'Visit metadata',
+    i18n: { ar: { name: 'بيانات الزيارة' } },
     fields: [
       {
         code: 'visitor_type',
@@ -47,6 +50,12 @@ const SECTIONS: SectionSpec[] = [
         required: true,
         binding: { namespace: 'SYSTEM', path: 'visitor_type' },
         config: {
+          i18n: {
+            ar: {
+              label: 'نوع الزائر',
+              options: { PATIENT: 'مريض', MEDICAL_REP: 'مندوب دعاية' },
+            },
+          },
           validation: {
             options: [
               { code: 'PATIENT', label: 'Patient' },
@@ -62,6 +71,7 @@ const SECTIONS: SectionSpec[] = [
         type: 'SELECT',
         binding: { namespace: 'SYSTEM', path: 'specialty_code' },
         config: {
+          i18n: { ar: { label: 'التخصص' } },
           ui: {
             optionsSource: '/v1/organizations/{org_id}/specialties',
             default: { kind: 'first_option' },
@@ -82,6 +92,7 @@ const SECTIONS: SectionSpec[] = [
         type: 'SELECT',
         binding: { namespace: 'VISIT', path: 'care_path_code' },
         config: {
+          i18n: { ar: { label: 'المسار العلاجي' } },
           ui: {
             optionsSource: '/v1/care-paths?specialtyCode={specialty_code}',
             default: { kind: 'first_option' },
@@ -103,6 +114,7 @@ const SECTIONS: SectionSpec[] = [
         type: 'DATETIME',
         binding: { namespace: 'VISIT', path: 'scheduled_at' },
         config: {
+          i18n: { ar: { label: 'موعد الزيارة' } },
           ui: { default: { kind: 'now' } },
           logic: {
             predicates: [
@@ -118,6 +130,7 @@ const SECTIONS: SectionSpec[] = [
         type: 'DATETIME',
         binding: { namespace: 'MEDICAL_REP', path: 'scheduled_at' },
         config: {
+          i18n: { ar: { label: 'موعد الزيارة' } },
           ui: { default: { kind: 'now' } },
           logic: {
             predicates: [
@@ -139,6 +152,12 @@ const SECTIONS: SectionSpec[] = [
         type: 'SELECT',
         binding: { namespace: 'VISIT', path: 'priority' },
         config: {
+          i18n: {
+            ar: {
+              label: 'الأولوية',
+              options: { NORMAL: 'عادية', EMERGENCY: 'طارئة' },
+            },
+          },
           ui: { default: 'NORMAL' },
           validation: {
             options: [
@@ -160,9 +179,10 @@ const SECTIONS: SectionSpec[] = [
         type: 'SELECT',
         binding: { namespace: 'VISIT', path: 'assigned_doctor_id' },
         config: {
+          i18n: { ar: { label: 'الطبيب المعالج' } },
           ui: {
             optionsSource:
-              '/v1/organizations/{org_id}/staff?doctors_only=true&specialty_code={specialty_code}',
+              '/v1/organizations/{org_id}/branches/{branch_id}/staff?doctors_only=true&specialty_code={specialty_code}',
             default: { kind: 'first_option' },
             prefillFrom: 'assigned_doctor_id',
           },
@@ -180,9 +200,10 @@ const SECTIONS: SectionSpec[] = [
         type: 'SELECT',
         binding: { namespace: 'MEDICAL_REP', path: 'assigned_doctor_id' },
         config: {
+          i18n: { ar: { label: 'الطبيب المعالج' } },
           ui: {
             optionsSource:
-              '/v1/organizations/{org_id}/staff?doctors_only=true',
+              '/v1/organizations/{org_id}/branches/{branch_id}/staff?doctors_only=true',
             default: { kind: 'first_option' },
           },
           logic: {
@@ -205,6 +226,12 @@ const SECTIONS: SectionSpec[] = [
         type: 'SELECT',
         binding: { namespace: 'VISIT', path: 'appointment_type' },
         config: {
+          i18n: {
+            ar: {
+              label: 'نوع الموعد',
+              options: { VISIT: 'زيارة', FOLLOW_UP: 'متابعة' },
+            },
+          },
           ui: { default: 'VISIT' },
           validation: {
             options: [
@@ -225,6 +252,7 @@ const SECTIONS: SectionSpec[] = [
   {
     code: 'patient_info',
     name: 'Patient info',
+    i18n: { ar: { name: 'بيانات المريض' } },
     visibleWhen: { eq: { visitor_type: 'PATIENT' } },
     exclusivityKey: {
       field: 'visitor_type',
@@ -248,6 +276,12 @@ const SECTIONS: SectionSpec[] = [
         type: 'TEXT',
         binding: { namespace: 'PATIENT', path: 'full_name' },
         config: {
+          i18n: {
+            ar: {
+              label: 'الاسم الكامل',
+              placeholder: 'ابحث عن مريض موجود أو اكتب اسماً جديداً',
+            },
+          },
           ui: {
             placeholder: 'Search existing patient or type a new name',
             searchEntity: {
@@ -275,6 +309,7 @@ const SECTIONS: SectionSpec[] = [
         // Digits only, 8–20 long. Tolerant across countries (Egyptian 14,
         // Saudi 10, passports/iqama, …) — the pattern enforces digits + range.
         config: {
+          i18n: { ar: { label: 'الرقم القومي' } },
           validation: {
             minLength: 8,
             maxLength: 20,
@@ -288,7 +323,10 @@ const SECTIONS: SectionSpec[] = [
         type: 'DATE',
         binding: { namespace: 'PATIENT', path: 'date_of_birth' },
         // Must be a real past date within a human lifespan.
-        config: { validation: { notInFuture: true, maxAgeYears: 120 } },
+        config: {
+          i18n: { ar: { label: 'تاريخ الميلاد' } },
+          validation: { notInFuture: true, maxAgeYears: 120 },
+        },
       },
       {
         code: 'phone_number',
@@ -298,6 +336,7 @@ const SECTIONS: SectionSpec[] = [
         // Lenient international: optional leading +, digits with spaces/dashes,
         // 7–20 chars total.
         config: {
+          i18n: { ar: { label: 'رقم الهاتف' } },
           validation: {
             minLength: 7,
             maxLength: 20,
@@ -310,7 +349,10 @@ const SECTIONS: SectionSpec[] = [
         label: 'Address',
         type: 'TEXT',
         binding: { namespace: 'PATIENT', path: 'address' },
-        config: { validation: { maxLength: 200 } },
+        config: {
+          i18n: { ar: { label: 'العنوان' } },
+          validation: { maxLength: 200 },
+        },
       },
       {
         code: 'marital_status',
@@ -318,6 +360,20 @@ const SECTIONS: SectionSpec[] = [
         type: 'SELECT',
         binding: { namespace: 'PATIENT', path: 'marital_status' },
         config: {
+          i18n: {
+            ar: {
+              label: 'الحالة الاجتماعية',
+              options: {
+                SINGLE: 'أعزب/عزباء',
+                MARRIED: 'متزوج/ة',
+                DIVORCED: 'مطلّق/ة',
+                WIDOWED: 'أرمل/ة',
+                SEPARATED: 'منفصل/ة',
+                ENGAGED: 'مخطوب/ة',
+                UNKNOWN: 'غير محدد',
+              },
+            },
+          },
           validation: {
             options: [
               { code: 'SINGLE', label: 'Single' },
@@ -336,6 +392,7 @@ const SECTIONS: SectionSpec[] = [
   {
     code: 'medical_rep_info',
     name: 'Medical rep info',
+    i18n: { ar: { name: 'بيانات مندوب الدعاية' } },
     visibleWhen: { eq: { visitor_type: 'MEDICAL_REP' } },
     exclusivityKey: {
       field: 'visitor_type',
@@ -359,6 +416,12 @@ const SECTIONS: SectionSpec[] = [
         type: 'TEXT',
         binding: { namespace: 'MEDICAL_REP', path: 'rep_full_name' },
         config: {
+          i18n: {
+            ar: {
+              label: 'اسم المندوب',
+              placeholder: 'ابحث عن مندوب موجود أو اكتب اسماً جديداً',
+            },
+          },
           ui: {
             placeholder: 'Search existing rep or type a new name',
             searchEntity: {
@@ -380,7 +443,10 @@ const SECTIONS: SectionSpec[] = [
         label: 'Rep phone number',
         type: 'TEXT',
         binding: { namespace: 'MEDICAL_REP', path: 'rep_phone_number' },
-        config: { validation: { maxLength: 30 } },
+        config: {
+          i18n: { ar: { label: 'هاتف المندوب' } },
+          validation: { maxLength: 30 },
+        },
       },
       {
         code: 'company_name',
@@ -388,6 +454,7 @@ const SECTIONS: SectionSpec[] = [
         type: 'TEXT',
         binding: { namespace: 'MEDICAL_REP', path: 'company_name' },
         config: {
+          i18n: { ar: { label: 'الشركة' } },
           ui: { autocompleteEndpoint: '/v1/medical-reps/companies' },
           validation: { maxLength: 200 },
         },
@@ -398,6 +465,7 @@ const SECTIONS: SectionSpec[] = [
         type: 'SELECT',
         binding: { namespace: 'MEDICAL_REP', path: 'specialty_focus' },
         config: {
+          i18n: { ar: { label: 'التخصص المستهدف' } },
           ui: { optionsSource: '/v1/organizations/{org_id}/specialties' },
         },
       },
@@ -454,6 +522,7 @@ function buildSectionConfig(section: SectionSpec): any {
       { effect: 'visible', when: section.visibleWhen },
     ] satisfies Predicate[];
   }
+  if (section.i18n) config.i18n = section.i18n;
   return config;
 }
 

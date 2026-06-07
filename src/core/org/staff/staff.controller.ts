@@ -29,48 +29,62 @@ import { StaffService } from './staff.service.js';
 
 @ApiTags('Staff')
 @ApiBearerAuth()
-@Controller('organizations/:organizationId/staff')
+@Controller('organizations/:organizationId/branches/:branchId/staff')
 export class StaffController {
   constructor(private readonly staffService: StaffService) {}
 
   @Post()
   @ApiOperation({
-    summary: 'Directly create a staff member',
+    summary: 'Directly create a staff member in a branch',
     description:
-      'Creates a user + profile immediately. A system email is auto-generated (e.g. sara-ahmed4821@cradlen.com). Staff log in with the password set here.',
+      'Creates a user + profile immediately, assigned to this branch (plus any extra branch_ids). A system email is auto-generated (e.g. sara-ahmed4821@cradlen.com). Staff log in with the password set here.',
   })
   @ApiStandardResponse(CreateStaffResponseDto)
   createStaff(
     @CurrentUser() user: AuthContext,
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('branchId', ParseUUIDPipe) branchId: string,
     @Body() dto: CreateStaffDto,
   ) {
-    return this.staffService.createStaff(user.profileId, organizationId, dto);
+    return this.staffService.createStaff(
+      user.profileId,
+      organizationId,
+      branchId,
+      dto,
+    );
   }
 
   @Get()
-  @ApiOperation({ summary: 'List active staff in an organization' })
+  @ApiOperation({ summary: 'List active staff assigned to a branch' })
   @ApiPaginatedResponse(StaffResponseDto)
   listStaff(
     @CurrentUser() user: AuthContext,
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('branchId', ParseUUIDPipe) branchId: string,
     @Query() query: ListStaffQueryDto,
   ) {
-    return this.staffService.listStaff(user.profileId, organizationId, query);
+    return this.staffService.listStaff(
+      user.profileId,
+      organizationId,
+      branchId,
+      query,
+    );
   }
 
   @Patch(':staffProfileId')
-  @ApiOperation({ summary: 'Update a staff member' })
+  @ApiOperation({ summary: 'Update a staff member within a branch' })
   @ApiStandardResponse(StaffResponseDto)
   updateStaff(
     @CurrentUser() user: AuthContext,
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('branchId', ParseUUIDPipe) branchId: string,
     @Param('staffProfileId', ParseUUIDPipe) staffProfileId: string,
     @Body() dto: UpdateStaffDto,
   ) {
     return this.staffService.updateStaff(
       user.profileId,
       organizationId,
+      branchId,
       staffProfileId,
       dto,
     );
@@ -79,42 +93,22 @@ export class StaffController {
   @Delete(':staffProfileId')
   @HttpCode(204)
   @ApiOperation({
-    summary: 'Soft-delete a staff member (OWNER only)',
+    summary: 'Remove a staff member from a branch',
     description:
-      'Removes the staff member from the organization entirely. BRANCH_MANAGER cannot perform this — use the per-branch unassign endpoint instead.',
+      "Removes the staff/branch link. Other branch assignments remain intact. If this was the staff member's last remaining branch, the profile is soft-deleted in the same transaction. Available to OWNER and to BRANCH_MANAGER on their own branches.",
   })
   @ApiVoidResponse()
-  deleteStaff(
+  removeStaffFromBranch(
     @CurrentUser() user: AuthContext,
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
-    @Param('staffProfileId', ParseUUIDPipe) staffProfileId: string,
-  ): Promise<void> {
-    return this.staffService.deleteStaff(
-      user.profileId,
-      organizationId,
-      staffProfileId,
-    );
-  }
-
-  @Delete(':staffProfileId/branches/:branchId')
-  @HttpCode(204)
-  @ApiOperation({
-    summary: 'Unassign a staff member from a single branch',
-    description:
-      'Removes the staff/branch link only. The profile and other branch assignments remain intact. Available to OWNER and to BRANCH_MANAGER on their own branches.',
-  })
-  @ApiVoidResponse()
-  unassignStaffFromBranch(
-    @CurrentUser() user: AuthContext,
-    @Param('organizationId', ParseUUIDPipe) organizationId: string,
-    @Param('staffProfileId', ParseUUIDPipe) staffProfileId: string,
     @Param('branchId', ParseUUIDPipe) branchId: string,
+    @Param('staffProfileId', ParseUUIDPipe) staffProfileId: string,
   ): Promise<void> {
-    return this.staffService.unassignStaffFromBranch(
+    return this.staffService.removeStaffFromBranch(
       user.profileId,
       organizationId,
-      staffProfileId,
       branchId,
+      staffProfileId,
     );
   }
 }

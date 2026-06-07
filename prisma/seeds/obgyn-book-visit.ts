@@ -20,7 +20,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import type { Predicate } from '../../src/builder/rules/predicates.js';
 
 const TEMPLATE_CODE = 'obgyn_book_visit_ext';
-const TEMPLATE_VERSION = 3;
+const TEMPLATE_VERSION = 4;
 const EXTENSION_KEY = 'OBGYN';
 
 interface FieldSpec {
@@ -29,12 +29,14 @@ interface FieldSpec {
   type: keyof typeof FIELD_TYPES;
   required?: boolean;
   binding?: { namespace: string; path: string | null };
-  config?: { ui?: any; validation?: any; logic?: any };
+  config?: { ui?: any; validation?: any; logic?: any; i18n?: any };
 }
 
 interface SectionSpec {
   code: string;
   name: string;
+  /** Per-locale section-name overrides, e.g. `{ ar: { name: '…' } }`. */
+  i18n?: Record<string, { name?: string }>;
   visibleWhen?: { eq: Record<string, unknown> };
   exclusivityKey?: { field: string; thisValue: string; otherValues: string[] };
   fields: FieldSpec[];
@@ -44,6 +46,7 @@ const SECTIONS: SectionSpec[] = [
   {
     code: 'main_complaint',
     name: 'Main Complaint',
+    i18n: { ar: { name: 'الشكوى الرئيسية' } },
     visibleWhen: { eq: { visitor_type: 'PATIENT' } },
     exclusivityKey: {
       field: 'visitor_type',
@@ -57,6 +60,9 @@ const SECTIONS: SectionSpec[] = [
         type: 'TEXTAREA',
         binding: { namespace: 'INTAKE', path: 'chief_complaint' },
         config: {
+          i18n: {
+            ar: { label: 'الشكوى الرئيسية', placeholder: 'مثال: ألم بأسفل البطن' },
+          },
           ui: { placeholder: 'Ex : Complaint', colSpan: 12 },
           validation: { maxLength: 5000 },
         },
@@ -67,6 +73,13 @@ const SECTIONS: SectionSpec[] = [
         type: 'SELECT',
         binding: { namespace: 'INTAKE', path: 'chief_complaint_meta.onset' },
         config: {
+          i18n: {
+            ar: {
+              label: 'البداية',
+              placeholder: 'مثال: حاد',
+              options: { ACUTE: 'حاد', SUBACUTE: 'تحت حاد', CHRONIC: 'مزمن' },
+            },
+          },
           ui: { placeholder: 'Ex : Acute', colSpan: 4 },
           validation: {
             options: [
@@ -82,7 +95,10 @@ const SECTIONS: SectionSpec[] = [
         label: 'Duration',
         type: 'TEXT',
         binding: { namespace: 'INTAKE', path: 'chief_complaint_meta.duration' },
-        config: { ui: { placeholder: 'Ex : 5 days', colSpan: 4 } },
+        config: {
+          i18n: { ar: { label: 'المدة', placeholder: 'مثال: 5 أيام' } },
+          ui: { placeholder: 'Ex : 5 days', colSpan: 4 },
+        },
       },
       {
         code: 'severity',
@@ -90,6 +106,13 @@ const SECTIONS: SectionSpec[] = [
         type: 'SELECT',
         binding: { namespace: 'INTAKE', path: 'chief_complaint_meta.severity' },
         config: {
+          i18n: {
+            ar: {
+              label: 'الشدة',
+              placeholder: 'مثال: متوسطة',
+              options: { MILD: 'خفيفة', MODERATE: 'متوسطة', SEVERE: 'شديدة' },
+            },
+          },
           ui: { placeholder: 'Ex : Moderate', colSpan: 4 },
           validation: {
             options: [
@@ -173,6 +196,7 @@ function buildSectionConfig(section: SectionSpec): any {
       { effect: 'visible', when: section.visibleWhen },
     ] satisfies Predicate[];
   }
+  if (section.i18n) config.i18n = section.i18n;
   return config;
 }
 
