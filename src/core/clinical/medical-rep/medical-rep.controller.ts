@@ -131,19 +131,23 @@ export class MedicalRepController {
     return this.visitService.listVisits(user, query);
   }
 
-  @Get('medical-rep-visits/my-waiting-list')
+  @Get('branches/:branchId/medical-rep-visits/my-waiting-list')
   @ApiPaginatedResponse(MedicalRepDto)
   async myWaitingList(
+    @Param('branchId', ParseUUIDPipe) branchId: string,
     @Query() query: ListMedicalRepVisitsQueryDto,
     @CurrentUser() user: AuthContext,
   ) {
-    return this.visitService.findMyWaitingList(query, user);
+    return this.visitService.findMyWaitingList(branchId, query, user);
   }
 
-  @Get('medical-rep-visits/my-current')
+  @Get('branches/:branchId/medical-rep-visits/my-current')
   @ApiStandardResponse(MedicalRepDto)
-  async myCurrent(@CurrentUser() user: AuthContext) {
-    return this.visitService.findMyCurrent(user);
+  async myCurrent(
+    @Param('branchId', ParseUUIDPipe) branchId: string,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.visitService.findMyCurrent(branchId, user);
   }
 
   @Get('branches/:branchId/medical-rep-visits/waiting-list')

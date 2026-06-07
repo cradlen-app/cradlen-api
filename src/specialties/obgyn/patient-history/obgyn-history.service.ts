@@ -53,7 +53,7 @@ export class ObgynHistoryService {
   ) {}
 
   async get(patientId: string, user: AuthContext) {
-    await this.access.assertPatientInOrg(patientId, user);
+    await this.access.assertPatientAccessible(patientId, user);
     const singleton = await this.loadOrCreateSingleton(
       this.prismaService.db,
       patientId,
