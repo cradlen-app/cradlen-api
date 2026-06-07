@@ -28,9 +28,6 @@ export const STAFF_ROLE_NAMES = [
 export const STAFF_LIST_ROLE_FILTERS = STAFF_ROLE_NAMES;
 export type StaffRoleName = (typeof STAFF_ROLE_NAMES)[number];
 
-export const STAFF_LIST_SCOPES = ['org', 'mine'] as const;
-export type StaffListScope = (typeof STAFF_LIST_SCOPES)[number];
-
 export class WorkingShiftDto {
   @ApiProperty({ example: '09:00', description: 'HH:MM 24-hour format' })
   @IsString()
@@ -221,11 +218,6 @@ export class CreateStaffDto {
 }
 
 export class ListStaffQueryDto {
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsUUID('4')
-  branch_id?: string;
-
   @ApiPropertyOptional({ enum: STAFF_ROLE_NAMES })
   @IsOptional()
   @Transform(({ value }: { value: unknown }) =>
@@ -248,15 +240,6 @@ export class ListStaffQueryDto {
   @Min(1)
   @Max(100)
   limit?: number;
-
-  @ApiPropertyOptional({
-    enum: STAFF_LIST_SCOPES,
-    description:
-      'Listing scope. OWNER may pass "org" to see the full organization or "mine" to see only their assigned branches. Non-OWNER callers are always scoped to "mine" regardless of value.',
-  })
-  @IsOptional()
-  @IsIn(STAFF_LIST_SCOPES)
-  scope?: StaffListScope;
 
   @ApiPropertyOptional({
     description:
