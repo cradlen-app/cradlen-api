@@ -195,6 +195,38 @@ describe('VisitsService', () => {
     service = module.get<VisitsService>(VisitsService);
   });
 
+  describe('findMyWaitingList', () => {
+    it('scopes to the branch AND the current doctor', async () => {
+      db.$transaction.mockResolvedValue([[], 0]);
+      await service.findMyWaitingList('branch-uuid', {}, mockUser);
+      expect(db.visit.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            assigned_doctor_id: mockUser.profileId,
+            branch_id: 'branch-uuid',
+            status: { in: ['SCHEDULED', 'CHECKED_IN'] },
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('findMyCurrent', () => {
+    it('scopes to the branch AND the current doctor', async () => {
+      db.visit.findFirst.mockResolvedValue(null);
+      await service.findMyCurrent('branch-uuid', mockUser);
+      expect(db.visit.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            assigned_doctor_id: mockUser.profileId,
+            branch_id: 'branch-uuid',
+            status: 'IN_PROGRESS',
+          }),
+        }),
+      );
+    });
+  });
+
   describe('create', () => {
     it('creates a visit when episode is in the user org', async () => {
       db.patientEpisode.findUnique.mockResolvedValue(mockEpisodeWithJourney);
