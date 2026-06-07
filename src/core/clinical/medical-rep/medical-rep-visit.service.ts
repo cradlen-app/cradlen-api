@@ -341,6 +341,7 @@ export class MedicalRepVisitService {
   }
 
   async findMyWaitingList(
+    branchId: string,
     query: { page?: number; limit?: number },
     user: AuthContext,
   ) {
@@ -350,6 +351,7 @@ export class MedicalRepVisitService {
     const where: Prisma.MedicalRepVisitWhereInput = {
       organization_id: user.organizationId,
       assigned_doctor_id: user.profileId,
+      branch_id: branchId,
       is_deleted: false,
       status: { in: ['SCHEDULED', 'CHECKED_IN'] },
       scheduled_at: { gte: start, lte: end },
@@ -367,7 +369,7 @@ export class MedicalRepVisitService {
     return paginated(visits, { page, limit, total });
   }
 
-  async findMyCurrent(user: AuthContext) {
+  async findMyCurrent(branchId: string, user: AuthContext) {
     // Bound to visits started TODAY — mirrors VisitsService.findMyCurrent so a
     // rep visit started on a prior day (and never completed) doesn't linger as
     // the doctor's "current visit" indefinitely.
@@ -376,6 +378,7 @@ export class MedicalRepVisitService {
       where: {
         organization_id: user.organizationId,
         assigned_doctor_id: user.profileId,
+        branch_id: branchId,
         status: 'IN_PROGRESS',
         is_deleted: false,
         started_at: { gte: start, lte: end },

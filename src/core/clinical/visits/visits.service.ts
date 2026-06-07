@@ -902,6 +902,7 @@ export class VisitsService {
   }
 
   async findMyWaitingList(
+    branchId: string,
     query: { page?: number; limit?: number },
     user: AuthContext,
   ) {
@@ -910,6 +911,7 @@ export class VisitsService {
     const { start, end } = todayBounds();
     const where: Prisma.VisitWhereInput = {
       assigned_doctor_id: user.profileId,
+      branch_id: branchId,
       is_deleted: false,
       status: { in: ['SCHEDULED', 'CHECKED_IN'] },
       scheduled_at: { gte: start, lte: end },
@@ -935,11 +937,12 @@ export class VisitsService {
     );
   }
 
-  async findMyCurrent(user: AuthContext) {
+  async findMyCurrent(branchId: string, user: AuthContext) {
     const { start, end } = todayBounds();
     const visit = await this.prismaService.db.visit.findFirst({
       where: {
         assigned_doctor_id: user.profileId,
+        branch_id: branchId,
         status: 'IN_PROGRESS',
         is_deleted: false,
         started_at: { gte: start, lte: end },
