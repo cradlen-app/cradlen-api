@@ -440,6 +440,76 @@ describe('SessionsService', () => {
         sessionsService.refresh({ refresh_token: rawRefreshToken }),
       ).rejects.toThrow('Refresh token mismatch');
     });
+
+    it('honors a just-rotated token within the grace window without re-revoking', async () => {
+      const { $transaction, refreshTokenUpdateMany, refreshTokenCreate } =
+        withRunningTransaction();
+      const { sessionsService, mocks, prismaService, jwtService } =
+        createAuthTestEnv({ $transaction });
+      const rawRefreshToken = signRefreshToken(jwtService, {
+        userId,
+        profileId,
+        organizationId,
+        jti,
+      });
+      const token_hash = await bcrypt.hash(rawRefreshToken, 12);
+      // Revoked by rotation 1s ago — a racing concurrent refresh.
+      prismaService.db.refreshToken.findUnique = jest.fn().mockResolvedValue({
+        id: 'row-1',
+        jti,
+        token_hash,
+        is_revoked: true,
+        replaced_by_jti: 'jti-successor',
+        revoked_at: new Date(Date.now() - 1_000),
+        expires_at: new Date(Date.now() + 60_000),
+        profile_id: profileId,
+        organization_id: organizationId,
+        active_branch_id: 'branch-1',
+        user: { id: userId },
+      });
+      mocks.profileFindFirst.mockResolvedValue({ id: profileId });
+
+      const result = await sessionsService.refresh({
+        refresh_token: rawRefreshToken,
+      });
+
+      expect(result).toMatchObject({
+        type: 'tokens',
+        access_token: expect.any(String),
+        refresh_token: expect.any(String),
+      });
+      // A fresh pair is minted, but the already-revoked row is not touched.
+      expect(refreshTokenUpdateMany).not.toHaveBeenCalled();
+      expect(refreshTokenCreate).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects a rotated token once the grace window has passed', async () => {
+      const { sessionsService, prismaService, jwtService } = createAuthTestEnv();
+      const rawRefreshToken = signRefreshToken(jwtService, {
+        userId,
+        profileId,
+        organizationId,
+        jti,
+      });
+      const token_hash = await bcrypt.hash(rawRefreshToken, 12);
+      prismaService.db.refreshToken.findUnique = jest.fn().mockResolvedValue({
+        id: 'row-1',
+        jti,
+        token_hash,
+        is_revoked: true,
+        replaced_by_jti: 'jti-successor',
+        revoked_at: new Date(Date.now() - 120_000), // 2 min ago, beyond grace
+        expires_at: new Date(Date.now() + 60_000),
+        profile_id: profileId,
+        organization_id: organizationId,
+        active_branch_id: null,
+        user: { id: userId },
+      });
+
+      await expect(
+        sessionsService.refresh({ refresh_token: rawRefreshToken }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
   });
 
   describe('logout', () => {
