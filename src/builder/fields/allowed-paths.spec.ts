@@ -35,9 +35,15 @@ describe('allowed-paths', () => {
   });
 
   it('namespaces have non-empty path lists', () => {
+    // GUARDIAN is intentionally empty — a reserved namespace kept to satisfy
+    // `Record<BindingNamespace, …>` after spouse capture was removed from
+    // booking. Re-populate (and drop this skip) if a guardian-bound surface
+    // returns.
+    const RESERVED_EMPTY = new Set(['GUARDIAN']);
     for (const ns of Object.keys(ALLOWED_PATHS) as Array<
       keyof typeof ALLOWED_PATHS
     >) {
+      if (RESERVED_EMPTY.has(ns)) continue;
       expect(ALLOWED_PATHS[ns].length).toBeGreaterThan(0);
     }
   });
