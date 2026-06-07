@@ -10,11 +10,7 @@ import { ListBranchPatientsQueryDto } from './dto/list-branch-patients-query.dto
 import { paginated } from '@common/utils/pagination.utils.js';
 import { PatientOrgEnrollmentStatus } from '@prisma/client';
 import { DEFAULT_PATIENT_PAGE_SIZE } from './patients.constants.js';
-import {
-  SPOUSE_GUARDIAN_SELECT,
-  flattenSpouse,
-  toEpisodeSummary,
-} from './patients.mapper.js';
+import { toEpisodeSummary } from './patients.mapper.js';
 
 @Injectable()
 export class PatientsService {
@@ -108,32 +104,23 @@ export class PatientsService {
               care_path: { select: { code: true } },
             },
           },
-          guardian_links: {
-            where: { is_deleted: false, relation_to_patient: 'SPOUSE' },
-            take: 1,
-            include: {
-              guardian: { select: SPOUSE_GUARDIAN_SELECT },
-            },
-          },
         },
       }),
       this.prismaService.db.patient.count({ where }),
     ]);
 
     const shaped = patients.map((patient) => {
-      const { journeys, guardian_links, ...rest } = patient;
+      const { journeys, ...rest } = patient;
       const activeJourney = journeys[0] ?? null;
       const activeCarePathCode = activeJourney?.care_path?.code;
       const carePathField = activeCarePathCode
         ? { active_care_path_code: activeCarePathCode }
         : {};
-      const spouseFields = flattenSpouse(guardian_links);
       if (isClinicalViewer) {
         return {
           ...rest,
           active_journey: activeJourney,
           ...carePathField,
-          ...spouseFields,
         };
       }
       return {
@@ -142,7 +129,6 @@ export class PatientsService {
           ? activeJourney.episodes.map(toEpisodeSummary)
           : [],
         ...carePathField,
-        ...spouseFields,
       };
     });
 
@@ -284,21 +270,9 @@ export class PatientsService {
     await this.patientAccessService.assertPatientInOrg(id, user);
     const patient = await this.prismaService.db.patient.findUnique({
       where: { id, is_deleted: false },
-      include: {
-        guardian_links: {
-          where: { is_deleted: false, relation_to_patient: 'SPOUSE' },
-          include: {
-            guardian: { select: SPOUSE_GUARDIAN_SELECT },
-          },
-        },
-      },
     });
     if (!patient) throw new NotFoundException(`Patient ${id} not found`);
-    const { guardian_links, ...rest } = patient;
-    return {
-      ...rest,
-      ...flattenSpouse(guardian_links),
-    };
+    return patient;
   }
 
   async update(id: string, dto: UpdatePatientDto, user: AuthContext) {
