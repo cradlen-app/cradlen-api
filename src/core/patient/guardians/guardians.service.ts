@@ -11,9 +11,8 @@ export class GuardiansService {
 
   /**
    * Searches guardians that are linked (via PatientGuardian) to at least one
-   * patient with a PatientJourney in the caller's organization. Used by the
-   * book-visit spouse autocomplete — frontend picks an existing spouse, the
-   * resolved id flows back into `book-visit.dto.spouse_guardian_id`.
+   * patient with a PatientJourney in the caller's organization. Generic
+   * guardian autocomplete for any PatientGuardian relation.
    */
   async search(query: ListGuardiansQueryDto, user: AuthContext) {
     const page = query.page ?? 1;

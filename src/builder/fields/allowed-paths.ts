@@ -51,7 +51,11 @@ export const ALLOWED_PATHS = {
     // vitals.bmi is COMPUTED — listed under COMPUTED namespace, never sent on wire.
     // vitals.rbs_mmol_l exists on visit_vitals table but no DTO exposes it yet; add here once it does.
   ],
-  GUARDIAN: ['full_name', 'national_id', 'phone_number', 'date_of_birth'],
+  // GUARDIAN bindings (spouse capture at booking) were removed — the booking
+  // flow no longer collects spouse fields. The key stays to satisfy
+  // `Record<BindingNamespace, …>`; re-populate if a guardian-bound surface
+  // is reintroduced.
+  GUARDIAN: [],
   MEDICAL_REP: [
     'rep_full_name',
     'rep_national_id',
@@ -66,7 +70,7 @@ export const ALLOWED_PATHS = {
     'medication_ids',
     'notes',
   ],
-  LOOKUP: ['patient_id', 'medical_rep_id', 'spouse_guardian_id'],
+  LOOKUP: ['patient_id', 'medical_rep_id'],
   SYSTEM: ['visitor_type', 'specialty_code'],
   COMPUTED: ['vitals.bmi'],
   // PATIENT_OBGYN_HISTORY targets the unified bulk PATCH at
