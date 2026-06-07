@@ -11,6 +11,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { EventBus } from '@infrastructure/messaging/event-bus.js';
+import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import { paginated } from '@common/utils/pagination.utils.js';
 import { CreateCalendarEventDto } from './dto/create-calendar-event.dto.js';
@@ -54,6 +55,7 @@ export class CalendarService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly eventBus: EventBus,
+    private readonly authorizationService: AuthorizationService,
   ) {}
 
   async create(
@@ -65,11 +67,16 @@ export class CalendarService {
     this.assertWindow(startAt, endAt);
 
     const visibility = dto.visibility ?? DEFAULT_VISIBILITY[dto.event_type];
+    const branchId = await this.resolveCreateBranch(
+      user,
+      dto.branch_id,
+      visibility,
+    );
 
     await this.assertEventConsistency(user, dto.event_type, {
       procedure_id: dto.procedure_id,
       patient_id: dto.patient_id,
-      branch_id: dto.branch_id,
+      branch_id: branchId ?? undefined,
       assistant_profile_ids: dto.assistant_profile_ids,
     });
 
@@ -77,7 +84,7 @@ export class CalendarService {
       data: {
         profile_id: user.profileId,
         organization_id: user.organizationId,
-        branch_id: dto.branch_id ?? null,
+        branch_id: branchId,
         event_type: dto.event_type,
         visibility,
         title: dto.title,
@@ -118,15 +125,18 @@ export class CalendarService {
     const page = query.page ?? 1;
     const limit = query.limit ?? 50;
 
+    // The calendar view is scoped to the active branch: events at that branch
+    // (shared or own) plus org-wide (null-branch) events plus the caller's own.
+    const activeBranchId = query.branch_id ?? user.activeBranchId ?? null;
+
     const where: Prisma.CalendarEventWhereInput = {
       is_deleted: false,
       organization_id: user.organizationId,
       start_at: { lt: to },
       end_at: { gt: from },
-      AND: [this.visibilityWhere(user)],
+      AND: [this.branchScopedVisibilityWhere(user, activeBranchId)],
       ...(query.profile_id ? { profile_id: query.profile_id } : {}),
       ...(query.event_type ? { event_type: query.event_type } : {}),
-      ...(query.branch_id ? { branch_id: query.branch_id } : {}),
       ...(query.visibility ? { visibility: query.visibility } : {}),
     };
 
@@ -413,6 +423,40 @@ export class CalendarService {
     }
   }
 
+  /**
+   * Resolve the branch an event is created under.
+   * - explicit branch → must be accessible to the caller (assertCanAccessBranch).
+   * - no branch + ORGANIZATION visibility → OWNER may broadcast org-wide (null);
+   *   anyone else (incl. BRANCH_MANAGER) defaults to their active branch.
+   * - no branch + PRIVATE → null (personal/untagged; owner-only by visibility).
+   */
+  private async resolveCreateBranch(
+    user: AuthContext,
+    requested: string | undefined,
+    visibility: CalendarVisibility,
+  ): Promise<string | null> {
+    if (requested) {
+      await this.authorizationService.assertCanAccessBranch(
+        user.profileId,
+        user.organizationId,
+        requested,
+      );
+      return requested;
+    }
+    if (visibility === CalendarVisibility.ORGANIZATION) {
+      if (user.roles.includes('OWNER')) return null; // org-wide broadcast
+      if (!user.activeBranchId) {
+        throw new BadRequestException({
+          message: 'branch_id is required',
+          details: { fields: { branch_id: ['is required'] } },
+        });
+      }
+      return user.activeBranchId;
+    }
+    return null; // PRIVATE, untagged personal event
+  }
+
+  /** Single-event read access: own, or org-visible at any of the caller's branches / org-wide. */
   private visibilityWhere(user: AuthContext): Prisma.CalendarEventWhereInput {
     const orgBranchClause: Prisma.CalendarEventWhereInput = {
       visibility: CalendarVisibility.ORGANIZATION,
@@ -425,6 +469,31 @@ export class CalendarService {
     };
     return {
       OR: [{ profile_id: user.profileId }, orgBranchClause],
+    };
+  }
+
+  /**
+   * List access scoped to the active branch: events at that branch (shared or
+   * the caller's own) plus org-wide (null-branch) events. Excludes other
+   * branches and other people's PRIVATE events.
+   */
+  private branchScopedVisibilityWhere(
+    user: AuthContext,
+    branchId: string | null,
+  ): Prisma.CalendarEventWhereInput {
+    const scope: Prisma.CalendarEventWhereInput[] = branchId
+      ? [{ branch_id: branchId }, { branch_id: null }]
+      : [
+          ...(user.branchIds.length > 0
+            ? [{ branch_id: { in: user.branchIds } }]
+            : []),
+          { branch_id: null },
+        ];
+    return {
+      OR: [
+        { profile_id: user.profileId, OR: scope },
+        { visibility: CalendarVisibility.ORGANIZATION, OR: scope },
+      ],
     };
   }
 
