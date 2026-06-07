@@ -16,7 +16,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import type { Predicate } from '../../src/builder/rules/predicates.js';
 
 const TEMPLATE_CODE = 'book_visit';
-const TEMPLATE_VERSION = 11;
+const TEMPLATE_VERSION = 12;
 
 interface FieldSpec {
   code: string;
@@ -261,15 +261,6 @@ const SECTIONS: SectionSpec[] = [
                 address: 'address',
                 marital_status: 'marital_status',
                 care_path_code: 'active_care_path_code',
-                spouse_guardian_id: 'spouse_guardian_id',
-                spouse_national_id: 'spouse_national_id',
-                spouse_phone_number: 'spouse_phone_number',
-              },
-              fillEntitySearches: {
-                spouse_full_name: {
-                  idSource: 'spouse_guardian_id',
-                  labelSource: 'spouse_full_name',
-                },
               },
             },
           },
@@ -319,91 +310,6 @@ const SECTIONS: SectionSpec[] = [
               { code: 'ENGAGED', label: 'Engaged' },
               { code: 'UNKNOWN', label: 'Unknown' },
             ],
-          },
-        },
-      },
-      {
-        code: 'spouse_guardian_id',
-        label: 'Spouse (resolved id)',
-        type: 'ENTITY_SEARCH',
-        binding: { namespace: 'LOOKUP', path: 'spouse_guardian_id' },
-        config: {
-          ui: { hidden: true },
-          logic: {
-            entity: 'guardian',
-            predicates: [
-              {
-                effect: 'visible',
-                when: { eq: { marital_status: 'MARRIED' } },
-              },
-            ] satisfies Predicate[],
-          },
-        },
-      },
-      {
-        code: 'spouse_full_name',
-        label: 'Spouse full name',
-        type: 'TEXT',
-        binding: { namespace: 'GUARDIAN', path: 'full_name' },
-        config: {
-          ui: {
-            placeholder: 'Search existing spouse or type a new name',
-            searchEntity: {
-              kind: 'guardian',
-              idTarget: 'spouse_guardian_id',
-              allowCreate: true,
-              fillFields: {
-                national_id: 'spouse_national_id',
-                phone_number: 'spouse_phone_number',
-              },
-            },
-          },
-          validation: { maxLength: 200 },
-          logic: {
-            predicates: [
-              {
-                effect: 'visible',
-                when: { eq: { marital_status: 'MARRIED' } },
-              },
-              {
-                effect: 'required',
-                when: { eq: { marital_status: 'MARRIED' } },
-              },
-            ] satisfies Predicate[],
-          },
-        },
-      },
-      {
-        code: 'spouse_national_id',
-        label: 'Spouse national ID',
-        type: 'TEXT',
-        binding: { namespace: 'GUARDIAN', path: 'national_id' },
-        config: {
-          validation: { maxLength: 50 },
-          logic: {
-            predicates: [
-              {
-                effect: 'visible',
-                when: { eq: { marital_status: 'MARRIED' } },
-              },
-            ] satisfies Predicate[],
-          },
-        },
-      },
-      {
-        code: 'spouse_phone_number',
-        label: 'Spouse phone number',
-        type: 'TEXT',
-        binding: { namespace: 'GUARDIAN', path: 'phone_number' },
-        config: {
-          validation: { maxLength: 30 },
-          logic: {
-            predicates: [
-              {
-                effect: 'visible',
-                when: { eq: { marital_status: 'MARRIED' } },
-              },
-            ] satisfies Predicate[],
           },
         },
       },

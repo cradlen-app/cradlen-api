@@ -32,8 +32,8 @@ export interface ConfigShape {
       allowCreate?: boolean;
       /**
        * Resolves a sibling ENTITY_SEARCH field from the same raw payload. Keyed
-       * by the target search field's `code`. Used e.g. to pre-resolve the
-       * spouse guardian search when an existing patient is picked.
+       * by the target search field's `code`. Used to pre-resolve a dependent
+       * entity-search picker when a parent entity is selected.
        */
       fillEntitySearches?: Record<
         string,
