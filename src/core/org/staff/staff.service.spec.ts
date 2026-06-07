@@ -1,9 +1,16 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { StaffService } from './staff.service';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+
+const ORG = 'org-uuid';
+const BRANCH = 'branch-uuid';
 
 const mockStaffProfile = {
   id: 'prof-uuid',
@@ -51,8 +58,7 @@ describe('StaffService.listStaff', () => {
   };
   let authMock: {
     assertCanViewStaff: jest.Mock;
-    isOwner: jest.Mock;
-    getEffectiveBranchIds: jest.Mock;
+    assertCanAccessBranch: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -64,8 +70,7 @@ describe('StaffService.listStaff', () => {
     };
     authMock = {
       assertCanViewStaff: jest.fn().mockResolvedValue(undefined),
-      isOwner: jest.fn().mockResolvedValue(true),
-      getEffectiveBranchIds: jest.fn().mockResolvedValue([]),
+      assertCanAccessBranch: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -83,8 +88,19 @@ describe('StaffService.listStaff', () => {
     service = module.get<StaffService>(StaffService);
   });
 
+  it('always scopes the query to the path branch', async () => {
+    await service.listStaff('caller-uuid', ORG, BRANCH);
+    expect(db.profile.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          branches: { some: { branch_id: BRANCH } },
+        }),
+      }),
+    );
+  });
+
   it('returns paginated staff when no role filter is given', async () => {
-    const result = await service.listStaff('caller-uuid', 'org-uuid');
+    const result = await service.listStaff('caller-uuid', ORG, BRANCH);
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.not.objectContaining({ roles: expect.anything() }),
@@ -100,7 +116,7 @@ describe('StaffService.listStaff', () => {
   });
 
   it('adds role filter to where clause when role is provided', async () => {
-    await service.listStaff('caller-uuid', 'org-uuid', { role: 'STAFF' });
+    await service.listStaff('caller-uuid', ORG, BRANCH, { role: 'STAFF' });
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -111,7 +127,7 @@ describe('StaffService.listStaff', () => {
   });
 
   it('normalises role to uppercase', async () => {
-    await service.listStaff('caller-uuid', 'org-uuid', { role: 'staff' });
+    await service.listStaff('caller-uuid', ORG, BRANCH, { role: 'staff' });
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -123,34 +139,27 @@ describe('StaffService.listStaff', () => {
 
   it('throws ForbiddenException when caller lacks viewer role', async () => {
     authMock.assertCanViewStaff.mockRejectedValue(new ForbiddenException());
-    await expect(service.listStaff('caller-uuid', 'org-uuid')).rejects.toThrow(
+    await expect(service.listStaff('caller-uuid', ORG, BRANCH)).rejects.toThrow(
       ForbiddenException,
     );
   });
 
-  it('applies both branchId and role filters together', async () => {
-    await service.listStaff('caller-uuid', 'org-uuid', {
-      branch_id: 'branch-uuid',
-      role: 'STAFF',
-    });
-    expect(db.profile.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          branches: { some: { branch_id: 'branch-uuid' } },
-          roles: { some: { role: { code: 'STAFF' } } },
-        }),
-      }),
+  it('throws ForbiddenException when caller cannot access the branch', async () => {
+    authMock.assertCanAccessBranch.mockRejectedValue(new ForbiddenException());
+    await expect(service.listStaff('caller-uuid', ORG, BRANCH)).rejects.toThrow(
+      ForbiddenException,
     );
+    expect(db.profile.findMany).not.toHaveBeenCalled();
   });
 
   it('throws BadRequestException for an unknown role', async () => {
     await expect(
-      service.listStaff('caller-uuid', 'org-uuid', { role: 'INVALID' }),
+      service.listStaff('caller-uuid', ORG, BRANCH, { role: 'INVALID' }),
     ).rejects.toThrow(BadRequestException);
   });
 
   it('adds EXTERNAL role filter to where clause', async () => {
-    await service.listStaff('caller-uuid', 'org-uuid', { role: 'EXTERNAL' });
+    await service.listStaff('caller-uuid', ORG, BRANCH, { role: 'EXTERNAL' });
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -161,7 +170,7 @@ describe('StaffService.listStaff', () => {
   });
 
   it('adds is_clinical job-function filter when clinical=true is passed', async () => {
-    await service.listStaff('caller-uuid', 'org-uuid', { clinical: true });
+    await service.listStaff('caller-uuid', ORG, BRANCH, { clinical: true });
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -172,7 +181,7 @@ describe('StaffService.listStaff', () => {
   });
 
   it('omits the clinical filter when clinical is undefined', async () => {
-    await service.listStaff('caller-uuid', 'org-uuid');
+    await service.listStaff('caller-uuid', ORG, BRANCH);
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.not.objectContaining({
@@ -183,7 +192,7 @@ describe('StaffService.listStaff', () => {
   });
 
   it('adds case-insensitive OR search across user name/email/phone', async () => {
-    await service.listStaff('caller-uuid', 'org-uuid', { search: 'merfat' });
+    await service.listStaff('caller-uuid', ORG, BRANCH, { search: 'merfat' });
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -201,7 +210,7 @@ describe('StaffService.listStaff', () => {
   });
 
   it('filters by job_function_codes when provided', async () => {
-    await service.listStaff('caller-uuid', 'org-uuid', {
+    await service.listStaff('caller-uuid', ORG, BRANCH, {
       job_function_codes: ['NURSE', 'RECEPTIONIST'],
     });
     expect(db.profile.findMany).toHaveBeenCalledWith(
@@ -216,7 +225,7 @@ describe('StaffService.listStaff', () => {
   });
 
   it('ANDs job_function_codes with clinical=true rather than overwriting', async () => {
-    await service.listStaff('caller-uuid', 'org-uuid', {
+    await service.listStaff('caller-uuid', ORG, BRANCH, {
       clinical: true,
       job_function_codes: ['NURSE'],
     });
@@ -241,7 +250,7 @@ describe('StaffService.listStaff', () => {
   });
 
   it('applies engagement_type filter', async () => {
-    await service.listStaff('caller-uuid', 'org-uuid', {
+    await service.listStaff('caller-uuid', ORG, BRANCH, {
       engagement_type: 'ON_DEMAND' as never,
     });
     expect(db.profile.findMany).toHaveBeenCalledWith(
@@ -252,7 +261,7 @@ describe('StaffService.listStaff', () => {
   });
 
   it('applies executive_title filter', async () => {
-    await service.listStaff('caller-uuid', 'org-uuid', {
+    await service.listStaff('caller-uuid', ORG, BRANCH, {
       executive_title: 'CEO' as never,
     });
     expect(db.profile.findMany).toHaveBeenCalledWith(
@@ -264,7 +273,7 @@ describe('StaffService.listStaff', () => {
 
   it('applies pagination skip/take and returns meta', async () => {
     db.profile.count.mockResolvedValue(45);
-    const result = await service.listStaff('caller-uuid', 'org-uuid', {
+    const result = await service.listStaff('caller-uuid', ORG, BRANCH, {
       page: 3,
       limit: 10,
     });
@@ -277,5 +286,110 @@ describe('StaffService.listStaff', () => {
       total: 45,
       totalPages: 5,
     });
+  });
+});
+
+describe('StaffService.removeStaffFromBranch', () => {
+  let service: StaffService;
+  let db: {
+    profile: { findFirst: jest.Mock; update: jest.Mock };
+    profileBranch: {
+      findFirst: jest.Mock;
+      delete: jest.Mock;
+      count: jest.Mock;
+    };
+    workingSchedule: { deleteMany: jest.Mock };
+    $transaction: jest.Mock;
+  };
+  let authMock: { assertCanManageStaffOnBranches: jest.Mock };
+
+  beforeEach(async () => {
+    db = {
+      profile: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'prof-uuid' }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      profileBranch: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'link-uuid' }),
+        delete: jest.fn().mockResolvedValue({}),
+        count: jest.fn().mockResolvedValue(2),
+      },
+      workingSchedule: { deleteMany: jest.fn().mockResolvedValue({}) },
+      // Run the transaction callback against the same db mock.
+      $transaction: jest.fn().mockImplementation((cb) => cb(db)),
+    };
+    authMock = {
+      assertCanManageStaffOnBranches: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        StaffService,
+        { provide: PrismaService, useValue: { db } },
+        { provide: AuthorizationService, useValue: authMock },
+        {
+          provide: SubscriptionsService,
+          useValue: { assertStaffLimit: jest.fn() },
+        },
+      ],
+    }).compile();
+
+    service = module.get<StaffService>(StaffService);
+  });
+
+  it('throws ForbiddenException when caller cannot manage the branch', async () => {
+    authMock.assertCanManageStaffOnBranches.mockRejectedValue(
+      new ForbiddenException(),
+    );
+    await expect(
+      service.removeStaffFromBranch('caller-uuid', ORG, BRANCH, 'prof-uuid'),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('throws NotFoundException when staff is not assigned to the branch', async () => {
+    db.profileBranch.findFirst.mockResolvedValue(null);
+    await expect(
+      service.removeStaffFromBranch('caller-uuid', ORG, BRANCH, 'prof-uuid'),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('unassigns from the branch and keeps the profile when other branches remain', async () => {
+    db.profileBranch.count.mockResolvedValue(2);
+    await service.removeStaffFromBranch(
+      'caller-uuid',
+      ORG,
+      BRANCH,
+      'prof-uuid',
+    );
+    expect(db.profileBranch.delete).toHaveBeenCalledWith({
+      where: { id: 'link-uuid' },
+    });
+    expect(db.workingSchedule.deleteMany).toHaveBeenCalledWith({
+      where: { profile_id: 'prof-uuid', branch_id: BRANCH },
+    });
+    expect(db.profile.update).not.toHaveBeenCalled();
+  });
+
+  it('soft-deletes the profile when removing the last branch', async () => {
+    db.profileBranch.count.mockResolvedValue(1);
+    await service.removeStaffFromBranch(
+      'caller-uuid',
+      ORG,
+      BRANCH,
+      'prof-uuid',
+    );
+    expect(db.profileBranch.delete).toHaveBeenCalled();
+    expect(db.profile.update).toHaveBeenCalledWith({
+      where: { id: 'prof-uuid' },
+      data: expect.objectContaining({ is_deleted: true }),
+    });
+  });
+
+  it('blocks removing yourself from your last branch', async () => {
+    db.profileBranch.count.mockResolvedValue(1);
+    await expect(
+      service.removeStaffFromBranch('prof-uuid', ORG, BRANCH, 'prof-uuid'),
+    ).rejects.toThrow(BadRequestException);
+    expect(db.profileBranch.delete).not.toHaveBeenCalled();
   });
 });
