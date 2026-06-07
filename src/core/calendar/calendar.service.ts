@@ -15,7 +15,6 @@ import { EventBus } from '@infrastructure/messaging/event-bus.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import { paginated } from '@common/utils/pagination.utils.js';
-import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import { CreateCalendarEventDto } from './dto/create-calendar-event.dto.js';
 import { UpdateCalendarEventDto } from './dto/update-calendar-event.dto.js';
 import { ListCalendarEventsQueryDto } from './dto/list-calendar-events.query.dto.js';
