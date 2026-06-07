@@ -116,7 +116,7 @@ export class HistorySummaryService {
     patientId: string,
     user: AuthContext,
   ): Promise<ObgynHistorySummaryDto> {
-    await this.access.assertPatientInOrg(patientId, user);
+    await this.access.assertPatientAccessible(patientId, user);
     const db = this.prismaService.db;
     const where = { patient_id: patientId, is_deleted: false };
 
