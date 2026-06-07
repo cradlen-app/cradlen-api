@@ -585,6 +585,10 @@ model RefreshToken {
   expires_at       DateTime
   is_revoked       Boolean   @default(false)
   revoked_at       DateTime?
+  // jti of the token that replaced this one on rotation. Set only when a row
+  // is revoked *by rotation* (never by logout), so the refresh endpoint can
+  // tell a rotation-race retry apart from a genuine replay / logout.
+  replaced_by_jti  String?   @db.Uuid
   created_at       DateTime  @default(now())
   user             User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
 

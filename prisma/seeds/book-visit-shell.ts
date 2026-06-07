@@ -16,7 +16,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import type { Predicate } from '../../src/builder/rules/predicates.js';
 
 const TEMPLATE_CODE = 'book_visit';
-const TEMPLATE_VERSION = 11;
+const TEMPLATE_VERSION = 13;
 
 interface FieldSpec {
   code: string;
@@ -261,19 +261,10 @@ const SECTIONS: SectionSpec[] = [
                 address: 'address',
                 marital_status: 'marital_status',
                 care_path_code: 'active_care_path_code',
-                spouse_guardian_id: 'spouse_guardian_id',
-                spouse_national_id: 'spouse_national_id',
-                spouse_phone_number: 'spouse_phone_number',
-              },
-              fillEntitySearches: {
-                spouse_full_name: {
-                  idSource: 'spouse_guardian_id',
-                  labelSource: 'spouse_full_name',
-                },
               },
             },
           },
-          validation: { maxLength: 200 },
+          validation: { minLength: 2, maxLength: 200 },
         },
       },
       {
@@ -281,20 +272,38 @@ const SECTIONS: SectionSpec[] = [
         label: 'National ID',
         type: 'TEXT',
         binding: { namespace: 'PATIENT', path: 'national_id' },
-        config: { validation: { maxLength: 50 } },
+        // Digits only, 8–20 long. Tolerant across countries (Egyptian 14,
+        // Saudi 10, passports/iqama, …) — the pattern enforces digits + range.
+        config: {
+          validation: {
+            minLength: 8,
+            maxLength: 20,
+            pattern: '^[0-9]{8,20}$',
+          },
+        },
       },
       {
         code: 'date_of_birth',
         label: 'Date of birth',
         type: 'DATE',
         binding: { namespace: 'PATIENT', path: 'date_of_birth' },
+        // Must be a real past date within a human lifespan.
+        config: { validation: { notInFuture: true, maxAgeYears: 120 } },
       },
       {
         code: 'phone_number',
         label: 'Phone number',
         type: 'TEXT',
         binding: { namespace: 'PATIENT', path: 'phone_number' },
-        config: { validation: { maxLength: 30 } },
+        // Lenient international: optional leading +, digits with spaces/dashes,
+        // 7–20 chars total.
+        config: {
+          validation: {
+            minLength: 7,
+            maxLength: 20,
+            pattern: '^\\+?[0-9\\s\\-]{7,20}$',
+          },
+        },
       },
       {
         code: 'address',
@@ -319,91 +328,6 @@ const SECTIONS: SectionSpec[] = [
               { code: 'ENGAGED', label: 'Engaged' },
               { code: 'UNKNOWN', label: 'Unknown' },
             ],
-          },
-        },
-      },
-      {
-        code: 'spouse_guardian_id',
-        label: 'Spouse (resolved id)',
-        type: 'ENTITY_SEARCH',
-        binding: { namespace: 'LOOKUP', path: 'spouse_guardian_id' },
-        config: {
-          ui: { hidden: true },
-          logic: {
-            entity: 'guardian',
-            predicates: [
-              {
-                effect: 'visible',
-                when: { eq: { marital_status: 'MARRIED' } },
-              },
-            ] satisfies Predicate[],
-          },
-        },
-      },
-      {
-        code: 'spouse_full_name',
-        label: 'Spouse full name',
-        type: 'TEXT',
-        binding: { namespace: 'GUARDIAN', path: 'full_name' },
-        config: {
-          ui: {
-            placeholder: 'Search existing spouse or type a new name',
-            searchEntity: {
-              kind: 'guardian',
-              idTarget: 'spouse_guardian_id',
-              allowCreate: true,
-              fillFields: {
-                national_id: 'spouse_national_id',
-                phone_number: 'spouse_phone_number',
-              },
-            },
-          },
-          validation: { maxLength: 200 },
-          logic: {
-            predicates: [
-              {
-                effect: 'visible',
-                when: { eq: { marital_status: 'MARRIED' } },
-              },
-              {
-                effect: 'required',
-                when: { eq: { marital_status: 'MARRIED' } },
-              },
-            ] satisfies Predicate[],
-          },
-        },
-      },
-      {
-        code: 'spouse_national_id',
-        label: 'Spouse national ID',
-        type: 'TEXT',
-        binding: { namespace: 'GUARDIAN', path: 'national_id' },
-        config: {
-          validation: { maxLength: 50 },
-          logic: {
-            predicates: [
-              {
-                effect: 'visible',
-                when: { eq: { marital_status: 'MARRIED' } },
-              },
-            ] satisfies Predicate[],
-          },
-        },
-      },
-      {
-        code: 'spouse_phone_number',
-        label: 'Spouse phone number',
-        type: 'TEXT',
-        binding: { namespace: 'GUARDIAN', path: 'phone_number' },
-        config: {
-          validation: { maxLength: 30 },
-          logic: {
-            predicates: [
-              {
-                effect: 'visible',
-                when: { eq: { marital_status: 'MARRIED' } },
-              },
-            ] satisfies Predicate[],
           },
         },
       },
