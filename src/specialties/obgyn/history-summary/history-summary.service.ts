@@ -49,6 +49,11 @@ interface FieldConfig {
 
 type LabelMap = Map<string, Map<string, string>>;
 
+/** Coerce a JSON-array column value to a typed row array (null/garbage → []). */
+function coerceRows<T>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
 const GYN_CANCER_CONDITIONS = [
   'BREAST_CANCER',
   'OVARIAN_CANCER',
@@ -118,19 +123,8 @@ export class HistorySummaryService {
   ): Promise<ObgynHistorySummaryDto> {
     await this.access.assertPatientAccessible(patientId, user);
     const db = this.prismaService.db;
-    const where = { patient_id: patientId, is_deleted: false };
 
-    const [
-      history,
-      pregnancies,
-      surgeries,
-      family,
-      allergies,
-      meds,
-      patient,
-      lmpEncounters,
-      labels,
-    ] = await Promise.all([
+    const [history, patient, lmpEncounters, labels] = await Promise.all([
       db.patientObgynHistory.findUnique({
         where: { patient_id: patientId, is_deleted: false },
         select: {
@@ -142,31 +136,13 @@ export class HistorySummaryService {
           screening_history: true,
           social_history: true,
           blood_group_rh: true,
+          // Child collections now live as JSON-array columns on the singleton.
+          pregnancies: true,
+          non_gyn_surgeries: true,
+          family_members: true,
+          allergies: true,
+          medications: true,
         },
-      }),
-      db.patientPregnancyHistory.findMany({
-        where,
-        select: {
-          outcome: true,
-          gestational_age_weeks: true,
-          neonatal_outcome: true,
-        },
-      }),
-      db.patientNonGynSurgery.findMany({
-        where,
-        select: { surgery_name: true },
-      }),
-      db.patientFamilyHistory.findMany({
-        where,
-        select: { condition: true, relative: true },
-      }),
-      db.patientAllergy.findMany({
-        where,
-        select: { allergy_to: true, severity: true },
-      }),
-      db.patientMedication.findMany({
-        where: { ...where, is_ongoing: true },
-        select: { drug_name: true, dose: true },
       }),
       db.patient.findUnique({
         where: { id: patientId },
@@ -188,6 +164,27 @@ export class HistorySummaryService {
       }),
       this.loadLabelMap(),
     ]);
+
+    const pregnancies = coerceRows<{
+      outcome: string | null;
+      gestational_age_weeks: number | null;
+      neonatal_outcome: string | null;
+    }>(history?.pregnancies);
+    const surgeries = coerceRows<{ surgery_name: string }>(
+      history?.non_gyn_surgeries,
+    );
+    const family = coerceRows<{ condition: string; relative: string | null }>(
+      history?.family_members,
+    );
+    const allergies = coerceRows<{
+      allergy_to: string;
+      severity: string | null;
+    }>(history?.allergies);
+    const meds = coerceRows<{
+      drug_name: string;
+      dose: string | null;
+      is_ongoing?: boolean;
+    }>(history?.medications).filter((m) => m.is_ongoing !== false);
 
     const age = ageFromDob(patient?.date_of_birth ?? null);
     const bloodGroupRh = history?.blood_group_rh

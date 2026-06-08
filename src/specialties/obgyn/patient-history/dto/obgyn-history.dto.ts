@@ -17,8 +17,10 @@ import { BloodGroupRh } from '@prisma/client';
 
 // JSON sub-shapes — kept lightweight; class-validator enforces only top-level
 // presence and basic typing. Free-form fields stay free-form to match early-
-// phase UI iteration. See the JSON Promotion Rule in the design doc for when
-// any of these should graduate to relational tables.
+// phase UI iteration. Both the singleton sections AND the repeatable child
+// collections below are persisted as JSON columns on `PatientObgynHistory`
+// (one history table per specialty — the former child tables were folded back
+// into JSON; see @specialties/obgyn/patient-history/obgyn-history.service).
 
 export class GynecologicalBaselineDto {
   @IsOptional() @IsNumber() age_at_menarche?: number;
@@ -119,10 +121,12 @@ export class MenopauseHistoryDto {
 }
 
 // ---------------------------------------------------------------------------
-// Repeatable child rows. Each row carries an optional `id`:
+// Repeatable child rows, stored as JSON arrays on the singleton. Each row
+// carries an optional `id`:
 //   - id present → update that row
-//   - id absent  → create a new row
-//   - any live row whose id is missing from the array → soft-delete
+//   - id absent  → create a new row (server assigns the `id`)
+//   - any live row whose id is missing from the array → removed from the array
+//     (prior state is retained in the patient_obgyn_history_revisions snapshot)
 // Sending the key as `[]` clears the collection; omitting the key leaves it
 // untouched.
 // ---------------------------------------------------------------------------
