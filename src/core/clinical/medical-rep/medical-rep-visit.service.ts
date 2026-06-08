@@ -92,6 +92,7 @@ export class MedicalRepVisitService {
       throw new BadRequestException('branch_id is required');
     }
     await this.assertBranchInOrg(branchId, user.organizationId);
+    this.assertBranchAccess(branchId, user);
 
     // `medical_rep_id` wins: when an existing rep is selected, identity fields
     // are ignored (loadExistingRep loads the rep by id and never reads them),
@@ -166,10 +167,23 @@ export class MedicalRepVisitService {
   ) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
+    // OWNER sees the org-wide overview; an explicit branch_id narrows it.
+    // Non-owners are confined to their assigned branches: a supplied branch_id
+    // must be one they can reach, otherwise the list is scoped to all of them.
+    const isOwner = user.roles.includes('OWNER');
+    let branchFilter: Prisma.MedicalRepVisitWhereInput;
+    if (isOwner) {
+      branchFilter = query.branch_id ? { branch_id: query.branch_id } : {};
+    } else if (query.branch_id) {
+      this.assertBranchAccess(query.branch_id, user);
+      branchFilter = { branch_id: query.branch_id };
+    } else {
+      branchFilter = { branch_id: { in: user.branchIds } };
+    }
     const where: Prisma.MedicalRepVisitWhereInput = {
       organization_id: user.organizationId,
       is_deleted: false,
-      ...(query.branch_id ? { branch_id: query.branch_id } : {}),
+      ...branchFilter,
       ...(query.medical_rep_id ? { medical_rep_id: query.medical_rep_id } : {}),
     };
     const [visits, total] = await this.prismaService.db.$transaction([
@@ -196,6 +210,7 @@ export class MedicalRepVisitService {
     });
     if (!visit)
       throw new NotFoundException(`Medical rep visit ${id} not found`);
+    this.assertBranchAccess(visit.branch_id, user);
     return visit;
   }
 
@@ -217,6 +232,7 @@ export class MedicalRepVisitService {
         id: { not: visitId },
         status: 'COMPLETED',
         is_deleted: false,
+        ...this.historyBranchFilter(user),
       },
       query,
     );
@@ -238,6 +254,7 @@ export class MedicalRepVisitService {
         medical_rep_id: repId,
         status: 'COMPLETED',
         is_deleted: false,
+        ...this.historyBranchFilter(user),
       },
       query,
     );
@@ -288,6 +305,7 @@ export class MedicalRepVisitService {
     user: AuthContext,
   ) {
     await this.assertBranchInOrg(branchId, user.organizationId);
+    this.assertBranchAccess(branchId, user);
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const { start, end } = todayBounds();
@@ -317,6 +335,7 @@ export class MedicalRepVisitService {
     user: AuthContext,
   ) {
     await this.assertBranchInOrg(branchId, user.organizationId);
+    this.assertBranchAccess(branchId, user);
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const { start, end } = todayBounds();
@@ -603,7 +622,32 @@ export class MedicalRepVisitService {
     });
     if (!visit)
       throw new NotFoundException(`Medical rep visit ${id} not found`);
+    this.assertBranchAccess(visit.branch_id, user);
     return visit;
+  }
+
+  /**
+   * Branch-level access gate. OWNER reaches every branch; everyone else only
+   * the branches they're assigned to (`AuthContext.branchIds`). Mirrors the
+   * in-memory check used by `VisitsService` — no extra DB round-trip.
+   */
+  private assertBranchAccess(branchId: string, user: AuthContext) {
+    if (!user.roles.includes('OWNER') && !user.branchIds.includes(branchId)) {
+      throw new ForbiddenException('Branch access denied');
+    }
+  }
+
+  /**
+   * Branch constraint for the rep visit-history timelines. OWNER sees the rep's
+   * visits across every branch; non-owners only the rep's visits at branches
+   * they're assigned to. The rep profile/products stay org-wide either way.
+   */
+  private historyBranchFilter(
+    user: AuthContext,
+  ): Prisma.MedicalRepVisitWhereInput {
+    return user.roles.includes('OWNER')
+      ? {}
+      : { branch_id: { in: user.branchIds } };
   }
 
   private async assertBranchInOrg(branchId: string, organizationId: string) {

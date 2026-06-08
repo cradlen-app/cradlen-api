@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@infrastructure/database/prisma.service';
-import { resolveAccessiblePatientIds } from '@core/patient/patient-portal/patient-portal.public';
+import { resolveAccessiblePatientIds } from '@core/patient-portal/portal/patient-portal.public';
 import type { PatientAuthContext } from '@common/interfaces/patient-auth-context.interface';
 import { ObgynHistoryService } from '../patient-history/obgyn-history.service';
 import {

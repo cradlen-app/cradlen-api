@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
-import { AuthModule } from '../auth.module.js';
+import { AuthModule } from '@core/auth/auth.module.js';
 import { PatientAuthController } from './patient-auth.controller.js';
 import { PatientSignupService } from './patient-signup.service.js';
 import { PatientJwtStrategy } from './strategies/patient-jwt.strategy.js';

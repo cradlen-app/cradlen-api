@@ -17,7 +17,7 @@ import {
   type InvestigationResultUploadedEvent,
 } from '@core/clinical/events/events.public.js';
 import type { PatientAuthContext } from '@common/interfaces/patient-auth-context.interface.js';
-import { resolveAccessiblePatientIds } from './accessible-patients.util.js';
+import { resolveAccessiblePatientIds } from '../accessible-patients.util.js';
 import {
   patientInvestigationInclude,
   mapPatientInvestigation,
