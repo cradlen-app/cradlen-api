@@ -368,6 +368,8 @@ export class StaffResponseDto {
   specialties!: SpecialtySummaryDto[];
   @ApiProperty({ type: [ScheduleSummaryDto] })
   schedule!: ScheduleSummaryDto[];
+  @ApiPropertyOptional({ nullable: true })
+  profile_image_url!: string | null;
 }
 
 export class CreateStaffResponseDto {
