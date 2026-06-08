@@ -8,6 +8,7 @@ import {
 import * as bcrypt from 'bcryptjs';
 import type { User } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
+import { StorageService } from '@infrastructure/storage/storage.service.js';
 import { EventBus } from '@infrastructure/messaging/event-bus.js';
 import type { AuthTokensDto } from '../dto/auth-tokens.dto.js';
 import type { LoginDto } from '../dto/login.dto.js';
@@ -60,6 +61,7 @@ export class SessionsService {
     private readonly authorizationService: AuthorizationService,
     private readonly tokensService: TokensService,
     private readonly eventBus: EventBus,
+    private readonly storageService: StorageService,
   ) {}
 
   async login(
@@ -283,7 +285,12 @@ export class SessionsService {
                 orderBy: { created_at: 'asc' },
               });
             })();
-        return { profile, branches };
+        const profile_image_url = profile.profile_image_object_key
+          ? await this.storageService.createPresignedDownloadUrl(
+              profile.profile_image_object_key,
+            )
+          : null;
+        return { profile, branches, profile_image_url };
       }),
     );
 
@@ -296,7 +303,8 @@ export class SessionsService {
       is_active: user.is_active,
       verified_at: user.verified_at,
       created_at: user.created_at,
-      profiles: profilesWithBranches.map(({ profile, branches }) => ({
+      profiles: profilesWithBranches.map(
+        ({ profile, branches, profile_image_url }) => ({
         staff_id: profile.id,
         executive_title: profile.executive_title,
         engagement_type: profile.engagement_type,
@@ -334,7 +342,9 @@ export class SessionsService {
           code: sl.specialty.code,
           name: sl.specialty.name,
         })),
-      })),
+        profile_image_url,
+      }),
+      ),
     };
   }
 

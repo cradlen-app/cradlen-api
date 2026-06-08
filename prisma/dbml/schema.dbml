@@ -143,6 +143,7 @@ Table profiles {
   organization_id String [not null]
   executive_title ExecutiveTitle
   engagement_type EngagementType [not null, default: 'FULL_TIME']
+  profile_image_object_key String
   is_active Boolean [not null, default: true]
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
