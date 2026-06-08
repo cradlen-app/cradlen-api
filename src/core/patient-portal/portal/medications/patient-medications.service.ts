@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import type { PatientAuthContext } from '@common/interfaces/patient-auth-context.interface.js';
 import { computeMedicationEndDate } from './medication-duration.util.js';
-import { resolveAccessiblePatientIds } from './accessible-patients.util.js';
+import { resolveAccessiblePatientIds } from '../accessible-patients.util.js';
 import {
   PatientMedicationItemDto,
   PatientMedicationsResponseDto,

@@ -5,7 +5,7 @@ import { StorageService } from '@infrastructure/storage/storage.service.js';
 import type { PatientAuthContext } from '@common/interfaces/patient-auth-context.interface.js';
 import type { PaginatedPayload } from '@common/dto/api-response.dto.js';
 import { paginated } from '@common/utils/pagination.utils.js';
-import { resolveAccessiblePatientIds } from './accessible-patients.util.js';
+import { resolveAccessiblePatientIds } from '../accessible-patients.util.js';
 import { ListPatientInvestigationsQueryDto } from './dto/list-patient-investigations.query.dto.js';
 import { PatientInvestigationItemDto } from './dto/patient-investigation.dto.js';
 
