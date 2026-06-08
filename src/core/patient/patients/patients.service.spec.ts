@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PatientsService } from './patients.service.js';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
+import { StorageService } from '@infrastructure/storage/storage.service.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import { PatientAccessService } from '@core/patient/patient-access/patient-access.public.js';
 import { AuthContext } from '@common/interfaces/auth-context.interface.js';
@@ -68,6 +69,14 @@ describe('PatientsService', () => {
         { provide: PrismaService, useValue: { db } },
         { provide: AuthorizationService, useValue: authMock },
         { provide: PatientAccessService, useValue: accessMock },
+        {
+          provide: StorageService,
+          useValue: {
+            createPresignedDownloadUrl: jest
+              .fn()
+              .mockResolvedValue('https://signed/url'),
+          },
+        },
       ],
     }).compile();
     service = module.get<PatientsService>(PatientsService);
