@@ -140,7 +140,10 @@ export class OrganizationsController {
     @CurrentUser() user: AuthContext,
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
   ) {
-    return this.organizationsService.removeImage(user.profileId, organizationId);
+    return this.organizationsService.removeImage(
+      user.profileId,
+      organizationId,
+    );
   }
 
   @Delete(':organizationId')
