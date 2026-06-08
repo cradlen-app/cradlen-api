@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { OrganizationStatus } from '@prisma/client';
 
 export class SpecialtySummaryDto {
@@ -24,6 +24,10 @@ export class OrganizationResponseDto {
 
   @ApiProperty({ type: [SpecialtySummaryDto] })
   specialties!: SpecialtySummaryDto[];
+
+  /** Short-lived presigned GET URL for the logo, or null when none. */
+  @ApiPropertyOptional({ nullable: true })
+  logo_image_url!: string | null;
 
   @ApiProperty()
   created_at!: Date;
