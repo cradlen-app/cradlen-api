@@ -487,7 +487,8 @@ describe('SessionsService', () => {
     });
 
     it('rejects a rotated token once the grace window has passed', async () => {
-      const { sessionsService, prismaService, jwtService } = createAuthTestEnv();
+      const { sessionsService, prismaService, jwtService } =
+        createAuthTestEnv();
       const rawRefreshToken = signRefreshToken(jwtService, {
         userId,
         profileId,

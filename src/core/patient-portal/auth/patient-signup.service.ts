@@ -8,14 +8,14 @@ import {
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { StorageService } from '@infrastructure/storage/storage.service.js';
-import type { AuthTokensDto } from '../dto/auth-tokens.dto.js';
-import { TokensService } from '../services/tokens.service.js';
+import type { AuthTokensDto } from '@core/auth/dto/auth-tokens.dto.js';
+import { TokensService } from '@core/auth/services/tokens.service.js';
 import type { PatientSignupStartDto } from './dto/patient-signup-start.dto.js';
 import type { PatientSignupStartResponseDto } from './dto/patient-signup-start-response.dto.js';
 import type { PatientSignupCompleteDto } from './dto/patient-signup-complete.dto.js';
 import type { PatientLoginDto } from './dto/patient-login.dto.js';
 import type { ChangePasswordDto } from './dto/change-password.dto.js';
-import type { RefreshDto } from '../dto/refresh.dto.js';
+import type { RefreshDto } from '@core/auth/dto/refresh.dto.js';
 import type { PatientMeResponseDto } from './dto/patient-me-response.dto.js';
 import type { PatientAuthContext } from '@common/interfaces/patient-auth-context.interface.js';
 
