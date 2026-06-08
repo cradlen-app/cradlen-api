@@ -19,7 +19,7 @@ import { SubscriptionsService } from '../subscriptions/subscriptions.service.js'
 import { persistSchedules } from '../staff/schedule.helpers.js';
 import {
   assertBranchesInOrganization,
-  assertNonOwnerRoles,
+  assertRolesExist,
   assertScheduleBranches,
   assertShiftTimes,
   resolveJobFunctionsAndSpecialties,
@@ -256,7 +256,7 @@ export class InvitationsService {
         organizationId,
         uniqueBranchIds,
       ),
-      assertNonOwnerRoles(this.prismaService, uniqueRoleIds),
+      assertRolesExist(this.prismaService, uniqueRoleIds),
     ]);
 
     const { jobFunctions, specialties } =

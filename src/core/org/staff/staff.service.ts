@@ -21,7 +21,7 @@ import { persistSchedules } from './schedule.helpers.js';
 import { createUserWithGeneratedEmail } from './staff-email.helper.js';
 import {
   assertBranchesInOrganization,
-  assertNonOwnerRoles,
+  assertRolesExist,
   assertScheduleBranches,
   assertShiftTimes,
   resolveJobFunctionsAndSpecialties,
@@ -96,7 +96,7 @@ export class StaffService {
       organizationId,
       uniqueBranchIds,
     );
-    await assertNonOwnerRoles(this.prismaService, uniqueRoleIds);
+    await assertRolesExist(this.prismaService, uniqueRoleIds);
 
     const resolved = await resolveJobFunctionsAndSpecialties(
       this.prismaService,
@@ -357,7 +357,7 @@ export class StaffService {
         callerProfileId,
         organizationId,
       );
-      await assertNonOwnerRoles(this.prismaService, uniqueRoleIds);
+      await assertRolesExist(this.prismaService, uniqueRoleIds);
     }
 
     if (dto.branch_ids) {
