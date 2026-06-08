@@ -311,6 +311,9 @@ model Organization {
   id                      String                  @id @default(uuid()) @db.Uuid
   name                    String
   status                  OrganizationStatus      @default(ACTIVE)
+  // Org logo (R2 object key; served via short-lived presigned GET). Null when
+  // no logo has been set. Mirrors Profile.profile_image_object_key.
+  logo_object_key         String?
   is_deleted              Boolean                 @default(false)
   deleted_at              DateTime?
   created_at              DateTime                @default(now())
@@ -475,11 +478,6 @@ model Profile {
   prescriptions_authored           Prescription[]                   @relation("PrescriptionPrescribedBy")
   history_notes_authored           PatientHistoryNote[]             @relation("HistoryNoteAuthor")
   authored_field_flags             PatientFieldFlag[]               @relation("FieldFlagAuthor")
-  history_allergies_added          PatientAllergy[]                 @relation("AllergyCreatedBy")
-  history_pregnancies_added        PatientPregnancyHistory[]        @relation("PregnancyCreatedBy")
-  history_contraceptives_added     PatientContraceptiveHistory[]    @relation("ContraceptiveCreatedBy")
-  history_surgeries_added          PatientNonGynSurgery[]           @relation("NonGynSurgeryCreatedBy")
-  history_medications_added        PatientMedication[]              @relation("PatientMedicationCreatedBy")
   // Updated-by back-relations for clinical mutable rows that have a revision
   // shadow table (PR4). History sub-tables that are list-style records are
   // not versioned individually — their audit lives on the PatientObgynHistory
@@ -933,12 +931,6 @@ model Patient {
   // migration. PatientObgynHistory is now the only home — see @specialties/obgyn/patient-history.
 
   journeys            PatientJourney[]
-  allergies           PatientAllergy[]
-  pregnancies         PatientPregnancyHistory[]
-  contraceptives      PatientContraceptiveHistory[]
-  non_gyn_surgeries   PatientNonGynSurgery[]
-  family_history_entries PatientFamilyHistory[]
-  current_medications PatientMedication[]
   history_notes       PatientHistoryNote[]
   field_flags         PatientFieldFlag[]
   guardian_links      PatientGuardian[]
@@ -1108,7 +1100,6 @@ model Medication {
   added_by_id             String?                     @db.Uuid
   added_by                Profile?                    @relation("MedicationAddedBy", fields: [added_by_id], references: [id], onDelete: SetNull)
   items                   PrescriptionItem[]
-  patient_medications     PatientMedication[]         @relation("PatientMedicationLink")
   medical_rep_links       MedicalRepMedication[]
   medical_rep_visit_links MedicalRepVisitMedication[]
   is_deleted              Boolean                     @default(false)
@@ -1383,136 +1374,11 @@ model PrescriptionItem {
   @@map("prescription_items")
 }
 
-model PatientAllergy {
-  id                  String    @id @default(uuid()) @db.Uuid
-  patient_id          String    @db.Uuid
-  patient             Patient   @relation(fields: [patient_id], references: [id], onDelete: Cascade)
-  allergy_to          String
-  associated_symptoms String?
-  severity            String?
-  notes               String?
-  created_by_id       String?   @db.Uuid
-  created_by          Profile?  @relation("AllergyCreatedBy", fields: [created_by_id], references: [id], onDelete: SetNull)
-  is_deleted          Boolean   @default(false)
-  deleted_at          DateTime?
-  created_at          DateTime  @default(now())
-  updated_at          DateTime  @updatedAt
-
-  @@index([patient_id, is_deleted])
-  @@map("patient_allergies")
-}
-
-model PatientPregnancyHistory {
-  id                    String    @id @default(uuid()) @db.Uuid
-  patient_id            String    @db.Uuid
-  patient               Patient   @relation(fields: [patient_id], references: [id], onDelete: Cascade)
-  birth_date            DateTime? @db.Date
-  outcome               String? // LIVE_BIRTH | STILLBIRTH | MISCARRIAGE | ABORTION | ECTOPIC | ONGOING
-  mode_of_delivery      String? // VAGINAL | CESAREAN | ASSISTED_VAGINAL | OTHER
-  mode_of_delivery_other String? // free text when mode_of_delivery = OTHER
-  gestational_age_weeks Int?
-  neonatal_outcome      String?
-  neonatal_outcome_other String? // free text when neonatal_outcome = OTHER
-  baby_weight           String?
-  baby_sex              String? // MALE | FEMALE | OTHER
-  complications         String?
-  notes                 String?
-  created_by_id         String?   @db.Uuid
-  created_by            Profile?  @relation("PregnancyCreatedBy", fields: [created_by_id], references: [id], onDelete: SetNull)
-  is_deleted            Boolean   @default(false)
-  deleted_at            DateTime?
-  created_at            DateTime  @default(now())
-  updated_at            DateTime  @updatedAt
-
-  @@index([patient_id, is_deleted])
-  @@map("patient_pregnancy_history")
-}
-
-// Structured family history (repeatable) — one row per condition in a relative,
-// matching the Stanford form's "cancer/disease + relative + age of diagnosis"
-// table. Mirrors the other patient-history child tables' id-keyed diff write.
-model PatientFamilyHistory {
-  id               String    @id @default(uuid()) @db.Uuid
-  patient_id       String    @db.Uuid
-  patient          Patient   @relation(fields: [patient_id], references: [id], onDelete: Cascade)
-  condition        String // e.g. BREAST_CANCER, DIABETES, STROKE, GENETIC_DISORDER
-  relative         String? // maternal/paternal + who (free text or code)
-  age_of_diagnosis Int?
-  notes            String?
-  created_by_id    String?   @db.Uuid
-  is_deleted       Boolean   @default(false)
-  deleted_at       DateTime?
-  created_at       DateTime  @default(now())
-  updated_at       DateTime  @updatedAt
-
-  @@index([patient_id, is_deleted])
-  @@map("patient_family_history")
-}
-
-model PatientContraceptiveHistory {
-  id            String    @id @default(uuid()) @db.Uuid
-  patient_id    String    @db.Uuid
-  patient       Patient   @relation(fields: [patient_id], references: [id], onDelete: Cascade)
-  method        String
-  method_other  String? // free text when method = OTHER
-  duration      String?
-  complications String?
-  notes         String?
-  created_by_id String?   @db.Uuid
-  created_by    Profile?  @relation("ContraceptiveCreatedBy", fields: [created_by_id], references: [id], onDelete: SetNull)
-  is_deleted    Boolean   @default(false)
-  deleted_at    DateTime?
-  created_at    DateTime  @default(now())
-  updated_at    DateTime  @updatedAt
-
-  @@index([patient_id, is_deleted])
-  @@map("patient_contraceptive_history")
-}
-
-model PatientNonGynSurgery {
-  id            String    @id @default(uuid()) @db.Uuid
-  patient_id    String    @db.Uuid
-  patient       Patient   @relation(fields: [patient_id], references: [id], onDelete: Cascade)
-  surgery_name  String
-  surgery_date  DateTime? @db.Date
-  facility      String?
-  notes         String?
-  created_by_id String?   @db.Uuid
-  created_by    Profile?  @relation("NonGynSurgeryCreatedBy", fields: [created_by_id], references: [id], onDelete: SetNull)
-  is_deleted    Boolean   @default(false)
-  deleted_at    DateTime?
-  created_at    DateTime  @default(now())
-  updated_at    DateTime  @updatedAt
-
-  @@index([patient_id, is_deleted])
-  @@map("patient_non_gyn_surgeries")
-}
-
-model PatientMedication {
-  id            String      @id @default(uuid()) @db.Uuid
-  patient_id    String      @db.Uuid
-  patient       Patient     @relation(fields: [patient_id], references: [id], onDelete: Cascade)
-  medication_id String?     @db.Uuid
-  medication    Medication? @relation("PatientMedicationLink", fields: [medication_id], references: [id], onDelete: SetNull)
-  drug_name     String
-  indication    String?
-  dose          String?
-  frequency     String?
-  from_date     DateTime?   @db.Date
-  to_date       DateTime?   @db.Date
-  is_ongoing    Boolean     @default(true)
-  notes         String?
-  created_by_id String?     @db.Uuid
-  created_by    Profile?    @relation("PatientMedicationCreatedBy", fields: [created_by_id], references: [id], onDelete: SetNull)
-  is_deleted    Boolean     @default(false)
-  deleted_at    DateTime?
-  created_at    DateTime    @default(now())
-  updated_at    DateTime    @updatedAt
-
-  @@index([patient_id, is_deleted])
-  @@index([medication_id])
-  @@map("patient_medications")
-}
+// Patient-history repeatable collections (allergies, pregnancies, family
+// history, contraceptives, non-gyn surgeries, medications) were folded from
+// their own relational tables into JSON-array columns on PatientObgynHistory —
+// one history table per specialty. The id-keyed diff write + revision audit now
+// operate over those JSON arrays. See @specialties/obgyn/patient-history.
 
 model PatientHistoryNote {
   id              String         @id @default(uuid()) @db.Uuid
@@ -1658,28 +1524,11 @@ model CarePathEpisode {
   @@map("care_path_episodes")
 }
 
-model ChiefComplaintCategory {
-  id             String    @id @default(uuid()) @db.Uuid
-  specialty_code String
-  care_path_code String?
-  code           String
-  label          String
-  order          Int       @default(0)
-  is_deleted     Boolean   @default(false)
-  deleted_at     DateTime?
-  created_at     DateTime  @default(now())
-  updated_at     DateTime  @updatedAt
-
-  @@unique([specialty_code, care_path_code, code])
-  @@index([specialty_code, care_path_code])
-  @@map("chief_complaint_categories")
-}
-
 // Maps a care path to the patient-history sections relevant to it. Drives which
 // embedded `history_*` sections the OB/GYN examination surfaces once the doctor
 // picks a care path (the rest of the full history stays out of the encounter).
-// String-keyed by section_code (the FormSection.code in obgyn_examination), like
-// ChiefComplaintCategory — no FK to FormSection so it is admin/seed editable.
+// String-keyed by section_code (the FormSection.code in obgyn_examination) — no
+// FK to FormSection so it is admin/seed editable.
 model CarePathHistorySection {
   id             String    @id @default(uuid()) @db.Uuid
   specialty_code String
@@ -1749,6 +1598,16 @@ model PatientObgynHistory {
   social_history            Json?
   menopause_history         Json?
   blood_group_rh            BloodGroupRh?
+  // Repeatable child collections, folded from former relational tables into
+  // JSON arrays on the singleton (one history table per specialty). Each array
+  // element is an object carrying a stable `id` (UUID) for id-keyed diffing +
+  // `created_by_id` provenance. See @specialties/obgyn/patient-history.
+  pregnancies               Json?
+  contraceptives            Json?
+  non_gyn_surgeries         Json?
+  family_members            Json?
+  medications               Json?
+  allergies                 Json?
   section_timestamps        Json?
   version                   Int                           @default(1)
   updated_by_id             String?                       @db.Uuid
