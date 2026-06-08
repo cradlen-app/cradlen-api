@@ -323,6 +323,7 @@ describe('SessionsService', () => {
             { id: 'jf-1', code: 'OBGYN', name: 'OB/GYN', is_clinical: true },
           ],
           specialties: [{ id: 'spec-1', code: 'OBGYN', name: 'Gynecology' }],
+          profile_image_url: null,
         },
       ],
     });

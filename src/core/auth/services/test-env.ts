@@ -97,6 +97,13 @@ export function createAuthTestEnv(
   const publish = jest.fn();
   const eventBus = { publish } as unknown as EventBus;
 
+  const createPresignedDownloadUrl = jest
+    .fn()
+    .mockResolvedValue('https://signed.example/avatar');
+  const storageService = {
+    createPresignedDownloadUrl,
+  } as unknown as import('@infrastructure/storage/storage.service.js').StorageService;
+
   const tokensService = new TokensService(
     prismaService,
     jwtService,
@@ -122,6 +129,7 @@ export function createAuthTestEnv(
     authorizationService,
     tokensService,
     eventBus,
+    storageService,
   );
 
   const specialtiesService = new SpecialtyCatalogService(prismaService);
