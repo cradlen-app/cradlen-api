@@ -22,6 +22,7 @@ import {
   CreateStaffDto,
   CreateStaffResponseDto,
   ListStaffQueryDto,
+  ResetStaffPasswordDto,
   StaffResponseDto,
   UpdateStaffDto,
 } from './dto/staff.dto.js';
@@ -82,6 +83,30 @@ export class StaffController {
     @Body() dto: UpdateStaffDto,
   ) {
     return this.staffService.updateStaff(
+      user.profileId,
+      organizationId,
+      branchId,
+      staffProfileId,
+      dto,
+    );
+  }
+
+  @Post(':staffProfileId/reset-password')
+  @HttpCode(204)
+  @ApiOperation({
+    summary: "Reset a staff member's password",
+    description:
+      "Sets a new login password for a staff member (admin shares it out-of-band). Intended for staff created with a system-generated email who cannot use the email-OTP reset flow. Revokes the staff member's active sessions. Available to OWNER and to BRANCH_MANAGER on their own branches (a BRANCH_MANAGER cannot reset an OWNER or BRANCH_MANAGER).",
+  })
+  @ApiVoidResponse()
+  resetStaffPassword(
+    @CurrentUser() user: AuthContext,
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('branchId', ParseUUIDPipe) branchId: string,
+    @Param('staffProfileId', ParseUUIDPipe) staffProfileId: string,
+    @Body() dto: ResetStaffPasswordDto,
+  ): Promise<void> {
+    return this.staffService.resetStaffPassword(
       user.profileId,
       organizationId,
       branchId,

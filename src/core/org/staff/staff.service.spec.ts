@@ -410,3 +410,126 @@ describe('StaffService.removeStaffFromBranch', () => {
     expect(db.profileBranch.delete).not.toHaveBeenCalled();
   });
 });
+
+describe('StaffService.resetStaffPassword', () => {
+  let service: StaffService;
+  let db: {
+    profile: { findFirst: jest.Mock };
+    user: { update: jest.Mock };
+    refreshToken: { updateMany: jest.Mock };
+    $transaction: jest.Mock;
+  };
+  let authMock: {
+    assertCanManageStaffOnBranches: jest.Mock;
+    assertCanManageStaffForTarget: jest.Mock;
+    assertOwnerOnly: jest.Mock;
+  };
+
+  const DTO = { password: 'new-secret-pw' };
+
+  beforeEach(async () => {
+    db = {
+      profile: {
+        findFirst: jest.fn().mockResolvedValue({
+          user_id: 'user-uuid',
+          roles: [{ role: { name: 'STAFF' } }],
+        }),
+      },
+      user: { update: jest.fn().mockResolvedValue({}) },
+      refreshToken: { updateMany: jest.fn().mockResolvedValue({ count: 2 }) },
+      $transaction: jest.fn().mockImplementation((cb) => cb(db)),
+    };
+    authMock = {
+      assertCanManageStaffOnBranches: jest.fn().mockResolvedValue(undefined),
+      assertCanManageStaffForTarget: jest.fn().mockResolvedValue(undefined),
+      assertOwnerOnly: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        StaffService,
+        { provide: PrismaService, useValue: { db } },
+        { provide: AuthorizationService, useValue: authMock },
+        {
+          provide: SubscriptionsService,
+          useValue: { assertStaffLimit: jest.fn() },
+        },
+        {
+          provide: StorageService,
+          useValue: { createPresignedDownloadUrl: jest.fn() },
+        },
+      ],
+    }).compile();
+
+    service = module.get<StaffService>(StaffService);
+  });
+
+  it('checks branch and target management authorization', async () => {
+    await service.resetStaffPassword(
+      'caller-uuid',
+      ORG,
+      BRANCH,
+      'prof-uuid',
+      DTO,
+    );
+    expect(authMock.assertCanManageStaffOnBranches).toHaveBeenCalledWith(
+      'caller-uuid',
+      ORG,
+      [BRANCH],
+    );
+    expect(authMock.assertCanManageStaffForTarget).toHaveBeenCalledWith(
+      'caller-uuid',
+      ORG,
+      'prof-uuid',
+    );
+  });
+
+  it('throws NotFoundException when target is not in the branch/org', async () => {
+    db.profile.findFirst.mockResolvedValue(null);
+    await expect(
+      service.resetStaffPassword('caller-uuid', ORG, BRANCH, 'prof-uuid', DTO),
+    ).rejects.toThrow(NotFoundException);
+    expect(db.user.update).not.toHaveBeenCalled();
+  });
+
+  it('hashes the new password and revokes active sessions', async () => {
+    await service.resetStaffPassword(
+      'caller-uuid',
+      ORG,
+      BRANCH,
+      'prof-uuid',
+      DTO,
+    );
+    const updateArg = db.user.update.mock.calls[0][0];
+    expect(updateArg.where).toEqual({ id: 'user-uuid' });
+    expect(updateArg.data.password_hashed).toEqual(expect.any(String));
+    expect(updateArg.data.password_hashed).not.toEqual(DTO.password);
+    expect(db.refreshToken.updateMany).toHaveBeenCalledWith({
+      where: { user_id: 'user-uuid', is_revoked: false },
+      data: { is_revoked: true },
+    });
+  });
+
+  it('does not require OWNER for a plain STAFF target', async () => {
+    await service.resetStaffPassword(
+      'caller-uuid',
+      ORG,
+      BRANCH,
+      'prof-uuid',
+      DTO,
+    );
+    expect(authMock.assertOwnerOnly).not.toHaveBeenCalled();
+  });
+
+  it('requires OWNER to reset a privileged (BRANCH_MANAGER) target', async () => {
+    db.profile.findFirst.mockResolvedValue({
+      user_id: 'user-uuid',
+      roles: [{ role: { name: 'BRANCH_MANAGER' } }],
+    });
+    authMock.assertOwnerOnly.mockRejectedValue(new ForbiddenException());
+    await expect(
+      service.resetStaffPassword('caller-uuid', ORG, BRANCH, 'prof-uuid', DTO),
+    ).rejects.toThrow(ForbiddenException);
+    expect(db.user.update).not.toHaveBeenCalled();
+  });
+});
