@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
+import { StorageService } from '@infrastructure/storage/storage.service.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import { PatientAccessService } from '@core/patient/patient-access/patient-access.public.js';
 import { AuthContext } from '@common/interfaces/auth-context.interface.js';
@@ -18,6 +19,7 @@ export class PatientsService {
     private readonly prismaService: PrismaService,
     private readonly authorizationService: AuthorizationService,
     private readonly patientAccessService: PatientAccessService,
+    private readonly storageService: StorageService,
   ) {}
 
   /**
@@ -221,16 +223,23 @@ export class PatientsService {
     const patientIds = patients.map((p) => p.id);
     const lastVisitMap = await this.getLastVisitDates(patientIds, branchId);
 
-    const shaped = patients.map(({ journeys, ...rest }) => {
-      const j = journeys[0] ?? null;
-      return {
-        ...rest,
-        journey: j
-          ? { id: j.id, type: j.journey_template.type, status: j.status }
-          : null,
-        last_visit_date: lastVisitMap.get(rest.id) ?? null,
-      };
-    });
+    const shaped = await Promise.all(
+      patients.map(async ({ journeys, profile_image_object_key, ...rest }) => {
+        const j = journeys[0] ?? null;
+        return {
+          ...rest,
+          journey: j
+            ? { id: j.id, type: j.journey_template.type, status: j.status }
+            : null,
+          last_visit_date: lastVisitMap.get(rest.id) ?? null,
+          profile_image_url: profile_image_object_key
+            ? await this.storageService.createPresignedDownloadUrl(
+                profile_image_object_key,
+              )
+            : null,
+        };
+      }),
+    );
 
     return paginated(shaped, { page, limit, total });
   }
@@ -299,16 +308,23 @@ export class PatientsService {
       null,
     );
 
-    const shaped = patients.map(({ journeys, ...rest }) => {
-      const j = journeys[0] ?? null;
-      return {
-        ...rest,
-        journey: j
-          ? { id: j.id, type: j.journey_template.type, status: j.status }
-          : null,
-        last_visit_date: lastVisitMap.get(rest.id) ?? null,
-      };
-    });
+    const shaped = await Promise.all(
+      patients.map(async ({ journeys, profile_image_object_key, ...rest }) => {
+        const j = journeys[0] ?? null;
+        return {
+          ...rest,
+          journey: j
+            ? { id: j.id, type: j.journey_template.type, status: j.status }
+            : null,
+          last_visit_date: lastVisitMap.get(rest.id) ?? null,
+          profile_image_url: profile_image_object_key
+            ? await this.storageService.createPresignedDownloadUrl(
+                profile_image_object_key,
+              )
+            : null,
+        };
+      }),
+    );
 
     return paginated(shaped, { page, limit, total });
   }
