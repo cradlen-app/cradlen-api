@@ -19,14 +19,13 @@ import { SubscriptionsService } from '../subscriptions/subscriptions.service.js'
 import { persistSchedules } from '../staff/schedule.helpers.js';
 import {
   assertBranchesInOrganization,
-  assertNonOwnerRoles,
+  assertRolesExist,
   assertScheduleBranches,
   assertShiftTimes,
   resolveJobFunctionsAndSpecialties,
 } from '../staff/staff.assertions.js';
 import type {
   AcceptInvitationDto,
-  BulkCreateInvitationsDto,
   CreateInvitationDto,
   DeclineInvitationDto,
   PreviewInvitationQueryDto,
@@ -134,113 +133,6 @@ export class InvitationsService {
     return toInvitationResponse(invitation);
   }
 
-  async bulkCreateInvitations(
-    currentUserId: string,
-    profileId: string,
-    organizationId: string,
-    branchId: string,
-    dto: BulkCreateInvitationsDto,
-  ) {
-    // Cheap, fail-fast checks first: self-invite and the path/branch invariant.
-    await assertNotSelfInvite(
-      this.prismaService,
-      currentUserId,
-      dto.invitations.map((i) => i.email),
-    );
-
-    // Per-row branch/role checks: every invitation in the batch must be
-    // within the caller's scope and include the path branchId in branch_ids.
-    // Done up-front so the whole batch fails fast rather than partially
-    // before the transaction opens.
-    for (const item of dto.invitations) {
-      const branchIds = [...new Set(item.branch_ids)];
-      const roleIds = [...new Set(item.role_ids)];
-      if (!branchIds.includes(branchId)) {
-        throw new BadRequestException(
-          'Every invitation must include the path branchId in branch_ids',
-        );
-      }
-      await this.authorizationService.assertCanManageStaffOnBranches(
-        profileId,
-        organizationId,
-        branchIds,
-      );
-      await this.authorizationService.assertNoPrivilegedRoleAssignment(
-        profileId,
-        organizationId,
-        roleIds,
-      );
-    }
-
-    // Subscription limit gate. The accept-flow re-checks the limit per acceptance,
-    // so a batch larger than remaining capacity will create invitations that simply
-    // can't all be redeemed; that's acceptable behavior.
-    await this.subscriptionsService.assertStaffLimit(organizationId);
-
-    const prepared = await Promise.all(
-      dto.invitations.map((item) =>
-        this.prepareInvitationData(organizationId, item),
-      ),
-    );
-
-    let createdIds: string[];
-    try {
-      createdIds = await this.prismaService.db.$transaction(async (tx) =>
-        Promise.all(
-          dto.invitations.map(async (item, idx) => {
-            const created = await tx.invitation.create({
-              data: this.buildInvitationCreateData(
-                organizationId,
-                currentUserId,
-                item,
-                prepared[idx],
-              ),
-              select: { id: true },
-            });
-            return created.id;
-          }),
-        ),
-      );
-    } catch (err: unknown) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
-        throw new ConflictException(
-          'One or more invitations already exist for the given emails',
-        );
-      }
-      throw err;
-    }
-
-    // Send emails after commit. Individual failures are logged and returned
-    // in the response so the caller can decide whether to resend.
-    const emailResults = await Promise.all(
-      dto.invitations.map(async (item, idx) => {
-        const id = createdIds[idx];
-        const inviteUrl = buildInvitationAcceptUrl(
-          this.appConfig,
-          id,
-          prepared[idx].rawToken,
-        );
-        try {
-          await this.mailService.sendStaffInvitationEmail(
-            item.email,
-            inviteUrl,
-          );
-          return { id, email: item.email, email_sent: true as const };
-        } catch {
-          return { id, email: item.email, email_sent: false as const };
-        }
-      }),
-    );
-
-    return {
-      created: emailResults.length,
-      results: emailResults,
-    };
-  }
-
   private async prepareInvitationData(
     organizationId: string,
     dto: CreateInvitationDto,
@@ -256,7 +148,7 @@ export class InvitationsService {
         organizationId,
         uniqueBranchIds,
       ),
-      assertNonOwnerRoles(this.prismaService, uniqueRoleIds),
+      assertRolesExist(this.prismaService, uniqueRoleIds),
     ]);
 
     const { jobFunctions, specialties } =
