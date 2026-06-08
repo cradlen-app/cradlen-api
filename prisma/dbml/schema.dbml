@@ -168,11 +168,6 @@ Table profiles {
   prescriptions_authored prescriptions [not null]
   history_notes_authored patient_history_notes [not null]
   authored_field_flags patient_field_flags [not null]
-  history_allergies_added patient_allergies [not null]
-  history_pregnancies_added patient_pregnancy_history [not null]
-  history_contraceptives_added patient_contraceptive_history [not null]
-  history_surgeries_added patient_non_gyn_surgeries [not null]
-  history_medications_added patient_medications [not null]
   patient_obgyn_history_updates patient_obgyn_histories [not null]
   visit_obgyn_encounter_updates visit_obgyn_encounters [not null]
   pregnancy_journey_updates pregnancy_journey_records [not null]
@@ -554,12 +549,6 @@ Table patients {
   marital_status MaritalStatus [not null, default: 'UNKNOWN']
   profile_image_object_key String
   journeys patient_journeys [not null]
-  allergies patient_allergies [not null]
-  pregnancies patient_pregnancy_history [not null]
-  contraceptives patient_contraceptive_history [not null]
-  non_gyn_surgeries patient_non_gyn_surgeries [not null]
-  family_history_entries patient_family_history [not null]
-  current_medications patient_medications [not null]
   history_notes patient_history_notes [not null]
   field_flags patient_field_flags [not null]
   guardian_links patient_guardians [not null]
@@ -697,7 +686,6 @@ Table medications {
   added_by_id String
   added_by profiles
   items prescription_items [not null]
-  patient_medications patient_medications [not null]
   medical_rep_links medical_rep_medications [not null]
   medical_rep_visit_links medical_rep_visit_medications [not null]
   is_deleted Boolean [not null, default: false]
@@ -906,115 +894,6 @@ Table prescription_items {
   updated_at DateTime [not null]
 }
 
-Table patient_allergies {
-  id String [pk]
-  patient_id String [not null]
-  patient patients [not null]
-  allergy_to String [not null]
-  associated_symptoms String
-  severity String
-  notes String
-  created_by_id String
-  created_by profiles
-  is_deleted Boolean [not null, default: false]
-  deleted_at DateTime
-  created_at DateTime [default: `now()`, not null]
-  updated_at DateTime [not null]
-}
-
-Table patient_pregnancy_history {
-  id String [pk]
-  patient_id String [not null]
-  patient patients [not null]
-  birth_date DateTime
-  outcome String
-  mode_of_delivery String
-  mode_of_delivery_other String
-  gestational_age_weeks Int
-  neonatal_outcome String
-  neonatal_outcome_other String
-  baby_weight String
-  baby_sex String
-  complications String
-  notes String
-  created_by_id String
-  created_by profiles
-  is_deleted Boolean [not null, default: false]
-  deleted_at DateTime
-  created_at DateTime [default: `now()`, not null]
-  updated_at DateTime [not null]
-}
-
-Table patient_family_history {
-  id String [pk]
-  patient_id String [not null]
-  patient patients [not null]
-  condition String [not null]
-  relative String
-  age_of_diagnosis Int
-  notes String
-  created_by_id String
-  is_deleted Boolean [not null, default: false]
-  deleted_at DateTime
-  created_at DateTime [default: `now()`, not null]
-  updated_at DateTime [not null]
-}
-
-Table patient_contraceptive_history {
-  id String [pk]
-  patient_id String [not null]
-  patient patients [not null]
-  method String [not null]
-  method_other String
-  duration String
-  complications String
-  notes String
-  created_by_id String
-  created_by profiles
-  is_deleted Boolean [not null, default: false]
-  deleted_at DateTime
-  created_at DateTime [default: `now()`, not null]
-  updated_at DateTime [not null]
-}
-
-Table patient_non_gyn_surgeries {
-  id String [pk]
-  patient_id String [not null]
-  patient patients [not null]
-  surgery_name String [not null]
-  surgery_date DateTime
-  facility String
-  notes String
-  created_by_id String
-  created_by profiles
-  is_deleted Boolean [not null, default: false]
-  deleted_at DateTime
-  created_at DateTime [default: `now()`, not null]
-  updated_at DateTime [not null]
-}
-
-Table patient_medications {
-  id String [pk]
-  patient_id String [not null]
-  patient patients [not null]
-  medication_id String
-  medication medications
-  drug_name String [not null]
-  indication String
-  dose String
-  frequency String
-  from_date DateTime
-  to_date DateTime
-  is_ongoing Boolean [not null, default: true]
-  notes String
-  created_by_id String
-  created_by profiles
-  is_deleted Boolean [not null, default: false]
-  deleted_at DateTime
-  created_at DateTime [default: `now()`, not null]
-  updated_at DateTime [not null]
-}
-
 Table patient_history_notes {
   id String [pk]
   patient_id String [not null]
@@ -1187,6 +1066,12 @@ Table patient_obgyn_histories {
   social_history Json
   menopause_history Json
   blood_group_rh BloodGroupRh
+  pregnancies Json
+  contraceptives Json
+  non_gyn_surgeries Json
+  family_members Json
+  medications Json
+  allergies Json
   section_timestamps Json
   version Int [not null, default: 1]
   updated_by_id String
@@ -2329,30 +2214,6 @@ Ref: prescription_items.prescription_id > prescriptions.id [delete: Cascade]
 Ref: prescription_items.medication_id > medications.id [delete: Set Null]
 
 Ref: prescription_items.updated_by_id > profiles.id [delete: Set Null]
-
-Ref: patient_allergies.patient_id > patients.id [delete: Cascade]
-
-Ref: patient_allergies.created_by_id > profiles.id [delete: Set Null]
-
-Ref: patient_pregnancy_history.patient_id > patients.id [delete: Cascade]
-
-Ref: patient_pregnancy_history.created_by_id > profiles.id [delete: Set Null]
-
-Ref: patient_family_history.patient_id > patients.id [delete: Cascade]
-
-Ref: patient_contraceptive_history.patient_id > patients.id [delete: Cascade]
-
-Ref: patient_contraceptive_history.created_by_id > profiles.id [delete: Set Null]
-
-Ref: patient_non_gyn_surgeries.patient_id > patients.id [delete: Cascade]
-
-Ref: patient_non_gyn_surgeries.created_by_id > profiles.id [delete: Set Null]
-
-Ref: patient_medications.patient_id > patients.id [delete: Cascade]
-
-Ref: patient_medications.medication_id > medications.id [delete: Set Null]
-
-Ref: patient_medications.created_by_id > profiles.id [delete: Set Null]
 
 Ref: patient_history_notes.patient_id > patients.id [delete: Cascade]
 
