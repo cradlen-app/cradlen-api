@@ -296,7 +296,11 @@ export class TokensService {
       if (args.revokeJti) {
         const revoked = await tx.refreshToken.updateMany({
           where: { jti: args.revokeJti, is_revoked: false },
-          data: { is_revoked: true, revoked_at: new Date(), replaced_by_jti: jti },
+          data: {
+            is_revoked: true,
+            revoked_at: new Date(),
+            replaced_by_jti: jti,
+          },
         });
         if (revoked.count !== 1) {
           throw new UnauthorizedException(
@@ -388,7 +392,11 @@ export class TokensService {
       if (args.revokeJti) {
         const revoked = await tx.refreshToken.updateMany({
           where: { jti: args.revokeJti, is_revoked: false },
-          data: { is_revoked: true, revoked_at: new Date(), replaced_by_jti: jti },
+          data: {
+            is_revoked: true,
+            revoked_at: new Date(),
+            replaced_by_jti: jti,
+          },
         });
         if (revoked.count !== 1) {
           throw new UnauthorizedException(

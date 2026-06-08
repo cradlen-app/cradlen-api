@@ -4,7 +4,7 @@ import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import type { PatientAuthContext } from '@common/interfaces/patient-auth-context.interface.js';
 import type { PaginatedPayload } from '@common/dto/api-response.dto.js';
 import { paginated } from '@common/utils/pagination.utils.js';
-import { resolveAccessiblePatientIds } from './accessible-patients.util.js';
+import { resolveAccessiblePatientIds } from '../accessible-patients.util.js';
 import { ListPatientVisitsQueryDto } from './dto/list-patient-visits.query.dto.js';
 import { PatientVisitItemDto } from './dto/patient-visit.dto.js';
 import { PatientUpcomingVisitItemDto } from './dto/patient-upcoming-visit.dto.js';

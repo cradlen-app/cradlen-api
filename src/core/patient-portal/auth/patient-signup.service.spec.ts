@@ -7,7 +7,7 @@ import {
 import * as bcrypt from 'bcryptjs';
 import { PatientSignupService } from './patient-signup.service.js';
 import type { PrismaService } from '@infrastructure/database/prisma.service.js';
-import type { TokensService } from '../services/tokens.service.js';
+import type { TokensService } from '@core/auth/services/tokens.service.js';
 import type { PatientAuthContext } from '@common/interfaces/patient-auth-context.interface.js';
 
 type Fn = jest.Mock;

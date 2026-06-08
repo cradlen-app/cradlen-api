@@ -240,7 +240,9 @@ describe('ProfilesService', () => {
         size_bytes: 1024,
       });
 
-      expect(storage.assertAllowedContentType).toHaveBeenCalledWith('image/png');
+      expect(storage.assertAllowedContentType).toHaveBeenCalledWith(
+        'image/png',
+      );
       expect(storage.assertWithinSizeLimit).toHaveBeenCalledWith(1024);
       expect(res.key).toMatch(/^profiles\/profile-1\/avatar\/.+\.png$/);
       expect(res.upload_url).toBe('https://put.example');
