@@ -450,6 +450,7 @@ model Profile {
   organization_id                  String                           @db.Uuid
   executive_title                  ExecutiveTitle?
   engagement_type                  EngagementType                   @default(FULL_TIME)
+  profile_image_object_key         String?
   is_active                        Boolean                          @default(true)
   is_deleted                       Boolean                          @default(false)
   deleted_at                       DateTime?
