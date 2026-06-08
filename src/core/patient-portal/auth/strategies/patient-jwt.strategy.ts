@@ -5,7 +5,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import authConfig from '@config/auth.config.js';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import type { PatientAuthContext } from '@common/interfaces/patient-auth-context.interface.js';
-import type { JwtPatientAccessPayload } from '../../interfaces/jwt-payload.interface.js';
+import type { JwtPatientAccessPayload } from '@core/auth/interfaces/jwt-payload.interface.js';
 
 const JWT_AUDIENCE = 'cradlen-api';
 const JWT_ISSUER = 'cradlen-api';

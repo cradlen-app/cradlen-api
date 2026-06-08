@@ -18,7 +18,8 @@ export class PatientSummaryDto {
 
   @ApiPropertyOptional({
     nullable: true,
-    description: "Short-lived presigned GET URL for the patient's avatar, or null.",
+    description:
+      "Short-lived presigned GET URL for the patient's avatar, or null.",
   })
   profile_image_url!: string | null;
 }
