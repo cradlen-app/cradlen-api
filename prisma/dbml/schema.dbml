@@ -17,6 +17,7 @@ Table organizations {
   id String [pk]
   name String [not null]
   status OrganizationStatus [not null, default: 'ACTIVE']
+  logo_object_key String
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
   created_at DateTime [default: `now()`, not null]

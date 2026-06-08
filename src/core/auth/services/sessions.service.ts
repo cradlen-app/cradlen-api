@@ -290,7 +290,12 @@ export class SessionsService {
               profile.profile_image_object_key,
             )
           : null;
-        return { profile, branches, profile_image_url };
+        const organization_logo_url = profile.organization.logo_object_key
+          ? await this.storageService.createPresignedDownloadUrl(
+              profile.organization.logo_object_key,
+            )
+          : null;
+        return { profile, branches, profile_image_url, organization_logo_url };
       }),
     );
 
@@ -304,7 +309,7 @@ export class SessionsService {
       verified_at: user.verified_at,
       created_at: user.created_at,
       profiles: profilesWithBranches.map(
-        ({ profile, branches, profile_image_url }) => ({
+        ({ profile, branches, profile_image_url, organization_logo_url }) => ({
           staff_id: profile.id,
           executive_title: profile.executive_title,
           engagement_type: profile.engagement_type,
@@ -317,6 +322,7 @@ export class SessionsService {
               name: l.specialty.name,
             })),
             status: profile.organization.status,
+            logo_image_url: organization_logo_url,
           },
           roles: profile.roles.map((pr) => ({
             id: pr.role.id,
