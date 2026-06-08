@@ -23,8 +23,11 @@ export function toOrganizationResponse(
 ): Omit<OrganizationWithSpecialties, 'specialty_links' | 'logo_object_key'> & {
   specialties: SpecialtySummary[];
 } {
-  const { specialty_links, logo_object_key: _logoObjectKey, ...rest } =
-    organization;
+  const {
+    specialty_links,
+    logo_object_key: _logoObjectKey,
+    ...rest
+  } = organization;
   void _logoObjectKey;
   return {
     ...rest,

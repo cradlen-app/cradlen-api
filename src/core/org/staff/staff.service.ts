@@ -15,13 +15,14 @@ import {
   STAFF_ROLE_NAMES,
   type CreateStaffDto,
   type ListStaffQueryDto,
+  type ResetStaffPasswordDto,
   type UpdateStaffDto,
 } from './dto/staff.dto.js';
 import { persistSchedules } from './schedule.helpers.js';
 import { createUserWithGeneratedEmail } from './staff-email.helper.js';
 import {
   assertBranchesInOrganization,
-  assertNonOwnerRoles,
+  assertRolesExist,
   assertScheduleBranches,
   assertShiftTimes,
   resolveJobFunctionsAndSpecialties,
@@ -96,7 +97,7 @@ export class StaffService {
       organizationId,
       uniqueBranchIds,
     );
-    await assertNonOwnerRoles(this.prismaService, uniqueRoleIds);
+    await assertRolesExist(this.prismaService, uniqueRoleIds);
 
     const resolved = await resolveJobFunctionsAndSpecialties(
       this.prismaService,
@@ -169,6 +170,76 @@ export class StaffService {
         organization_id: organizationId,
         generated_email: user.email,
       };
+    });
+  }
+
+  /**
+   * Admin-initiated password reset for a staff member. This is the recovery
+   * path for staff created via `createStaff`, who get a system-generated
+   * `@cradlen.com` email (not a real inbox) and so cannot use the email-OTP
+   * forgot-password flow. The caller sets a new password and shares it
+   * out-of-band, mirroring how the original password was issued.
+   */
+  async resetStaffPassword(
+    callerProfileId: string,
+    organizationId: string,
+    branchId: string,
+    staffProfileId: string,
+    dto: ResetStaffPasswordDto,
+  ): Promise<void> {
+    // Branch-scoped: caller must manage this branch, and share a branch with
+    // the target. Mirrors updateStaff's authorization.
+    await this.authorizationService.assertCanManageStaffOnBranches(
+      callerProfileId,
+      organizationId,
+      [branchId],
+    );
+    await this.authorizationService.assertCanManageStaffForTarget(
+      callerProfileId,
+      organizationId,
+      staffProfileId,
+    );
+
+    const profile = await this.prismaService.db.profile.findFirst({
+      where: {
+        id: staffProfileId,
+        organization_id: organizationId,
+        is_deleted: false,
+        branches: { some: { branch_id: branchId } },
+      },
+      select: {
+        user_id: true,
+        roles: { select: { role: { select: { name: true } } } },
+      },
+    });
+    if (!profile) throw new NotFoundException('Staff member not found');
+
+    // Privileged-target guard: resetting an OWNER or BRANCH_MANAGER's password
+    // could hijack a privileged account, so restrict that to OWNERs. A
+    // BRANCH_MANAGER may only reset plain STAFF/EXTERNAL members.
+    const targetIsPrivileged = profile.roles.some(
+      (r) => r.role.name === 'OWNER' || r.role.name === 'BRANCH_MANAGER',
+    );
+    if (targetIsPrivileged) {
+      await this.authorizationService.assertOwnerOnly(
+        callerProfileId,
+        organizationId,
+      );
+    }
+
+    const passwordHashed = await bcrypt.hash(dto.password, 12);
+
+    // Single transaction: set the new password and revoke every active
+    // session so the old credentials stop working immediately.
+    await this.prismaService.db.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: profile.user_id },
+        data: { password_hashed: passwordHashed },
+      });
+      await tx.refreshToken.updateMany({
+        where: { user_id: profile.user_id, is_revoked: false },
+        data: { is_revoked: true },
+      });
     });
   }
 
@@ -357,7 +428,7 @@ export class StaffService {
         callerProfileId,
         organizationId,
       );
-      await assertNonOwnerRoles(this.prismaService, uniqueRoleIds);
+      await assertRolesExist(this.prismaService, uniqueRoleIds);
     }
 
     if (dto.branch_ids) {

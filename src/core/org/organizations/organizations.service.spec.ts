@@ -78,9 +78,7 @@ describe('OrganizationsService', () => {
       createPresignedUploadUrl: jest
         .fn()
         .mockResolvedValue({ url: 'https://r2/put', expiresIn: 300 }),
-      createPresignedDownloadUrl: jest
-        .fn()
-        .mockResolvedValue('https://r2/get'),
+      createPresignedDownloadUrl: jest.fn().mockResolvedValue('https://r2/get'),
       headObject: jest
         .fn()
         .mockResolvedValue({ contentType: 'image/png', contentLength: 1024 }),

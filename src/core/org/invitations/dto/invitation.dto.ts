@@ -1,6 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
-  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsEmail,
@@ -186,27 +185,6 @@ export class InvitationResponseDto {
   working_schedule?: InvitationWorkingScheduleDto[] | null;
 }
 
-// ---------- Bulk-create response ----------
-
-export class BulkInviteResultDto {
-  @ApiProperty()
-  id!: string;
-
-  @ApiProperty()
-  email!: string;
-
-  @ApiProperty()
-  email_sent!: boolean;
-}
-
-export class BulkInviteResponseDto {
-  @ApiProperty()
-  created!: number;
-
-  @ApiProperty({ type: () => [BulkInviteResultDto] })
-  results!: BulkInviteResultDto[];
-}
-
 // ---------- Preview (public) ----------
 
 export class InvitationPreviewOrganizationDto {
@@ -343,16 +321,6 @@ export class CreateInvitationDto {
   @IsOptional()
   @IsEnum(EngagementType)
   engagement_type?: EngagementType;
-}
-
-export class BulkCreateInvitationsDto {
-  @ApiProperty({ type: [CreateInvitationDto] })
-  @IsArray()
-  @ArrayMinSize(1)
-  @ArrayMaxSize(100)
-  @ValidateNested({ each: true })
-  @Type(() => CreateInvitationDto)
-  invitations!: CreateInvitationDto[];
 }
 
 export class AcceptInvitationDto {
