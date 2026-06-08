@@ -8,6 +8,7 @@ import * as bcrypt from 'bcryptjs';
 import { EngagementType, Prisma } from '@prisma/client';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
+import { StorageService } from '@infrastructure/storage/storage.service.js';
 import { paginated } from '@common/utils/pagination.utils.js';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service.js';
 import {
@@ -57,6 +58,7 @@ export class StaffService {
     private readonly prismaService: PrismaService,
     private readonly authorizationService: AuthorizationService,
     private readonly subscriptionsService: SubscriptionsService,
+    private readonly storageService: StorageService,
   ) {}
 
   async createStaff(
@@ -277,10 +279,18 @@ export class StaffService {
       this.prismaService.db.profile.count({ where }),
     ]);
 
-    return paginated(
-      profiles.map((p) => toStaffResponse(p)),
-      { page, limit, total },
+    const items = await Promise.all(
+      profiles.map(async (p) => ({
+        ...toStaffResponse(p),
+        profile_image_url: p.profile_image_object_key
+          ? await this.storageService.createPresignedDownloadUrl(
+              p.profile_image_object_key,
+            )
+          : null,
+      })),
     );
+
+    return paginated(items, { page, limit, total });
   }
 
   async updateStaff(

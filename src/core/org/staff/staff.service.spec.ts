@@ -8,6 +8,7 @@ import { StaffService } from './staff.service';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { StorageService } from '@infrastructure/storage/storage.service';
 
 const ORG = 'org-uuid';
 const BRANCH = 'branch-uuid';
@@ -81,6 +82,14 @@ describe('StaffService.listStaff', () => {
         {
           provide: SubscriptionsService,
           useValue: { assertStaffLimit: jest.fn() },
+        },
+        {
+          provide: StorageService,
+          useValue: {
+            createPresignedDownloadUrl: jest
+              .fn()
+              .mockResolvedValue('https://get.example/avatar'),
+          },
         },
       ],
     }).compile();
@@ -330,6 +339,14 @@ describe('StaffService.removeStaffFromBranch', () => {
         {
           provide: SubscriptionsService,
           useValue: { assertStaffLimit: jest.fn() },
+        },
+        {
+          provide: StorageService,
+          useValue: {
+            createPresignedDownloadUrl: jest
+              .fn()
+              .mockResolvedValue('https://get.example/avatar'),
+          },
         },
       ],
     }).compile();
