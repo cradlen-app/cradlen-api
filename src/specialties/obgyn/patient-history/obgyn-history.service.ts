@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
@@ -12,15 +13,7 @@ import { splitDiff } from '@common/utils/id-keyed-diff';
 import { coerceStringRecord } from '@common/utils/json.utils';
 import { PatientAccessService } from '@core/patient/patient-access/patient-access.public';
 import { buildRevision } from '../revisions.helper';
-import {
-  AllergyRowDto,
-  ContraceptiveRowDto,
-  FamilyHistoryRowDto,
-  MedicationRowDto,
-  NonGynSurgeryRowDto,
-  PregnancyRowDto,
-  UpdateObgynHistoryDto,
-} from './dto/obgyn-history.dto';
+import { UpdateObgynHistoryDto } from './dto/obgyn-history.dto';
 
 const SINGLETON_JSON_FIELDS = [
   'gynecological_baseline',
@@ -38,11 +31,84 @@ const SINGLETON_JSON_FIELDS = [
 
 type SingletonJsonField = (typeof SINGLETON_JSON_FIELDS)[number];
 
+// Repeatable child collections, now stored as JSON-array columns on the
+// singleton (folded from former relational tables). The DTO/envelope key for
+// each maps 1:1 to its `PatientObgynHistory` JSON column.
+const CHILD_COLLECTIONS = [
+  'pregnancies',
+  'contraceptives',
+  'non_gyn_surgeries',
+  'family_members',
+  'medications',
+  'allergies',
+] as const;
+
+type ChildCollection = (typeof CHILD_COLLECTIONS)[number];
+type StoredRow = Record<string, unknown> & { id: string };
+type Children = Record<ChildCollection, StoredRow[]>;
+
 const LIVE_BIRTH_OUTCOMES = ['LIVE_BIRTH'];
 const ABORTION_LIKE_OUTCOMES = ['MISCARRIAGE', 'ABORTION', 'ECTOPIC'];
 const STILLBIRTH_OUTCOME = 'STILLBIRTH';
 // A stillbirth counts toward parity only once the fetus is viable (>= 20 weeks).
 const STILLBIRTH_VIABLE_WEEKS = 20;
+
+// --- pure helpers -----------------------------------------------------------
+
+/** Coerce a JSON column value to an array of stored rows (null/garbage → []). */
+function coerceRows(value: unknown): StoredRow[] {
+  return Array.isArray(value) ? (value as StoredRow[]) : [];
+}
+
+/** Provided row fields minus `id` and any `undefined` values. */
+function rowFields(row: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(row)) {
+    if (k === 'id' || v === undefined) continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+function str(v: unknown): string {
+  return typeof v === 'string' ? v : '';
+}
+
+/** Descending comparator on a date-ish string field, `created_at` as tiebreak. */
+function byDateDesc(field: string) {
+  return (a: StoredRow, b: StoredRow): number => {
+    const av = str(a[field]);
+    const bv = str(b[field]);
+    if (av !== bv) return av < bv ? 1 : -1; // empty sorts last (smallest)
+    return str(b.created_at).localeCompare(str(a.created_at));
+  };
+}
+
+function byCreatedDesc(a: StoredRow, b: StoredRow): number {
+  return str(b.created_at).localeCompare(str(a.created_at));
+}
+
+function byMedication(a: StoredRow, b: StoredRow): number {
+  const ao = a.is_ongoing === false ? 0 : 1;
+  const bo = b.is_ongoing === false ? 0 : 1;
+  if (ao !== bo) return bo - ao; // ongoing first
+  const af = str(a.from_date);
+  const bf = str(b.from_date);
+  if (af !== bf) return af < bf ? 1 : -1;
+  return str(b.created_at).localeCompare(str(a.created_at));
+}
+
+const COLLECTION_SORTERS: Record<
+  ChildCollection,
+  (a: StoredRow, b: StoredRow) => number
+> = {
+  pregnancies: byDateDesc('birth_date'),
+  contraceptives: byCreatedDesc,
+  non_gyn_surgeries: byDateDesc('surgery_date'),
+  family_members: byCreatedDesc,
+  medications: byMedication,
+  allergies: byCreatedDesc,
+};
 
 @Injectable()
 export class ObgynHistoryService {
@@ -59,7 +125,7 @@ export class ObgynHistoryService {
       patientId,
       user.profileId,
     );
-    return this.composeEnvelope(this.prismaService.db, singleton);
+    return this.composeEnvelope(singleton);
   }
 
   /**
@@ -78,7 +144,7 @@ export class ObgynHistoryService {
       where: { patient_id: patientId },
     });
     if (!singleton) return null;
-    return this.composeEnvelope(tx, singleton);
+    return this.composeEnvelope(singleton);
   }
 
   /**
@@ -86,22 +152,21 @@ export class ObgynHistoryService {
    *
    * NOTE: This is no longer exposed over HTTP. The patient-history surface is
    * read-only (GET = the "specialty full history" view). This method is kept
-   * as the canonical internal writer — the OB/GYN examination flow will call
-   * into it to persist patient-level history captured during an encounter
-   * (see plan: history capture relocates to the examination template).
+   * as the canonical internal writer — the OB/GYN examination flow calls into
+   * it to persist patient-level history captured during an encounter.
    *
-   * Singleton JSON columns + all five child collections (pregnancies,
-   * contraceptives, non_gyn_surgeries, medications, allergies) are diffed
-   * and written atomically. Child arrays use id-keyed diff semantics:
-   * present id → update; missing id → create; live id absent from body →
-   * soft-delete. A field absent from the body leaves that collection
-   * untouched; sending it as `[]` clears the collection.
+   * Singleton JSON columns + all six child collections (pregnancies,
+   * contraceptives, non_gyn_surgeries, family_members, medications, allergies)
+   * are diffed and written atomically. The collections live as JSON-array
+   * columns on the singleton; each array element carries a stable `id` so the
+   * id-keyed diff still applies: present id → update; missing id → create;
+   * live id absent from the body → remove. A field absent from the body leaves
+   * that collection untouched; sending it as `[]` clears the collection.
    *
    * Optimistic concurrency: client must echo the singleton row's current
    * `version` via `If-Match`. Inside one transaction we snapshot the prior
-   * full state (singleton + all child rows) to
-   * `patient_obgyn_history_revisions`, apply the diff, then bump `version`.
-   * One PATCH = one revision row = one event.
+   * full state to `patient_obgyn_history_revisions`, apply the diff, then bump
+   * `version`. One PATCH = one revision row = one event.
    */
   async patch(
     patientId: string,
@@ -111,13 +176,10 @@ export class ObgynHistoryService {
   ) {
     await this.access.assertPatientInOrg(patientId, user);
 
-    // Compose the read-back envelope OUTSIDE the write transaction so the
-    // transaction does no extra child-table reads (applyPatch returns just the
-    // singleton row). Keeps this wrapper's public shape unchanged.
     const singleton = await this.prismaService.db.$transaction((tx) =>
       this.applyPatch(tx, patientId, dto, ifMatchVersion, user.profileId),
     );
-    return this.composeEnvelope(this.prismaService.db, singleton);
+    return this.composeEnvelope(singleton);
   }
 
   /**
@@ -145,13 +207,14 @@ export class ObgynHistoryService {
       assertVersionMatches(ifMatchVersion, current.version);
     }
 
-    const priorChildren = await this.loadChildren(tx, patientId);
+    const priorChildren = this.loadChildren(current);
     const changedSections: string[] = [];
 
-    // ----- Singleton field updates (JSON columns) -----
     const data: Prisma.PatientObgynHistoryUncheckedUpdateInput = {
       updated_by_id: profileId,
     };
+
+    // ----- Singleton field updates (JSON columns) -----
     for (const field of SINGLETON_JSON_FIELDS) {
       if (!(field in dto)) continue;
       const value = (dto as Record<string, unknown>)[field];
@@ -164,83 +227,39 @@ export class ObgynHistoryService {
       changedSections.push('blood_group_rh');
     }
 
-    // ----- Child collection diffs -----
-    if (dto.pregnancies !== undefined) {
-      await this.diffPregnancies(
-        tx,
-        patientId,
-        priorChildren.pregnancies,
-        dto.pregnancies,
+    // ----- Child collection diffs (in-memory JSON-array merges) -----
+    let newPregnancies = priorChildren.pregnancies;
+    for (const key of CHILD_COLLECTIONS) {
+      const incoming = (dto as Record<string, unknown>)[key] as
+        | Array<{ id?: string }>
+        | undefined;
+      if (incoming === undefined) continue;
+      const merged = this.diffCollection(
+        priorChildren[key],
+        incoming,
         profileId,
       );
-      changedSections.push('pregnancies');
-    }
-    if (dto.contraceptives !== undefined) {
-      await this.diffContraceptives(
-        tx,
-        patientId,
-        priorChildren.contraceptives,
-        dto.contraceptives,
-        profileId,
-      );
-      changedSections.push('contraceptives');
-    }
-    if (dto.non_gyn_surgeries !== undefined) {
-      await this.diffNonGynSurgeries(
-        tx,
-        patientId,
-        priorChildren.non_gyn_surgeries,
-        dto.non_gyn_surgeries,
-        profileId,
-      );
-      changedSections.push('non_gyn_surgeries');
-    }
-    if (dto.family_members !== undefined) {
-      await this.diffFamilyHistory(
-        tx,
-        patientId,
-        priorChildren.family_members,
-        dto.family_members,
-        profileId,
-      );
-      changedSections.push('family_members');
-    }
-    if (dto.medications !== undefined) {
-      await this.diffMedications(
-        tx,
-        patientId,
-        priorChildren.medications,
-        dto.medications,
-        profileId,
-      );
-      changedSections.push('medications');
-    }
-    if (dto.allergies !== undefined) {
-      await this.diffAllergies(
-        tx,
-        patientId,
-        priorChildren.allergies,
-        dto.allergies,
-        profileId,
-      );
-      changedSections.push('allergies');
+      (data as Record<string, unknown>)[key] =
+        merged as unknown as Prisma.InputJsonValue;
+      if (key === 'pregnancies') newPregnancies = merged;
+      changedSections.push(key);
     }
 
     // If pregnancies were touched but user did NOT supply obstetric_summary,
-    // recompute G/P/A from the resulting pregnancy rows so the cached
-    // summary stays in sync with the source of truth.
+    // recompute G/P/A from the resulting pregnancy rows so the cached summary
+    // stays in sync with the source of truth.
     const pregnanciesTouched = dto.pregnancies !== undefined;
     const summarySupplied = dto.obstetric_summary !== undefined;
     if (pregnanciesTouched && !summarySupplied) {
-      const recomputed = await this.recomputeObstetricSummary(tx, patientId);
-      data.obstetric_summary = recomputed as unknown as Prisma.InputJsonValue;
+      data.obstetric_summary = this.computeObstetricSummary(
+        newPregnancies,
+      ) as unknown as Prisma.InputJsonValue;
       if (!changedSections.includes('obstetric_summary')) {
         changedSections.push('obstetric_summary');
       }
     }
 
     if (changedSections.length === 0) {
-      // No envelope read-back inside the tx — callers compose outside it.
       return current;
     }
 
@@ -253,15 +272,11 @@ export class ObgynHistoryService {
     }
     data.section_timestamps = updatedTimestamps;
 
-    // Snapshot the full prior state (singleton + all child arrays) before
-    // mutating the singleton. The revision's `version` field is the prior
-    // version — buildRevision handles that.
-    const priorSnapshot = {
-      ...current,
-      ...priorChildren,
-    };
+    // Snapshot the full prior state (singleton row already carries the child
+    // JSON columns) before mutating. The revision's `version` field is the
+    // prior version — buildRevision handles that.
     await tx.patientObgynHistoryRevision.create({
-      data: buildRevision(priorSnapshot, changedSections, profileId),
+      data: buildRevision(current, changedSections, profileId),
     });
 
     data.version = { increment: 1 };
@@ -281,8 +296,6 @@ export class ObgynHistoryService {
       },
     );
 
-    // Return the lightweight singleton; callers compose the full envelope
-    // outside the write transaction (the examination flow discards it).
     return updated;
   }
 
@@ -304,392 +317,83 @@ export class ObgynHistoryService {
     });
   }
 
-  private async loadChildren(
-    tx: Prisma.TransactionClient | typeof this.prismaService.db,
-    patientId: string,
-  ) {
-    const where = { patient_id: patientId, is_deleted: false };
-    const [
-      pregnancies,
-      contraceptives,
-      non_gyn_surgeries,
-      family_members,
-      medications,
-      allergies,
-    ] = await Promise.all([
-      tx.patientPregnancyHistory.findMany({
-        where,
-        orderBy: [{ birth_date: 'desc' }, { created_at: 'desc' }],
-      }),
-      tx.patientContraceptiveHistory.findMany({
-        where,
-        orderBy: { created_at: 'desc' },
-      }),
-      tx.patientNonGynSurgery.findMany({
-        where,
-        orderBy: [{ surgery_date: 'desc' }, { created_at: 'desc' }],
-      }),
-      tx.patientFamilyHistory.findMany({
-        where,
-        orderBy: { created_at: 'desc' },
-      }),
-      tx.patientMedication.findMany({
-        where,
-        orderBy: [
-          { is_ongoing: 'desc' },
-          { from_date: 'desc' },
-          { created_at: 'desc' },
-        ],
-      }),
-      tx.patientAllergy.findMany({ where, orderBy: { created_at: 'desc' } }),
-    ]);
-    return {
-      pregnancies,
-      contraceptives,
-      non_gyn_surgeries,
-      family_members,
-      medications,
-      allergies,
-    };
+  /** Read the six JSON-array columns off the singleton row (unsorted). */
+  private loadChildren(singleton: Record<string, unknown>): Children {
+    return CHILD_COLLECTIONS.reduce((acc, key) => {
+      acc[key] = coerceRows(singleton[key]);
+      return acc;
+    }, {} as Children);
   }
 
-  private async composeEnvelope(
-    tx: Prisma.TransactionClient | typeof this.prismaService.db,
-    singleton: { patient_id: string },
-  ) {
-    const children = await this.loadChildren(tx, singleton.patient_id);
-    return { ...singleton, ...children };
-  }
-
-  // ---- Child diff helpers (id-keyed: upsert / create / soft-delete) -------
-
-  private async diffPregnancies(
-    tx: Prisma.TransactionClient,
-    patientId: string,
-    prior: Array<{ id: string }>,
-    rows: PregnancyRowDto[],
-    profileId: string,
-  ) {
-    const liveIds = new Set(prior.map((p) => p.id));
-    const { toUpdate, toCreate, toDelete } = splitDiff(rows, liveIds);
-    for (const row of toUpdate) {
-      await tx.patientPregnancyHistory.update({
-        where: { id: row.id! },
-        data: {
-          ...(row.birth_date !== undefined && {
-            birth_date: row.birth_date ? new Date(row.birth_date) : null,
-          }),
-          ...(row.outcome !== undefined && { outcome: row.outcome }),
-          ...(row.mode_of_delivery !== undefined && {
-            mode_of_delivery: row.mode_of_delivery,
-          }),
-          ...(row.mode_of_delivery_other !== undefined && {
-            mode_of_delivery_other: row.mode_of_delivery_other,
-          }),
-          ...(row.gestational_age_weeks !== undefined && {
-            gestational_age_weeks: row.gestational_age_weeks,
-          }),
-          ...(row.neonatal_outcome !== undefined && {
-            neonatal_outcome: row.neonatal_outcome,
-          }),
-          ...(row.neonatal_outcome_other !== undefined && {
-            neonatal_outcome_other: row.neonatal_outcome_other,
-          }),
-          ...(row.baby_weight !== undefined && {
-            baby_weight: row.baby_weight,
-          }),
-          ...(row.baby_sex !== undefined && { baby_sex: row.baby_sex }),
-          ...(row.complications !== undefined && {
-            complications: row.complications,
-          }),
-          ...(row.notes !== undefined && { notes: row.notes }),
-        },
-      });
-    }
-    for (const row of toCreate) {
-      await tx.patientPregnancyHistory.create({
-        data: {
-          patient_id: patientId,
-          birth_date: row.birth_date ? new Date(row.birth_date) : null,
-          outcome: row.outcome ?? null,
-          mode_of_delivery: row.mode_of_delivery ?? null,
-          mode_of_delivery_other: row.mode_of_delivery_other ?? null,
-          gestational_age_weeks: row.gestational_age_weeks ?? null,
-          neonatal_outcome: row.neonatal_outcome ?? null,
-          neonatal_outcome_other: row.neonatal_outcome_other ?? null,
-          baby_weight: row.baby_weight ?? null,
-          baby_sex: row.baby_sex ?? null,
-          complications: row.complications ?? null,
-          notes: row.notes ?? null,
-          created_by_id: profileId,
-        },
-      });
-    }
-    if (toDelete.length > 0) {
-      await tx.patientPregnancyHistory.updateMany({
-        where: { id: { in: toDelete } },
-        data: { is_deleted: true, deleted_at: new Date() },
-      });
-    }
-  }
-
-  private async diffContraceptives(
-    tx: Prisma.TransactionClient,
-    patientId: string,
-    prior: Array<{ id: string }>,
-    rows: ContraceptiveRowDto[],
-    profileId: string,
-  ) {
-    const liveIds = new Set(prior.map((p) => p.id));
-    const { toUpdate, toCreate, toDelete } = splitDiff(rows, liveIds);
-    for (const row of toUpdate) {
-      await tx.patientContraceptiveHistory.update({
-        where: { id: row.id! },
-        data: {
-          ...(row.method !== undefined && { method: row.method }),
-          ...(row.method_other !== undefined && {
-            method_other: row.method_other,
-          }),
-          ...(row.duration !== undefined && { duration: row.duration }),
-          ...(row.complications !== undefined && {
-            complications: row.complications,
-          }),
-          ...(row.notes !== undefined && { notes: row.notes }),
-        },
-      });
-    }
-    for (const row of toCreate) {
-      await tx.patientContraceptiveHistory.create({
-        data: {
-          patient_id: patientId,
-          // Column is NOT NULL — coalesce missing values to "" so partial rows
-          // (date-only contraceptive, e.g.) still persist.
-          method: row.method ?? '',
-          method_other: row.method_other ?? null,
-          duration: row.duration ?? null,
-          complications: row.complications ?? null,
-          notes: row.notes ?? null,
-          created_by_id: profileId,
-        },
-      });
-    }
-    if (toDelete.length > 0) {
-      await tx.patientContraceptiveHistory.updateMany({
-        where: { id: { in: toDelete } },
-        data: { is_deleted: true, deleted_at: new Date() },
-      });
-    }
-  }
-
-  private async diffNonGynSurgeries(
-    tx: Prisma.TransactionClient,
-    patientId: string,
-    prior: Array<{ id: string }>,
-    rows: NonGynSurgeryRowDto[],
-    profileId: string,
-  ) {
-    const liveIds = new Set(prior.map((p) => p.id));
-    const { toUpdate, toCreate, toDelete } = splitDiff(rows, liveIds);
-    for (const row of toUpdate) {
-      await tx.patientNonGynSurgery.update({
-        where: { id: row.id! },
-        data: {
-          ...(row.surgery_name !== undefined && {
-            surgery_name: row.surgery_name,
-          }),
-          ...(row.surgery_date !== undefined && {
-            surgery_date: row.surgery_date ? new Date(row.surgery_date) : null,
-          }),
-          ...(row.facility !== undefined && { facility: row.facility }),
-          ...(row.notes !== undefined && { notes: row.notes }),
-        },
-      });
-    }
-    for (const row of toCreate) {
-      await tx.patientNonGynSurgery.create({
-        data: {
-          patient_id: patientId,
-          surgery_name: row.surgery_name ?? '',
-          surgery_date: row.surgery_date ? new Date(row.surgery_date) : null,
-          facility: row.facility ?? null,
-          notes: row.notes ?? null,
-          created_by_id: profileId,
-        },
-      });
-    }
-    if (toDelete.length > 0) {
-      await tx.patientNonGynSurgery.updateMany({
-        where: { id: { in: toDelete } },
-        data: { is_deleted: true, deleted_at: new Date() },
-      });
-    }
-  }
-
-  private async diffFamilyHistory(
-    tx: Prisma.TransactionClient,
-    patientId: string,
-    prior: Array<{ id: string }>,
-    rows: FamilyHistoryRowDto[],
-    profileId: string,
-  ) {
-    const liveIds = new Set(prior.map((p) => p.id));
-    const { toUpdate, toCreate, toDelete } = splitDiff(rows, liveIds);
-    for (const row of toUpdate) {
-      await tx.patientFamilyHistory.update({
-        where: { id: row.id! },
-        data: {
-          ...(row.condition !== undefined && { condition: row.condition }),
-          ...(row.relative !== undefined && { relative: row.relative }),
-          ...(row.age_of_diagnosis !== undefined && {
-            age_of_diagnosis: row.age_of_diagnosis,
-          }),
-          ...(row.notes !== undefined && { notes: row.notes }),
-        },
-      });
-    }
-    for (const row of toCreate) {
-      await tx.patientFamilyHistory.create({
-        data: {
-          patient_id: patientId,
-          condition: row.condition ?? '',
-          relative: row.relative ?? null,
-          age_of_diagnosis: row.age_of_diagnosis ?? null,
-          notes: row.notes ?? null,
-          created_by_id: profileId,
-        },
-      });
-    }
-    if (toDelete.length > 0) {
-      await tx.patientFamilyHistory.updateMany({
-        where: { id: { in: toDelete } },
-        data: { is_deleted: true, deleted_at: new Date() },
-      });
-    }
-  }
-
-  private async diffMedications(
-    tx: Prisma.TransactionClient,
-    patientId: string,
-    prior: Array<{ id: string }>,
-    rows: MedicationRowDto[],
-    profileId: string,
-  ) {
-    const liveIds = new Set(prior.map((p) => p.id));
-    const { toUpdate, toCreate, toDelete } = splitDiff(rows, liveIds);
-    for (const row of toUpdate) {
-      await tx.patientMedication.update({
-        where: { id: row.id! },
-        data: {
-          ...(row.drug_name !== undefined && { drug_name: row.drug_name }),
-          ...(row.medication_id !== undefined && {
-            medication_id: row.medication_id,
-          }),
-          ...(row.indication !== undefined && { indication: row.indication }),
-          ...(row.dose !== undefined && { dose: row.dose }),
-          ...(row.frequency !== undefined && { frequency: row.frequency }),
-          ...(row.from_date !== undefined && {
-            from_date: row.from_date ? new Date(row.from_date) : null,
-          }),
-          ...(row.to_date !== undefined && {
-            to_date: row.to_date ? new Date(row.to_date) : null,
-          }),
-          ...(row.is_ongoing !== undefined && { is_ongoing: row.is_ongoing }),
-          ...(row.notes !== undefined && { notes: row.notes }),
-        },
-      });
-    }
-    for (const row of toCreate) {
-      await tx.patientMedication.create({
-        data: {
-          patient_id: patientId,
-          medication_id: row.medication_id ?? null,
-          drug_name: row.drug_name ?? '',
-          indication: row.indication ?? null,
-          dose: row.dose ?? null,
-          frequency: row.frequency ?? null,
-          from_date: row.from_date ? new Date(row.from_date) : null,
-          to_date: row.to_date ? new Date(row.to_date) : null,
-          is_ongoing: row.is_ongoing ?? true,
-          notes: row.notes ?? null,
-          created_by_id: profileId,
-        },
-      });
-    }
-    if (toDelete.length > 0) {
-      await tx.patientMedication.updateMany({
-        where: { id: { in: toDelete } },
-        data: { is_deleted: true, deleted_at: new Date() },
-      });
-    }
-  }
-
-  private async diffAllergies(
-    tx: Prisma.TransactionClient,
-    patientId: string,
-    prior: Array<{ id: string }>,
-    rows: AllergyRowDto[],
-    profileId: string,
-  ) {
-    const liveIds = new Set(prior.map((p) => p.id));
-    const { toUpdate, toCreate, toDelete } = splitDiff(rows, liveIds);
-    for (const row of toUpdate) {
-      await tx.patientAllergy.update({
-        where: { id: row.id! },
-        data: {
-          ...(row.allergy_to !== undefined && { allergy_to: row.allergy_to }),
-          ...(row.associated_symptoms !== undefined && {
-            associated_symptoms: row.associated_symptoms,
-          }),
-          ...(row.severity !== undefined && { severity: row.severity }),
-          ...(row.notes !== undefined && { notes: row.notes }),
-        },
-      });
-    }
-    for (const row of toCreate) {
-      await tx.patientAllergy.create({
-        data: {
-          patient_id: patientId,
-          allergy_to: row.allergy_to ?? '',
-          associated_symptoms: row.associated_symptoms ?? null,
-          severity: row.severity ?? null,
-          notes: row.notes ?? null,
-          created_by_id: profileId,
-        },
-      });
-    }
-    if (toDelete.length > 0) {
-      await tx.patientAllergy.updateMany({
-        where: { id: { in: toDelete } },
-        data: { is_deleted: true, deleted_at: new Date() },
-      });
-    }
+  private composeEnvelope(singleton: Record<string, unknown>) {
+    const children = this.loadChildren(singleton);
+    const sorted = CHILD_COLLECTIONS.reduce((acc, key) => {
+      acc[key] = [...children[key]].sort(COLLECTION_SORTERS[key]);
+      return acc;
+    }, {} as Children);
+    return { ...singleton, ...sorted };
   }
 
   /**
-   * Auto-compute gravida/para/abortion cache from the current
-   * `PatientPregnancyHistory` rows. Only called when pregnancies were
-   * touched and the caller did NOT supply an explicit `obstetric_summary`.
-   * Manual user input wins when supplied.
+   * id-keyed merge of one collection, producing the new JSON array:
+   *   - present id matching a live row → field-merge over the prior row
+   *   - new/unknown id → append with a fresh `id`, `created_by_id`, `created_at`
+   *   - live id absent from the request → drop (history is kept in the revision
+   *     snapshot, so no soft-delete tombstone is needed in the live array)
+   * Prior order is preserved for surviving rows; creates are appended.
    */
-  private async recomputeObstetricSummary(
-    tx: Prisma.TransactionClient,
-    patientId: string,
-  ) {
-    const rows = await tx.patientPregnancyHistory.findMany({
-      where: { patient_id: patientId, is_deleted: false },
-      select: { outcome: true, gestational_age_weeks: true },
-    });
+  private diffCollection(
+    prior: StoredRow[],
+    rows: Array<{ id?: string }>,
+    profileId: string,
+  ): StoredRow[] {
+    const liveIds = new Set(prior.map((p) => p.id));
+    const { toUpdate, toCreate, toDelete } = splitDiff(rows, liveIds);
+    const updById = new Map(
+      toUpdate.map((r) => [r.id as string, r as Record<string, unknown>]),
+    );
+    const del = new Set(toDelete);
+
+    const result: StoredRow[] = [];
+    for (const p of prior) {
+      if (del.has(p.id)) continue;
+      const upd = updById.get(p.id);
+      result.push(upd ? { ...p, ...rowFields(upd) } : p);
+    }
+
+    const now = new Date().toISOString();
+    for (const r of toCreate) {
+      result.push({
+        id: randomUUID(),
+        created_by_id: profileId,
+        created_at: now,
+        ...rowFields(r as Record<string, unknown>),
+      });
+    }
+    return result;
+  }
+
+  /**
+   * Auto-compute gravida/para/abortion cache from the current pregnancy rows.
+   * Only called when pregnancies were touched and the caller did NOT supply an
+   * explicit `obstetric_summary`. Manual user input wins when supplied.
+   */
+  private computeObstetricSummary(pregnancies: StoredRow[]) {
     let gravida = 0;
     let para = 0;
     let abortion = 0;
-    for (const r of rows) {
+    for (const r of pregnancies) {
       gravida += 1;
-      const outcome = (r.outcome ?? '').toUpperCase();
+      const outcome = str(r.outcome).toUpperCase();
+      const ga =
+        typeof r.gestational_age_weeks === 'number'
+          ? r.gestational_age_weeks
+          : 0;
       if (LIVE_BIRTH_OUTCOMES.includes(outcome)) {
         para += 1;
       } else if (
         outcome === STILLBIRTH_OUTCOME &&
-        (r.gestational_age_weeks ?? 0) >= STILLBIRTH_VIABLE_WEEKS
+        ga >= STILLBIRTH_VIABLE_WEEKS
       ) {
         para += 1;
       } else if (ABORTION_LIKE_OUTCOMES.includes(outcome)) {
