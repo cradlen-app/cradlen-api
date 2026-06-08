@@ -64,14 +64,20 @@ export class ProfilesController {
   }
 
   @Post(':profileId/image-upload-url')
-  @ApiOperation({ summary: "Get a presigned URL to upload the profile's avatar" })
+  @ApiOperation({
+    summary: "Get a presigned URL to upload the profile's avatar",
+  })
   @ApiStandardResponse(ProfileImageUploadUrlDto)
   createImageUploadUrl(
     @CurrentUser() user: AuthContext,
     @Param('profileId', ParseUUIDPipe) profileId: string,
     @Body() dto: ProfileImageUploadDto,
   ) {
-    return this.profilesService.createImageUploadUrl(user.userId, profileId, dto);
+    return this.profilesService.createImageUploadUrl(
+      user.userId,
+      profileId,
+      dto,
+    );
   }
 
   @Post(':profileId/image')
