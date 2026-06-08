@@ -15,9 +15,9 @@ import { IdentifierThrottlerGuard } from '@common/guards/identifier-throttler.gu
 import { PatientJwtAuthGuard } from '@common/guards/patient-jwt-auth.guard.js';
 import { ApiStandardResponse, ApiVoidResponse } from '@common/swagger/index.js';
 import type { PatientAuthContext } from '@common/interfaces/patient-auth-context.interface.js';
-import { AuthTokensDto } from '../dto/auth-tokens.dto.js';
-import { RefreshDto } from '../dto/refresh.dto.js';
-import { LogoutDto } from '../dto/logout.dto.js';
+import { AuthTokensDto } from '@core/auth/dto/auth-tokens.dto.js';
+import { RefreshDto } from '@core/auth/dto/refresh.dto.js';
+import { LogoutDto } from '@core/auth/dto/logout.dto.js';
 import { PatientSignupService } from './patient-signup.service.js';
 import { PatientSignupStartDto } from './dto/patient-signup-start.dto.js';
 import { PatientSignupStartResponseDto } from './dto/patient-signup-start-response.dto.js';

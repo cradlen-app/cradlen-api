@@ -305,45 +305,45 @@ export class SessionsService {
       created_at: user.created_at,
       profiles: profilesWithBranches.map(
         ({ profile, branches, profile_image_url }) => ({
-        staff_id: profile.id,
-        executive_title: profile.executive_title,
-        engagement_type: profile.engagement_type,
-        organization: {
-          id: profile.organization.id,
-          name: profile.organization.name,
-          specialties: profile.organization.specialty_links.map((l) => ({
-            id: l.specialty.id,
-            code: l.specialty.code,
-            name: l.specialty.name,
+          staff_id: profile.id,
+          executive_title: profile.executive_title,
+          engagement_type: profile.engagement_type,
+          organization: {
+            id: profile.organization.id,
+            name: profile.organization.name,
+            specialties: profile.organization.specialty_links.map((l) => ({
+              id: l.specialty.id,
+              code: l.specialty.code,
+              name: l.specialty.name,
+            })),
+            status: profile.organization.status,
+          },
+          roles: profile.roles.map((pr) => ({
+            id: pr.role.id,
+            name: pr.role.name,
           })),
-          status: profile.organization.status,
-        },
-        roles: profile.roles.map((pr) => ({
-          id: pr.role.id,
-          name: pr.role.name,
-        })),
-        branches: branches.map((b) => ({
-          id: b.id,
-          name: b.name,
-          address: b.address,
-          city: b.city,
-          governorate: b.governorate,
-          country: b.country,
-          is_main: b.is_main,
-        })),
-        job_functions: profile.job_functions.map((jf) => ({
-          id: jf.job_function.id,
-          code: jf.job_function.code,
-          name: jf.job_function.name,
-          is_clinical: jf.job_function.is_clinical,
-        })),
-        specialties: profile.specialty_links.map((sl) => ({
-          id: sl.specialty.id,
-          code: sl.specialty.code,
-          name: sl.specialty.name,
-        })),
-        profile_image_url,
-      }),
+          branches: branches.map((b) => ({
+            id: b.id,
+            name: b.name,
+            address: b.address,
+            city: b.city,
+            governorate: b.governorate,
+            country: b.country,
+            is_main: b.is_main,
+          })),
+          job_functions: profile.job_functions.map((jf) => ({
+            id: jf.job_function.id,
+            code: jf.job_function.code,
+            name: jf.job_function.name,
+            is_clinical: jf.job_function.is_clinical,
+          })),
+          specialties: profile.specialty_links.map((sl) => ({
+            id: sl.specialty.id,
+            code: sl.specialty.code,
+            name: sl.specialty.name,
+          })),
+          profile_image_url,
+        }),
       ),
     };
   }

@@ -9,7 +9,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { StorageService } from '@infrastructure/storage/storage.service.js';
 import type { PatientAuthContext } from '@common/interfaces/patient-auth-context.interface.js';
-import { resolveAccessiblePatientIds } from './accessible-patients.util.js';
+import { resolveAccessiblePatientIds } from '../accessible-patients.util.js';
 import {
   PatientProfileDto,
   UpdatePatientProfileDto,
