@@ -101,6 +101,7 @@ export class MedicationsService {
   }
 
   async create(dto: CreateMedicationDto, user: AuthContext) {
+    await this.assertCanManageCatalog(user);
     const existing = await this.prismaService.db.medication.findFirst({
       where: {
         organization_id: user.organizationId,
@@ -183,6 +184,24 @@ export class MedicationsService {
       where: { id },
       data: { is_deleted: true, deleted_at: new Date() },
     });
+  }
+
+  /**
+   * Gate for adding catalog rows: OWNER/BRANCH_MANAGER (org managers) OR any
+   * clinician (clinical job function). Blocks pure operational staff
+   * (receptionist/accountant) from contributing to the formulary. Mirrors the
+   * frontend `canAccessMedicine` predicate.
+   */
+  private async assertCanManageCatalog(user: AuthContext) {
+    const canManage = await this.authorizationService.canManageStaff(
+      user.profileId,
+      user.organizationId,
+    );
+    if (canManage) return;
+    if (await this.authorizationService.isClinical(user.profileId)) return;
+    throw new ForbiddenException(
+      'You do not have permission to add medications to the catalog',
+    );
   }
 
   /**

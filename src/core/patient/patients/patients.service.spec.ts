@@ -41,7 +41,7 @@ describe('PatientsService', () => {
     visit: { findMany: jest.Mock };
     $transaction: jest.Mock;
   };
-  let authMock: { assertCanAccessBranch: jest.Mock };
+  let authMock: { assertCanAccessBranch: jest.Mock; isClinical: jest.Mock };
   let accessMock: { assertPatientAccessible: jest.Mock };
 
   beforeEach(async () => {
@@ -58,7 +58,10 @@ describe('PatientsService', () => {
       visit: { findMany: jest.fn().mockResolvedValue([]) },
       $transaction: jest.fn(),
     };
-    authMock = { assertCanAccessBranch: jest.fn() };
+    authMock = {
+      assertCanAccessBranch: jest.fn(),
+      isClinical: jest.fn().mockResolvedValue(false),
+    };
     accessMock = {
       assertPatientAccessible: jest.fn().mockResolvedValue(undefined),
     };
@@ -176,30 +179,23 @@ describe('PatientsService', () => {
       expect(first.active_journey).toMatchObject({ id: 'journey-uuid' });
       expect(first.active_journey.episodes).toEqual(mockEpisodes);
       expect(first.active_episodes).toBeUndefined();
-      // OWNER short-circuits — no job-function lookup needed.
-      expect(db.profileJobFunction.findFirst).not.toHaveBeenCalled();
+      // OWNER short-circuits — no clinical lookup needed.
+      expect(authMock.isClinical).not.toHaveBeenCalled();
     });
 
     it('returns full active_journey for a caller with a clinical job function', async () => {
-      db.profileJobFunction.findFirst.mockResolvedValue({ id: 'pjf-uuid' });
+      authMock.isClinical.mockResolvedValue(true);
       db.$transaction.mockResolvedValue([[patientWithJourney], 1]);
       const result = await service.findAll({}, mockUser);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const first = (result as any).items[0];
       expect(first.active_journey).toMatchObject({ id: 'journey-uuid' });
       expect(first.active_episodes).toBeUndefined();
-      expect(db.profileJobFunction.findFirst).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            profile_id: mockUser.profileId,
-            job_function: { is_clinical: true },
-          }),
-        }),
-      );
+      expect(authMock.isClinical).toHaveBeenCalledWith(mockUser.profileId);
     });
 
     it('returns active_journey: null for a clinical viewer when patient has no active journey', async () => {
-      db.profileJobFunction.findFirst.mockResolvedValue({ id: 'pjf-uuid' });
+      authMock.isClinical.mockResolvedValue(true);
       db.$transaction.mockResolvedValue([[patientNoJourney], 1]);
       const result = await service.findAll({}, mockUser);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

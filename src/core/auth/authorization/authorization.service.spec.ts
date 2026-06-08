@@ -335,3 +335,40 @@ describe('AuthorizationService.getProfileContext', () => {
     expect(profileBranch.findMany).not.toHaveBeenCalled();
   });
 });
+
+describe('AuthorizationService.isClinical', () => {
+  let service: AuthorizationService;
+  let profileJobFunction: { findFirst: jest.Mock };
+
+  beforeEach(async () => {
+    profileJobFunction = { findFirst: jest.fn() };
+    const module = await Test.createTestingModule({
+      providers: [
+        AuthorizationService,
+        {
+          provide: PrismaService,
+          useValue: { db: { profileJobFunction } },
+        },
+      ],
+    }).compile();
+    service = module.get(AuthorizationService);
+  });
+
+  it('returns true when a clinical job function exists', async () => {
+    profileJobFunction.findFirst.mockResolvedValue({ id: 'pjf-1' });
+    await expect(service.isClinical('prof-1')).resolves.toBe(true);
+    expect(profileJobFunction.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          profile_id: 'prof-1',
+          job_function: { is_clinical: true },
+        },
+      }),
+    );
+  });
+
+  it('returns false when the profile has no clinical job function', async () => {
+    profileJobFunction.findFirst.mockResolvedValue(null);
+    await expect(service.isClinical('prof-1')).resolves.toBe(false);
+  });
+});

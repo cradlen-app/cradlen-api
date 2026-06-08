@@ -28,15 +28,10 @@ export class PatientsService {
    * any profile holding a clinical job function (OBGYN, doctors, nurses, …).
    */
   private async isClinicalViewer(user: AuthContext): Promise<boolean> {
-    if (user.roles.includes('OWNER')) return true;
-    const clinical = await this.prismaService.db.profileJobFunction.findFirst({
-      where: {
-        profile_id: user.profileId,
-        job_function: { is_clinical: true },
-      },
-      select: { id: true },
-    });
-    return clinical !== null;
+    return (
+      user.roles.includes('OWNER') ||
+      this.authorizationService.isClinical(user.profileId)
+    );
   }
 
   async create(dto: CreatePatientDto) {
