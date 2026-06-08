@@ -46,6 +46,9 @@ export class ProfileOrganizationDto {
 
   @ApiProperty()
   status!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  logo_image_url!: string | null;
 }
 
 export class ProfileBranchDto {

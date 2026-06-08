@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import authConfig from '@config/auth.config';
 import { PrismaService } from '@infrastructure/database/prisma.service';
+import { StorageService } from '@infrastructure/storage/storage.service';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service';
 import { SpecialtyCatalogService } from '@core/org/specialty-catalog/specialty-catalog.public';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
@@ -32,6 +33,15 @@ describe('OrganizationsService', () => {
   };
   let specialties: { resolveByCodeOrName: jest.Mock };
   let subscriptions: { assertOrganizationLimit: jest.Mock };
+  let storage: {
+    createPresignedUploadUrl: jest.Mock;
+    createPresignedDownloadUrl: jest.Mock;
+    headObject: jest.Mock;
+    deleteObject: jest.Mock;
+    assertAllowedContentType: jest.Mock;
+    assertWithinSizeLimit: jest.Mock;
+    extensionFor: jest.Mock;
+  };
 
   beforeEach(async () => {
     db = {
@@ -64,6 +74,21 @@ describe('OrganizationsService', () => {
     subscriptions = {
       assertOrganizationLimit: jest.fn().mockResolvedValue(undefined),
     };
+    storage = {
+      createPresignedUploadUrl: jest
+        .fn()
+        .mockResolvedValue({ url: 'https://r2/put', expiresIn: 300 }),
+      createPresignedDownloadUrl: jest
+        .fn()
+        .mockResolvedValue('https://r2/get'),
+      headObject: jest
+        .fn()
+        .mockResolvedValue({ contentType: 'image/png', contentLength: 1024 }),
+      deleteObject: jest.fn().mockResolvedValue(undefined),
+      assertAllowedContentType: jest.fn(),
+      assertWithinSizeLimit: jest.fn(),
+      extensionFor: jest.fn().mockReturnValue('png'),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -72,6 +97,7 @@ describe('OrganizationsService', () => {
         { provide: AuthorizationService, useValue: authorization },
         { provide: SpecialtyCatalogService, useValue: specialties },
         { provide: SubscriptionsService, useValue: subscriptions },
+        { provide: StorageService, useValue: storage },
         {
           provide: authConfig.KEY,
           useValue: { freeTrialDays: 14 },
