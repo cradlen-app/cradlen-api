@@ -292,6 +292,19 @@ export class AuthorizationService {
     return this.hasAnyRole(profileId, organizationId, OWNER_ONLY_ROLES);
   }
 
+  /**
+   * Whether the profile holds any clinical job function (OBGYN, doctors,
+   * nurses, …). Job-function-based, independent of role tier — used for
+   * clinician-gated surfaces (e.g. catalog contribution, clinical viewers).
+   */
+  async isClinical(profileId: string): Promise<boolean> {
+    const row = await this.prismaService.db.profileJobFunction.findFirst({
+      where: { profile_id: profileId, job_function: { is_clinical: true } },
+      select: { id: true },
+    });
+    return row !== null;
+  }
+
   async assertOwnerOnly(
     profileId: string,
     organizationId: string,
