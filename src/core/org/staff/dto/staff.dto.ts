@@ -381,3 +381,14 @@ export class CreateStaffResponseDto {
   })
   generated_email!: string;
 }
+
+export class ResetStaffPasswordDto {
+  @ApiProperty({
+    description:
+      'New password. Min 8, max 72 (bcrypt input ceiling). Admin shares this with the staff member out-of-band.',
+  })
+  @IsString()
+  @MinLength(8)
+  @MaxLength(72)
+  password!: string;
+}

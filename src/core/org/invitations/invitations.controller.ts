@@ -22,8 +22,6 @@ import {
 import {
   AcceptInvitationDto,
   AcceptInvitationResponseDto,
-  BulkCreateInvitationsDto,
-  BulkInviteResponseDto,
   CreateInvitationDto,
   DeclineInvitationDto,
   InvitationPreviewResponseDto,
@@ -48,29 +46,6 @@ export class InvitationsController {
     @Body() dto: CreateInvitationDto,
   ) {
     return this.invitationsService.createInvitation(
-      user.userId,
-      user.profileId,
-      organizationId,
-      branchId,
-      dto,
-    );
-  }
-
-  @Post('organizations/:organizationId/branches/:branchId/invitations/bulk')
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'Bulk-create staff invitations (branch-scoped)',
-    description:
-      'Creates all invitations in a single transaction (rolls back on any DB error). Every item must include the path branchId in its branch_ids. Emails are sent after commit; per-email failures are returned in the response.',
-  })
-  @ApiStandardResponse(BulkInviteResponseDto)
-  bulkCreateInvitations(
-    @CurrentUser() user: AuthContext,
-    @Param('organizationId', ParseUUIDPipe) organizationId: string,
-    @Param('branchId', ParseUUIDPipe) branchId: string,
-    @Body() dto: BulkCreateInvitationsDto,
-  ) {
-    return this.invitationsService.bulkCreateInvitations(
       user.userId,
       user.profileId,
       organizationId,
