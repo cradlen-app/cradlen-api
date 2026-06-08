@@ -1,10 +1,12 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
   Patch,
+  Post,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@common/decorators/current-user.decorator.js';
@@ -15,6 +17,11 @@ import { ProfileResponseDto } from './dto/profile-response.dto.js';
 import { ProfileDetailResponseDto } from './dto/profile-detail-response.dto.js';
 import { ProfileLookupsDto } from './dto/profile-lookups.dto.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
+import {
+  ConfirmProfileImageDto,
+  ProfileImageUploadDto,
+  ProfileImageUploadUrlDto,
+} from './dto/profile-image.dto.js';
 import { ProfilesService } from './profiles.service.js';
 
 @ApiTags('Profiles')
@@ -54,5 +61,37 @@ export class ProfilesController {
     @Body() dto: UpdateProfileDto,
   ) {
     return this.profilesService.updateProfile(user.userId, profileId, dto);
+  }
+
+  @Post(':profileId/image-upload-url')
+  @ApiOperation({ summary: "Get a presigned URL to upload the profile's avatar" })
+  @ApiStandardResponse(ProfileImageUploadUrlDto)
+  createImageUploadUrl(
+    @CurrentUser() user: AuthContext,
+    @Param('profileId', ParseUUIDPipe) profileId: string,
+    @Body() dto: ProfileImageUploadDto,
+  ) {
+    return this.profilesService.createImageUploadUrl(user.userId, profileId, dto);
+  }
+
+  @Post(':profileId/image')
+  @ApiOperation({ summary: 'Confirm an uploaded profile avatar' })
+  @ApiStandardResponse(ProfileDetailResponseDto)
+  confirmImage(
+    @CurrentUser() user: AuthContext,
+    @Param('profileId', ParseUUIDPipe) profileId: string,
+    @Body() dto: ConfirmProfileImageDto,
+  ) {
+    return this.profilesService.confirmImage(user.userId, profileId, dto);
+  }
+
+  @Delete(':profileId/image')
+  @ApiOperation({ summary: "Remove the profile's avatar" })
+  @ApiStandardResponse(ProfileDetailResponseDto)
+  removeImage(
+    @CurrentUser() user: AuthContext,
+    @Param('profileId', ParseUUIDPipe) profileId: string,
+  ) {
+    return this.profilesService.removeImage(user.userId, profileId);
   }
 }

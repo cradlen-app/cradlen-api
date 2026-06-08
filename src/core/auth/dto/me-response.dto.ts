@@ -95,6 +95,9 @@ export class StaffProfileDto {
 
   @ApiProperty({ type: [SpecialtyRefDto] })
   specialties!: SpecialtyRefDto[];
+
+  @ApiPropertyOptional({ nullable: true })
+  profile_image_url!: string | null;
 }
 
 export class MeResponseDto {
