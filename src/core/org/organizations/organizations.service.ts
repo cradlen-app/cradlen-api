@@ -1,11 +1,15 @@
 import {
+  BadRequestException,
   Inject,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { ConfigType } from '@nestjs/config';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
+import { StorageService } from '@infrastructure/storage/storage.service.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import {
   SpecialtyCatalogService,
@@ -15,15 +19,22 @@ import { SubscriptionsService } from '../subscriptions/subscriptions.service.js'
 import authConfig from '@config/auth.config.js';
 import type { CreateOrganizationDto } from './dto/create-organization.dto.js';
 import type { UpdateOrganizationDto } from './dto/update-organization.dto.js';
+import type {
+  ConfirmOrganizationImageDto,
+  OrganizationImageUploadDto,
+  OrganizationImageUploadUrlDto,
+} from './dto/organization-image.dto.js';
 import { FREE_TRIAL_PLAN, OWNER_ROLE_CODE } from './organizations.constants.js';
 import {
   ORGANIZATION_WITH_SPECIALTIES_INCLUDE,
   toOrganizationResponse,
+  type OrganizationWithSpecialties,
 } from './organizations.mapper.js';
 import { provisionOrganization } from './organizations.helpers.js';
 
 @Injectable()
 export class OrganizationsService {
+  private readonly logger = new Logger(OrganizationsService.name);
   private readonly freeTrialDays: number;
 
   constructor(
@@ -31,10 +42,16 @@ export class OrganizationsService {
     private readonly authorizationService: AuthorizationService,
     private readonly specialtiesService: SpecialtyCatalogService,
     private readonly subscriptionsService: SubscriptionsService,
+    private readonly storageService: StorageService,
     @Inject(authConfig.KEY)
     config: ConfigType<typeof authConfig>,
   ) {
     this.freeTrialDays = config.freeTrialDays;
+  }
+
+  /** Object-key prefix that scopes a logo to one organization. */
+  private logoPrefix(organizationId: string): string {
+    return `organizations/${organizationId}/logo/`;
   }
 
   async listOrganizationSpecialties(profileId: string, organizationId: string) {
@@ -65,7 +82,7 @@ export class OrganizationsService {
       include: ORGANIZATION_WITH_SPECIALTIES_INCLUDE,
     });
     if (!organization) throw new NotFoundException('Organization not found');
-    return toOrganizationResponse(organization);
+    return this.toResponseWithLogo(organization);
   }
 
   async updateOrganization(
@@ -127,7 +144,152 @@ export class OrganizationsService {
       },
     );
 
-    return toOrganizationResponse(organization);
+    return this.toResponseWithLogo(organization);
+  }
+
+  /**
+   * Issues a short-lived presigned PUT URL for the organization's logo. Images
+   * only; the key is server-derived and scoped to the organization. Owners only.
+   */
+  async createImageUploadUrl(
+    profileId: string,
+    organizationId: string,
+    dto: OrganizationImageUploadDto,
+  ): Promise<OrganizationImageUploadUrlDto> {
+    await this.authorizationService.assertCanManageOrganization(
+      profileId,
+      organizationId,
+    );
+    await this.assertOrganizationExists(organizationId);
+
+    this.assertImageContentType(dto.content_type);
+    this.storageService.assertAllowedContentType(dto.content_type);
+    this.storageService.assertWithinSizeLimit(dto.size_bytes);
+
+    const ext = this.storageService.extensionFor(dto.content_type);
+    const key = `${this.logoPrefix(organizationId)}${randomUUID()}.${ext}`;
+
+    const { url, expiresIn } =
+      await this.storageService.createPresignedUploadUrl({
+        key,
+        contentType: dto.content_type,
+      });
+
+    return {
+      key,
+      upload_url: url,
+      expires_in: expiresIn,
+      content_type: dto.content_type,
+    };
+  }
+
+  /**
+   * Confirms an uploaded logo: validates the key belongs to this organization
+   * and the object actually landed in R2, sets it, and best-effort removes the
+   * previously stored logo. Owners only.
+   */
+  async confirmImage(
+    profileId: string,
+    organizationId: string,
+    dto: ConfirmOrganizationImageDto,
+  ) {
+    await this.authorizationService.assertCanManageOrganization(
+      profileId,
+      organizationId,
+    );
+    const existing = await this.assertOrganizationExists(organizationId);
+
+    if (!dto.key.startsWith(this.logoPrefix(organizationId))) {
+      throw new BadRequestException('Invalid image key');
+    }
+
+    const head = await this.storageService.headObject(dto.key);
+    if (!head) {
+      throw new BadRequestException('Uploaded file not found');
+    }
+    if (head.contentType) {
+      this.assertImageContentType(head.contentType);
+      this.storageService.assertAllowedContentType(head.contentType);
+    }
+    if (typeof head.contentLength === 'number') {
+      this.storageService.assertWithinSizeLimit(head.contentLength);
+    }
+
+    const previousKey = existing.logo_object_key;
+
+    await this.prismaService.db.organization.update({
+      where: { id: organizationId },
+      data: { logo_object_key: dto.key },
+    });
+
+    if (previousKey && previousKey !== dto.key) {
+      await this.bestEffortDelete(previousKey);
+    }
+
+    return this.loadOrganizationWithLogo(organizationId);
+  }
+
+  /** Clears the organization's logo and best-effort removes the R2 object. */
+  async removeImage(profileId: string, organizationId: string) {
+    await this.authorizationService.assertCanManageOrganization(
+      profileId,
+      organizationId,
+    );
+    const existing = await this.assertOrganizationExists(organizationId);
+    const previousKey = existing.logo_object_key;
+
+    await this.prismaService.db.organization.update({
+      where: { id: organizationId },
+      data: { logo_object_key: null },
+    });
+
+    if (previousKey) {
+      await this.bestEffortDelete(previousKey);
+    }
+
+    return this.loadOrganizationWithLogo(organizationId);
+  }
+
+  /** Loads a live organization (404 otherwise); returns id + current logo key. */
+  private async assertOrganizationExists(organizationId: string) {
+    const organization = await this.prismaService.db.organization.findFirst({
+      where: { id: organizationId, is_deleted: false },
+      select: { id: true, logo_object_key: true },
+    });
+    if (!organization) throw new NotFoundException('Organization not found');
+    return organization;
+  }
+
+  private async loadOrganizationWithLogo(organizationId: string) {
+    const organization = await this.prismaService.db.organization.findFirst({
+      where: { id: organizationId, is_deleted: false },
+      include: ORGANIZATION_WITH_SPECIALTIES_INCLUDE,
+    });
+    if (!organization) throw new NotFoundException('Organization not found');
+    return this.toResponseWithLogo(organization);
+  }
+
+  /** Maps an organization and attaches a presigned logo GET URL. */
+  private async toResponseWithLogo(organization: OrganizationWithSpecialties) {
+    const key = organization.logo_object_key;
+    const logo_image_url = key
+      ? await this.storageService.createPresignedDownloadUrl(key)
+      : null;
+    return { ...toOrganizationResponse(organization), logo_image_url };
+  }
+
+  private assertImageContentType(contentType: string): void {
+    if (!contentType.startsWith('image/')) {
+      throw new BadRequestException('Organization logo must be an image file');
+    }
+  }
+
+  private async bestEffortDelete(key: string): Promise<void> {
+    try {
+      await this.storageService.deleteObject(key);
+    } catch {
+      this.logger.warn(`Failed to delete previous logo object ${key}`);
+    }
   }
 
   async createOrganization(userId: string, dto: CreateOrganizationDto) {
