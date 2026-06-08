@@ -26,21 +26,15 @@ export async function assertBranchesInOrganization(
   }
 }
 
-export async function assertNonOwnerRoles(
+export async function assertRolesExist(
   prisma: PrismaService,
   roleIds: string[],
 ): Promise<void> {
-  const roles = await prisma.db.role.findMany({
+  const count = await prisma.db.role.count({
     where: { id: { in: roleIds } },
-    select: { id: true, name: true },
   });
-  if (roles.length !== roleIds.length) {
+  if (count !== roleIds.length) {
     throw new NotFoundException('One or more roles were not found');
-  }
-  if (roles.some((r) => r.name === 'OWNER')) {
-    throw new BadRequestException(
-      'OWNER role cannot be assigned via staff endpoints; it is reserved for the organization founder.',
-    );
   }
 }
 

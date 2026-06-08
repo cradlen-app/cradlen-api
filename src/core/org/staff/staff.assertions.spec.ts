@@ -1,7 +1,12 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { DayOfWeek } from '@prisma/client';
+import type { PrismaService } from '@infrastructure/database/prisma.service.js';
 import type { BranchScheduleDto } from './dto/staff.dto';
-import { assertScheduleBranches, assertShiftTimes } from './staff.assertions';
+import {
+  assertRolesExist,
+  assertScheduleBranches,
+  assertShiftTimes,
+} from './staff.assertions';
 
 const branchId = '11111111-1111-1111-1111-111111111111';
 
@@ -83,6 +88,37 @@ describe('assertShiftTimes', () => {
         ]),
       ),
     ).toThrow(/Overlapping shifts/);
+  });
+});
+
+describe('assertRolesExist', () => {
+  function prismaWithRoleCount(count: number): PrismaService {
+    return {
+      db: { role: { count: jest.fn().mockResolvedValue(count) } },
+    } as unknown as PrismaService;
+  }
+
+  it('resolves when every role id exists', async () => {
+    const prisma = prismaWithRoleCount(2);
+    await expect(
+      assertRolesExist(prisma, ['role-a', 'role-b']),
+    ).resolves.toBeUndefined();
+  });
+
+  it('throws NotFound when some role ids do not exist', async () => {
+    const prisma = prismaWithRoleCount(1);
+    await expect(
+      assertRolesExist(prisma, ['role-a', 'missing']),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('does NOT reject the OWNER role — privilege gating is enforced by the caller', async () => {
+    // Promoting to OWNER is allowed; the OWNER-only gate lives in
+    // AuthorizationService (assertNoPrivilegedRoleAssignment / assertOwnerOnly).
+    const prisma = prismaWithRoleCount(1);
+    await expect(
+      assertRolesExist(prisma, ['owner-role-id']),
+    ).resolves.toBeUndefined();
   });
 });
 
