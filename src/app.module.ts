@@ -36,7 +36,6 @@ import { JourneysModule } from '@core/clinical/journeys/journeys.module';
 import { DiagnosisCodesModule } from '@core/clinical/diagnosis-codes/diagnosis-codes.module';
 import { InvestigationsModule } from '@core/clinical/investigations/investigations.module.js';
 import { LabTestsModule } from '@core/clinical/lab-tests/lab-tests.module';
-import { ChiefComplaintsModule } from '@core/clinical/chief-complaints/chief-complaints.module';
 import { CalendarModule } from '@core/calendar/calendar.module';
 import { ProceduresModule } from '@core/org/procedures/procedures.module';
 import { ObgynModule } from '@specialties/obgyn/obgyn.module';
@@ -89,7 +88,6 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     DiagnosisCodesModule,
     InvestigationsModule,
     LabTestsModule,
-    ChiefComplaintsModule,
     CalendarModule,
     ProceduresModule,
     ObgynModule,
