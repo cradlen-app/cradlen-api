@@ -37,7 +37,12 @@ describe('MedicationsService', () => {
     prescriptionItem: { findMany: jest.Mock };
     $transaction: jest.Mock;
   };
-  let auth: { isOwner: jest.Mock; assertOwnerOnly: jest.Mock };
+  let auth: {
+    isOwner: jest.Mock;
+    assertOwnerOnly: jest.Mock;
+    canManageStaff: jest.Mock;
+    isClinical: jest.Mock;
+  };
   let medicalRep: {
     findRepsByMedicationIds: jest.Mock;
     setMedicationRep: jest.Mock;
@@ -65,6 +70,8 @@ describe('MedicationsService', () => {
     auth = {
       isOwner: jest.fn().mockResolvedValue(true),
       assertOwnerOnly: jest.fn(),
+      canManageStaff: jest.fn().mockResolvedValue(true),
+      isClinical: jest.fn().mockResolvedValue(false),
     };
     medicalRep = {
       findRepsByMedicationIds: jest.fn().mockResolvedValue(new Map()),
@@ -110,6 +117,39 @@ describe('MedicationsService', () => {
       await expect(
         service.assertReferenceable('med-uuid', mockUser),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('create — catalog governance', () => {
+    it('allows OWNER/BRANCH_MANAGER (canManageStaff) to add', async () => {
+      auth.canManageStaff.mockResolvedValue(true);
+      auth.isClinical.mockResolvedValue(false);
+      db.medication.findFirst.mockResolvedValue(null);
+      db.medication.create.mockImplementation(({ data }) => data);
+      await expect(
+        service.create({ code: 'NEW', name: 'Drug' }, mockUser),
+      ).resolves.toBeDefined();
+      expect(db.medication.create).toHaveBeenCalled();
+    });
+
+    it('allows a clinician (clinical job function) to add', async () => {
+      auth.canManageStaff.mockResolvedValue(false);
+      auth.isClinical.mockResolvedValue(true);
+      db.medication.findFirst.mockResolvedValue(null);
+      db.medication.create.mockImplementation(({ data }) => data);
+      await expect(
+        service.create({ code: 'NEW', name: 'Drug' }, mockUser),
+      ).resolves.toBeDefined();
+      expect(db.medication.create).toHaveBeenCalled();
+    });
+
+    it('rejects non-clinical staff and never writes', async () => {
+      auth.canManageStaff.mockResolvedValue(false);
+      auth.isClinical.mockResolvedValue(false);
+      await expect(
+        service.create({ code: 'NEW', name: 'Drug' }, mockUser),
+      ).rejects.toThrow(ForbiddenException);
+      expect(db.medication.create).not.toHaveBeenCalled();
     });
   });
 
