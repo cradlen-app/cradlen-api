@@ -226,6 +226,19 @@ export class CalendarService {
     const nextEnd = dto.end_at ? new Date(dto.end_at) : existing.end_at;
     this.assertWindow(nextStart, nextEnd);
 
+    // Re-gate the branch on update with the same rules as create, so an
+    // owner-only edit can't flip a branch event to org-wide (null) unless the
+    // caller is OWNER. `undefined` means "branch_id not part of this PATCH".
+    const nextVisibility = dto.visibility ?? existing.visibility;
+    const resolvedBranchId =
+      dto.branch_id !== undefined
+        ? await this.resolveCreateBranch(
+            user,
+            dto.branch_id || undefined,
+            nextVisibility,
+          )
+        : undefined;
+
     const touchesRelations =
       dto.event_type !== undefined ||
       dto.procedure_id !== undefined ||
@@ -244,7 +257,7 @@ export class CalendarService {
             : (existing.patient_id ?? undefined),
         branch_id:
           dto.branch_id !== undefined
-            ? dto.branch_id
+            ? (resolvedBranchId ?? undefined)
             : (existing.branch_id ?? undefined),
         assistant_profile_ids: dto.assistant_profile_ids,
       });
@@ -303,7 +316,7 @@ export class CalendarService {
           ...(dto.start_at !== undefined ? { start_at: nextStart } : {}),
           ...(dto.end_at !== undefined ? { end_at: nextEnd } : {}),
           ...(dto.branch_id !== undefined
-            ? { branch_id: dto.branch_id ?? null }
+            ? { branch_id: resolvedBranchId ?? null }
             : {}),
           ...(dto.procedure_id !== undefined
             ? { procedure_id: dto.procedure_id ?? null }
