@@ -8,6 +8,7 @@ export const NOTIFICATION_CATEGORIES = [
   'medicine',
   'patient',
   'report',
+  'billing',
   'system',
 ] as const;
 
