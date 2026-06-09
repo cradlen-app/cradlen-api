@@ -134,6 +134,11 @@ export class PriceListsService {
 
     const data: Prisma.PriceListUpdateInput = {
       ...(dto.name !== undefined && { name: dto.name }),
+      ...(dto.branch_id !== undefined && {
+        branch: dto.branch_id
+          ? { connect: { id: dto.branch_id } }
+          : { disconnect: true },
+      }),
       ...(dto.currency !== undefined && { currency: dto.currency }),
       ...(dto.discount_type !== undefined && {
         discount_type: dto.discount_type,
