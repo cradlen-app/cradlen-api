@@ -16,7 +16,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import type { Predicate } from '../../src/builder/rules/predicates.js';
 
 const TEMPLATE_CODE = 'book_visit';
-const TEMPLATE_VERSION = 15;
+const TEMPLATE_VERSION = 16;
 
 interface FieldSpec {
   code: string;
@@ -174,6 +174,28 @@ const SECTIONS: SectionSpec[] = [
         },
       },
       {
+        code: 'service_id',
+        label: 'Service',
+        type: 'SELECT',
+        binding: { namespace: 'SYSTEM', path: 'service_id' },
+        config: {
+          i18n: { ar: { label: 'الخدمة' } },
+          ui: {
+            // Catalog services the org offers. The picked service id is billed
+            // at booking (the assigned doctor must be authorized for it) and
+            // narrows the doctor picker below to authorized providers.
+            optionsSource:
+              '/v1/organizations/{org_id}/financial/catalog/services?active=true',
+          },
+          logic: {
+            // Optional: bookings still work before catalog/pricing is set up.
+            predicates: [
+              { effect: 'visible', when: { eq: { visitor_type: 'PATIENT' } } },
+            ] satisfies Predicate[],
+          },
+        },
+      },
+      {
         code: 'assigned_doctor_patient',
         label: 'Assigned doctor',
         type: 'SELECT',
@@ -181,8 +203,11 @@ const SECTIONS: SectionSpec[] = [
         config: {
           i18n: { ar: { label: 'الطبيب المعالج' } },
           ui: {
+            // `{service_id?}` is optional: when no billable service is chosen the
+            // param is empty and the endpoint returns all specialty doctors; once
+            // a service is picked the list narrows to providers authorized for it.
             optionsSource:
-              '/v1/organizations/{org_id}/branches/{branch_id}/staff?doctors_only=true&specialty_code={specialty_code}',
+              '/v1/organizations/{org_id}/branches/{branch_id}/staff?doctors_only=true&specialty_code={specialty_code}&authorized_for_service={service_id?}',
             default: { kind: 'first_option' },
             prefillFrom: 'assigned_doctor_id',
           },
