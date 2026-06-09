@@ -7,7 +7,9 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Min,
+  ValidateIf,
 } from 'class-validator';
 
 export class UpdatePriceListDto {
@@ -15,6 +17,12 @@ export class UpdatePriceListDto {
   @IsString()
   @IsOptional()
   name?: string;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Branch scope; null = org-wide.' })
+  @IsOptional()
+  @ValidateIf((o) => o.branch_id !== null)
+  @IsUUID('4')
+  branch_id?: string | null;
 
   @ApiPropertyOptional()
   @IsString()
