@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { isDeepStrictEqual } from 'node:util';
@@ -27,6 +28,7 @@ import {
 } from '@builder/validator/template.validator.js';
 import { TemplatesService } from '@builder/templates/templates.service.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
+import { ChargingService } from '@core/financial/charging/charging.service.js';
 import { buildRevision } from '@common/utils/revisions.helper.js';
 import { CLINICAL_EVENTS } from '@core/clinical/events/clinical-events.js';
 import { VitalsTrendPointDto } from './dto/vitals-trend-point.dto.js';
@@ -62,7 +64,10 @@ export class VisitsService {
     private readonly templateValidator: TemplateValidator,
     private readonly templatesService: TemplatesService,
     private readonly authorizationService: AuthorizationService,
+    private readonly chargingService: ChargingService,
   ) {}
+
+  private readonly logger = new Logger(VisitsService.name);
 
   /**
    * Append-only queue numbering by scheduled_at-day bucket.
@@ -357,6 +362,17 @@ export class VisitsService {
       });
     }
 
+    // Financial: when a billable service is chosen at booking, the assigned
+    // doctor must be authorized to deliver it. Validate before any writes.
+    if (dto.service_id) {
+      await this.assertDoctorAuthorizedForService(
+        user.organizationId,
+        dto.assigned_doctor_id,
+        dto.service_id,
+        branchId,
+      );
+    }
+
     const { carePathId, template, firstEpisodeTemplate } =
       await this.resolveCarePathTemplate(
         dto.specialty_code,
@@ -430,12 +446,65 @@ export class VisitsService {
       };
     });
 
+    // Best-effort: capture the PENDING charge for the chosen service, priced for
+    // the assigned doctor. A pricing gap must never fail the clinical booking —
+    // reception can still add the charge via the collect flow.
+    if (dto.service_id) {
+      try {
+        await this.chargingService.capture(
+          user.organizationId,
+          {
+            branch_id: branchId,
+            patient_id: result.patient.id,
+            profile_id: dto.assigned_doctor_id,
+            visit_id: result.visit.id,
+            service_id: dto.service_id,
+            quantity: 1,
+          },
+          user,
+        );
+      } catch (err) {
+        this.logger.error(
+          `Failed to capture booking charge (visit=${result.visit.id}, service=${dto.service_id})`,
+          err as Error,
+        );
+      }
+    }
+
     this.eventBus.publish('visit.booked', {
       assignedDoctorId: dto.assigned_doctor_id,
       branchId,
       payload: result,
     });
     return result;
+  }
+
+  /**
+   * A doctor may only be booked against a billable service they're authorized to
+   * deliver — an active ProviderService at this branch or org-wide (branch null).
+   */
+  private async assertDoctorAuthorizedForService(
+    organizationId: string,
+    profileId: string,
+    serviceId: string,
+    branchId: string,
+  ): Promise<void> {
+    const authorized = await this.prismaService.db.providerService.findFirst({
+      where: {
+        organization_id: organizationId,
+        profile_id: profileId,
+        service_id: serviceId,
+        is_active: true,
+        is_deleted: false,
+        OR: [{ branch_id: branchId }, { branch_id: null }],
+      },
+      select: { id: true },
+    });
+    if (!authorized) {
+      throw new BadRequestException(
+        'Assigned doctor is not authorized for the selected service',
+      );
+    }
   }
 
   /**

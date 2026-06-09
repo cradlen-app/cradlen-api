@@ -269,6 +269,15 @@ export class ListStaffQueryDto {
 
   @ApiPropertyOptional({
     description:
+      'Filters to providers authorized (active ProviderService) for the given service id — at the path branch or org-wide. Narrows the book-visit doctor picker to doctors who can deliver the chosen service.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => (value === '' ? undefined : value))
+  @IsUUID('4')
+  authorized_for_service?: string;
+
+  @ApiPropertyOptional({
+    description:
       "Free-text search across the staff member's first_name, last_name, email, and phone_number (case-insensitive substring match).",
   })
   @IsOptional()

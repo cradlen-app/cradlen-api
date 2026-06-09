@@ -254,6 +254,7 @@ export class StaffService {
       clinical,
       doctors_only: doctorsOnly,
       specialty_code: specialtyCode,
+      authorized_for_service: authorizedForService,
       search,
       job_function_codes: jobFunctionCodes,
       engagement_type: engagementType,
@@ -320,6 +321,20 @@ export class StaffService {
     if (specialtyCode) {
       where.specialty_links = {
         some: { specialty: { code: specialtyCode, is_deleted: false } },
+      };
+    }
+    // Narrow to providers authorized (active ProviderService) for a service —
+    // at this branch or org-wide. Powers the service-scoped book-visit doctor
+    // picker; an empty value (no service chosen) leaves the list unfiltered.
+    if (authorizedForService) {
+      where.provider_services = {
+        some: {
+          service_id: authorizedForService,
+          organization_id: organizationId,
+          is_active: true,
+          is_deleted: false,
+          OR: [{ branch_id: branchId }, { branch_id: null }],
+        },
       };
     }
     if (engagementType) {
