@@ -4,24 +4,33 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  ChargeStatus,
+  DiscountType,
   InvoiceStatus,
   InvoiceType,
-  PaymentStatus,
-  Prisma,
   PricingSource,
+  Prisma,
 } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
+import { EventBus } from '@infrastructure/messaging/event-bus.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import { paginated } from '@common/utils/pagination.utils.js';
-import { PricingResolverService } from '@core/financial/pricing/pricing-resolver.service.js';
+import { PricingResolverService } from '../pricing/pricing-resolver.service.js';
+import { FinancialAccessService } from '../shared/access/financial-access.service.js';
+import { Money } from '../shared/money/money.js';
+import { DEFAULT_CURRENCY } from '../shared/currency.js';
+import {
+  FINANCIAL_EVENTS,
+  type InvoiceIssuedEvent,
+} from '../shared/events/financial-events.js';
 import { InvoiceNumberService } from './invoice-number.service.js';
 import type {
   CreateInvoiceDto,
   InvoiceItemInputDto,
 } from './dto/create-invoice.dto.js';
 import type { UpdateInvoiceDto } from './dto/update-invoice.dto.js';
-import type { RecordPaymentDto } from './dto/record-payment.dto.js';
+import type { BuildInvoiceFromChargesDto } from './dto/build-invoice-from-charges.dto.js';
 
 export interface InvoiceFilters {
   branchId?: string;
@@ -32,13 +41,33 @@ export interface InvoiceFilters {
   dateTo?: string;
 }
 
+interface ResolvedItem {
+  service_id: string | undefined;
+  charge_id?: string;
+  description: string;
+  quantity: number;
+  unit_price: Prisma.Decimal;
+  currency: string;
+  discount_amount: Prisma.Decimal;
+  total_amount: Prisma.Decimal;
+  pricing_source: PricingSource;
+}
+
+/** Invoice-level discount declaration (type + raw value); resolved to an amount at compute time. */
+interface InvoiceDiscountInput {
+  type: DiscountType | null;
+  value: Prisma.Decimal | null;
+}
+
 @Injectable()
-export class InvoicesService {
+export class InvoicingService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly authorizationService: AuthorizationService,
+    private readonly access: FinancialAccessService,
     private readonly pricingResolver: PricingResolverService,
     private readonly invoiceNumberService: InvoiceNumberService,
+    private readonly eventBus: EventBus,
   ) {}
 
   async findAll(
@@ -123,9 +152,14 @@ export class InvoicesService {
     dto: CreateInvoiceDto,
     user: AuthContext,
   ) {
-    await this.assertIsReceptionistOrOwner(user, organizationId);
+    await this.access.assertIsReceptionistOrOwner(user, organizationId);
+    await this.authorizationService.assertCanAccessBranch(
+      user.profileId,
+      organizationId,
+      dto.branch_id,
+    );
 
-    const currency = dto.currency ?? 'EGP';
+    const currency = dto.currency ?? DEFAULT_CURRENCY;
     const invoiceNumber =
       await this.invoiceNumberService.generate(organizationId);
 
@@ -137,10 +171,14 @@ export class InvoicesService {
       currency,
     );
 
-    const { subtotal, total } = this.computeTotals(
+    const discount = this.discountFromDto(
+      dto.discount_type,
+      dto.discount_value,
+    );
+    const { subtotal, discountAmount, total } = this.computeTotals(
       resolvedItems,
-      new Prisma.Decimal(0),
-      new Prisma.Decimal(0),
+      discount,
+      Money.zero(),
     );
 
     const invoice = await this.prismaService.db.invoice.create({
@@ -155,27 +193,115 @@ export class InvoicesService {
         currency,
         notes: dto.notes,
         due_date: dto.due_date ? new Date(dto.due_date) : undefined,
+        discount_type: discount.type,
+        discount_value: discount.value,
+        discount_amount: discountAmount,
         subtotal,
         total_amount: total,
+        balance_due: total,
         created_by_id: user.profileId,
         items: resolvedItems.length
-          ? {
-              create: resolvedItems.map((item) => ({
-                service_id: item.service_id,
-                description: item.description,
-                quantity: item.quantity,
-                unit_price: item.unit_price,
-                currency: item.currency,
-                discount_amount: item.discount_amount,
-                total_amount: item.total_amount,
-                pricing_source: item.pricing_source,
-              })),
-            }
+          ? { create: resolvedItems.map((item) => this.toItemData(item)) }
           : undefined,
       },
       include: { items: true },
     });
 
+    this.publishCreated(invoice);
+    return invoice;
+  }
+
+  /**
+   * Assemble a DRAFT invoice from a patient's open charges: each PENDING charge
+   * becomes an invoice line (linked via charge_id) and flips to INVOICED.
+   */
+  async buildFromCharges(
+    organizationId: string,
+    dto: BuildInvoiceFromChargesDto,
+    user: AuthContext,
+  ) {
+    await this.access.assertIsReceptionistOrOwner(user, organizationId);
+    await this.authorizationService.assertCanAccessBranch(
+      user.profileId,
+      organizationId,
+      dto.branch_id,
+    );
+
+    const invoiceNumber =
+      await this.invoiceNumberService.generate(organizationId);
+
+    const invoice = await this.prismaService.db.$transaction(async (tx) => {
+      const charges = await tx.charge.findMany({
+        where: {
+          organization_id: organizationId,
+          branch_id: dto.branch_id,
+          patient_id: dto.patient_id,
+          status: ChargeStatus.PENDING,
+          is_deleted: false,
+          ...(dto.charge_ids?.length && { id: { in: dto.charge_ids } }),
+        },
+        orderBy: { captured_at: 'asc' },
+      });
+
+      if (charges.length === 0) {
+        throw new BadRequestException('No open charges to invoice');
+      }
+
+      const currency = dto.currency ?? charges[0].currency;
+      const items: ResolvedItem[] = charges.map((charge) => ({
+        service_id: charge.service_id ?? undefined,
+        charge_id: charge.id,
+        description: charge.description,
+        quantity: charge.quantity,
+        unit_price: charge.unit_price,
+        currency: charge.currency,
+        discount_amount: Money.zero(),
+        total_amount: Money.multiply(charge.unit_price, charge.quantity),
+        pricing_source: charge.pricing_source,
+      }));
+
+      const discount = this.discountFromDto(
+        dto.discount_type,
+        dto.discount_value,
+      );
+      const { subtotal, discountAmount, total } = this.computeTotals(
+        items,
+        discount,
+        Money.zero(),
+      );
+
+      const created = await tx.invoice.create({
+        data: {
+          invoice_number: invoiceNumber,
+          invoice_type: dto.invoice_type ?? InvoiceType.STANDARD,
+          organization_id: organizationId,
+          branch_id: dto.branch_id,
+          patient_id: dto.patient_id,
+          visit_id: dto.visit_id,
+          currency,
+          notes: dto.notes,
+          due_date: dto.due_date ? new Date(dto.due_date) : undefined,
+          discount_type: discount.type,
+          discount_value: discount.value,
+          discount_amount: discountAmount,
+          subtotal,
+          total_amount: total,
+          balance_due: total,
+          created_by_id: user.profileId,
+          items: { create: items.map((item) => this.toItemData(item)) },
+        },
+        include: { items: true },
+      });
+
+      await tx.charge.updateMany({
+        where: { id: { in: charges.map((c) => c.id) } },
+        data: { status: ChargeStatus.INVOICED },
+      });
+
+      return created;
+    });
+
+    this.publishCreated(invoice);
     return invoice;
   }
 
@@ -185,17 +311,20 @@ export class InvoicesService {
     dto: UpdateInvoiceDto,
     user: AuthContext,
   ) {
-    await this.assertIsReceptionistOrOwner(user, organizationId);
+    await this.access.assertIsReceptionistOrOwner(user, organizationId);
     const invoice = await this.findOneOrThrow(organizationId, invoiceId);
     this.assertDraft(invoice);
 
+    const discountChanged =
+      dto.discount_type !== undefined || dto.discount_value !== undefined;
+    const discount: InvoiceDiscountInput = discountChanged
+      ? this.discountFromDto(dto.discount_type, dto.discount_value)
+      : { type: invoice.discount_type, value: invoice.discount_value };
+
     return this.prismaService.db.$transaction(async (tx) => {
       let subtotal = invoice.subtotal;
+      let discountAmount = invoice.discount_amount;
       let total = invoice.total_amount;
-      const discountAmount =
-        dto.discount_amount !== undefined
-          ? new Prisma.Decimal(dto.discount_amount)
-          : invoice.discount_amount;
 
       if (dto.items !== undefined) {
         await tx.invoiceItem.deleteMany({ where: { invoice_id: invoiceId } });
@@ -212,29 +341,23 @@ export class InvoicesService {
           await tx.invoiceItem.createMany({
             data: resolvedItems.map((item) => ({
               invoice_id: invoiceId,
-              service_id: item.service_id,
-              description: item.description,
-              quantity: item.quantity,
-              unit_price: item.unit_price,
-              currency: item.currency,
-              discount_amount: item.discount_amount,
-              total_amount: item.total_amount,
-              pricing_source: item.pricing_source,
+              ...this.toItemData(item),
             })),
           });
         }
 
-        const computed = this.computeTotals(
+        ({ subtotal, discountAmount, total } = this.computeTotals(
           resolvedItems,
-          discountAmount,
+          discount,
           invoice.tax_amount,
+        ));
+      } else if (discountChanged) {
+        discountAmount = this.resolveInvoiceDiscount(
+          invoice.subtotal,
+          discount,
         );
-        subtotal = computed.subtotal;
-        total = computed.total;
-      } else if (dto.discount_amount !== undefined) {
-        subtotal = invoice.subtotal;
         total = Prisma.Decimal.max(
-          new Prisma.Decimal(0),
+          Money.zero(),
           invoice.subtotal.minus(discountAmount).plus(invoice.tax_amount),
         );
       }
@@ -249,11 +372,15 @@ export class InvoicesService {
           ...(dto.due_date !== undefined && {
             due_date: new Date(dto.due_date),
           }),
-          ...(dto.discount_amount !== undefined && {
-            discount_amount: discountAmount,
-          }),
+          discount_type: discount.type,
+          discount_value: discount.value,
+          discount_amount: discountAmount,
           subtotal,
           total_amount: total,
+          balance_due: Prisma.Decimal.max(
+            Money.zero(),
+            total.minus(invoice.paid_amount),
+          ),
         },
         include: { items: true },
       });
@@ -266,7 +393,7 @@ export class InvoicesService {
     dto: InvoiceItemInputDto,
     user: AuthContext,
   ) {
-    await this.assertIsReceptionistOrOwner(user, organizationId);
+    await this.access.assertIsReceptionistOrOwner(user, organizationId);
     const invoice = await this.findOneOrThrow(organizationId, invoiceId);
     this.assertDraft(invoice);
 
@@ -280,37 +407,29 @@ export class InvoicesService {
 
     return this.prismaService.db.$transaction(async (tx) => {
       await tx.invoiceItem.create({
-        data: {
-          invoice_id: invoiceId,
-          service_id: resolved.service_id,
-          description: resolved.description,
-          quantity: resolved.quantity,
-          unit_price: resolved.unit_price,
-          currency: resolved.currency,
-          discount_amount: resolved.discount_amount,
-          total_amount: resolved.total_amount,
-          pricing_source: resolved.pricing_source,
-        },
+        data: { invoice_id: invoiceId, ...this.toItemData(resolved) },
       });
 
       const allItems = await tx.invoiceItem.findMany({
         where: { invoice_id: invoiceId },
       });
-      const { subtotal, total } = this.computeTotals(
-        allItems.map((i) => ({
-          ...i,
-          unit_price: i.unit_price,
-          quantity: i.quantity,
-          discount_amount: i.discount_amount,
-          total_amount: i.total_amount,
-        })),
-        invoice.discount_amount,
+      const { subtotal, discountAmount, total } = this.computeTotals(
+        allItems,
+        { type: invoice.discount_type, value: invoice.discount_value },
         invoice.tax_amount,
       );
 
       return tx.invoice.update({
         where: { id: invoiceId },
-        data: { subtotal, total_amount: total },
+        data: {
+          subtotal,
+          discount_amount: discountAmount,
+          total_amount: total,
+          balance_due: Prisma.Decimal.max(
+            Money.zero(),
+            total.minus(invoice.paid_amount),
+          ),
+        },
         include: { items: true },
       });
     });
@@ -322,7 +441,7 @@ export class InvoicesService {
     itemId: string,
     user: AuthContext,
   ) {
-    await this.assertIsReceptionistOrOwner(user, organizationId);
+    await this.access.assertIsReceptionistOrOwner(user, organizationId);
     const invoice = await this.findOneOrThrow(organizationId, invoiceId);
     this.assertDraft(invoice);
 
@@ -337,27 +456,29 @@ export class InvoicesService {
       const remaining = await tx.invoiceItem.findMany({
         where: { invoice_id: invoiceId },
       });
-      const { subtotal, total } = this.computeTotals(
-        remaining.map((i) => ({
-          ...i,
-          unit_price: i.unit_price,
-          quantity: i.quantity,
-          discount_amount: i.discount_amount,
-          total_amount: i.total_amount,
-        })),
-        invoice.discount_amount,
+      const { subtotal, discountAmount, total } = this.computeTotals(
+        remaining,
+        { type: invoice.discount_type, value: invoice.discount_value },
         invoice.tax_amount,
       );
 
       await tx.invoice.update({
         where: { id: invoiceId },
-        data: { subtotal, total_amount: total },
+        data: {
+          subtotal,
+          discount_amount: discountAmount,
+          total_amount: total,
+          balance_due: Prisma.Decimal.max(
+            Money.zero(),
+            total.minus(invoice.paid_amount),
+          ),
+        },
       });
     });
   }
 
   async issue(organizationId: string, invoiceId: string, user: AuthContext) {
-    await this.assertIsReceptionistOrOwner(user, organizationId);
+    await this.access.assertIsReceptionistOrOwner(user, organizationId);
     const invoice = await this.findOneOrThrow(organizationId, invoiceId);
     this.assertDraft(invoice);
 
@@ -368,10 +489,21 @@ export class InvoicesService {
       throw new BadRequestException('Cannot issue an invoice with no items');
     }
 
-    return this.prismaService.db.invoice.update({
+    const issued = await this.prismaService.db.invoice.update({
       where: { id: invoiceId },
       data: { status: InvoiceStatus.ISSUED, issued_at: new Date() },
     });
+
+    this.eventBus.publish<InvoiceIssuedEvent>(FINANCIAL_EVENTS.invoice.issued, {
+      invoice_id: issued.id,
+      invoice_number: issued.invoice_number,
+      organization_id: issued.organization_id,
+      branch_id: issued.branch_id,
+      patient_id: issued.patient_id,
+      total_amount: issued.total_amount,
+      issued_by_id: user.profileId,
+    });
+    return issued;
   }
 
   async void(organizationId: string, invoiceId: string, user: AuthContext) {
@@ -390,86 +522,45 @@ export class InvoicesService {
       );
     }
 
-    return this.prismaService.db.invoice.update({
+    const voided = await this.prismaService.db.invoice.update({
       where: { id: invoiceId },
       data: { status: InvoiceStatus.VOID },
     });
+    this.eventBus.publish(FINANCIAL_EVENTS.invoice.voided, {
+      invoice_id: voided.id,
+      organization_id: organizationId,
+    });
+    return voided;
   }
 
-  async recordPayment(
-    organizationId: string,
-    invoiceId: string,
-    dto: RecordPaymentDto,
-    user: AuthContext,
-  ) {
-    await this.assertIsReceptionistOrOwner(user, organizationId);
-    const invoice = await this.findOneOrThrow(organizationId, invoiceId);
-
-    if (
-      invoice.status !== InvoiceStatus.ISSUED &&
-      invoice.status !== InvoiceStatus.PARTIALLY_PAID
-    ) {
-      throw new BadRequestException(
-        'Payments can only be recorded on ISSUED or PARTIALLY_PAID invoices',
-      );
-    }
-
-    return this.prismaService.db.$transaction(async (tx) => {
-      await tx.payment.create({
-        data: {
-          invoice_id: invoiceId,
-          amount: new Prisma.Decimal(dto.amount),
-          currency: dto.currency ?? invoice.currency,
-          status: PaymentStatus.COMPLETED,
-          payment_method: dto.payment_method,
-          payment_date: dto.payment_date
-            ? new Date(dto.payment_date)
-            : new Date(),
-          reference_number: dto.reference_number,
-          notes: dto.notes,
-          recorded_by_id: user.profileId,
-        },
-      });
-
-      const payments = await tx.payment.findMany({
-        where: {
-          invoice_id: invoiceId,
-          is_deleted: false,
-          status: PaymentStatus.COMPLETED,
-        },
-        select: { amount: true },
-      });
-
-      const paidAmount = payments.reduce(
-        (acc, p) => acc.plus(p.amount),
-        new Prisma.Decimal(0),
-      );
-
-      const newStatus = this.deriveStatus(invoice.total_amount, paidAmount);
-
-      return tx.invoice.update({
-        where: { id: invoiceId },
-        data: { paid_amount: paidAmount, status: newStatus },
-      });
+  private publishCreated(invoice: {
+    id: string;
+    organization_id: string;
+    branch_id: string;
+    patient_id: string;
+    total_amount: Prisma.Decimal;
+  }): void {
+    this.eventBus.publish(FINANCIAL_EVENTS.invoice.created, {
+      invoice_id: invoice.id,
+      organization_id: invoice.organization_id,
+      branch_id: invoice.branch_id,
+      patient_id: invoice.patient_id,
+      total_amount: invoice.total_amount,
     });
   }
 
-  async findPayments(
-    organizationId: string,
-    invoiceId: string,
-    user: AuthContext,
-  ) {
-    const invoice = await this.findOneOrThrow(organizationId, invoiceId);
-    await this.authorizationService.assertCanAccessBranch(
-      user.profileId,
-      organizationId,
-      invoice.branch_id,
-    );
-
-    return this.prismaService.db.payment.findMany({
-      where: { invoice_id: invoiceId, is_deleted: false },
-      orderBy: { created_at: 'desc' },
-    });
+  private toItemData(item: ResolvedItem) {
+    return {
+      service_id: item.service_id,
+      charge_id: item.charge_id,
+      description: item.description,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      currency: item.currency,
+      discount_amount: item.discount_amount,
+      total_amount: item.total_amount,
+      pricing_source: item.pricing_source,
+    };
   }
 
   private async resolveItemPricing(
@@ -478,11 +569,11 @@ export class InvoicesService {
     branchId: string,
     profileId: string,
     defaultCurrency: string,
-  ) {
+  ): Promise<ResolvedItem[]> {
     return Promise.all(
       items.map(async (item) => {
         const quantity = item.quantity ?? 1;
-        const discountAmount = new Prisma.Decimal(item.discount_amount ?? 0);
+        const discountAmount = Money.of(item.discount_amount ?? 0);
         let unitPrice: Prisma.Decimal;
         let currency = defaultCurrency;
         let pricingSource: PricingSource = PricingSource.CUSTOM;
@@ -493,23 +584,24 @@ export class InvoicesService {
             branchId,
             serviceId: item.service_id,
             profileId,
+            quantity,
           });
           if (resolved) {
             unitPrice = resolved.price;
             currency = resolved.currency;
             pricingSource = resolved.source;
           } else {
-            unitPrice = new Prisma.Decimal(item.unit_price);
+            unitPrice = Money.of(item.unit_price);
           }
         } else {
-          unitPrice = new Prisma.Decimal(item.unit_price);
+          unitPrice = Money.of(item.unit_price);
         }
 
-        const lineTotal = unitPrice.times(quantity).minus(discountAmount);
-        const total_amount = Prisma.Decimal.max(
-          new Prisma.Decimal(0),
-          lineTotal,
+        const lineTotal = Money.subtract(
+          Money.multiply(unitPrice, quantity),
+          discountAmount,
         );
+        const total_amount = Prisma.Decimal.max(Money.zero(), lineTotal);
 
         return {
           service_id: item.service_id,
@@ -525,52 +617,52 @@ export class InvoicesService {
     );
   }
 
+  private discountFromDto(
+    type?: DiscountType,
+    value?: number,
+  ): InvoiceDiscountInput {
+    return {
+      type: type ?? null,
+      value: value !== undefined ? Money.of(value) : null,
+    };
+  }
+
+  /**
+   * Resolve an invoice-level discount declaration to a concrete amount, clamped
+   * to [0, subtotal]. PERCENTAGE applies to the subtotal; FIXED is a flat amount.
+   * Mirrors the pricing resolver's discount math.
+   */
+  private resolveInvoiceDiscount(
+    subtotal: Prisma.Decimal,
+    discount: InvoiceDiscountInput,
+  ): Prisma.Decimal {
+    if (discount.type === null || discount.value === null) return Money.zero();
+    const amount =
+      discount.type === DiscountType.PERCENTAGE
+        ? Money.round(Money.multiply(subtotal, discount.value).dividedBy(100))
+        : discount.value;
+    return Prisma.Decimal.min(
+      subtotal,
+      Prisma.Decimal.max(Money.zero(), amount),
+    );
+  }
+
   private computeTotals(
-    items: { total_amount: Prisma.Decimal | number }[],
-    invoiceDiscount: Prisma.Decimal,
+    items: { total_amount: Prisma.Decimal }[],
+    discount: InvoiceDiscountInput,
     taxAmount: Prisma.Decimal,
-  ): { subtotal: Prisma.Decimal; total: Prisma.Decimal } {
-    const subtotal = items.reduce(
-      (acc, item) => acc.plus(new Prisma.Decimal(item.total_amount.toString())),
-      new Prisma.Decimal(0),
-    );
+  ): {
+    subtotal: Prisma.Decimal;
+    discountAmount: Prisma.Decimal;
+    total: Prisma.Decimal;
+  } {
+    const subtotal = Money.sum(items.map((item) => item.total_amount));
+    const discountAmount = this.resolveInvoiceDiscount(subtotal, discount);
     const total = Prisma.Decimal.max(
-      new Prisma.Decimal(0),
-      subtotal.minus(invoiceDiscount).plus(taxAmount),
+      Money.zero(),
+      subtotal.minus(discountAmount).plus(taxAmount),
     );
-    return { subtotal, total };
-  }
-
-  private deriveStatus(
-    totalAmount: Prisma.Decimal,
-    paidAmount: Prisma.Decimal,
-  ): InvoiceStatus {
-    if (totalAmount.lte(0)) return InvoiceStatus.PAID;
-    if (paidAmount.gte(totalAmount)) return InvoiceStatus.PAID;
-    if (paidAmount.gt(0)) return InvoiceStatus.PARTIALLY_PAID;
-    return InvoiceStatus.ISSUED;
-  }
-
-  private async assertIsReceptionistOrOwner(
-    user: AuthContext,
-    organizationId: string,
-  ): Promise<void> {
-    if (user.roles.includes('OWNER')) return;
-
-    const jobFunction =
-      await this.prismaService.db.profileJobFunction.findFirst({
-        where: {
-          profile_id: user.profileId,
-          job_function: { code: 'RECEPTIONIST' },
-          profile: { organization_id: organizationId, is_deleted: false },
-        },
-      });
-
-    if (!jobFunction) {
-      throw new BadRequestException(
-        'Only RECEPTIONISTs or OWNERs can perform this action',
-      );
-    }
+    return { subtotal, discountAmount, total };
   }
 
   private assertDraft(invoice: { status: InvoiceStatus; id: string }): void {
