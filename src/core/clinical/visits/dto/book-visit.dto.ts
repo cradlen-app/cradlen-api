@@ -45,6 +45,14 @@ export class BookVisitDto extends VisitIntakeFieldsDto {
   @IsEnum(MaritalStatus) @IsOptional() marital_status?: MaritalStatus;
 
   @IsUUID() assigned_doctor_id!: string;
+
+  /**
+   * Optional billable service chosen at booking. When present, the assigned
+   * doctor must be authorized (active ProviderService) for it, and a PENDING
+   * charge is captured for the visit at the doctor's resolved price.
+   */
+  @IsUUID() @IsOptional() service_id?: string;
+
   @IsEnum(AppointmentType) appointment_type!: AppointmentType;
   @IsEnum(VisitPriority) priority!: VisitPriority;
   @IsDateString() scheduled_at!: string;
