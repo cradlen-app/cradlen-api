@@ -71,7 +71,7 @@ export const ALLOWED_PATHS = {
     'notes',
   ],
   LOOKUP: ['patient_id', 'medical_rep_id'],
-  SYSTEM: ['visitor_type', 'specialty_code'],
+  SYSTEM: ['visitor_type', 'specialty_code', 'service_id'],
   COMPUTED: ['vitals.bmi'],
   // PATIENT_OBGYN_HISTORY targets the unified bulk PATCH at
   // `/patients/:id/obgyn-history`. Singleton JSON columns are reached via
