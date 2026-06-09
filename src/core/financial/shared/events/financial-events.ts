@@ -1,5 +1,6 @@
 import {
   Prisma,
+  ChargeSource,
   InvoiceStatus,
   PaymentMethod,
   PricingSource,
@@ -58,6 +59,7 @@ export interface ChargeCapturedEvent {
   service_id: string | null;
   amount: Prisma.Decimal;
   pricing_source: PricingSource;
+  source: ChargeSource;
   captured_by_id: string;
 }
 
