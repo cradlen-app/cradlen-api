@@ -33,6 +33,8 @@ export const ALLOWED_PATHS = {
     'notes',
     'care_path_code',
     'follow_up_date',
+    // Consumed at booking to capture the charge; not persisted on the visit row.
+    'service_id',
   ],
   INTAKE: [
     'chief_complaint',
@@ -71,7 +73,7 @@ export const ALLOWED_PATHS = {
     'notes',
   ],
   LOOKUP: ['patient_id', 'medical_rep_id'],
-  SYSTEM: ['visitor_type', 'specialty_code', 'service_id'],
+  SYSTEM: ['visitor_type', 'specialty_code'],
   COMPUTED: ['vitals.bmi'],
   // PATIENT_OBGYN_HISTORY targets the unified bulk PATCH at
   // `/patients/:id/obgyn-history`. Singleton JSON columns are reached via
