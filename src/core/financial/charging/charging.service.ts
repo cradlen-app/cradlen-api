@@ -152,6 +152,7 @@ export class ChargingService {
         service_id: charge.service_id,
         amount: Money.multiply(charge.unit_price, charge.quantity),
         pricing_source: charge.pricing_source,
+        source: charge.source,
         captured_by_id: charge.captured_by_id,
       },
     );
