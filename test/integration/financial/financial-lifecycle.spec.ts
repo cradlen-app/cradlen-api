@@ -112,6 +112,44 @@ describe('Financial RCM — lifecycle + cross-tenant (integration)', () => {
     return patient.id;
   }
 
+  async function seedReceptionist(
+    organizationId: string,
+    branchId: string,
+    email: string,
+  ): Promise<string> {
+    const user = await prisma.user.create({
+      data: {
+        first_name: 'Recep',
+        last_name: 'Tion',
+        email,
+        password_hashed: await bcrypt.hash(PASSWORD, 12),
+        is_active: true,
+        verified_at: new Date(),
+        registration_status: 'ACTIVE',
+        onboarding_completed: true,
+      },
+    });
+    const staffRole = await prisma.role.findFirstOrThrow({
+      where: { code: 'STAFF' },
+    });
+    const receptionist = await prisma.jobFunction.findFirstOrThrow({
+      where: { code: 'RECEPTIONIST' },
+    });
+    const profile = await prisma.profile.create({
+      data: {
+        user_id: user.id,
+        organization_id: organizationId,
+        engagement_type: 'FULL_TIME',
+        roles: { create: [{ role_id: staffRole.id }] },
+        job_functions: { create: [{ job_function_id: receptionist.id }] },
+        branches: {
+          create: [{ branch_id: branchId, organization_id: organizationId }],
+        },
+      },
+    });
+    return profile.id;
+  }
+
   async function loginAs(email: string): Promise<string> {
     const http = app.getHttpServer();
     const login = await request(http)
@@ -397,5 +435,52 @@ describe('Financial RCM — lifecycle + cross-tenant (integration)', () => {
         unit_price: 10,
       })
       .expect(denied);
+  });
+
+  it('notifies the branch receptionist when a doctor adds a service', async () => {
+    const a = await seedOrg('Org A', 'owner.a@example.com');
+    const receptionistId = await seedReceptionist(
+      a.org.id,
+      a.branch.id,
+      'recep.a@example.com',
+    );
+    const patientId = await createPatient(a.org.id, a.ownerProfileId);
+    const auth = bearer(await loginAs(a.ownerEmail));
+    const http = app.getHttpServer();
+    const base = `/v1/organizations/${a.org.id}`;
+
+    // the owner is both captor and rendering provider -> charge source = DOCTOR
+    const svc = await auth(
+      request(http).post(`${base}/financial/catalog/services`),
+    )
+      .send({
+        code: `CONSULT-${Math.floor(Math.random() * 1e6)}`,
+        name: 'Consultation',
+        service_type: 'CONSULTATION',
+      })
+      .expect(201);
+    await auth(request(http).post(`${base}/financial/charges`))
+      .send({
+        branch_id: a.branch.id,
+        patient_id: patientId,
+        profile_id: a.ownerProfileId,
+        service_id: svc.body.data.id,
+        description: 'Consultation',
+        unit_price: 200,
+      })
+      .expect(201);
+
+    // the charge.captured listener asynchronously writes the reception notice
+    const notification = await eventually(async () => {
+      const n = await prisma.notification.findFirst({
+        where: {
+          profile_id: receptionistId,
+          code: 'billing.service_charge_added',
+        },
+      });
+      if (!n) throw new Error('notification not created yet');
+      return n;
+    });
+    expect(notification.category).toBe('billing');
   });
 });

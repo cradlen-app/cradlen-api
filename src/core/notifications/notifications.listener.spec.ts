@@ -1,15 +1,23 @@
 import { Logger } from '@nestjs/common';
+import { ChargeSource, Prisma } from '@prisma/client';
 import { NotificationsListener } from './notifications.listener';
 import { NotificationsService } from './notifications.service';
 import { NOTIFICATION_CODES } from './notification-codes';
+import { PrismaService } from '@infrastructure/database/prisma.service';
 import {
   InvitationAcceptedEvent,
   InvitationDeclinedEvent,
 } from '@core/org/invitations/invitations.public';
+import type { ChargeCapturedEvent } from '@core/financial/financial.public';
 
 describe('NotificationsListener', () => {
   let listener: NotificationsListener;
   let service: { create: jest.Mock };
+  let db: {
+    profile: { findMany: jest.Mock; findUnique: jest.Mock };
+    patient: { findUnique: jest.Mock };
+    service: { findUnique: jest.Mock };
+  };
 
   const acceptedEvent = new InvitationAcceptedEvent({
     invitationId: 'inv-1',
@@ -19,10 +27,32 @@ describe('NotificationsListener', () => {
     branchId: 'branch-1',
   });
 
+  const chargeEvent = (
+    overrides: Partial<ChargeCapturedEvent> = {},
+  ): ChargeCapturedEvent => ({
+    charge_id: 'chg-1',
+    organization_id: 'org-1',
+    branch_id: 'branch-1',
+    patient_id: 'pat-1',
+    visit_id: 'visit-1',
+    service_id: 'svc-1',
+    amount: new Prisma.Decimal('200.00'),
+    pricing_source: 'CUSTOM',
+    source: ChargeSource.DOCTOR,
+    captured_by_id: 'doc-1',
+    ...overrides,
+  });
+
   beforeEach(() => {
     service = { create: jest.fn().mockResolvedValue(undefined) };
+    db = {
+      profile: { findMany: jest.fn(), findUnique: jest.fn() },
+      patient: { findUnique: jest.fn() },
+      service: { findUnique: jest.fn() },
+    };
     listener = new NotificationsListener(
       service as unknown as NotificationsService,
+      { db } as unknown as PrismaService,
     );
   });
 
@@ -88,6 +118,52 @@ describe('NotificationsListener', () => {
         },
       }),
     );
+  });
+
+  it('notifies each branch receptionist when a doctor adds a service charge', async () => {
+    db.profile.findMany.mockResolvedValue([
+      { id: 'recep-1' },
+      { id: 'recep-2' },
+    ]);
+    db.patient.findUnique.mockResolvedValue({ full_name: 'Jane Doe' });
+    db.profile.findUnique.mockResolvedValue({
+      user: { first_name: 'Sara', last_name: 'Ali' },
+    });
+    db.service.findUnique.mockResolvedValue({ name: 'Consultation' });
+
+    await listener.handleChargeCaptured(chargeEvent());
+
+    expect(service.create).toHaveBeenCalledTimes(2);
+    expect(service.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        profileId: 'recep-1',
+        code: NOTIFICATION_CODES.SERVICE_CHARGE_ADDED.code,
+        category: 'billing',
+        description: 'Dr. Sara Ali added "Consultation" for Jane Doe.',
+        navigateTo: '/org-1/branch-1/dashboard/visits/visit-1',
+        metadata: expect.objectContaining({
+          chargeId: 'chg-1',
+          patientId: 'pat-1',
+        }),
+      }),
+    );
+  });
+
+  it('does not notify reception for a reception-entered charge', async () => {
+    await listener.handleChargeCaptured(
+      chargeEvent({ source: ChargeSource.RECEPTION }),
+    );
+
+    expect(db.profile.findMany).not.toHaveBeenCalled();
+    expect(service.create).not.toHaveBeenCalled();
+  });
+
+  it('no-ops when the branch has no receptionists', async () => {
+    db.profile.findMany.mockResolvedValue([]);
+
+    await listener.handleChargeCaptured(chargeEvent());
+
+    expect(service.create).not.toHaveBeenCalled();
   });
 
   it('swallows and logs a create failure so the invite flow is unaffected', async () => {
