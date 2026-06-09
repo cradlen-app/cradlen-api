@@ -11,7 +11,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { InvoiceType } from '@prisma/client';
+import { DiscountType, InvoiceType } from '@prisma/client';
 
 export class InvoiceItemInputDto {
   @IsUUID()
@@ -66,6 +66,17 @@ export class CreateInvoiceDto {
   @IsDateString()
   @IsOptional()
   due_date?: string;
+
+  /** Invoice-level discount type. PERCENTAGE applies to the subtotal; FIXED is a flat amount. */
+  @IsEnum(DiscountType)
+  @IsOptional()
+  discount_type?: DiscountType;
+
+  /** Percent (when PERCENTAGE) or flat amount (when FIXED). */
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @IsOptional()
+  discount_value?: number;
 
   @IsArray()
   @ValidateNested({ each: true })

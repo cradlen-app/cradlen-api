@@ -26,10 +26,9 @@ describe('InvoiceNumberService', () => {
     service = module.get(InvoiceNumberService);
     jest.clearAllMocks();
 
-    mockTransaction.mockImplementation(async (fn) =>
-      fn({
-        $queryRaw: mockQueryRaw,
-      }),
+    mockTransaction.mockImplementation(
+      (fn: (tx: { $queryRaw: jest.Mock }) => unknown) =>
+        fn({ $queryRaw: mockQueryRaw }),
     );
   });
 
