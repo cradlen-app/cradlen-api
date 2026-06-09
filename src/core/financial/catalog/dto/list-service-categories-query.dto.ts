@@ -1,19 +1,8 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { ServiceType } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import { IsInt, IsOptional, Max, Min } from 'class-validator';
 
-export class ListServicesQueryDto {
-  @ApiPropertyOptional({ enum: ServiceType })
-  @IsEnum(ServiceType)
-  @IsOptional()
-  service_type?: ServiceType;
-
-  @ApiPropertyOptional()
-  @IsUUID('4')
-  @IsOptional()
-  specialty_id?: string;
-
+export class ListServiceCategoriesQueryDto {
   @ApiPropertyOptional()
   @IsOptional()
   active?: string;

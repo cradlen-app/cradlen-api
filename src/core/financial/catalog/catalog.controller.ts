@@ -19,36 +19,49 @@ import {
   ApiStandardResponse,
   ApiVoidResponse,
 } from '@common/swagger/index.js';
-import { ServicesService } from './services.service.js';
+import { CatalogService } from './catalog.service.js';
 import { CreateServiceDto } from './dto/create-service.dto.js';
 import { UpdateServiceDto } from './dto/update-service.dto.js';
 import { ServiceResponseDto } from './dto/service-response.dto.js';
 import { ListServicesQueryDto } from './dto/list-services-query.dto.js';
 
-@ApiTags('Financial — Services')
+@ApiTags('Financial — Catalog')
 @ApiBearerAuth()
-@Controller('organizations/:orgId/financial/services')
-export class ServicesController {
-  constructor(private readonly servicesService: ServicesService) {}
+@Controller('organizations/:orgId/financial/catalog/services')
+export class CatalogController {
+  constructor(private readonly catalogService: CatalogService) {}
 
   @Get()
   @ApiPaginatedResponse(ServiceResponseDto)
   findAll(
     @Param('orgId', ParseUUIDPipe) orgId: string,
     @Query() query: ListServicesQueryDto,
+    @CurrentUser() user: AuthContext,
   ) {
     const activeFilter =
       query.active !== undefined ? query.active === 'true' : undefined;
-    return this.servicesService.findAll(
+    return this.catalogService.findAll(
       orgId,
       {
         service_type: query.service_type,
         specialty_id: query.specialty_id,
+        category_id: query.category_id,
         active: activeFilter,
       },
       query.page ?? 1,
       query.limit ?? 20,
+      user,
     );
+  }
+
+  @Get(':id')
+  @ApiStandardResponse(ServiceResponseDto)
+  findOne(
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.catalogService.getOne(orgId, id, user);
   }
 
   @Post()
@@ -58,7 +71,27 @@ export class ServicesController {
     @Body() dto: CreateServiceDto,
     @CurrentUser() user: AuthContext,
   ) {
-    return this.servicesService.create(orgId, dto, user);
+    return this.catalogService.create(orgId, dto, user);
+  }
+
+  @Post(':id/activate')
+  @ApiStandardResponse(ServiceResponseDto)
+  activate(
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.catalogService.activate(orgId, id, user);
+  }
+
+  @Post(':id/deactivate')
+  @ApiStandardResponse(ServiceResponseDto)
+  deactivate(
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.catalogService.deactivate(orgId, id, user);
   }
 
   @Patch(':id')
@@ -69,7 +102,7 @@ export class ServicesController {
     @Body() dto: UpdateServiceDto,
     @CurrentUser() user: AuthContext,
   ) {
-    return this.servicesService.update(orgId, id, dto, user);
+    return this.catalogService.update(orgId, id, dto, user);
   }
 
   @Delete(':id')
@@ -80,6 +113,6 @@ export class ServicesController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthContext,
   ) {
-    return this.servicesService.remove(orgId, id, user);
+    return this.catalogService.remove(orgId, id, user);
   }
 }
