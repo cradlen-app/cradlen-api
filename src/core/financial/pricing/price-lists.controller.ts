@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
@@ -25,6 +26,7 @@ import { CreatePriceListItemDto } from './dto/create-price-list-item.dto.js';
 import { UpdatePriceListItemDto } from './dto/update-price-list-item.dto.js';
 import { UpdatePriceListDto } from './dto/update-price-list.dto.js';
 import { ListPriceListsQueryDto } from './dto/list-price-lists-query.dto.js';
+import { SetPriceListItemsDto } from './dto/set-price-list-items.dto.js';
 
 @ApiTags('Financial — Price Lists')
 @ApiBearerAuth()
@@ -37,12 +39,14 @@ export class PriceListsController {
   findAll(
     @Param('orgId', ParseUUIDPipe) orgId: string,
     @Query() query: ListPriceListsQueryDto,
+    @CurrentUser() user: AuthContext,
   ) {
     return this.priceListsService.findAll(
       orgId,
       query.branch_id,
       query.page,
       query.limit,
+      user,
     );
   }
 
@@ -78,13 +82,54 @@ export class PriceListsController {
     return this.priceListsService.remove(orgId, id, user);
   }
 
+  @Get(':id')
+  @ApiStandardResponse(Object)
+  getOne(
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.priceListsService.getOne(orgId, id, user);
+  }
+
+  @Post(':id/set-default')
+  @ApiStandardResponse(Object)
+  setDefault(
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.priceListsService.setDefault(orgId, id, user);
+  }
+
+  @Post(':id/activate')
+  @ApiStandardResponse(Object)
+  activate(
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.priceListsService.activate(orgId, id, user);
+  }
+
+  @Post(':id/deactivate')
+  @ApiStandardResponse(Object)
+  deactivate(
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.priceListsService.deactivate(orgId, id, user);
+  }
+
   @Get(':id/items')
   @ApiStandardResponse(Object)
   findItems(
     @Param('orgId', ParseUUIDPipe) orgId: string,
     @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthContext,
   ) {
-    return this.priceListsService.findItems(orgId, id);
+    return this.priceListsService.findItems(orgId, id, user);
   }
 
   @Post(':id/items')
@@ -96,6 +141,28 @@ export class PriceListsController {
     @CurrentUser() user: AuthContext,
   ) {
     return this.priceListsService.addItem(orgId, id, dto, user);
+  }
+
+  @Put(':id/items')
+  @ApiStandardResponse(Object)
+  setItems(
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SetPriceListItemsDto,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.priceListsService.setItems(orgId, id, dto, user);
+  }
+
+  @Get(':id/items/:itemId')
+  @ApiStandardResponse(Object)
+  getItem(
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.priceListsService.getItem(orgId, id, itemId, user);
   }
 
   @Patch(':id/items/:itemId')

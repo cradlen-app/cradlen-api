@@ -1,5 +1,14 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsDateString, IsOptional, IsString } from 'class-validator';
+import { DiscountType } from '@prisma/client';
+import {
+  IsBoolean,
+  IsDateString,
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+} from 'class-validator';
 
 export class UpdatePriceListDto {
   @ApiPropertyOptional()
@@ -16,6 +25,17 @@ export class UpdatePriceListDto {
   @IsBoolean()
   @IsOptional()
   is_default?: boolean;
+
+  @ApiPropertyOptional({ enum: DiscountType, nullable: true })
+  @IsEnum(DiscountType)
+  @IsOptional()
+  discount_type?: DiscountType | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @IsOptional()
+  discount_value?: number | null;
 
   @ApiPropertyOptional()
   @IsDateString()
