@@ -39,11 +39,16 @@ Table organizations {
   calendar_events calendar_events [not null]
   patient_org_enrollments patient_org_enrollments [not null]
   services services [not null]
+  service_categories service_categories [not null]
   price_lists price_lists [not null]
   provider_services provider_services [not null]
   provider_overrides provider_price_overrides [not null]
   invoice_sequences invoice_sequences [not null]
   invoices invoices [not null]
+  receipts receipts [not null]
+  receipt_sequences receipt_sequences [not null]
+  charges charges [not null]
+  cash_sessions cash_sessions [not null]
 }
 
 Table branches {
@@ -71,6 +76,9 @@ Table branches {
   provider_services provider_services [not null]
   provider_overrides provider_price_overrides [not null]
   invoices invoices [not null]
+  receipts receipts [not null]
+  charges charges [not null]
+  cash_sessions cash_sessions [not null]
 
   indexes {
     (id, organization_id) [unique]
@@ -194,6 +202,7 @@ Table profiles {
   calendar_event_assists calendar_event_assistants [not null]
   notifications notifications [not null]
   services_created services [not null]
+  service_categories_created service_categories [not null]
   price_lists_created price_lists [not null]
   price_list_items_created price_list_items [not null]
   provider_services provider_services [not null]
@@ -202,8 +211,14 @@ Table profiles {
   provider_price_overrides_created provider_price_overrides [not null]
   invoices_created invoices [not null]
   invoices_as_doctor invoices [not null]
+  charges_as_provider charges [not null]
+  charges_captured charges [not null]
   payments_recorded payments [not null]
   refunds_issued refunds [not null]
+  receipts_issued receipts [not null]
+  cash_sessions_as_cashier cash_sessions [not null]
+  cash_sessions_opened cash_sessions [not null]
+  cash_sessions_closed cash_sessions [not null]
 
   indexes {
     (user_id, organization_id) [unique]
@@ -559,6 +574,8 @@ Table patients {
   calendar_events calendar_events [not null]
   enrollments patient_org_enrollments [not null]
   invoices invoices [not null]
+  receipts receipts [not null]
+  charges charges [not null]
   notifications patient_notifications [not null]
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
@@ -662,6 +679,7 @@ Table visits {
   diagnoses visit_diagnoses [not null]
   prescription prescriptions
   invoices invoices [not null]
+  charges charges [not null]
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   is_deleted Boolean [not null, default: false]
@@ -1505,13 +1523,38 @@ Table patient_org_enrollments {
   organization organizations [not null]
 }
 
-Table services {
+Table service_categories {
   id String [pk]
   organization_id String
   code String [not null]
   name String [not null]
   description String
+  is_active Boolean [not null, default: true]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_by_id String
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  organization organizations
+  created_by profiles
+  services services [not null]
+
+  indexes {
+    (organization_id, code) [unique]
+  }
+}
+
+Table services {
+  id String [pk]
+  organization_id String
+  category_id String
+  code String [not null]
+  name String [not null]
+  description String
   service_type ServiceType [not null]
+  duration_minutes Int
+  billing_code String
+  unit ServiceUnit [not null, default: 'PER_SERVICE']
   is_active Boolean [not null, default: true]
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
@@ -1519,12 +1562,14 @@ Table services {
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   organization organizations
+  category service_categories
   created_by profiles [not null]
   specialties service_specialties [not null]
   price_list_items price_list_items [not null]
   provider_services provider_services [not null]
   provider_overrides provider_price_overrides [not null]
   invoice_items invoice_items [not null]
+  charges charges [not null]
 
   indexes {
     (organization_id, code) [unique]
@@ -1549,6 +1594,8 @@ Table price_lists {
   name String [not null]
   currency String [not null, default: 'EGP']
   is_default Boolean [not null, default: false]
+  discount_type DiscountType
+  discount_value Decimal
   valid_from DateTime
   valid_to DateTime
   is_active Boolean [not null, default: true]
@@ -1568,6 +1615,8 @@ Table price_list_items {
   price_list_id String [not null]
   service_id String [not null]
   unit_price Decimal [not null]
+  discount_type DiscountType
+  discount_value Decimal
   is_active Boolean [not null, default: true]
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
@@ -1577,9 +1626,24 @@ Table price_list_items {
   price_list price_lists [not null]
   service services [not null]
   created_by profiles
+  tiers price_list_item_tiers [not null]
 
   indexes {
     (price_list_id, service_id) [unique]
+  }
+}
+
+Table price_list_item_tiers {
+  id String [pk]
+  price_list_item_id String [not null]
+  min_quantity Int [not null]
+  unit_price Decimal [not null]
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  price_list_item price_list_items [not null]
+
+  indexes {
+    (price_list_item_id, min_quantity) [unique]
   }
 }
 
@@ -1601,10 +1665,6 @@ Table provider_services {
   organization organizations [not null]
   branch branches
   created_by profiles
-
-  indexes {
-    (profile_id, service_id, organization_id, branch_id) [unique]
-  }
 }
 
 Table provider_price_overrides {
@@ -1657,10 +1717,13 @@ Table invoices {
   assigned_doctor_id String
   status InvoiceStatus [not null, default: 'DRAFT']
   subtotal Decimal [not null, default: 0]
+  discount_type DiscountType
+  discount_value Decimal
   discount_amount Decimal [not null, default: 0]
   tax_amount Decimal [not null, default: 0]
   total_amount Decimal [not null, default: 0]
   paid_amount Decimal [not null, default: 0]
+  balance_due Decimal [not null, default: 0]
   currency String [not null, default: 'EGP']
   notes String
   issued_at DateTime
@@ -1678,6 +1741,7 @@ Table invoices {
   created_by profiles [not null]
   items invoice_items [not null]
   payments payments [not null]
+  receipts receipts [not null]
   insurance_claim invoice_insurance_claims
 
   indexes {
@@ -1689,6 +1753,7 @@ Table invoice_items {
   id String [pk]
   invoice_id String [not null]
   service_id String
+  charge_id String
   description String [not null]
   quantity Int [not null, default: 1]
   unit_price Decimal [not null]
@@ -1700,6 +1765,38 @@ Table invoice_items {
   updated_at DateTime [not null]
   invoice invoices [not null]
   service services
+  charge charges
+}
+
+Table charges {
+  id String [pk]
+  organization_id String [not null]
+  branch_id String [not null]
+  patient_id String [not null]
+  visit_id String
+  profile_id String [not null]
+  service_id String
+  description String [not null]
+  quantity Int [not null, default: 1]
+  unit_price Decimal [not null]
+  currency String [not null, default: 'EGP']
+  pricing_source PricingSource [not null, default: 'CUSTOM']
+  source ChargeSource [not null, default: 'RECEPTION']
+  status ChargeStatus [not null, default: 'PENDING']
+  captured_by_id String [not null]
+  captured_at DateTime [default: `now()`, not null]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  organization organizations [not null]
+  branch branches [not null]
+  patient patients [not null]
+  visit visits
+  provider profiles [not null]
+  service services
+  captured_by profiles [not null]
+  invoice_items invoice_items [not null]
 }
 
 Table payments {
@@ -1713,13 +1810,43 @@ Table payments {
   reference_number String
   notes String
   recorded_by_id String [not null]
+  cash_session_id String
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   invoice invoices [not null]
   recorded_by profiles [not null]
+  cash_session cash_sessions
   refunds refunds [not null]
+  receipt receipts
+}
+
+Table cash_sessions {
+  id String [pk]
+  organization_id String [not null]
+  branch_id String [not null]
+  profile_id String [not null]
+  opening_float Decimal [not null, default: 0]
+  opened_by_id String [not null]
+  opened_at DateTime [default: `now()`, not null]
+  closed_by_id String
+  closed_at DateTime
+  expected_amount Decimal
+  counted_amount Decimal
+  variance Decimal
+  status CashSessionStatus [not null, default: 'OPEN']
+  notes String
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  organization organizations [not null]
+  branch branches [not null]
+  profile profiles [not null]
+  opened_by profiles [not null]
+  closed_by profiles
+  payments payments [not null]
 }
 
 Table refunds {
@@ -1736,6 +1863,53 @@ Table refunds {
   updated_at DateTime [not null]
   payment payments [not null]
   refunded_by profiles [not null]
+}
+
+Table receipts {
+  id String [pk]
+  receipt_number String [not null]
+  organization_id String [not null]
+  branch_id String [not null]
+  patient_id String [not null]
+  invoice_id String [not null]
+  payment_id String [unique, not null]
+  amount Decimal [not null]
+  currency String [not null, default: 'EGP']
+  payment_method PaymentMethod [not null]
+  balance_after Decimal [not null]
+  status ReceiptStatus [not null, default: 'ISSUED']
+  issued_by_id String [not null]
+  issued_at DateTime [default: `now()`, not null]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  organization organizations [not null]
+  branch branches [not null]
+  patient patients [not null]
+  invoice invoices [not null]
+  payment payments [not null]
+  issued_by profiles [not null]
+
+  indexes {
+    (organization_id, receipt_number) [unique]
+  }
+}
+
+Table receipt_sequences {
+  id String [pk]
+  organization_id String [not null]
+  year Int [not null]
+  last_seq Int [not null, default: 0]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  organization organizations [not null]
+
+  indexes {
+    (organization_id, year) [unique]
+  }
 }
 
 Table invoice_insurance_claims {
@@ -1983,11 +2157,48 @@ Enum ServiceType {
   OTHER
 }
 
+Enum ServiceUnit {
+  PER_SERVICE
+  PER_SESSION
+  PER_HOUR
+  PER_DAY
+  PER_ITEM
+}
+
+Enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
 Enum PricingSource {
   ORG_PRICE_LIST
   BRANCH_OVERRIDE
   PROVIDER_OVERRIDE
   CUSTOM
+}
+
+Enum ChargeStatus {
+  PENDING
+  INVOICED
+  VOID
+  WRITTEN_OFF
+}
+
+Enum ChargeSource {
+  DOCTOR
+  RECEPTION
+  SYSTEM
+}
+
+Enum ReceiptStatus {
+  ISSUED
+  VOID
+}
+
+Enum CashSessionStatus {
+  OPEN
+  CLOSED
+  RECONCILED
 }
 
 Enum InvoiceType {
@@ -2350,7 +2561,13 @@ Ref: patient_org_enrollments.patient_id > patients.id [delete: Cascade]
 
 Ref: patient_org_enrollments.organization_id > organizations.id [delete: Cascade]
 
+Ref: service_categories.organization_id > organizations.id
+
+Ref: service_categories.created_by_id > profiles.id [delete: Set Null]
+
 Ref: services.organization_id > organizations.id
+
+Ref: services.category_id > service_categories.id
 
 Ref: services.created_by_id > profiles.id
 
@@ -2369,6 +2586,8 @@ Ref: price_list_items.price_list_id > price_lists.id [delete: Cascade]
 Ref: price_list_items.service_id > services.id
 
 Ref: price_list_items.created_by_id > profiles.id [delete: Set Null]
+
+Ref: price_list_item_tiers.price_list_item_id > price_list_items.id [delete: Cascade]
 
 Ref: provider_services.profile_id > profiles.id
 
@@ -2408,12 +2627,54 @@ Ref: invoice_items.invoice_id > invoices.id [delete: Cascade]
 
 Ref: invoice_items.service_id > services.id
 
+Ref: invoice_items.charge_id > charges.id
+
+Ref: charges.organization_id > organizations.id
+
+Ref: charges.branch_id > branches.id
+
+Ref: charges.patient_id > patients.id
+
+Ref: charges.visit_id > visits.id
+
+Ref: charges.profile_id > profiles.id
+
+Ref: charges.service_id > services.id
+
+Ref: charges.captured_by_id > profiles.id
+
 Ref: payments.invoice_id > invoices.id
 
 Ref: payments.recorded_by_id > profiles.id
 
+Ref: payments.cash_session_id > cash_sessions.id
+
+Ref: cash_sessions.organization_id > organizations.id
+
+Ref: cash_sessions.branch_id > branches.id
+
+Ref: cash_sessions.profile_id > profiles.id
+
+Ref: cash_sessions.opened_by_id > profiles.id
+
+Ref: cash_sessions.closed_by_id > profiles.id
+
 Ref: refunds.payment_id > payments.id
 
 Ref: refunds.refunded_by_id > profiles.id
+
+Ref: receipts.organization_id > organizations.id
+
+Ref: receipts.branch_id > branches.id
+
+Ref: receipts.patient_id > patients.id
+
+Ref: receipts.invoice_id > invoices.id
+
+Ref: receipts.payment_id - payments.id
+
+Ref: receipts.issued_by_id > profiles.id
+
+Ref: receipt_sequences.organization_id > organizations.id
 
 Ref: invoice_insurance_claims.invoice_id - invoices.id
