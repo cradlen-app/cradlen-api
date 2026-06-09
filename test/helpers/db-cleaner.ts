@@ -31,15 +31,15 @@ const TABLES = [
 ];
 
 export async function cleanDatabase(prisma: PrismaClient): Promise<void> {
+  // Single multi-table TRUNCATE … CASCADE — one network round-trip instead of
+  // 21 sequential statements wrapped in a transaction. The transactional form
+  // intermittently blew past Prisma's 5s interactive-transaction timeout
+  // against Neon's latency; a single statement is atomic, faster, and
+  // FK-order-independent (CASCADE handles dependents).
+  const tableList = TABLES.map((table) => `"${table}"`).join(', ');
   await (
-    prisma as unknown as { $transaction: (ops: unknown[]) => Promise<unknown> }
-  ).$transaction(
-    TABLES.map((table) =>
-      (
-        prisma as unknown as {
-          $executeRawUnsafe: (sql: string) => Promise<unknown>;
-        }
-      ).$executeRawUnsafe(`TRUNCATE TABLE "${table}" CASCADE`),
-    ),
-  );
+    prisma as unknown as {
+      $executeRawUnsafe: (sql: string) => Promise<unknown>;
+    }
+  ).$executeRawUnsafe(`TRUNCATE TABLE ${tableList} CASCADE`);
 }
