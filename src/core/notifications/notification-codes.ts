@@ -31,6 +31,11 @@ export const NOTIFICATION_CODES = def({
     category: 'report',
     defaultTitle: 'Test result uploaded',
   },
+  SERVICE_CHARGE_ADDED: {
+    code: 'billing.service_charge_added',
+    category: 'billing',
+    defaultTitle: 'Service added to bill',
+  },
 });
 
 export type NotificationCodeKey = keyof typeof NOTIFICATION_CODES;

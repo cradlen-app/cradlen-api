@@ -95,6 +95,7 @@ describe('ChargingService', () => {
         unit_price: new Prisma.Decimal('150.00'),
         quantity: 2,
         pricing_source: PricingSource.ORG_PRICE_LIST,
+        source: ChargeSource.RECEPTION,
         captured_by_id: 'p1',
       };
       mockDb.charge.create.mockResolvedValue(created);
@@ -123,6 +124,7 @@ describe('ChargingService', () => {
       expect(eventName).toBe('charge.captured');
       // amount = unit_price * quantity = 300.00
       expect(payload.amount.toFixed(2)).toBe('300.00');
+      expect(payload.source).toBe(ChargeSource.RECEPTION);
     });
 
     it('uses an explicit unit_price as CUSTOM and skips resolution', async () => {
