@@ -32,8 +32,63 @@ export class ProviderServicesController {
   findServices(
     @Param('orgId', ParseUUIDPipe) orgId: string,
     @Param('profileId', ParseUUIDPipe) profileId: string,
+    @CurrentUser() user: AuthContext,
   ) {
-    return this.providerServicesService.findProviderServices(orgId, profileId);
+    return this.providerServicesService.findProviderServices(
+      orgId,
+      profileId,
+      user,
+    );
+  }
+
+  @Get('services/:serviceId')
+  @ApiStandardResponse(Object)
+  getService(
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('profileId', ParseUUIDPipe) profileId: string,
+    @Param('serviceId', ParseUUIDPipe) serviceId: string,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.providerServicesService.getProviderService(
+      orgId,
+      profileId,
+      serviceId,
+      user,
+    );
+  }
+
+  @Post('services/:serviceId/activate')
+  @ApiStandardResponse(Object)
+  activateService(
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('profileId', ParseUUIDPipe) profileId: string,
+    @Param('serviceId', ParseUUIDPipe) serviceId: string,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.providerServicesService.setServiceActive(
+      orgId,
+      profileId,
+      serviceId,
+      true,
+      user,
+    );
+  }
+
+  @Post('services/:serviceId/deactivate')
+  @ApiStandardResponse(Object)
+  deactivateService(
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('profileId', ParseUUIDPipe) profileId: string,
+    @Param('serviceId', ParseUUIDPipe) serviceId: string,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.providerServicesService.setServiceActive(
+      orgId,
+      profileId,
+      serviceId,
+      false,
+      user,
+    );
   }
 
   @Post('services')
@@ -74,8 +129,63 @@ export class ProviderServicesController {
   findOverrides(
     @Param('orgId', ParseUUIDPipe) orgId: string,
     @Param('profileId', ParseUUIDPipe) profileId: string,
+    @CurrentUser() user: AuthContext,
   ) {
-    return this.providerServicesService.findPriceOverrides(orgId, profileId);
+    return this.providerServicesService.findPriceOverrides(
+      orgId,
+      profileId,
+      user,
+    );
+  }
+
+  @Get('price-overrides/:id')
+  @ApiStandardResponse(Object)
+  getOverride(
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('profileId', ParseUUIDPipe) profileId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.providerServicesService.getPriceOverride(
+      orgId,
+      profileId,
+      id,
+      user,
+    );
+  }
+
+  @Post('price-overrides/:id/activate')
+  @ApiStandardResponse(Object)
+  activateOverride(
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('profileId', ParseUUIDPipe) profileId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.providerServicesService.setOverrideActive(
+      orgId,
+      profileId,
+      id,
+      true,
+      user,
+    );
+  }
+
+  @Post('price-overrides/:id/deactivate')
+  @ApiStandardResponse(Object)
+  deactivateOverride(
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('profileId', ParseUUIDPipe) profileId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.providerServicesService.setOverrideActive(
+      orgId,
+      profileId,
+      id,
+      false,
+      user,
+    );
   }
 
   @Post('price-overrides')

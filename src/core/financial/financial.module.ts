@@ -1,9 +1,25 @@
 import { Module } from '@nestjs/common';
-import { FinancialServicesModule } from './services/services.module.js';
+import { CatalogModule } from './catalog/catalog.module.js';
 import { PricingModule } from './pricing/pricing.module.js';
-import { InvoicesModule } from './invoices/invoices.module.js';
+import { ChargingModule } from './charging/charging.module.js';
+import { InvoicingModule } from './invoicing/invoicing.module.js';
+import { PaymentsModule } from './payments/payments.module.js';
+import { RefundsModule } from './refunds/refunds.module.js';
+import { ReceiptsModule } from './receipts/receipts.module.js';
+import { CashManagementModule } from './cash-management/cash-management.module.js';
+import { ReportingModule } from './reporting/reporting.module.js';
 
 @Module({
-  imports: [FinancialServicesModule, PricingModule, InvoicesModule],
+  imports: [
+    CatalogModule,
+    PricingModule,
+    ChargingModule,
+    InvoicingModule,
+    PaymentsModule,
+    RefundsModule,
+    ReceiptsModule,
+    CashManagementModule,
+    ReportingModule,
+  ],
 })
 export class FinancialModule {}
