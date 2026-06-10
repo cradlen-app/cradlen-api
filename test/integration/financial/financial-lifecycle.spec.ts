@@ -483,4 +483,175 @@ describe('Financial RCM — lifecycle + cross-tenant (integration)', () => {
     });
     expect(notification.category).toBe('billing');
   });
+
+  it('appends a later charge to a fully-paid invoice, reopening it for the balance', async () => {
+    const a = await seedOrg('Org A', 'owner.a@example.com');
+    const patientId = await createPatient(a.org.id, a.ownerProfileId);
+    const auth = bearer(await loginAs(a.ownerEmail));
+    const http = app.getHttpServer();
+    const base = `/v1/organizations/${a.org.id}`;
+
+    // First service: charge → invoice → issue → pay in full.
+    const { invoiceId } = await chargeAndIssue(
+      base,
+      auth,
+      a.branch.id,
+      patientId,
+      a.ownerProfileId,
+      { unit_price: 200 },
+    );
+    const payFull = await auth(
+      request(http).post(`${base}/invoices/${invoiceId}/payments`),
+    )
+      .send({ amount: 200, payment_method: 'CASH' })
+      .expect(201);
+    expect(payFull.body.data.invoice.status).toBe('PAID');
+
+    // A second service is rendered later → a fresh PENDING charge.
+    const svc2 = await auth(
+      request(http).post(`${base}/financial/catalog/services`),
+    )
+      .send({
+        code: `PROC-${Math.floor(Math.random() * 1e6)}`,
+        name: 'Procedure',
+        service_type: 'CONSULTATION',
+      })
+      .expect(201);
+    const charge2 = await auth(
+      request(http).post(`${base}/financial/charges`),
+    )
+      .send({
+        branch_id: a.branch.id,
+        patient_id: patientId,
+        profile_id: a.ownerProfileId,
+        service_id: svc2.body.data.id,
+        description: 'Procedure',
+        unit_price: 150,
+      })
+      .expect(201);
+
+    // Append it to the already-paid invoice → reopens to PARTIALLY_PAID.
+    const appended = await auth(
+      request(http).post(`${base}/invoices/${invoiceId}/append-charges`),
+    )
+      .send({})
+      .expect(201);
+    expect(money(appended.body.data.total_amount)).toBe(350);
+    expect(money(appended.body.data.balance_due)).toBe(150);
+    expect(appended.body.data.status).toBe('PARTIALLY_PAID');
+
+    // The appended charge is now INVOICED.
+    const c2 = await prisma.charge.findUnique({
+      where: { id: charge2.body.data.id },
+    });
+    expect(c2?.status).toBe('INVOICED');
+
+    // Collect the balance → PAID.
+    const pay2 = await auth(
+      request(http).post(`${base}/invoices/${invoiceId}/payments`),
+    )
+      .send({ amount: 150, payment_method: 'CASH' })
+      .expect(201);
+    expect(pay2.body.data.invoice.status).toBe('PAID');
+
+    // Nothing left to append → 400.
+    await auth(
+      request(http).post(`${base}/invoices/${invoiceId}/append-charges`),
+    )
+      .send({})
+      .expect(400);
+  });
+
+  it('collects a procedure priced up front in installments until PAID', async () => {
+    const a = await seedOrg('Org A', 'owner.a@example.com');
+    const patientId = await createPatient(a.org.id, a.ownerProfileId);
+    const auth = bearer(await loginAs(a.ownerEmail));
+    const http = app.getHttpServer();
+    const base = `/v1/organizations/${a.org.id}`;
+
+    // The whole procedure (e.g. a root canal) is priced up front as one charge.
+    const { invoiceId, invoice } = await chargeAndIssue(
+      base,
+      auth,
+      a.branch.id,
+      patientId,
+      a.ownerProfileId,
+      { unit_price: 5000 },
+    );
+    expect(money(invoice.total_amount)).toBe(5000);
+
+    // First installment.
+    const pay1 = await auth(
+      request(http).post(`${base}/invoices/${invoiceId}/payments`),
+    )
+      .send({ amount: 2000, payment_method: 'CASH' })
+      .expect(201);
+    expect(pay1.body.data.invoice.status).toBe('PARTIALLY_PAID');
+    expect(money(pay1.body.data.invoice.balance_due)).toBe(3000);
+
+    // Second installment.
+    const pay2 = await auth(
+      request(http).post(`${base}/invoices/${invoiceId}/payments`),
+    )
+      .send({ amount: 1500, payment_method: 'CASH' })
+      .expect(201);
+    expect(pay2.body.data.invoice.status).toBe('PARTIALLY_PAID');
+    expect(money(pay2.body.data.invoice.balance_due)).toBe(1500);
+
+    // Final installment settles the case.
+    const pay3 = await auth(
+      request(http).post(`${base}/invoices/${invoiceId}/payments`),
+    )
+      .send({ amount: 1500, payment_method: 'CARD' })
+      .expect(201);
+    expect(pay3.body.data.invoice.status).toBe('PAID');
+    expect(money(pay3.body.data.invoice.balance_due)).toBe(0);
+  });
+
+  it('rejects appending charges to a voided invoice', async () => {
+    const a = await seedOrg('Org A', 'owner.a@example.com');
+    const patientId = await createPatient(a.org.id, a.ownerProfileId);
+    const auth = bearer(await loginAs(a.ownerEmail));
+    const http = app.getHttpServer();
+    const base = `/v1/organizations/${a.org.id}`;
+
+    const { invoiceId } = await chargeAndIssue(
+      base,
+      auth,
+      a.branch.id,
+      patientId,
+      a.ownerProfileId,
+      { unit_price: 200 },
+    );
+    await auth(
+      request(http).post(`${base}/invoices/${invoiceId}/void`),
+    ).expect(201);
+
+    // A new PENDING charge exists, but the invoice is VOID → append blocked.
+    const svc = await auth(
+      request(http).post(`${base}/financial/catalog/services`),
+    )
+      .send({
+        code: `EXTRA-${Math.floor(Math.random() * 1e6)}`,
+        name: 'Extra',
+        service_type: 'CONSULTATION',
+      })
+      .expect(201);
+    await auth(request(http).post(`${base}/financial/charges`))
+      .send({
+        branch_id: a.branch.id,
+        patient_id: patientId,
+        profile_id: a.ownerProfileId,
+        service_id: svc.body.data.id,
+        description: 'Extra',
+        unit_price: 50,
+      })
+      .expect(201);
+
+    await auth(
+      request(http).post(`${base}/invoices/${invoiceId}/append-charges`),
+    )
+      .send({})
+      .expect(400);
+  });
 });

@@ -26,6 +26,7 @@ import {
 } from './dto/create-invoice.dto.js';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto.js';
 import { BuildInvoiceFromChargesDto } from './dto/build-invoice-from-charges.dto.js';
+import { AppendChargesDto } from './dto/append-charges.dto.js';
 import { ListInvoicesQueryDto } from './dto/list-invoices-query.dto.js';
 import { InvoiceResponseDto } from './dto/invoice-response.dto.js';
 
@@ -48,6 +49,7 @@ export class InvoicingController {
         status: query.status,
         patientId: query.patient_id,
         branchId: query.branch_id,
+        episodeId: query.episode_id,
         invoiceType: query.type,
         dateFrom: query.date_from,
         dateTo: query.date_to,
@@ -78,6 +80,18 @@ export class InvoicingController {
     @CurrentUser() user: AuthContext,
   ) {
     return this.invoicingService.buildFromCharges(orgId, dto, user);
+  }
+
+  @Post(':id/append-charges')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiStandardResponse(InvoiceResponseDto)
+  appendCharges(
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AppendChargesDto,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.invoicingService.appendCharges(orgId, id, dto, user);
   }
 
   @Get(':id')
