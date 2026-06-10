@@ -369,6 +369,22 @@ export class InvoicingService {
     user: AuthContext,
   ) {
     await this.access.assertIsReceptionistOrOwner(user, organizationId);
+    return this.appendChargesSystem(organizationId, invoiceId, dto.charge_ids);
+  }
+
+  /**
+   * Core append logic without the user/role assertion — shared by the public
+   * {@link appendCharges} (after auth) and the auto-append event path. Pass
+   * `throwIfEmpty: false` for best-effort callers (the listener) so a charge
+   * that's already invoiced is a quiet no-op instead of an error.
+   */
+  async appendChargesSystem(
+    organizationId: string,
+    invoiceId: string,
+    chargeIds?: string[],
+    opts: { throwIfEmpty?: boolean } = {},
+  ) {
+    const { throwIfEmpty = true } = opts;
     const invoice = await this.findOneOrThrow(organizationId, invoiceId);
 
     // DRAFT invoices accrue charges via the normal create/import path; VOID is
@@ -391,12 +407,18 @@ export class InvoicingService {
           patient_id: invoice.patient_id,
           status: ChargeStatus.PENDING,
           is_deleted: false,
-          ...(dto.charge_ids?.length && { id: { in: dto.charge_ids } }),
+          ...(chargeIds?.length && { id: { in: chargeIds } }),
         },
         orderBy: { captured_at: 'asc' },
       });
 
       if (charges.length === 0) {
+        if (!throwIfEmpty) {
+          return tx.invoice.findUniqueOrThrow({
+            where: { id: invoiceId },
+            include: { items: true },
+          });
+        }
         throw new BadRequestException('No open charges to append');
       }
 
@@ -450,6 +472,49 @@ export class InvoicingService {
         include: { items: true },
       });
     });
+  }
+
+  /**
+   * When a charge is captured for a visit whose case already has an open issued
+   * invoice, append it to that invoice automatically (so a service the doctor
+   * adds mid-visit lands on the bill without a manual step). Best-effort: a
+   * no-op when there's no visit, no episode, or no open issued invoice yet.
+   */
+  async autoAppendChargeFromEvent(event: {
+    organization_id: string;
+    branch_id: string;
+    visit_id: string | null;
+    charge_id: string;
+  }): Promise<void> {
+    if (!event.visit_id) return;
+    const visit = await this.prismaService.db.visit.findFirst({
+      where: { id: event.visit_id, is_deleted: false },
+      select: { episode_id: true },
+    });
+    if (!visit) return;
+
+    const invoice = await this.prismaService.db.invoice.findFirst({
+      where: {
+        organization_id: event.organization_id,
+        branch_id: event.branch_id,
+        episode_id: visit.episode_id,
+        is_deleted: false,
+        status: {
+          in: [
+            InvoiceStatus.ISSUED,
+            InvoiceStatus.PARTIALLY_PAID,
+            InvoiceStatus.PAID,
+          ],
+        },
+      },
+      orderBy: { created_at: 'desc' },
+      select: { id: true },
+    });
+    if (!invoice) return;
+
+    await this.appendChargesSystem(event.organization_id, invoice.id, [
+      event.charge_id,
+    ], { throwIfEmpty: false });
   }
 
   async update(
