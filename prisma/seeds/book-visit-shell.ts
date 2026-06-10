@@ -16,7 +16,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import type { Predicate } from '../../src/builder/rules/predicates.js';
 
 const TEMPLATE_CODE = 'book_visit';
-const TEMPLATE_VERSION = 16;
+const TEMPLATE_VERSION = 17;
 
 interface FieldSpec {
   code: string;
@@ -177,7 +177,10 @@ const SECTIONS: SectionSpec[] = [
         code: 'service_id',
         label: 'Service',
         type: 'SELECT',
-        binding: { namespace: 'SYSTEM', path: 'service_id' },
+        // VISIT-bound (like care_path_code): consumed at booking to capture the
+        // charge, not persisted on the visit row. SYSTEM-bound non-discriminator
+        // fields are dropped by the frontend submission builder.
+        binding: { namespace: 'VISIT', path: 'service_id' },
         config: {
           i18n: { ar: { label: 'الخدمة' } },
           ui: {
