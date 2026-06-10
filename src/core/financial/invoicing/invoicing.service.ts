@@ -106,7 +106,10 @@ export class InvoicingService {
         ? {
             created_at: {
               ...(filters.dateFrom && { gte: new Date(filters.dateFrom) }),
-              ...(filters.dateTo && { lte: new Date(filters.dateTo) }),
+              // Inclusive upper bound: a date-only `dateTo` ("YYYY-MM-DD")
+              // parses to midnight UTC, which would exclude everything created
+              // later that day — so extend it to end-of-day.
+              ...(filters.dateTo && { lte: this.endOfDay(filters.dateTo) }),
             },
           }
         : {}),
@@ -837,6 +840,13 @@ export class InvoicingService {
       select: { episode_id: true },
     });
     return visit?.episode_id ?? undefined;
+  }
+
+  /** End of the given UTC day — inclusive upper bound for a date-only filter. */
+  private endOfDay(date: string): Date {
+    const end = new Date(date);
+    end.setUTCHours(23, 59, 59, 999);
+    return end;
   }
 
   private async findOneOrThrow(organizationId: string, invoiceId: string) {
