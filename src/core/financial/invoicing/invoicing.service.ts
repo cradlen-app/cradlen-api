@@ -144,6 +144,13 @@ export class InvoicingService {
           where: { invoice_id: invoiceId, is_deleted: false },
           orderBy: { created_at: 'desc' },
         },
+        patient: { select: { id: true, full_name: true } },
+        assigned_doctor: {
+          select: {
+            id: true,
+            user: { select: { first_name: true, last_name: true } },
+          },
+        },
       },
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
@@ -152,7 +159,20 @@ export class InvoicingService {
       organizationId,
       invoice.branch_id,
     );
-    return invoice;
+
+    // Expose a flat `doctor` shape (matches the web EmbeddedPerson contract);
+    // `patient` already carries `full_name` from the include.
+    const { assigned_doctor, ...rest } = invoice;
+    return {
+      ...rest,
+      doctor: assigned_doctor
+        ? {
+            id: assigned_doctor.id,
+            first_name: assigned_doctor.user.first_name,
+            last_name: assigned_doctor.user.last_name,
+          }
+        : null,
+    };
   }
 
   async create(
@@ -304,6 +324,9 @@ export class InvoicingService {
           patient_id: dto.patient_id,
           visit_id: dto.visit_id,
           episode_id: episodeId,
+          // The case's rendering provider — taken from the charges so the
+          // invoice records (and can display) the doctor.
+          assigned_doctor_id: charges[0].profile_id,
           currency,
           notes: dto.notes,
           due_date: dto.due_date ? new Date(dto.due_date) : undefined,
