@@ -150,4 +150,44 @@ describe('VisitsGateway broadcast', () => {
     expect(to).toHaveBeenCalledWith(['branch:b1']);
     expect(emit).toHaveBeenCalledWith('visit.updated', { x: 1 });
   });
+
+  it('relays a doctor-captured charge to the branch room only', () => {
+    const gateway = makeGateway(jest.fn());
+    const { to, emit } = withServer(gateway);
+
+    gateway.onChargeCaptured({
+      branch_id: 'b1',
+      patient_id: 'pat1',
+      visit_id: 'v1',
+      service_id: 's1',
+      amount: '150',
+      source: 'DOCTOR',
+    });
+
+    expect(to).toHaveBeenCalledWith('branch:b1');
+    expect(emit).toHaveBeenCalledWith('billing.charge_added', {
+      branch_id: 'b1',
+      patient_id: 'pat1',
+      visit_id: 'v1',
+      service_id: 's1',
+      amount: '150',
+    });
+  });
+
+  it('does not relay a reception-captured charge', () => {
+    const gateway = makeGateway(jest.fn());
+    const { to, emit } = withServer(gateway);
+
+    gateway.onChargeCaptured({
+      branch_id: 'b1',
+      patient_id: 'pat1',
+      visit_id: 'v1',
+      service_id: 's1',
+      amount: '150',
+      source: 'RECEPTION',
+    });
+
+    expect(to).not.toHaveBeenCalled();
+    expect(emit).not.toHaveBeenCalled();
+  });
 });
