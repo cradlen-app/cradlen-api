@@ -562,6 +562,34 @@ describe('Financial RCM — lifecycle + cross-tenant (integration)', () => {
       .expect(400);
   });
 
+  it('lists a same-day invoice when filtered by today (inclusive date_to)', async () => {
+    const a = await seedOrg('Org A', 'owner.a@example.com');
+    const patientId = await createPatient(a.org.id, a.ownerProfileId);
+    const auth = bearer(await loginAs(a.ownerEmail));
+    const http = app.getHttpServer();
+    const base = `/v1/organizations/${a.org.id}`;
+
+    const { invoiceId } = await chargeAndIssue(
+      base,
+      auth,
+      a.branch.id,
+      patientId,
+      a.ownerProfileId,
+      { unit_price: 200 },
+    );
+
+    // The reception billing panel filters by date_from = date_to = today; the
+    // invoice was created moments ago, so an inclusive upper bound must return it.
+    const today = new Date().toISOString().split('T')[0]!;
+    const list = await auth(
+      request(http).get(
+        `${base}/invoices?branch_id=${a.branch.id}&date_from=${today}&date_to=${today}`,
+      ),
+    ).expect(200);
+    const ids = (list.body.data as Array<{ id: string }>).map((i) => i.id);
+    expect(ids).toContain(invoiceId);
+  });
+
   it('collects a procedure priced up front in installments until PAID', async () => {
     const a = await seedOrg('Org A', 'owner.a@example.com');
     const patientId = await createPatient(a.org.id, a.ownerProfileId);
