@@ -33,6 +33,7 @@ const mockDb = {
   },
   charge: { findMany: jest.fn(), updateMany: jest.fn() },
   visit: { findFirst: jest.fn() },
+  patientEpisode: { findFirst: jest.fn() },
   $transaction: jest.fn(),
 };
 
