@@ -25,16 +25,19 @@ import {
   type InvoiceIssuedEvent,
 } from '../shared/events/financial-events.js';
 import { InvoiceNumberService } from './invoice-number.service.js';
+import { InvoiceBalanceService } from './invoice-balance.service.js';
 import type {
   CreateInvoiceDto,
   InvoiceItemInputDto,
 } from './dto/create-invoice.dto.js';
 import type { UpdateInvoiceDto } from './dto/update-invoice.dto.js';
 import type { BuildInvoiceFromChargesDto } from './dto/build-invoice-from-charges.dto.js';
+import type { AppendChargesDto } from './dto/append-charges.dto.js';
 
 export interface InvoiceFilters {
   branchId?: string;
   patientId?: string;
+  episodeId?: string;
   status?: InvoiceStatus;
   invoiceType?: InvoiceType;
   dateFrom?: string;
@@ -67,6 +70,7 @@ export class InvoicingService {
     private readonly access: FinancialAccessService,
     private readonly pricingResolver: PricingResolverService,
     private readonly invoiceNumberService: InvoiceNumberService,
+    private readonly balanceService: InvoiceBalanceService,
     private readonly eventBus: EventBus,
   ) {}
 
@@ -95,6 +99,7 @@ export class InvoicingService {
       is_deleted: false,
       ...(filters.branchId && { branch_id: filters.branchId }),
       ...(filters.patientId && { patient_id: filters.patientId }),
+      ...(filters.episodeId && { episode_id: filters.episodeId }),
       ...(filters.status && { status: filters.status }),
       ...(filters.invoiceType && { invoice_type: filters.invoiceType }),
       ...(filters.dateFrom || filters.dateTo
@@ -181,6 +186,11 @@ export class InvoicingService {
       Money.zero(),
     );
 
+    const episodeId = await this.resolveEpisodeId(
+      dto.episode_id,
+      dto.visit_id,
+    );
+
     const invoice = await this.prismaService.db.invoice.create({
       data: {
         invoice_number: invoiceNumber,
@@ -189,6 +199,7 @@ export class InvoicingService {
         branch_id: dto.branch_id,
         patient_id: dto.patient_id,
         visit_id: dto.visit_id,
+        episode_id: episodeId,
         assigned_doctor_id: dto.assigned_doctor_id,
         currency,
         notes: dto.notes,
@@ -229,6 +240,8 @@ export class InvoicingService {
 
     const invoiceNumber =
       await this.invoiceNumberService.generate(organizationId);
+
+    const episodeId = await this.resolveEpisodeId(dto.episode_id, dto.visit_id);
 
     const invoice = await this.prismaService.db.$transaction(async (tx) => {
       const charges = await tx.charge.findMany({
@@ -278,6 +291,7 @@ export class InvoicingService {
           branch_id: dto.branch_id,
           patient_id: dto.patient_id,
           visit_id: dto.visit_id,
+          episode_id: episodeId,
           currency,
           notes: dto.notes,
           due_date: dto.due_date ? new Date(dto.due_date) : undefined,
@@ -303,6 +317,104 @@ export class InvoicingService {
 
     this.publishCreated(invoice);
     return invoice;
+  }
+
+  /**
+   * Append a patient's open (PENDING) charges to an existing issued invoice —
+   * the post-issue accrual path for a case billed across visits (e.g. a service
+   * the doctor added mid-visit, or a later session of a multi-visit procedure).
+   * Charges flip to INVOICED; the invoice's totals and lifecycle status are
+   * recomputed (a fully-paid invoice reopens to PARTIALLY_PAID when a balance
+   * reappears).
+   */
+  async appendCharges(
+    organizationId: string,
+    invoiceId: string,
+    dto: AppendChargesDto,
+    user: AuthContext,
+  ) {
+    await this.access.assertIsReceptionistOrOwner(user, organizationId);
+    const invoice = await this.findOneOrThrow(organizationId, invoiceId);
+
+    // DRAFT invoices accrue charges via the normal create/import path; VOID is
+    // terminal. Only an already-issued, non-void invoice accrues here.
+    if (
+      invoice.status !== InvoiceStatus.ISSUED &&
+      invoice.status !== InvoiceStatus.PARTIALLY_PAID &&
+      invoice.status !== InvoiceStatus.PAID
+    ) {
+      throw new BadRequestException(
+        'Charges can only be appended to an ISSUED, PARTIALLY_PAID, or PAID invoice',
+      );
+    }
+
+    return this.prismaService.db.$transaction(async (tx) => {
+      const charges = await tx.charge.findMany({
+        where: {
+          organization_id: organizationId,
+          branch_id: invoice.branch_id,
+          patient_id: invoice.patient_id,
+          status: ChargeStatus.PENDING,
+          is_deleted: false,
+          ...(dto.charge_ids?.length && { id: { in: dto.charge_ids } }),
+        },
+        orderBy: { captured_at: 'asc' },
+      });
+
+      if (charges.length === 0) {
+        throw new BadRequestException('No open charges to append');
+      }
+
+      await tx.invoiceItem.createMany({
+        data: charges.map((charge) => ({
+          invoice_id: invoiceId,
+          ...this.toItemData({
+            service_id: charge.service_id ?? undefined,
+            charge_id: charge.id,
+            description: charge.description,
+            quantity: charge.quantity,
+            unit_price: charge.unit_price,
+            currency: charge.currency,
+            discount_amount: Money.zero(),
+            total_amount: Money.multiply(charge.unit_price, charge.quantity),
+            pricing_source: charge.pricing_source,
+          }),
+        })),
+      });
+
+      await tx.charge.updateMany({
+        where: { id: { in: charges.map((c) => c.id) } },
+        data: { status: ChargeStatus.INVOICED },
+      });
+
+      // Recompute invoice-level totals from all items, preserving the existing
+      // invoice-level discount and tax…
+      const allItems = await tx.invoiceItem.findMany({
+        where: { invoice_id: invoiceId },
+      });
+      const { subtotal, discountAmount, total } = this.computeTotals(
+        allItems,
+        { type: invoice.discount_type, value: invoice.discount_value },
+        invoice.tax_amount,
+      );
+      await tx.invoice.update({
+        where: { id: invoiceId },
+        data: {
+          subtotal,
+          discount_amount: discountAmount,
+          total_amount: total,
+        },
+      });
+
+      // …then recompute paid/balance/status from payments (reopens PAID →
+      // PARTIALLY_PAID when the new total exceeds what's been paid).
+      await this.balanceService.recompute(tx, invoiceId);
+
+      return tx.invoice.findUniqueOrThrow({
+        where: { id: invoiceId },
+        include: { items: true },
+      });
+    });
   }
 
   async update(
@@ -671,6 +783,24 @@ export class InvoicingService {
         `Invoice ${invoice.id} is not in DRAFT status and cannot be modified`,
       );
     }
+  }
+
+  /**
+   * The case (episode) an invoice bills. Prefer an explicit episode_id; otherwise
+   * derive it from the originating visit so per-visit billing still groups under
+   * its episode.
+   */
+  private async resolveEpisodeId(
+    explicitEpisodeId: string | undefined,
+    visitId: string | undefined,
+  ): Promise<string | undefined> {
+    if (explicitEpisodeId) return explicitEpisodeId;
+    if (!visitId) return undefined;
+    const visit = await this.prismaService.db.visit.findFirst({
+      where: { id: visitId, is_deleted: false },
+      select: { episode_id: true },
+    });
+    return visit?.episode_id ?? undefined;
   }
 
   private async findOneOrThrow(organizationId: string, invoiceId: string) {
