@@ -9,6 +9,7 @@ import {
 } from '@prisma/client';
 import { InvoicingService } from './invoicing.service.js';
 import { InvoiceNumberService } from './invoice-number.service.js';
+import { InvoiceBalanceService } from './invoice-balance.service.js';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { EventBus } from '@infrastructure/messaging/event-bus.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
@@ -31,6 +32,7 @@ const mockDb = {
     count: jest.fn(),
   },
   charge: { findMany: jest.fn(), updateMany: jest.fn() },
+  visit: { findFirst: jest.fn() },
   $transaction: jest.fn(),
 };
 
@@ -42,6 +44,7 @@ const mockAuth = {
 const mockAccess = { assertIsReceptionistOrOwner: jest.fn() };
 const mockResolver = { resolvePrice: jest.fn() };
 const mockNumber = { generate: jest.fn() };
+const mockBalance = { recompute: jest.fn() };
 const mockEventBus = { publish: jest.fn() };
 
 const ORG = 'org-1';
@@ -66,6 +69,7 @@ describe('InvoicingService', () => {
         { provide: FinancialAccessService, useValue: mockAccess },
         { provide: PricingResolverService, useValue: mockResolver },
         { provide: InvoiceNumberService, useValue: mockNumber },
+        { provide: InvoiceBalanceService, useValue: mockBalance },
         { provide: EventBus, useValue: mockEventBus },
       ],
     }).compile();
