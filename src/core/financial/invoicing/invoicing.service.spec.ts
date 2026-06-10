@@ -225,4 +225,50 @@ describe('InvoicingService', () => {
       );
     });
   });
+
+  describe('autoAppendChargeFromEvent', () => {
+    const event = {
+      organization_id: ORG,
+      branch_id: BRANCH,
+      visit_id: 'visit-1',
+      charge_id: 'charge-1',
+    };
+
+    it('appends the charge to the episode open invoice', async () => {
+      mockDb.visit.findFirst.mockResolvedValue({ episode_id: 'ep-1' });
+      mockDb.invoice.findFirst.mockResolvedValue({ id: 'inv-1' });
+      const spy = jest
+        .spyOn(service, 'appendChargesSystem')
+        .mockResolvedValue({} as never);
+
+      await service.autoAppendChargeFromEvent(event);
+
+      expect(spy).toHaveBeenCalledWith(ORG, 'inv-1', ['charge-1'], {
+        throwIfEmpty: false,
+      });
+    });
+
+    it('no-ops when the episode has no open issued invoice', async () => {
+      mockDb.visit.findFirst.mockResolvedValue({ episode_id: 'ep-1' });
+      mockDb.invoice.findFirst.mockResolvedValue(null);
+      const spy = jest
+        .spyOn(service, 'appendChargesSystem')
+        .mockResolvedValue({} as never);
+
+      await service.autoAppendChargeFromEvent(event);
+
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('no-ops when the charge has no visit', async () => {
+      const spy = jest
+        .spyOn(service, 'appendChargesSystem')
+        .mockResolvedValue({} as never);
+
+      await service.autoAppendChargeFromEvent({ ...event, visit_id: null });
+
+      expect(spy).not.toHaveBeenCalled();
+      expect(mockDb.visit.findFirst).not.toHaveBeenCalled();
+    });
+  });
 });

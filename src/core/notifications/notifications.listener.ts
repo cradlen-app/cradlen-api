@@ -144,10 +144,10 @@ export class NotificationsListener {
       const serviceLabel = service?.name
         ? `"${service.name}"`
         : 'a service charge';
-      const branchPath = `/${event.branch_id}`;
-      const navigateTo = event.visit_id
-        ? `/${event.organization_id}${branchPath}/dashboard/visits/${event.visit_id}`
-        : `/${event.organization_id}${branchPath}/dashboard/patients/${event.patient_id}`;
+      // Send reception to the billing panel (the visits dashboard), not the
+      // clinical visit workspace — that workspace fetches clinical resources
+      // reception isn't authorized for, which 401s and bounces them to sign-in.
+      const navigateTo = `/${event.organization_id}/${event.branch_id}/dashboard/visits`;
 
       await Promise.all(
         receptionists.map((receptionist) =>
