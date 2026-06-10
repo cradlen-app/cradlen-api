@@ -1071,6 +1071,7 @@ model PatientEpisode {
   started_at           DateTime?
   ended_at             DateTime?
   visits               Visit[]
+  invoices             Invoice[]               @relation("EpisodeInvoices")
   pregnancy_record     PregnancyEpisodeRecord?
   created_at           DateTime                @default(now())
   updated_at           DateTime                @updatedAt
@@ -2423,6 +2424,7 @@ model Invoice {
   branch_id          String        @db.Uuid
   patient_id         String        @db.Uuid
   visit_id           String?       @db.Uuid
+  episode_id         String?       @db.Uuid
   assigned_doctor_id String?       @db.Uuid
   status             InvoiceStatus @default(DRAFT)
   subtotal           Decimal       @default(0) @db.Decimal(10, 2)
@@ -2447,6 +2449,7 @@ model Invoice {
   branch          Branch                 @relation("BranchInvoices", fields: [branch_id], references: [id])
   patient         Patient                @relation("PatientInvoices", fields: [patient_id], references: [id])
   visit           Visit?                 @relation("VisitInvoices", fields: [visit_id], references: [id])
+  episode         PatientEpisode?        @relation("EpisodeInvoices", fields: [episode_id], references: [id])
   assigned_doctor Profile?               @relation("InvoiceDoctor", fields: [assigned_doctor_id], references: [id])
   created_by      Profile                @relation("InvoiceCreatedBy", fields: [created_by_id], references: [id])
   items           InvoiceItem[]
@@ -2457,6 +2460,7 @@ model Invoice {
   @@unique([organization_id, invoice_number])
   @@index([organization_id, branch_id, status, is_deleted])
   @@index([patient_id, is_deleted])
+  @@index([episode_id, is_deleted])
   @@map("invoices")
 }
 

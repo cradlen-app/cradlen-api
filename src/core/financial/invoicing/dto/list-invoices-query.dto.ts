@@ -27,6 +27,11 @@ export class ListInvoicesQueryDto {
   @IsOptional()
   branch_id?: string;
 
+  @ApiPropertyOptional({ description: 'Filter invoices by clinical case (episode).' })
+  @IsUUID('4')
+  @IsOptional()
+  episode_id?: string;
+
   @ApiPropertyOptional({ enum: InvoiceType })
   @IsEnum(InvoiceType)
   @IsOptional()

@@ -20,6 +20,20 @@ export interface VisitRealtimeEvent {
 }
 
 /**
+ * Subset of the financial `charge.captured` event the gateway relays to
+ * reception. Redeclared locally (not imported from core) to honour the
+ * `infrastructure → common only` layer boundary.
+ */
+interface ChargeCapturedRealtimeEvent {
+  branch_id: string;
+  patient_id: string;
+  visit_id: string | null;
+  service_id: string | null;
+  amount: unknown;
+  source: string;
+}
+
+/**
  * Minimal shape we trust from a verified access token. Redeclared locally
  * (not imported from core) so the gateway honours the
  * `infrastructure → common only` layer boundary.
@@ -122,6 +136,23 @@ export class VisitsGateway implements OnGatewayConnection {
   @OnEvent('medical_rep_visit.updated')
   onMedRepVisitUpdated(event: VisitRealtimeEvent) {
     this.broadcast('medical_rep_visit.updated', event, false);
+  }
+
+  /**
+   * When the doctor adds a billable service mid-visit, nudge reception (the
+   * branch room) to collect for it. Reception-/system-captured charges are not
+   * relayed — they don't represent a new amount someone at the desk must act on.
+   */
+  @OnEvent('charge.captured')
+  onChargeCaptured(event: ChargeCapturedRealtimeEvent) {
+    if (event.source !== 'DOCTOR') return;
+    this.server.to(`branch:${event.branch_id}`).emit('billing.charge_added', {
+      branch_id: event.branch_id,
+      patient_id: event.patient_id,
+      visit_id: event.visit_id,
+      service_id: event.service_id,
+      amount: String(event.amount),
+    });
   }
 
   private joinAuthorizedRooms(client: Socket): void {

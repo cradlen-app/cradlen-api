@@ -639,6 +639,7 @@ Table patient_episodes {
   started_at DateTime
   ended_at DateTime
   visits visits [not null]
+  invoices invoices [not null]
   pregnancy_record pregnancy_episode_records
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
@@ -1714,6 +1715,7 @@ Table invoices {
   branch_id String [not null]
   patient_id String [not null]
   visit_id String
+  episode_id String
   assigned_doctor_id String
   status InvoiceStatus [not null, default: 'DRAFT']
   subtotal Decimal [not null, default: 0]
@@ -1737,6 +1739,7 @@ Table invoices {
   branch branches [not null]
   patient patients [not null]
   visit visits
+  episode patient_episodes
   assigned_doctor profiles
   created_by profiles [not null]
   items invoice_items [not null]
@@ -2618,6 +2621,8 @@ Ref: invoices.branch_id > branches.id
 Ref: invoices.patient_id > patients.id
 
 Ref: invoices.visit_id > visits.id
+
+Ref: invoices.episode_id > patient_episodes.id
 
 Ref: invoices.assigned_doctor_id > profiles.id
 
