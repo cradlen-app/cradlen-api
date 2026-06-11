@@ -18,7 +18,8 @@ import { SetFollowUpDto } from './dto/set-follow-up.dto';
 import { VisitIntakeFieldsDto } from './dto/visit-intake.dto';
 import { EventBus } from '@infrastructure/messaging/event-bus';
 import { paginated } from '@common/utils/pagination.utils';
-import { todayBounds } from '@common/utils/date-range.utils.js';
+import { dayBounds, todayBounds } from '@common/utils/date-range.utils.js';
+import { ERROR_CODES } from '@common/constant/error-codes.js';
 import { assertStatusTransition } from '@common/utils/state-transition.js';
 import { assertBookVisitPayloadValid } from '../shared/book-visit-validation.js';
 import { nextQueueNumber } from '../shared/queue-number.js';
@@ -262,7 +263,9 @@ export class VisitsService {
   private async assertEpisodeInOrg(episodeId: string, organizationId: string) {
     const episode = await this.prismaService.db.patientEpisode.findUnique({
       where: { id: episodeId, is_deleted: false },
-      include: { journey: { select: { organization_id: true } } },
+      include: {
+        journey: { select: { organization_id: true, patient_id: true } },
+      },
     });
     if (
       !episode ||
@@ -274,12 +277,51 @@ export class VisitsService {
     return episode;
   }
 
+  /**
+   * Reject a booking when the patient already has an open visit
+   * (SCHEDULED / CHECKED_IN / IN_PROGRESS) in the same branch on the same
+   * calendar day — i.e. one that already occupies a slot in that day's waiting
+   * list. Runs on the transaction client so the check is atomic with the
+   * insert.
+   */
+  private async assertNoOpenVisitForPatient(
+    tx: Prisma.TransactionClient,
+    args: { patientId: string; branchId: string; scheduledAt: Date },
+  ): Promise<void> {
+    const { start, end } = dayBounds(args.scheduledAt);
+    const existing = await tx.visit.findFirst({
+      where: {
+        branch_id: args.branchId,
+        is_deleted: false,
+        status: { in: ['SCHEDULED', 'CHECKED_IN', 'IN_PROGRESS'] },
+        scheduled_at: { gte: start, lte: end },
+        episode: { journey: { patient_id: args.patientId } },
+      },
+      select: { id: true },
+    });
+    if (existing) {
+      throw new ConflictException({
+        code: ERROR_CODES.PATIENT_HAS_OPEN_VISIT,
+        message: 'Patient already has an open visit for this day',
+        details: { visitId: existing.id },
+      });
+    }
+  }
+
   async create(episodeId: string, dto: CreateVisitDto, user: AuthContext) {
-    await this.assertEpisodeInOrg(episodeId, user.organizationId);
+    const episode = await this.assertEpisodeInOrg(
+      episodeId,
+      user.organizationId,
+    );
     const branchId = dto.branch_id ?? user.activeBranchId;
     if (!branchId) throw new BadRequestException('branch_id is required');
     const scheduledAt = new Date(dto.scheduled_at);
     return this.prismaService.db.$transaction(async (tx) => {
+      await this.assertNoOpenVisitForPatient(tx, {
+        patientId: episode.journey.patient_id,
+        branchId,
+        scheduledAt,
+      });
       const queueNumber = await this.getNextQueueNumberForSchedule(
         tx,
         dto.assigned_doctor_id,
@@ -387,6 +429,13 @@ export class VisitsService {
         resolvedMaritalStatus,
       );
 
+      const scheduledAt = new Date(dto.scheduled_at);
+      await this.assertNoOpenVisitForPatient(tx, {
+        patientId: patient.id,
+        branchId,
+        scheduledAt,
+      });
+
       const { episode, journey } = await this.resolveJourneyAndEpisode(tx, {
         patientId: patient.id,
         organizationId: user.organizationId,
@@ -396,7 +445,6 @@ export class VisitsService {
         createdById: user.profileId,
       });
 
-      const scheduledAt = new Date(dto.scheduled_at);
       const queueNumber = await this.getNextQueueNumberForSchedule(
         tx,
         dto.assigned_doctor_id,
@@ -1008,7 +1056,7 @@ export class VisitsService {
 
   async findMyCurrent(branchId: string, user: AuthContext) {
     const { start, end } = todayBounds();
-    const visit = await this.prismaService.db.visit.findFirst({
+    const visits = await this.prismaService.db.visit.findMany({
       where: {
         assigned_doctor_id: user.profileId,
         branch_id: branchId,
@@ -1016,10 +1064,10 @@ export class VisitsService {
         is_deleted: false,
         started_at: { gte: start, lte: end },
       },
-      orderBy: { started_at: 'desc' },
+      orderBy: { started_at: 'asc' },
       include: this.listInclude,
     });
-    return { data: visit ? this.flattenVisit(visit) : null };
+    return { data: visits.map((v) => this.flattenVisit(v)) };
   }
 
   async findOne(id: string, user: AuthContext) {
