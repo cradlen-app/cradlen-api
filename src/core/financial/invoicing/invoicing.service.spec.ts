@@ -22,6 +22,8 @@ const d = (n: string) => new Prisma.Decimal(n);
 const mockDb = {
   invoice: {
     findFirst: jest.fn(),
+    findMany: jest.fn(),
+    count: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
   },
@@ -79,6 +81,7 @@ describe('InvoicingService', () => {
     jest.clearAllMocks();
     mockAccess.assertIsReceptionistOrOwner.mockResolvedValue(undefined);
     mockAuth.assertCanAccessBranch.mockResolvedValue(undefined);
+    mockAuth.assertCanManageOrganization.mockResolvedValue(undefined);
     mockNumber.generate.mockResolvedValue('INV-2026-00001');
     mockDb.$transaction.mockImplementation((fn) => fn(mockDb));
     mockDb.invoice.create.mockImplementation(({ data }) => ({
@@ -89,6 +92,64 @@ describe('InvoicingService', () => {
       id: 'inv-1',
       ...data,
     }));
+  });
+
+  describe('findAll', () => {
+    beforeEach(() => {
+      mockDb.invoice.findMany.mockResolvedValue([{ id: 'inv-1' }, { id: 'inv-2' }]);
+      mockDb.invoice.count.mockResolvedValue(2);
+    });
+
+    it('embeds patient {id, full_name} and omits the search OR when no search is given', async () => {
+      await service.findAll(ORG, {}, 1, 20, USER);
+
+      const args = mockDb.invoice.findMany.mock.calls[0][0];
+      expect(args.include).toEqual({
+        patient: { select: { id: true, full_name: true } },
+      });
+      expect(args.where.OR).toBeUndefined();
+      expect(args.where.organization_id).toBe(ORG);
+      expect(mockAuth.assertCanManageOrganization).toHaveBeenCalled();
+    });
+
+    it('builds a case-insensitive OR over invoice_number and patient.full_name when searching', async () => {
+      await service.findAll(ORG, { search: 'ali' }, 1, 20, USER);
+
+      const args = mockDb.invoice.findMany.mock.calls[0][0];
+      expect(args.where.OR).toEqual([
+        { invoice_number: { contains: 'ali', mode: 'insensitive' } },
+        { patient: { full_name: { contains: 'ali', mode: 'insensitive' } } },
+      ]);
+    });
+
+    it('scopes to the branch (assertCanAccessBranch) when branchId is supplied', async () => {
+      await service.findAll(ORG, { branchId: BRANCH }, 1, 20, USER);
+
+      const args = mockDb.invoice.findMany.mock.calls[0][0];
+      expect(args.where.branch_id).toBe(BRANCH);
+      expect(mockAuth.assertCanAccessBranch).toHaveBeenCalledWith(
+        USER.profileId,
+        ORG,
+        BRANCH,
+      );
+    });
+
+    it('returns paginated meta (page/limit/total/totalPages)', async () => {
+      mockDb.invoice.count.mockResolvedValue(25);
+      const res = await service.findAll(ORG, {}, 2, 10, USER);
+
+      expect(res.meta).toMatchObject({
+        page: 2,
+        limit: 10,
+        total: 25,
+        totalPages: 3,
+      });
+      // page 2 skips the first page's rows
+      expect(mockDb.invoice.findMany.mock.calls[0][0]).toMatchObject({
+        skip: 10,
+        take: 10,
+      });
+    });
   });
 
   describe('create', () => {
