@@ -16,6 +16,7 @@ import { ApiTags } from '@nestjs/swagger';
 import {
   ApiPaginatedResponse,
   ApiStandardResponse,
+  ApiStandardArrayResponse,
   ApiVoidResponse,
 } from '@common/swagger';
 import { CurrentUser } from '@common/decorators/current-user.decorator';
@@ -142,7 +143,7 @@ export class MedicalRepController {
   }
 
   @Get('branches/:branchId/medical-rep-visits/my-current')
-  @ApiStandardResponse(MedicalRepDto)
+  @ApiStandardArrayResponse(MedicalRepDto)
   async myCurrent(
     @Param('branchId', ParseUUIDPipe) branchId: string,
     @CurrentUser() user: AuthContext,

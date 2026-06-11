@@ -31,7 +31,11 @@ import {
   VisitHistoryQueryDto,
   VitalsTrendQueryDto,
 } from './dto/list-visits-query.dto';
-import { ApiStandardResponse, ApiPaginatedResponse } from '@common/swagger';
+import {
+  ApiStandardResponse,
+  ApiStandardArrayResponse,
+  ApiPaginatedResponse,
+} from '@common/swagger';
 import { CurrentUser } from '@common/decorators/current-user.decorator';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 
@@ -85,9 +89,9 @@ export class VisitsController {
   @ApiBearerAuth()
   @ApiOperation({
     summary:
-      'Current IN_PROGRESS visit assigned to the doctor at this branch (data may be null)',
+      'All IN_PROGRESS visits assigned to the doctor at this branch today',
   })
-  @ApiStandardResponse(VisitDto)
+  @ApiStandardArrayResponse(VisitDto)
   findMyCurrent(
     @Param('branchId', ParseUUIDPipe) branchId: string,
     @CurrentUser() user: AuthContext,
