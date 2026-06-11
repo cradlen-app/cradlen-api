@@ -243,7 +243,7 @@ describe('VisitsService', () => {
           where: expect.objectContaining({
             assigned_doctor_id: mockUser.profileId,
             branch_id: 'branch-uuid',
-            status: 'IN_PROGRESS',
+            status: { in: ['IN_PROGRESS', 'IN_CONSULTATION'] },
           }),
         }),
       );
@@ -352,7 +352,7 @@ describe('VisitsService', () => {
       expect(result.queue_number).toBe(1);
     });
 
-    it('sets started_at when transitioning to IN_PROGRESS', async () => {
+    it('sets started_at when reception transitions CHECKED_IN to IN_PROGRESS', async () => {
       db.visit.findUnique.mockResolvedValue({
         ...mockVisit,
         status: 'CHECKED_IN',
@@ -364,11 +364,12 @@ describe('VisitsService', () => {
         assigned_doctor_id: 'doctor-uuid',
       });
 
+      // Moving a checked-in patient into the queue is a front-desk action.
       await service.updateStatus(
         'visit-uuid',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         { status: 'IN_PROGRESS' as any },
-        mockDoctorUser,
+        mockUser,
       );
       expect(db.visit.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -380,10 +381,37 @@ describe('VisitsService', () => {
       );
     });
 
-    it('rejects COMPLETED transition when no encounter exists', async () => {
+    it('sets consultation_started_at when the assigned doctor starts the consultation', async () => {
       db.visit.findUnique.mockResolvedValue({
         ...mockVisit,
         status: 'IN_PROGRESS',
+      });
+      db.visit.update.mockResolvedValue({
+        ...mockVisit,
+        status: 'IN_CONSULTATION',
+        consultation_started_at: new Date(),
+      });
+
+      await service.updateStatus(
+        'visit-uuid',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        { status: 'IN_CONSULTATION' as any },
+        mockDoctorUser,
+      );
+      expect(db.visit.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: 'IN_CONSULTATION',
+            consultation_started_at: expect.any(Date),
+          }),
+        }),
+      );
+    });
+
+    it('rejects COMPLETED transition when no encounter exists', async () => {
+      db.visit.findUnique.mockResolvedValue({
+        ...mockVisit,
+        status: 'IN_CONSULTATION',
       });
       db.visitEncounter.findUnique.mockResolvedValue(null);
       await expect(
@@ -400,7 +428,7 @@ describe('VisitsService', () => {
     it('rejects COMPLETED transition when chief_complaint is empty', async () => {
       db.visit.findUnique.mockResolvedValue({
         ...mockVisit,
-        status: 'IN_PROGRESS',
+        status: 'IN_CONSULTATION',
       });
       db.visitEncounter.findUnique.mockResolvedValue({
         chief_complaint: '   ', // whitespace only
@@ -418,7 +446,7 @@ describe('VisitsService', () => {
     it('rejects COMPLETED transition when provisional_diagnosis is empty', async () => {
       db.visit.findUnique.mockResolvedValue({
         ...mockVisit,
-        status: 'IN_PROGRESS',
+        status: 'IN_CONSULTATION',
       });
       db.visitEncounter.findUnique.mockResolvedValue({
         chief_complaint: 'Bleeding',
@@ -438,7 +466,7 @@ describe('VisitsService', () => {
     it('sets completed_at when transitioning to COMPLETED', async () => {
       db.visit.findUnique.mockResolvedValue({
         ...mockVisit,
-        status: 'IN_PROGRESS',
+        status: 'IN_CONSULTATION',
       });
       db.visitEncounter.findUnique.mockResolvedValue({
         chief_complaint: 'Bleeding',
@@ -581,7 +609,7 @@ describe('VisitsService', () => {
         await service.updateStatus(
           'visit-uuid',
           { status: 'IN_PROGRESS' },
-          mockDoctorUser,
+          mockUser,
         );
 
         expect(tx.patientOrgEnrollment.updateMany).not.toHaveBeenCalled();
@@ -620,26 +648,30 @@ describe('VisitsService', () => {
       expect(db.visit.create).not.toHaveBeenCalled();
     });
 
-    it('updateStatus to IN_PROGRESS is forbidden for a receptionist (not the assigned doctor)', async () => {
+    it('updateStatus to IN_CONSULTATION is forbidden for a receptionist', async () => {
       db.visit.findUnique.mockResolvedValue({
         ...mockVisit,
-        status: 'CHECKED_IN',
-      });
-      await expect(
-        service.updateStatus('visit-uuid', { status: 'IN_PROGRESS' }, mockUser),
-      ).rejects.toThrow(ForbiddenException);
-      expect(db.visit.update).not.toHaveBeenCalled();
-    });
-
-    it('updateStatus to IN_PROGRESS is forbidden for a different doctor', async () => {
-      db.visit.findUnique.mockResolvedValue({
-        ...mockVisit,
-        status: 'CHECKED_IN',
+        status: 'IN_PROGRESS',
       });
       await expect(
         service.updateStatus(
           'visit-uuid',
-          { status: 'IN_PROGRESS' },
+          { status: 'IN_CONSULTATION' },
+          mockUser,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(db.visit.update).not.toHaveBeenCalled();
+    });
+
+    it('updateStatus to IN_CONSULTATION is forbidden for a different doctor', async () => {
+      db.visit.findUnique.mockResolvedValue({
+        ...mockVisit,
+        status: 'IN_PROGRESS',
+      });
+      await expect(
+        service.updateStatus(
+          'visit-uuid',
+          { status: 'IN_CONSULTATION' },
           otherDoctorUser,
         ),
       ).rejects.toThrow(ForbiddenException);
@@ -648,7 +680,7 @@ describe('VisitsService', () => {
     it('updateStatus to COMPLETED is forbidden for a receptionist', async () => {
       db.visit.findUnique.mockResolvedValue({
         ...mockVisit,
-        status: 'IN_PROGRESS',
+        status: 'IN_CONSULTATION',
       });
       await expect(
         service.updateStatus('visit-uuid', { status: 'COMPLETED' }, mockUser),
@@ -657,7 +689,7 @@ describe('VisitsService', () => {
       expect(db.visitEncounter.findUnique).not.toHaveBeenCalled();
     });
 
-    it('updateStatus to IN_PROGRESS is allowed for an owner override', async () => {
+    it('updateStatus to IN_PROGRESS (queue) is allowed for a receptionist', async () => {
       db.visit.findUnique.mockResolvedValue({
         ...mockVisit,
         status: 'CHECKED_IN',
@@ -672,9 +704,28 @@ describe('VisitsService', () => {
       );
 
       await expect(
+        service.updateStatus('visit-uuid', { status: 'IN_PROGRESS' }, mockUser),
+      ).resolves.toBeDefined();
+    });
+
+    it('updateStatus to IN_CONSULTATION is allowed for an owner override', async () => {
+      db.visit.findUnique.mockResolvedValue({
+        ...mockVisit,
+        status: 'IN_PROGRESS',
+      });
+      db.visit.update.mockResolvedValue({
+        ...mockVisit,
+        status: 'IN_CONSULTATION',
+        consultation_started_at: new Date(),
+      });
+      db.$transaction.mockImplementation(
+        async (cb: (tx: typeof db) => Promise<unknown>) => cb(db),
+      );
+
+      await expect(
         service.updateStatus(
           'visit-uuid',
-          { status: 'IN_PROGRESS' },
+          { status: 'IN_CONSULTATION' },
           ownerUser,
         ),
       ).resolves.toBeDefined();
@@ -1040,7 +1091,9 @@ describe('VisitsService', () => {
           where: expect.objectContaining({
             branch_id: 'branch-uuid',
             is_deleted: false,
-            status: { in: ['SCHEDULED', 'CHECKED_IN', 'IN_PROGRESS'] },
+            status: {
+              in: ['SCHEDULED', 'CHECKED_IN', 'IN_PROGRESS', 'IN_CONSULTATION'],
+            },
             scheduled_at: expect.objectContaining({
               gte: expect.any(Date),
               lte: expect.any(Date),
