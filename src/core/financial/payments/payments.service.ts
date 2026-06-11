@@ -6,6 +6,7 @@ import {
 import {
   CashSessionStatus,
   InvoiceStatus,
+  PaymentMethod,
   PaymentStatus,
 } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
@@ -66,13 +67,22 @@ export class PaymentsService {
       throw new BadRequestException('Payment exceeds outstanding balance');
     }
 
-    if (dto.cash_session_id) {
-      await this.assertOpenSessionForBranch(
-        organizationId,
-        dto.cash_session_id,
-        invoice.branch_id,
+    // Every payment requires the cashier to hold an open drawer at the
+    // invoice's branch, so collected cash always reconciles. Only cash is
+    // attributed to the session — card/transfer/insurance never enter the
+    // physical drawer and must not inflate its expected total.
+    const openSession = await this.findOpenSessionForUser(
+      organizationId,
+      invoice.branch_id,
+      user.profileId,
+    );
+    if (!openSession) {
+      throw new BadRequestException(
+        'Open a cash session at this branch before recording payments',
       );
     }
+    const cashSessionId =
+      dto.payment_method === PaymentMethod.CASH ? openSession.id : null;
 
     const { payment, updatedInvoice } =
       await this.prismaService.db.$transaction(async (tx) => {
@@ -89,7 +99,7 @@ export class PaymentsService {
             reference_number: dto.reference_number,
             notes: dto.notes,
             recorded_by_id: user.profileId,
-            cash_session_id: dto.cash_session_id ?? null,
+            cash_session_id: cashSessionId,
           },
         });
         const updatedInvoice = await this.balanceService.recompute(
@@ -108,7 +118,7 @@ export class PaymentsService {
         branch_id: invoice.branch_id,
         amount: payment.amount,
         payment_method: payment.payment_method,
-        cash_session_id: dto.cash_session_id ?? null,
+        cash_session_id: cashSessionId,
         recorded_by_id: user.profileId,
       },
     );
@@ -229,27 +239,21 @@ export class PaymentsService {
     return invoice;
   }
 
-  private async assertOpenSessionForBranch(
+  /** The recording cashier's own OPEN drawer at the given branch, or null. */
+  private async findOpenSessionForUser(
     organizationId: string,
-    cashSessionId: string,
     branchId: string,
-  ): Promise<void> {
-    const session = await this.prismaService.db.cashSession.findFirst({
+    profileId: string,
+  ): Promise<{ id: string } | null> {
+    return this.prismaService.db.cashSession.findFirst({
       where: {
-        id: cashSessionId,
         organization_id: organizationId,
+        branch_id: branchId,
+        profile_id: profileId,
+        status: CashSessionStatus.OPEN,
         is_deleted: false,
       },
-      select: { status: true, branch_id: true },
+      select: { id: true },
     });
-    if (!session) throw new NotFoundException('Cash session not found');
-    if (session.status !== CashSessionStatus.OPEN) {
-      throw new BadRequestException('Cash session is not open');
-    }
-    if (session.branch_id !== branchId) {
-      throw new BadRequestException(
-        'Cash session belongs to a different branch than the invoice',
-      );
-    }
   }
 }
