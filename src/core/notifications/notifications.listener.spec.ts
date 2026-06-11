@@ -140,11 +140,32 @@ describe('NotificationsListener', () => {
         code: NOTIFICATION_CODES.SERVICE_CHARGE_ADDED.code,
         category: 'billing',
         description: 'Dr. Sara Ali added "Consultation" for Jane Doe.',
-        navigateTo: '/org-1/branch-1/dashboard/visits/visit-1',
+        // Deep-links to the visits page so reception can auto-open the invoice
+        // drawer for this visit (resolved to its invoice client-side).
+        navigateTo: '/org-1/branch-1/dashboard/visits?invoiceVisit=visit-1',
         metadata: expect.objectContaining({
           chargeId: 'chg-1',
           patientId: 'pat-1',
+          visitId: 'visit-1',
         }),
+      }),
+    );
+  });
+
+  it('falls back to the bare visits path when the charge has no visit', async () => {
+    db.profile.findMany.mockResolvedValue([{ id: 'recep-1' }]);
+    db.patient.findUnique.mockResolvedValue({ full_name: 'Jane Doe' });
+    db.profile.findUnique.mockResolvedValue({
+      user: { first_name: 'Sara', last_name: 'Ali' },
+    });
+    db.service.findUnique.mockResolvedValue({ name: 'Consultation' });
+
+    await listener.handleChargeCaptured(chargeEvent({ visit_id: null }));
+
+    expect(service.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        navigateTo: '/org-1/branch-1/dashboard/visits',
+        metadata: expect.objectContaining({ visitId: null }),
       }),
     );
   });
