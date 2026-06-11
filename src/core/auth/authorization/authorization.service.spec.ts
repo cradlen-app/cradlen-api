@@ -266,6 +266,7 @@ describe('AuthorizationService.getProfileContext', () => {
   it('resolves OWNER context in exactly 2 queries (profile + org branches)', async () => {
     profile.findFirst.mockResolvedValue({
       roles: [{ role: { code: 'OWNER', name: 'OWNER' } }],
+      job_functions: [],
     });
     branch.findMany.mockResolvedValue([{ id: 'b1' }, { id: 'b2' }]);
 
@@ -277,6 +278,7 @@ describe('AuthorizationService.getProfileContext', () => {
       organizationId: 'org',
       activeBranchId: 'b1',
       roles: ['OWNER'],
+      jobFunctions: [],
       branchIds: ['b1', 'b2'],
     });
     expect(profile.findFirst).toHaveBeenCalledTimes(1);
@@ -287,6 +289,7 @@ describe('AuthorizationService.getProfileContext', () => {
   it('resolves member context in exactly 2 queries (profile + profileBranch)', async () => {
     profile.findFirst.mockResolvedValue({
       roles: [{ role: { code: 'STAFF', name: 'STAFF' } }],
+      job_functions: [{ job_function: { code: 'RECEPTIONIST' } }],
     });
     profileBranch.findMany.mockResolvedValue([
       { branch_id: 'b1' },
@@ -296,6 +299,7 @@ describe('AuthorizationService.getProfileContext', () => {
     const ctx = await service.getProfileContext('u', 'p', 'org');
 
     expect(ctx.roles).toEqual(['STAFF']);
+    expect(ctx.jobFunctions).toEqual(['RECEPTIONIST']);
     expect(ctx.branchIds).toEqual(['b1', 'b2']);
     expect(profile.findFirst).toHaveBeenCalledTimes(1);
     expect(profileBranch.findMany).toHaveBeenCalledTimes(1);
@@ -305,6 +309,7 @@ describe('AuthorizationService.getProfileContext', () => {
   it('filters on user.is_active and organization.status in the single profile query', async () => {
     profile.findFirst.mockResolvedValue({
       roles: [{ role: { code: 'OWNER', name: 'OWNER' } }],
+      job_functions: [],
     });
     branch.findMany.mockResolvedValue([]);
 

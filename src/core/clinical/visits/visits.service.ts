@@ -10,7 +10,6 @@ import { isDeepStrictEqual } from 'node:util';
 import { MaritalStatus, Prisma, VisitStatus } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
-import { CreateVisitDto } from './dto/create-visit.dto';
 import { UpdateVisitDto } from './dto/update-visit.dto';
 import { UpdateVisitStatusDto } from './dto/update-visit-status.dto';
 import { BookVisitDto } from './dto/book-visit.dto';
@@ -39,6 +38,8 @@ import {
   toVisitHistorySummary,
   toVitalsTrendPoint,
 } from './visits.mapper.js';
+
+const RECEPTIONIST_JOB_FUNCTION = 'RECEPTIONIST';
 
 const TERMINAL_STATES: VisitStatus[] = ['COMPLETED', 'CANCELLED', 'NO_SHOW'];
 
@@ -308,45 +309,48 @@ export class VisitsService {
     }
   }
 
-  async create(episodeId: string, dto: CreateVisitDto, user: AuthContext) {
-    const episode = await this.assertEpisodeInOrg(
-      episodeId,
-      user.organizationId,
+  /**
+   * Owners and branch managers may drive any step of the visit lifecycle as an
+   * administrative override.
+   */
+  private isPrivileged(user: AuthContext): boolean {
+    return (
+      user.roles.includes('OWNER') ||
+      user.roles.includes('BRANCH_MANAGER') ||
+      user.roles.includes('SYSTEM')
     );
-    const branchId = dto.branch_id ?? user.activeBranchId;
-    if (!branchId) throw new BadRequestException('branch_id is required');
-    const scheduledAt = new Date(dto.scheduled_at);
-    return this.prismaService.db.$transaction(async (tx) => {
-      await this.assertNoOpenVisitForPatient(tx, {
-        patientId: episode.journey.patient_id,
-        branchId,
-        scheduledAt,
-      });
-      const queueNumber = await this.getNextQueueNumberForSchedule(
-        tx,
-        dto.assigned_doctor_id,
-        branchId,
-        scheduledAt,
-      );
-      const visit = await tx.visit.create({
-        data: {
-          episode_id: episodeId,
-          assigned_doctor_id: dto.assigned_doctor_id,
-          branch_id: branchId,
-          appointment_type: dto.appointment_type,
-          priority: dto.priority,
-          scheduled_at: scheduledAt,
-          created_by_id: user.profileId,
-          queue_number: queueNumber,
-          ...(dto.specialty_code && { specialty_code: dto.specialty_code }),
-        },
-      });
-      await this.applyIntake(tx, visit.id, dto, user.profileId);
-      return visit;
-    });
+  }
+
+  /**
+   * Front-desk actions — booking a visit and the reception-driven status
+   * transitions (check-in, cancel, no-show). Restricted to receptionists, with
+   * an owner/branch-manager override.
+   */
+  private assertReceptionAction(user: AuthContext, message: string): void {
+    if (this.isPrivileged(user)) return;
+    if (user.jobFunctions.includes(RECEPTIONIST_JOB_FUNCTION)) return;
+    throw new ForbiddenException(message);
+  }
+
+  /**
+   * Clinical actions — starting (IN_PROGRESS) and completing (COMPLETED) a
+   * visit may only be done by the doctor the visit was booked for, with an
+   * owner/branch-manager override. A receptionist (or any other doctor) cannot
+   * start or complete a visit they were not assigned.
+   */
+  private assertAssignedDoctor(
+    assignedDoctorId: string,
+    user: AuthContext,
+  ): void {
+    if (this.isPrivileged(user)) return;
+    if (assignedDoctorId === user.profileId) return;
+    throw new ForbiddenException(
+      'Only the assigned doctor can start or complete this visit',
+    );
   }
 
   async bookVisit(dto: BookVisitDto, user: AuthContext) {
+    this.assertReceptionAction(user, 'Only reception can book visits');
     await this.assertTemplateValid(dto as unknown as Record<string, unknown>, {
       extensionKey: dto.specialty_code,
     });
@@ -404,16 +408,14 @@ export class VisitsService {
       });
     }
 
-    // Financial: when a billable service is chosen at booking, the assigned
+    // Financial: a billable service is required at booking, and the assigned
     // doctor must be authorized to deliver it. Validate before any writes.
-    if (dto.service_id) {
-      await this.assertDoctorAuthorizedForService(
-        user.organizationId,
-        dto.assigned_doctor_id,
-        dto.service_id,
-        branchId,
-      );
-    }
+    await this.assertDoctorAuthorizedForService(
+      user.organizationId,
+      dto.assigned_doctor_id,
+      dto.service_id,
+      branchId,
+    );
 
     const { carePathId, template, firstEpisodeTemplate } =
       await this.resolveCarePathTemplate(
@@ -495,28 +497,28 @@ export class VisitsService {
     });
 
     // Best-effort: capture the PENDING charge for the chosen service, priced for
-    // the assigned doctor. A pricing gap must never fail the clinical booking —
-    // reception can still add the charge via the collect flow.
-    if (dto.service_id) {
-      try {
-        await this.chargingService.capture(
-          user.organizationId,
-          {
-            branch_id: branchId,
-            patient_id: result.patient.id,
-            profile_id: dto.assigned_doctor_id,
-            visit_id: result.visit.id,
-            service_id: dto.service_id,
-            quantity: 1,
-          },
-          user,
-        );
-      } catch (err) {
-        this.logger.error(
-          `Failed to capture booking charge (visit=${result.visit.id}, service=${dto.service_id})`,
-          err as Error,
-        );
-      }
+    // the assigned doctor. The charge.captured event then auto-bills it onto the
+    // case invoice (creating and issuing one when the case has none yet). A
+    // pricing gap must never fail the clinical booking — reception can still add
+    // the charge via the collect flow.
+    try {
+      await this.chargingService.capture(
+        user.organizationId,
+        {
+          branch_id: branchId,
+          patient_id: result.patient.id,
+          profile_id: dto.assigned_doctor_id,
+          visit_id: result.visit.id,
+          service_id: dto.service_id,
+          quantity: 1,
+        },
+        user,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to capture booking charge (visit=${result.visit.id}, service=${dto.service_id})`,
+        err as Error,
+      );
     }
 
     this.eventBus.publish('visit.booked', {
@@ -1202,6 +1204,17 @@ export class VisitsService {
       dto.status,
       (current, next) => `Cannot transition from ${current} to ${next}`,
     );
+    // Enforce *who* may drive each step: the assigned doctor starts/completes;
+    // reception checks in / cancels / marks no-show. Owners and branch managers
+    // override either side.
+    if (dto.status === 'IN_PROGRESS' || dto.status === 'COMPLETED') {
+      this.assertAssignedDoctor(visit.assigned_doctor_id, user);
+    } else {
+      this.assertReceptionAction(
+        user,
+        'Only reception can change this visit status',
+      );
+    }
     if (dto.status === 'COMPLETED') {
       const encounter = await this.prismaService.db.visitEncounter.findUnique({
         where: { visit_id: id },
