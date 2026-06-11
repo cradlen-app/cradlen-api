@@ -46,7 +46,8 @@ const TERMINAL_STATES: VisitStatus[] = ['COMPLETED', 'CANCELLED', 'NO_SHOW'];
 const VALID_TRANSITIONS: Record<VisitStatus, VisitStatus[]> = {
   SCHEDULED: ['CHECKED_IN', 'CANCELLED', 'NO_SHOW'],
   CHECKED_IN: ['IN_PROGRESS', 'CANCELLED', 'NO_SHOW'],
-  IN_PROGRESS: ['COMPLETED', 'CANCELLED'],
+  IN_PROGRESS: ['IN_CONSULTATION', 'CANCELLED', 'NO_SHOW'],
+  IN_CONSULTATION: ['COMPLETED', 'CANCELLED'],
   COMPLETED: [],
   CANCELLED: [],
   NO_SHOW: [],
@@ -55,6 +56,7 @@ const VALID_TRANSITIONS: Record<VisitStatus, VisitStatus[]> = {
 const STATUS_TIMESTAMPS: Partial<Record<VisitStatus, string>> = {
   CHECKED_IN: 'checked_in_at',
   IN_PROGRESS: 'started_at',
+  IN_CONSULTATION: 'consultation_started_at',
   COMPLETED: 'completed_at',
 };
 
@@ -294,7 +296,9 @@ export class VisitsService {
       where: {
         branch_id: args.branchId,
         is_deleted: false,
-        status: { in: ['SCHEDULED', 'CHECKED_IN', 'IN_PROGRESS'] },
+        status: {
+          in: ['SCHEDULED', 'CHECKED_IN', 'IN_PROGRESS', 'IN_CONSULTATION'],
+        },
         scheduled_at: { gte: start, lte: end },
         episode: { journey: { patient_id: args.patientId } },
       },
@@ -333,10 +337,10 @@ export class VisitsService {
   }
 
   /**
-   * Clinical actions — starting (IN_PROGRESS) and completing (COMPLETED) a
-   * visit may only be done by the doctor the visit was booked for, with an
-   * owner/branch-manager override. A receptionist (or any other doctor) cannot
-   * start or complete a visit they were not assigned.
+   * Clinical actions — starting the consultation (IN_CONSULTATION) and
+   * completing (COMPLETED) a visit may only be done by the doctor the visit was
+   * booked for, with an owner/branch-manager override. A receptionist (or any
+   * other doctor) cannot start or complete a visit they were not assigned.
    */
   private assertAssignedDoctor(
     assignedDoctorId: string,
@@ -1000,7 +1004,9 @@ export class VisitsService {
     const where: Prisma.VisitWhereInput = {
       branch_id: branchId,
       is_deleted: false,
-      status: 'IN_PROGRESS',
+      // Both the reception-queued (IN_PROGRESS) and doctor-active
+      // (IN_CONSULTATION) patients are "live" for the per-doctor panel.
+      status: { in: ['IN_PROGRESS', 'IN_CONSULTATION'] },
       started_at: { gte: start, lte: end },
     };
 
@@ -1062,7 +1068,9 @@ export class VisitsService {
       where: {
         assigned_doctor_id: user.profileId,
         branch_id: branchId,
-        status: 'IN_PROGRESS',
+        // The doctor's card carries both their queue (IN_PROGRESS, reception
+        // readied) and the patient they're actively seeing (IN_CONSULTATION).
+        status: { in: ['IN_PROGRESS', 'IN_CONSULTATION'] },
         is_deleted: false,
         started_at: { gte: start, lte: end },
       },
@@ -1204,10 +1212,11 @@ export class VisitsService {
       dto.status,
       (current, next) => `Cannot transition from ${current} to ${next}`,
     );
-    // Enforce *who* may drive each step: the assigned doctor starts/completes;
-    // reception checks in / cancels / marks no-show. Owners and branch managers
-    // override either side.
-    if (dto.status === 'IN_PROGRESS' || dto.status === 'COMPLETED') {
+    // Enforce *who* may drive each step: the assigned doctor starts the
+    // consultation (IN_CONSULTATION) and completes it; reception drives the
+    // queue — checks in, moves to IN_PROGRESS, cancels, marks no-show. Owners
+    // and branch managers override either side.
+    if (dto.status === 'IN_CONSULTATION' || dto.status === 'COMPLETED') {
       this.assertAssignedDoctor(visit.assigned_doctor_id, user);
     } else {
       this.assertReceptionAction(

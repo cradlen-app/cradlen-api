@@ -15,8 +15,10 @@ export interface SeedVisitArgs {
   createdById?: string;
   patientName?: string;
   status?: VisitStatus;
-  /** When omitted for IN_PROGRESS, defaults to now. */
+  /** When omitted for IN_PROGRESS / IN_CONSULTATION, defaults to now. */
   startedAt?: Date | null;
+  /** When omitted for IN_CONSULTATION, defaults to now. */
+  consultationStartedAt?: Date | null;
   scheduledAt?: Date;
 }
 
@@ -71,10 +73,17 @@ export async function seedVisit(
     },
   });
 
+  // started_at marks queue entry; it's set once a visit reaches IN_PROGRESS and
+  // persists through IN_CONSULTATION. The "live" feeds bound on it for both.
   const startedAt =
-    status === 'IN_PROGRESS'
+    status === 'IN_PROGRESS' || status === 'IN_CONSULTATION'
       ? (args.startedAt ?? new Date())
       : (args.startedAt ?? null);
+
+  const consultationStartedAt =
+    status === 'IN_CONSULTATION'
+      ? (args.consultationStartedAt ?? new Date())
+      : (args.consultationStartedAt ?? null);
 
   const visit = await prisma.visit.create({
     data: {
@@ -87,6 +96,7 @@ export async function seedVisit(
       status,
       scheduled_at: args.scheduledAt ?? new Date(),
       started_at: startedAt,
+      consultation_started_at: consultationStartedAt,
     },
   });
 
