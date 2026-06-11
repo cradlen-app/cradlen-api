@@ -189,6 +189,7 @@ enum VisitStatus {
   SCHEDULED
   CHECKED_IN
   IN_PROGRESS
+  IN_CONSULTATION
   COMPLETED
   CANCELLED
   NO_SHOW
@@ -1098,7 +1099,12 @@ model Visit {
   status              VisitStatus           @default(SCHEDULED)
   scheduled_at        DateTime
   checked_in_at       DateTime?
+  // started_at marks queue entry (IN_PROGRESS, set by reception).
   started_at          DateTime?
+  // consultation_started_at marks when the doctor actually began the
+  // consultation (IN_CONSULTATION). Distinct from started_at so we keep both
+  // the queue-entry and consultation-start timestamps.
+  consultation_started_at DateTime?
   completed_at        DateTime?
   notes               String?
   queue_number        Int?
