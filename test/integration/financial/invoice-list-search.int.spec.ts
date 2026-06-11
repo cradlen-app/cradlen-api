@@ -82,9 +82,17 @@ describe('Financial — invoice list: search + pagination (integration + securit
 
     for (const name of ['Alice Adams', 'Bob Brown', 'Carol Clark']) {
       const pid = await seedNamedPatient(a.org.id, a.ownerProfileId, name);
-      await chargeAndIssue(app, base, auth, a.branch.id, pid, a.ownerProfileId, {
-        unit_price: 100,
-      });
+      await chargeAndIssue(
+        app,
+        base,
+        auth,
+        a.branch.id,
+        pid,
+        a.ownerProfileId,
+        {
+          unit_price: 100,
+        },
+      );
     }
 
     const page1 = await auth(list(base, '?limit=2&page=1')).expect(200);
@@ -147,9 +155,17 @@ describe('Financial — invoice list: search + pagination (integration + securit
     const base = `/v1/organizations/${a.org.id}`;
     for (const name of ['Alice Adams', 'Bob Brown']) {
       const pid = await seedNamedPatient(a.org.id, a.ownerProfileId, name);
-      await chargeAndIssue(app, base, auth, a.branch.id, pid, a.ownerProfileId, {
-        unit_price: 100,
-      });
+      await chargeAndIssue(
+        app,
+        base,
+        auth,
+        a.branch.id,
+        pid,
+        a.ownerProfileId,
+        {
+          unit_price: 100,
+        },
+      );
     }
 
     const res = await auth(list(base, '?search=alice')).expect(200);
@@ -173,18 +189,42 @@ describe('Financial — invoice list: search + pagination (integration + securit
     const a = await seedOrg(prisma, 'Org A', 'owner.a@example.com');
     const authA = bearer(await loginAs(app, a.ownerEmail));
     const baseA = `/v1/organizations/${a.org.id}`;
-    const pidA = await seedNamedPatient(a.org.id, a.ownerProfileId, 'Hala Hana');
-    await chargeAndIssue(app, baseA, authA, a.branch.id, pidA, a.ownerProfileId, {
-      unit_price: 100,
-    });
+    const pidA = await seedNamedPatient(
+      a.org.id,
+      a.ownerProfileId,
+      'Hala Hana',
+    );
+    await chargeAndIssue(
+      app,
+      baseA,
+      authA,
+      a.branch.id,
+      pidA,
+      a.ownerProfileId,
+      {
+        unit_price: 100,
+      },
+    );
 
     const b = await seedOrg(prisma, 'Org B', 'owner.b@example.com');
     const authB = bearer(await loginAs(app, b.ownerEmail));
     const baseB = `/v1/organizations/${b.org.id}`;
-    const pidB = await seedNamedPatient(b.org.id, b.ownerProfileId, 'Zara Zaki');
-    await chargeAndIssue(app, baseB, authB, b.branch.id, pidB, b.ownerProfileId, {
-      unit_price: 100,
-    });
+    const pidB = await seedNamedPatient(
+      b.org.id,
+      b.ownerProfileId,
+      'Zara Zaki',
+    );
+    await chargeAndIssue(
+      app,
+      baseB,
+      authB,
+      b.branch.id,
+      pidB,
+      b.ownerProfileId,
+      {
+        unit_price: 100,
+      },
+    );
 
     // Org A searches for Org B's patient name → no leakage.
     const res = await authA(list(baseA, '?search=Zara')).expect(200);
@@ -210,8 +250,8 @@ describe('Financial — invoice list: search + pagination (integration + securit
   it('rejects an invalid status enum', async () => {
     const a = await seedOrg(prisma, 'Org A', 'owner.a@example.com');
     const auth = bearer(await loginAs(app, a.ownerEmail));
-    await auth(
-      list(`/v1/organizations/${a.org.id}`, '?status=BOGUS'),
-    ).expect(400);
+    await auth(list(`/v1/organizations/${a.org.id}`, '?status=BOGUS')).expect(
+      400,
+    );
   });
 });
