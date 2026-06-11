@@ -58,22 +58,24 @@ describe('Financial — reports security (integration)', () => {
   it('rejects unauthenticated requests with 401', async () => {
     const a = await seedOrg(prisma, 'Org A', 'owner.a@example.com');
     const http = app.getHttpServer();
-    await request(http).get(`${reportsBase(a.org.id)}/revenue`).expect(401);
+    await request(http)
+      .get(`${reportsBase(a.org.id)}/revenue`)
+      .expect(401);
     await request(http)
       .get(`${reportsBase(a.org.id)}/outstanding-invoices`)
       .expect(401);
   });
 
-  it("denies an OWNER cross-org access to every report endpoint (403)", async () => {
+  it('denies an OWNER cross-org access to every report endpoint (403)', async () => {
     const a = await seedOrg(prisma, 'Org A', 'owner.a@example.com');
     await seedOrg(prisma, 'Org B', 'owner.b@example.com');
     const authB = bearer(await loginAs(app, 'owner.b@example.com'));
     const http = app.getHttpServer();
 
     for (const ep of ENDPOINTS) {
-      await authB(
-        request(http).get(`${reportsBase(a.org.id)}/${ep}`),
-      ).expect(403);
+      await authB(request(http).get(`${reportsBase(a.org.id)}/${ep}`)).expect(
+        403,
+      );
     }
   });
 
@@ -89,9 +91,9 @@ describe('Financial — reports security (integration)', () => {
     });
     const authBm = bearer(await loginAs(app, bmEmail));
 
-    await authBm(request(app.getHttpServer()).get(`${reportsBase(a.org.id)}/revenue`)).expect(
-      403,
-    );
+    await authBm(
+      request(app.getHttpServer()).get(`${reportsBase(a.org.id)}/revenue`),
+    ).expect(403);
   });
 
   it('bounds a BRANCH_MANAGER to its assigned branch (200 assigned, 403 other)', async () => {
@@ -117,11 +119,15 @@ describe('Financial — reports security (integration)', () => {
     const http = app.getHttpServer();
 
     await authBm(
-      request(http).get(`${reportsBase(a.org.id)}/revenue`).query({ branch_id: a.branch.id }),
+      request(http)
+        .get(`${reportsBase(a.org.id)}/revenue`)
+        .query({ branch_id: a.branch.id }),
     ).expect(200);
 
     await authBm(
-      request(http).get(`${reportsBase(a.org.id)}/revenue`).query({ branch_id: branch2.id }),
+      request(http)
+        .get(`${reportsBase(a.org.id)}/revenue`)
+        .query({ branch_id: branch2.id }),
     ).expect(403);
   });
 
@@ -132,17 +138,23 @@ describe('Financial — reports security (integration)', () => {
 
     // Non-UUID branch_id (DTO @IsUUID).
     await auth(
-      request(http).get(`${reportsBase(a.org.id)}/revenue`).query({ branch_id: 'not-a-uuid' }),
+      request(http)
+        .get(`${reportsBase(a.org.id)}/revenue`)
+        .query({ branch_id: 'not-a-uuid' }),
     ).expect(400);
 
     // Non-date date_from (DTO @IsDateString).
     await auth(
-      request(http).get(`${reportsBase(a.org.id)}/revenue`).query({ date_from: 'nope' }),
+      request(http)
+        .get(`${reportsBase(a.org.id)}/revenue`)
+        .query({ date_from: 'nope' }),
     ).expect(400);
 
     // Non-UUID orgId path param (ParseUUIDPipe).
     await auth(
-      request(http).get('/v1/organizations/not-a-uuid/financial/reports/revenue'),
+      request(http).get(
+        '/v1/organizations/not-a-uuid/financial/reports/revenue',
+      ),
     ).expect(400);
   });
 
