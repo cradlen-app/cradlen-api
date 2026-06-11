@@ -183,7 +183,7 @@ describe('GlobalExceptionFilter', () => {
       );
     });
 
-    it('maps BadRequestException with string message to 400 VALIDATION_ERROR', () => {
+    it('preserves a manual BadRequestException string message verbatim', () => {
       const { host, status, json } = buildMockHost();
 
       filter.catch(new BadRequestException('speciality is required'), host);
@@ -191,7 +191,10 @@ describe('GlobalExceptionFilter', () => {
       expect(status).toHaveBeenCalledWith(400);
       expect(json).toHaveBeenCalledWith(
         expect.objectContaining({
-          error: expect.objectContaining({ code: 'VALIDATION_ERROR' }),
+          error: expect.objectContaining({
+            code: 'VALIDATION_ERROR',
+            message: 'speciality is required',
+          }),
         }),
       );
     });

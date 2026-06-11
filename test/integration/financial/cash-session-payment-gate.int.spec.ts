@@ -73,11 +73,7 @@ describe('Financial — cash-session payment gate (integration + security)', () 
     const cash = await auth(pay(base, invoiceId))
       .send({ amount: 100, payment_method: 'CASH' })
       .expect(400);
-    // The global filter genericizes BadRequest `message` and tucks the real
-    // text into `error.details.fields`.
-    expect(JSON.stringify(cash.body.error.details)).toMatch(
-      /open a cash session/i,
-    );
+    expect(cash.body.error.message).toMatch(/open a cash session/i);
 
     await auth(pay(base, invoiceId))
       .send({ amount: 100, payment_method: 'CARD' })
@@ -144,12 +140,10 @@ describe('Financial — cash-session payment gate (integration + security)', () 
     const denied = await authB(pay(base, invoiceId))
       .send({ amount: 50, payment_method: 'CASH' })
       .expect(400);
-    expect(JSON.stringify(denied.body.error.details)).toMatch(
-      /open a cash session/i,
-    );
+    expect(denied.body.error.message).toMatch(/open a cash session/i);
   });
 
-  it('ignores a client-supplied cash_session_id belonging to another cashier', async () => {
+  it('rejects a client-supplied cash_session_id — the field is not accepted', async () => {
     const a = await seedOrg(prisma, 'Org A', 'owner.a@example.com');
     const authA = bearer(await loginAs(app, a.ownerEmail));
     const base = `/v1/organizations/${a.org.id}`;
@@ -168,7 +162,8 @@ describe('Financial — cash-session payment gate (integration + security)', () 
     await seedReceptionist(prisma, a.org.id, a.branch.id, 'recep.b@example.com');
     const authB = bearer(await loginAs(app, 'recep.b@example.com'));
 
-    // B tries to smuggle A's session id → server resolves B's own (none) → 400.
+    // cash_session_id is not an accepted payload field (the server derives it),
+    // so an attempt to smuggle A's session id is rejected by validation.
     await authB(pay(base, invoiceId))
       .send({
         amount: 50,

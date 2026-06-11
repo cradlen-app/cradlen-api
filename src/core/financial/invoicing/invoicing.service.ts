@@ -242,6 +242,19 @@ export class InvoicingService {
       dto.visit_id,
     );
 
+    // Backfill the rendering provider from the linked visit when the caller
+    // didn't pass one, so the invoice attributes to a doctor (and the By Doctor
+    // report doesn't bucket it as "Unassigned"). Visit.assigned_doctor_id is
+    // required, so the visit is a reliable source.
+    let assignedDoctorId = dto.assigned_doctor_id;
+    if (!assignedDoctorId && dto.visit_id) {
+      const visit = await this.prismaService.db.visit.findUnique({
+        where: { id: dto.visit_id },
+        select: { assigned_doctor_id: true },
+      });
+      assignedDoctorId = visit?.assigned_doctor_id ?? undefined;
+    }
+
     const invoice = await this.prismaService.db.invoice.create({
       data: {
         invoice_number: invoiceNumber,
@@ -251,7 +264,7 @@ export class InvoicingService {
         patient_id: dto.patient_id,
         visit_id: dto.visit_id,
         episode_id: episodeId,
-        assigned_doctor_id: dto.assigned_doctor_id,
+        assigned_doctor_id: assignedDoctorId,
         currency,
         notes: dto.notes,
         due_date: dto.due_date ? new Date(dto.due_date) : undefined,

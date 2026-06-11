@@ -162,6 +162,12 @@ export class ReportingService {
       }),
     ]);
 
+    const staffNames = await this.resolveProfileNames(
+      byStaff
+        .map((row) => row.recorded_by_id)
+        .filter((id): id is string => id !== null),
+    );
+
     return {
       by_method: byMethod.map((row) => ({
         payment_method: row.payment_method,
@@ -170,6 +176,9 @@ export class ReportingService {
       })),
       by_staff: byStaff.map((row) => ({
         profile_id: row.recorded_by_id,
+        staff_name: row.recorded_by_id
+          ? (staffNames.get(row.recorded_by_id) ?? 'Unknown')
+          : 'Unknown',
         total: row._sum.amount ?? Money.zero(),
         count: row._count,
       })),
@@ -339,7 +348,7 @@ export class ReportingService {
       _count: true,
     });
 
-    const names = await this.resolveDoctorNames(
+    const names = await this.resolveProfileNames(
       grouped
         .map((g) => g.assigned_doctor_id)
         .filter((id): id is string => id !== null),
@@ -378,6 +387,7 @@ export class ReportingService {
         id: true,
         invoice_number: true,
         patient_id: true,
+        assigned_doctor_id: true,
         status: true,
         total_amount: true,
         paid_amount: true,
@@ -385,12 +395,25 @@ export class ReportingService {
         issued_at: true,
         due_date: true,
         created_at: true,
+        payments: {
+          where: { is_deleted: false, status: PaymentStatus.COMPLETED },
+          orderBy: { payment_date: 'desc' },
+          take: 1,
+          select: { payment_date: true },
+        },
       },
       orderBy: { balance_due: 'desc' },
     });
 
     const names = await this.resolvePatientNames([
       ...new Set(invoices.map((i) => i.patient_id)),
+    ]);
+    const doctorNames = await this.resolveProfileNames([
+      ...new Set(
+        invoices
+          .map((i) => i.assigned_doctor_id)
+          .filter((id): id is string => id !== null),
+      ),
     ]);
     const now = Date.now();
 
@@ -402,12 +425,16 @@ export class ReportingService {
         invoice_number: inv.invoice_number,
         patient_id: inv.patient_id,
         patient_name: names.get(inv.patient_id) ?? 'Unknown',
+        doctor_name: inv.assigned_doctor_id
+          ? (doctorNames.get(inv.assigned_doctor_id) ?? 'Unknown')
+          : null,
         status: inv.status,
         total_amount: inv.total_amount,
         paid_amount: inv.paid_amount,
         balance_due: inv.balance_due,
         issued_at: inv.issued_at,
         due_date: inv.due_date,
+        last_payment_date: inv.payments[0]?.payment_date ?? null,
         age_days,
         aging_bucket: bucket,
       };
@@ -464,7 +491,7 @@ export class ReportingService {
     return new Map(rows.map((r) => [r.id, r.name]));
   }
 
-  private async resolveDoctorNames(
+  private async resolveProfileNames(
     ids: string[],
   ): Promise<Map<string, string>> {
     if (ids.length === 0) return new Map();
