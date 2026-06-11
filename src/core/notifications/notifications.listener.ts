@@ -147,7 +147,12 @@ export class NotificationsListener {
       // Send reception to the billing panel (the visits dashboard), not the
       // clinical visit workspace — that workspace fetches clinical resources
       // reception isn't authorized for, which 401s and bounces them to sign-in.
-      const navigateTo = `/${event.organization_id}/${event.branch_id}/dashboard/visits`;
+      // The `invoiceVisit` deep-link tells the visits page to auto-open the
+      // invoice drawer for this visit (resolved to its invoice client-side).
+      const base = `/${event.organization_id}/${event.branch_id}/dashboard/visits`;
+      const navigateTo = event.visit_id
+        ? `${base}?invoiceVisit=${event.visit_id}`
+        : base;
 
       await Promise.all(
         receptionists.map((receptionist) =>
@@ -163,6 +168,7 @@ export class NotificationsListener {
               patientId: event.patient_id,
               branchId: event.branch_id,
               serviceId: event.service_id,
+              visitId: event.visit_id,
             },
           }),
         ),
