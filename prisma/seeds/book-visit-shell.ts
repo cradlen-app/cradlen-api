@@ -191,9 +191,11 @@ const SECTIONS: SectionSpec[] = [
               '/v1/organizations/{org_id}/financial/catalog/services?active=true',
           },
           logic: {
-            // Optional: bookings still work before catalog/pricing is set up.
+            // Required for a patient booking: the charge captured here is what
+            // auto-issues the case invoice, so reception never has to create one.
             predicates: [
               { effect: 'visible', when: { eq: { visitor_type: 'PATIENT' } } },
+              { effect: 'required', when: { eq: { visitor_type: 'PATIENT' } } },
             ] satisfies Predicate[],
           },
         },
