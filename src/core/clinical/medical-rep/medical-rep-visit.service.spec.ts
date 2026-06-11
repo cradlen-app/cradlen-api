@@ -78,9 +78,9 @@ describe('MedicalRepVisitService', () => {
 
   describe('findMyCurrent', () => {
     it('scopes to the branch AND the current doctor (within the org)', async () => {
-      db.medicalRepVisit.findFirst.mockResolvedValue(null);
+      db.medicalRepVisit.findMany.mockResolvedValue([]);
       await service.findMyCurrent('branch-uuid', mockUser);
-      expect(db.medicalRepVisit.findFirst).toHaveBeenCalledWith(
+      expect(db.medicalRepVisit.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
             organization_id: mockUser.organizationId,
@@ -90,6 +90,15 @@ describe('MedicalRepVisitService', () => {
           }),
         }),
       );
+    });
+
+    it('returns every in-progress visit, not just one', async () => {
+      db.medicalRepVisit.findMany.mockResolvedValue([
+        { id: 'v1' },
+        { id: 'v2' },
+      ]);
+      const result = await service.findMyCurrent('branch-uuid', mockUser);
+      expect(result.data).toHaveLength(2);
     });
   });
 

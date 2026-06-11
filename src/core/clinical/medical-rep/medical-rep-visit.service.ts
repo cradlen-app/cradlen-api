@@ -393,7 +393,7 @@ export class MedicalRepVisitService {
     // rep visit started on a prior day (and never completed) doesn't linger as
     // the doctor's "current visit" indefinitely.
     const { start, end } = todayBounds();
-    const visit = await this.prismaService.db.medicalRepVisit.findFirst({
+    const visits = await this.prismaService.db.medicalRepVisit.findMany({
       where: {
         organization_id: user.organizationId,
         assigned_doctor_id: user.profileId,
@@ -402,10 +402,10 @@ export class MedicalRepVisitService {
         is_deleted: false,
         started_at: { gte: start, lte: end },
       },
-      orderBy: { started_at: 'desc' },
+      orderBy: { started_at: 'asc' },
       include: MED_REP_VISIT_INCLUDE,
     });
-    return { data: visit };
+    return { data: visits };
   }
 
   async updateVisit(
