@@ -13,6 +13,7 @@ import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { TemplateValidator } from '@builder/validator/template.validator';
 import { TemplatesService } from '@builder/templates/templates.service';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service';
+import { ChargingService } from '@core/financial/charging/charging.service';
 
 const mockUser: AuthContext = {
   userId: 'user-uuid',
@@ -27,7 +28,7 @@ const mockEpisodeWithJourney = {
   id: 'ep-uuid',
   journey_id: 'journey-uuid',
   is_deleted: false,
-  journey: { organization_id: 'org-uuid' },
+  journey: { organization_id: 'org-uuid', patient_id: 'patient-uuid' },
 };
 
 const mockVisit = {
@@ -182,6 +183,9 @@ describe('VisitsService', () => {
     const authorizationServiceMock = {
       assertCanAccessBranch: jest.fn().mockResolvedValue(undefined),
     };
+    const chargingServiceMock = {
+      capture: jest.fn().mockResolvedValue(undefined),
+    };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         VisitsService,
@@ -190,6 +194,7 @@ describe('VisitsService', () => {
         { provide: TemplateValidator, useValue: templateValidatorMock },
         { provide: TemplatesService, useValue: templatesServiceMock },
         { provide: AuthorizationService, useValue: authorizationServiceMock },
+        { provide: ChargingService, useValue: chargingServiceMock },
       ],
     }).compile();
     service = module.get<VisitsService>(VisitsService);
@@ -268,6 +273,33 @@ describe('VisitsService', () => {
           mockUser,
         ),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    it('rejects when the patient already has an open visit that day', async () => {
+      db.patientEpisode.findUnique.mockResolvedValue(mockEpisodeWithJourney);
+      db.visit.findFirst.mockResolvedValue({ id: 'existing-open-visit' });
+      db.$transaction.mockImplementation(
+        async (cb: (tx: typeof db) => Promise<unknown>) => cb(db),
+      );
+      const err = await service
+        .create(
+          'ep-uuid',
+          {
+            assigned_doctor_id: 'doctor-uuid',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            appointment_type: 'FOLLOW_UP' as any,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            priority: 'NORMAL' as any,
+            scheduled_at: new Date().toISOString(),
+          },
+          mockUser,
+        )
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ConflictException);
+      expect(
+        (err as ConflictException).getResponse() as { code: string },
+      ).toMatchObject({ code: 'PATIENT_HAS_OPEN_VISIT' });
+      expect(db.visit.create).not.toHaveBeenCalled();
     });
   });
 
@@ -895,6 +927,52 @@ describe('VisitsService', () => {
       expect(db.visit.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ episode_id: 'gen-ep-uuid' }),
+        }),
+      );
+    });
+
+    it('rejects with PATIENT_HAS_OPEN_VISIT when patient already has an open visit that day', async () => {
+      db.carePath.findFirst.mockResolvedValue(mockCarePath);
+      db.patient.findUnique.mockResolvedValue(mockPatient);
+      db.visit.findFirst.mockResolvedValue({ id: 'existing-open-visit' });
+
+      const err = await service
+        .bookVisit({ ...baseDto, patient_id: 'patient-uuid' }, mockUser)
+        .catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(ConflictException);
+      expect(
+        (err as ConflictException).getResponse() as { code: string },
+      ).toMatchObject({ code: 'PATIENT_HAS_OPEN_VISIT' });
+      expect(db.visit.create).not.toHaveBeenCalled();
+    });
+
+    it('scopes the duplicate check to open statuses in the branch on the booking day', async () => {
+      db.carePath.findFirst.mockResolvedValue(mockCarePath);
+      db.patient.findUnique.mockResolvedValue(null);
+      db.patient.create.mockResolvedValue(mockPatient);
+      db.patientJourney.findFirst.mockResolvedValue(mockJourney);
+      db.patientEpisode.findFirst.mockResolvedValue(mockEpisode);
+      db.visit.findFirst.mockResolvedValue(null);
+      db.visit.create.mockResolvedValue({
+        ...mockVisit,
+        episode_id: 'gen-ep-uuid',
+      });
+
+      await service.bookVisit(baseDto, mockUser);
+
+      expect(db.visit.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            branch_id: 'branch-uuid',
+            is_deleted: false,
+            status: { in: ['SCHEDULED', 'CHECKED_IN', 'IN_PROGRESS'] },
+            scheduled_at: expect.objectContaining({
+              gte: expect.any(Date),
+              lte: expect.any(Date),
+            }),
+            episode: { journey: { patient_id: 'patient-uuid' } },
+          }),
         }),
       );
     });
