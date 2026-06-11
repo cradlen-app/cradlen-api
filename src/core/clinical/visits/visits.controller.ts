@@ -78,7 +78,7 @@ export class VisitsController {
   @ApiBearerAuth()
   @ApiOperation({
     summary:
-      'All IN_PROGRESS visits assigned to the doctor at this branch today',
+      "The doctor's live visits at this branch today — queued (IN_PROGRESS) and in consultation (IN_CONSULTATION)",
   })
   @ApiStandardArrayResponse(VisitDto)
   findMyCurrent(
@@ -174,7 +174,10 @@ export class VisitsController {
 
   @Get('branches/:branchId/visits/in-progress')
   @ApiBearerAuth()
-  @ApiOperation({ summary: "Today's IN_PROGRESS visits for a branch" })
+  @ApiOperation({
+    summary:
+      "Today's live visits for a branch — queued (IN_PROGRESS) and in consultation (IN_CONSULTATION)",
+  })
   @ApiPaginatedResponse(VisitDto)
   findBranchInProgress(
     @Param('branchId', ParseUUIDPipe) branchId: string,

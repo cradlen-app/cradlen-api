@@ -663,6 +663,7 @@ Table visits {
   scheduled_at DateTime [not null]
   checked_in_at DateTime
   started_at DateTime
+  consultation_started_at DateTime
   completed_at DateTime
   notes String
   queue_number Int
@@ -2108,6 +2109,7 @@ Enum VisitStatus {
   SCHEDULED
   CHECKED_IN
   IN_PROGRESS
+  IN_CONSULTATION
   COMPLETED
   CANCELLED
   NO_SHOW
