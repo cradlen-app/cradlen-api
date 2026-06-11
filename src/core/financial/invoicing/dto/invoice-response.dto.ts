@@ -51,4 +51,14 @@ export class InvoiceResponseDto {
   items?: unknown[];
   @ApiPropertyOptional({ type: 'array', items: { type: 'object' } })
   payments?: unknown[];
+
+  @ApiPropertyOptional({
+    description: 'Embedded patient summary (id + full_name); present on list and detail responses.',
+    type: 'object',
+    properties: {
+      id: { type: 'string' },
+      full_name: { type: 'string' },
+    },
+  })
+  patient?: { id: string; full_name: string };
 }
