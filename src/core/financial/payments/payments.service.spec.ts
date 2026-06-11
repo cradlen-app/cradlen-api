@@ -103,6 +103,72 @@ describe('PaymentsService', () => {
       expect(result.invoice.status).toBe(InvoiceStatus.PARTIALLY_PAID);
     });
 
+    it('attributes a cash payment to the cashier’s open session', async () => {
+      mockDb.invoice.findFirst.mockResolvedValue({
+        id: INVOICE,
+        status: InvoiceStatus.ISSUED,
+        currency: 'EGP',
+        branch_id: 'br-1',
+        patient_id: 'pat-1',
+        total_amount: new Prisma.Decimal('200.00'),
+        paid_amount: new Prisma.Decimal('0.00'),
+      });
+      mockDb.payment.create.mockResolvedValue({
+        id: 'pay-1',
+        amount: new Prisma.Decimal('100.00'),
+        payment_method: PaymentMethod.CASH,
+      });
+      mockBalance.recompute.mockResolvedValue({
+        status: InvoiceStatus.PARTIALLY_PAID,
+        total_amount: new Prisma.Decimal('200.00'),
+        paid_amount: new Prisma.Decimal('100.00'),
+      });
+
+      await service.recordPayment(
+        ORG,
+        INVOICE,
+        { amount: 100, payment_method: PaymentMethod.CASH },
+        USER,
+      );
+
+      expect(mockDb.payment.create.mock.calls[0][0].data.cash_session_id).toBe(
+        'sess-1',
+      );
+    });
+
+    it('does not attribute a card payment to the drawer session', async () => {
+      mockDb.invoice.findFirst.mockResolvedValue({
+        id: INVOICE,
+        status: InvoiceStatus.ISSUED,
+        currency: 'EGP',
+        branch_id: 'br-1',
+        patient_id: 'pat-1',
+        total_amount: new Prisma.Decimal('200.00'),
+        paid_amount: new Prisma.Decimal('0.00'),
+      });
+      mockDb.payment.create.mockResolvedValue({
+        id: 'pay-1',
+        amount: new Prisma.Decimal('100.00'),
+        payment_method: PaymentMethod.CARD,
+      });
+      mockBalance.recompute.mockResolvedValue({
+        status: InvoiceStatus.PARTIALLY_PAID,
+        total_amount: new Prisma.Decimal('200.00'),
+        paid_amount: new Prisma.Decimal('100.00'),
+      });
+
+      await service.recordPayment(
+        ORG,
+        INVOICE,
+        { amount: 100, payment_method: PaymentMethod.CARD },
+        USER,
+      );
+
+      expect(
+        mockDb.payment.create.mock.calls[0][0].data.cash_session_id,
+      ).toBeNull();
+    });
+
     it('rejects a payment when the cashier has no open cash session', async () => {
       mockDb.invoice.findFirst.mockResolvedValue({
         id: INVOICE,
