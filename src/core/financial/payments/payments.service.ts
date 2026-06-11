@@ -170,10 +170,29 @@ export class PaymentsService {
       invoice.branch_id,
     );
 
-    return this.prismaService.db.payment.findMany({
+    const payments = await this.prismaService.db.payment.findMany({
       where: { invoice_id: invoiceId, is_deleted: false },
       orderBy: { created_at: 'desc' },
+      include: {
+        recorded_by: {
+          select: {
+            id: true,
+            user: { select: { first_name: true, last_name: true } },
+          },
+        },
+      },
     });
+
+    // Expose a flat `recorded_by` person shape (matches the web EmbeddedPerson
+    // contract) so the UI can render the cashier's name instead of the raw id.
+    return payments.map(({ recorded_by, ...rest }) => ({
+      ...rest,
+      recorded_by: {
+        id: recorded_by.id,
+        first_name: recorded_by.user.first_name,
+        last_name: recorded_by.user.last_name,
+      },
+    }));
   }
 
   async voidPayment(
