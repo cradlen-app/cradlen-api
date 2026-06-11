@@ -96,7 +96,10 @@ describe('InvoicingService', () => {
 
   describe('findAll', () => {
     beforeEach(() => {
-      mockDb.invoice.findMany.mockResolvedValue([{ id: 'inv-1' }, { id: 'inv-2' }]);
+      mockDb.invoice.findMany.mockResolvedValue([
+        { id: 'inv-1' },
+        { id: 'inv-2' },
+      ]);
       mockDb.invoice.count.mockResolvedValue(2);
     });
 
@@ -182,7 +185,9 @@ describe('InvoicingService', () => {
     };
 
     it('backfills assigned_doctor_id from the visit when the dto omits it', async () => {
-      mockDb.visit.findUnique.mockResolvedValue({ assigned_doctor_id: 'doc-v' });
+      mockDb.visit.findUnique.mockResolvedValue({
+        assigned_doctor_id: 'doc-v',
+      });
 
       await service.create(ORG, { ...baseDto, visit_id: 'v1' }, USER);
 
