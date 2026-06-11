@@ -15,9 +15,10 @@ import { seedVisit } from '../../helpers/visits-helpers';
  * `GET /branches/:branchId/visits/my-current` against real Postgres.
  *
  * Regression cover for the "doctor only sees their last in-progress visit" bug:
- * the endpoint must return EVERY IN_PROGRESS visit assigned to the caller today
- * (a `findMany`, not a `findFirst`), oldest first — and must not leak another
- * doctor's, another branch's, or another non-IN_PROGRESS visit.
+ * the endpoint must return EVERY live visit assigned to the caller today — both
+ * queued (IN_PROGRESS) and in consultation (IN_CONSULTATION) — as a `findMany`,
+ * oldest first, and must not leak another doctor's, another branch's, or a
+ * not-live (CHECKED_IN / COMPLETED) visit.
  */
 describe('Visits — my-current (integration)', () => {
   let app: INestApplication;
@@ -75,13 +76,21 @@ describe('Visits — my-current (integration)', () => {
     expect(ids(res.body.data)).toEqual([early.visitId, late.visitId]);
   });
 
-  it('excludes visits that are not IN_PROGRESS', async () => {
+  it('includes IN_PROGRESS and IN_CONSULTATION, excludes other statuses', async () => {
     const a = await seedOrg(prisma, 'Clinic A', 'doc.a@example.com');
     const inProgress = await seedVisit(prisma, {
       organizationId: a.org.id,
       branchId: a.branch.id,
       doctorProfileId: a.ownerProfileId,
       status: 'IN_PROGRESS',
+      startedAt: new Date(Date.now() - 30 * 60 * 1000),
+    });
+    const inConsultation = await seedVisit(prisma, {
+      organizationId: a.org.id,
+      branchId: a.branch.id,
+      doctorProfileId: a.ownerProfileId,
+      status: 'IN_CONSULTATION',
+      startedAt: new Date(Date.now() - 10 * 60 * 1000),
     });
     await seedVisit(prisma, {
       organizationId: a.org.id,
@@ -102,7 +111,11 @@ describe('Visits — my-current (integration)', () => {
       200,
     );
 
-    expect(ids(res.body.data)).toEqual([inProgress.visitId]);
+    // Both live statuses, oldest started_at first; not-live excluded.
+    expect(ids(res.body.data)).toEqual([
+      inProgress.visitId,
+      inConsultation.visitId,
+    ]);
   });
 
   it('empty list when the doctor has no in-progress visits', async () => {

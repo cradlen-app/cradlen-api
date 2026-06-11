@@ -26,6 +26,7 @@ const ACTIVE_VISIT_STATUSES: VisitStatus[] = [
   VisitStatus.SCHEDULED,
   VisitStatus.CHECKED_IN,
   VisitStatus.IN_PROGRESS,
+  VisitStatus.IN_CONSULTATION,
 ];
 
 const ACTIVE_REP_VISIT_STATUSES: MedicalRepVisitStatus[] = [

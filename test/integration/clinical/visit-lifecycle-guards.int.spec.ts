@@ -19,8 +19,9 @@ import { seedVisit } from '../../helpers/visits-helpers';
 /**
  * Visit lifecycle integrity guards against real Postgres.
  *
- * The workflow is strictly: reception books → the *assigned* doctor starts →
- * the *assigned* doctor completes. Once COMPLETED a visit is terminal. These
+ * The workflow is: reception books → reception drives the queue (CHECKED_IN,
+ * IN_PROGRESS) → the *assigned* doctor starts the consultation (IN_CONSULTATION)
+ * → the *assigned* doctor completes. Once COMPLETED a visit is terminal. These
  * tests pin the server-side enforcement of *who* may drive each step, and that
  * the only way a visit is created is via booking (the episode-scoped "create"
  * bypass route is gone).
@@ -67,7 +68,7 @@ describe('Visits — lifecycle integrity guards (integration)', () => {
   // incomplete BookVisitDto with 400 before the handler/guard runs, so a clean
   // 403 assertion isn't reachable without a full valid booking payload.
 
-  it('a staff member who is not the assigned doctor cannot start the visit', async () => {
+  it('a staff member who is not the assigned doctor cannot start the consultation', async () => {
     const a = await seedOrg(prisma, 'Clinic A', 'owner.a@example.com');
     const doctor = await seedMember(prisma, {
       orgId: a.org.id,
@@ -88,18 +89,18 @@ describe('Visits — lifecycle integrity guards (integration)', () => {
       branchId: a.branch.id,
       doctorProfileId: doctor.profileId,
       createdById: a.ownerProfileId,
-      status: 'CHECKED_IN',
+      status: 'IN_PROGRESS',
     });
 
     const intruderTokens = await loginAndSelect(app, 'intruder@example.com');
     await bearer(intruderTokens.accessToken)(
       request(http()).patch(statusUrl(visit.visitId)).send({
-        status: 'IN_PROGRESS',
+        status: 'IN_CONSULTATION',
       }),
     ).expect(403);
   });
 
-  it('the assigned doctor can start their own visit', async () => {
+  it('the assigned doctor can start the consultation on their own visit', async () => {
     const a = await seedOrg(prisma, 'Clinic A', 'owner.a@example.com');
     const doctor = await seedMember(prisma, {
       orgId: a.org.id,
@@ -113,16 +114,16 @@ describe('Visits — lifecycle integrity guards (integration)', () => {
       branchId: a.branch.id,
       doctorProfileId: doctor.profileId,
       createdById: a.ownerProfileId,
-      status: 'CHECKED_IN',
+      status: 'IN_PROGRESS',
     });
 
     const doctorTokens = await loginAndSelect(app, 'doctor@example.com');
     const res = await bearer(doctorTokens.accessToken)(
       request(http()).patch(statusUrl(visit.visitId)).send({
-        status: 'IN_PROGRESS',
+        status: 'IN_CONSULTATION',
       }),
     ).expect(200);
-    expect(res.body.data.status).toBe('IN_PROGRESS');
+    expect(res.body.data.status).toBe('IN_CONSULTATION');
   });
 
   it('a receptionist can check a scheduled visit in (reception-driven action)', async () => {
@@ -148,6 +149,55 @@ describe('Visits — lifecycle integrity guards (integration)', () => {
       }),
     ).expect(200);
     expect(res.body.data.status).toBe('CHECKED_IN');
+  });
+
+  it('a receptionist can move a checked-in visit into the queue (IN_PROGRESS)', async () => {
+    const a = await seedOrg(prisma, 'Clinic A', 'owner.a@example.com');
+    await seedReceptionist(
+      prisma,
+      a.org.id,
+      a.branch.id,
+      'reception@example.com',
+    );
+    const visit = await seedVisit(prisma, {
+      organizationId: a.org.id,
+      branchId: a.branch.id,
+      doctorProfileId: a.ownerProfileId,
+      createdById: a.ownerProfileId,
+      status: 'CHECKED_IN',
+    });
+
+    const reception = await loginAndSelect(app, 'reception@example.com');
+    const res = await bearer(reception.accessToken)(
+      request(http()).patch(statusUrl(visit.visitId)).send({
+        status: 'IN_PROGRESS',
+      }),
+    ).expect(200);
+    expect(res.body.data.status).toBe('IN_PROGRESS');
+  });
+
+  it('a receptionist cannot start the consultation (IN_CONSULTATION is doctor-only)', async () => {
+    const a = await seedOrg(prisma, 'Clinic A', 'owner.a@example.com');
+    await seedReceptionist(
+      prisma,
+      a.org.id,
+      a.branch.id,
+      'reception@example.com',
+    );
+    const visit = await seedVisit(prisma, {
+      organizationId: a.org.id,
+      branchId: a.branch.id,
+      doctorProfileId: a.ownerProfileId,
+      createdById: a.ownerProfileId,
+      status: 'IN_PROGRESS',
+    });
+
+    const reception = await loginAndSelect(app, 'reception@example.com');
+    await bearer(reception.accessToken)(
+      request(http()).patch(statusUrl(visit.visitId)).send({
+        status: 'IN_CONSULTATION',
+      }),
+    ).expect(403);
   });
 
   it('a COMPLETED visit cannot be reopened (terminal transition)', async () => {
