@@ -190,13 +190,19 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const raw = exception.getResponse();
 
     if (exception instanceof BadRequestException) {
+      // class-validator throws an array of field messages (genericized to
+      // "Validation failed" with per-field details); a manual
+      // `new BadRequestException('business rule message')` carries a single
+      // string we surface verbatim so callers see the real reason.
+      const isFieldValidation =
+        isValidationErrorResponse(raw) && Array.isArray(raw.message);
       return {
         status,
         body: {
           code: ERROR_CODES.VALIDATION_ERROR,
-          message: 'Validation failed',
+          message: isFieldValidation ? 'Validation failed' : exception.message,
           statusCode: status,
-          details: buildValidationDetails(raw),
+          details: isFieldValidation ? buildValidationDetails(raw) : {},
         },
       };
     }
