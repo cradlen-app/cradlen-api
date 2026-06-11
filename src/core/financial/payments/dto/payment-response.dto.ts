@@ -15,5 +15,16 @@ export class PaymentResponseDto {
   @ApiPropertyOptional() notes!: string | null;
   @ApiPropertyOptional() cash_session_id!: string | null;
   @ApiProperty() recorded_by_id!: string;
+  @ApiPropertyOptional({
+    description:
+      'Embedded recorder summary (id + name) for the staff member who took the payment.',
+    type: 'object',
+    properties: {
+      id: { type: 'string' },
+      first_name: { type: 'string' },
+      last_name: { type: 'string' },
+    },
+  })
+  recorded_by?: { id: string; first_name: string; last_name: string };
   @ApiProperty() created_at!: Date;
 }
