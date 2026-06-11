@@ -18,7 +18,10 @@ export class UpdatePriceListDto {
   @IsOptional()
   name?: string;
 
-  @ApiPropertyOptional({ nullable: true, description: 'Branch scope; null = org-wide.' })
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Branch scope; null = org-wide.',
+  })
   @IsOptional()
   @ValidateIf((o) => o.branch_id !== null)
   @IsUUID('4')

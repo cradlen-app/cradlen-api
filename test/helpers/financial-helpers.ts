@@ -211,9 +211,9 @@ export async function chargeAndIssue(
     })
     .expect(201);
   const invoiceId = inv.body.data.id as string;
-  await auth(
-    request(http).post(`${base}/invoices/${invoiceId}/issue`),
-  ).expect(201);
+  await auth(request(http).post(`${base}/invoices/${invoiceId}/issue`)).expect(
+    201,
+  );
   return { invoiceId, serviceId: svc.body.data.id, invoice: inv.body.data };
 }
 
