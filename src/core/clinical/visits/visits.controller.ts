@@ -18,7 +18,6 @@ import {
 import { VisitStatus } from '@prisma/client';
 import { VisitsService } from './visits.service';
 import { BookVisitDto } from './dto/book-visit.dto';
-import { CreateVisitDto } from './dto/create-visit.dto';
 import { UpdateVisitDto } from './dto/update-visit.dto';
 import { UpdateVisitStatusDto } from './dto/update-visit-status.dto';
 import { SetFollowUpDto } from './dto/set-follow-up.dto';
@@ -43,16 +42,6 @@ import { AuthContext } from '@common/interfaces/auth-context.interface';
 @Controller()
 export class VisitsController {
   constructor(private readonly visitsService: VisitsService) {}
-
-  @Post('episodes/:episodeId/visits')
-  @ApiStandardResponse(VisitDto)
-  create(
-    @Param('episodeId') episodeId: string,
-    @Body() dto: CreateVisitDto,
-    @CurrentUser() user: AuthContext,
-  ) {
-    return this.visitsService.create(episodeId, dto, user);
-  }
 
   @Get('episodes/:episodeId/visits')
   @ApiPaginatedResponse(VisitDto)
