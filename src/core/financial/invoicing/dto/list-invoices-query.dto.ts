@@ -6,12 +6,22 @@ import {
   IsEnum,
   IsInt,
   IsOptional,
+  IsString,
   IsUUID,
   Max,
+  MaxLength,
   Min,
 } from 'class-validator';
 
 export class ListInvoicesQueryDto {
+  @ApiPropertyOptional({
+    description: 'Free-text search across invoice number and patient name.',
+  })
+  @IsString()
+  @MaxLength(100)
+  @IsOptional()
+  search?: string;
+
   @ApiPropertyOptional({ enum: InvoiceStatus })
   @IsEnum(InvoiceStatus)
   @IsOptional()
