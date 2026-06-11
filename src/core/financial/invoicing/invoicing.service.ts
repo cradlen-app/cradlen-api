@@ -42,6 +42,8 @@ export interface InvoiceFilters {
   invoiceType?: InvoiceType;
   dateFrom?: string;
   dateTo?: string;
+  /** Free-text search across invoice_number and patient full_name. */
+  search?: string;
 }
 
 interface ResolvedItem {
@@ -102,6 +104,26 @@ export class InvoicingService {
       ...(filters.episodeId && { episode_id: filters.episodeId }),
       ...(filters.status && { status: filters.status }),
       ...(filters.invoiceType && { invoice_type: filters.invoiceType }),
+      ...(filters.search
+        ? {
+            OR: [
+              {
+                invoice_number: {
+                  contains: filters.search,
+                  mode: 'insensitive' as const,
+                },
+              },
+              {
+                patient: {
+                  full_name: {
+                    contains: filters.search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
       ...(filters.dateFrom || filters.dateTo
         ? {
             created_at: {
@@ -121,6 +143,9 @@ export class InvoicingService {
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { created_at: 'desc' },
+        include: {
+          patient: { select: { id: true, full_name: true } },
+        },
       }),
       this.prismaService.db.invoice.count({ where }),
     ]);
