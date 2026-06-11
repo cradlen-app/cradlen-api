@@ -1056,7 +1056,7 @@ export class VisitsService {
 
   async findMyCurrent(branchId: string, user: AuthContext) {
     const { start, end } = todayBounds();
-    const visit = await this.prismaService.db.visit.findFirst({
+    const visits = await this.prismaService.db.visit.findMany({
       where: {
         assigned_doctor_id: user.profileId,
         branch_id: branchId,
@@ -1064,10 +1064,10 @@ export class VisitsService {
         is_deleted: false,
         started_at: { gte: start, lte: end },
       },
-      orderBy: { started_at: 'desc' },
+      orderBy: { started_at: 'asc' },
       include: this.listInclude,
     });
-    return { data: visit ? this.flattenVisit(visit) : null };
+    return { data: visits.map((v) => this.flattenVisit(v)) };
   }
 
   async findOne(id: string, user: AuthContext) {
