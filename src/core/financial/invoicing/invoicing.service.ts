@@ -301,7 +301,19 @@ export class InvoicingService {
       organizationId,
       dto.branch_id,
     );
+    return this.buildFromChargesSystem(organizationId, dto, user.profileId);
+  }
 
+  /**
+   * Core of {@link buildFromCharges} without the user/role assertion — shared by
+   * the public method (after auth) and the event-driven auto-bill path, which
+   * has no AuthContext. `actorId` stamps `created_by_id`.
+   */
+  async buildFromChargesSystem(
+    organizationId: string,
+    dto: BuildInvoiceFromChargesDto,
+    actorId: string,
+  ) {
     const invoiceNumber =
       await this.invoiceNumberService.generate(organizationId);
 
@@ -374,7 +386,7 @@ export class InvoicingService {
           subtotal,
           total_amount: total,
           balance_due: total,
-          created_by_id: user.profileId,
+          created_by_id: actorId,
           items: { create: items.map((item) => this.toItemData(item)) },
         },
         include: { items: true },
@@ -513,25 +525,33 @@ export class InvoicingService {
   }
 
   /**
-   * When a charge is captured for a visit whose case already has an open issued
-   * invoice, append it to that invoice automatically (so a service the doctor
-   * adds mid-visit lands on the bill without a manual step). Best-effort: a
-   * no-op when there's no visit, no episode, or no open issued invoice yet.
+   * Ensure a captured charge lands on its case's invoice — the event-driven
+   * auto-bill path that enforces one open invoice per episode:
+   *   • an ISSUED / PARTIALLY_PAID / PAID invoice exists → append to it (so a
+   *     service the doctor adds mid-visit lands on the bill);
+   *   • a DRAFT exists → add the charge to that draft, which stays DRAFT (a
+   *     human started it intentionally);
+   *   • none exists → build a fresh invoice from the charge and issue it, so the
+   *     fee is ready to collect without a manual create/pull step (e.g. the
+   *     service reception picked at booking).
+   * Best-effort: a no-op when there's no visit or no episode.
    */
-  async autoAppendChargeFromEvent(event: {
+  async ensureInvoiceForCharge(event: {
     organization_id: string;
     branch_id: string;
+    patient_id: string;
     visit_id: string | null;
     charge_id: string;
+    captured_by_id: string;
   }): Promise<void> {
     if (!event.visit_id) return;
     const visit = await this.prismaService.db.visit.findFirst({
       where: { id: event.visit_id, is_deleted: false },
       select: { episode_id: true },
     });
-    if (!visit) return;
+    if (!visit?.episode_id) return;
 
-    const invoice = await this.prismaService.db.invoice.findFirst({
+    const openInvoice = await this.prismaService.db.invoice.findFirst({
       where: {
         organization_id: event.organization_id,
         branch_id: event.branch_id,
@@ -539,6 +559,7 @@ export class InvoicingService {
         is_deleted: false,
         status: {
           in: [
+            InvoiceStatus.DRAFT,
             InvoiceStatus.ISSUED,
             InvoiceStatus.PARTIALLY_PAID,
             InvoiceStatus.PAID,
@@ -546,16 +567,122 @@ export class InvoicingService {
         },
       },
       orderBy: { created_at: 'desc' },
-      select: { id: true },
+      select: { id: true, status: true },
     });
-    if (!invoice) return;
 
-    await this.appendChargesSystem(
+    if (openInvoice?.status === InvoiceStatus.DRAFT) {
+      await this.addChargesToDraftSystem(
+        event.organization_id,
+        openInvoice.id,
+        [event.charge_id],
+      );
+      return;
+    }
+
+    if (openInvoice) {
+      await this.appendChargesSystem(
+        event.organization_id,
+        openInvoice.id,
+        [event.charge_id],
+        { throwIfEmpty: false },
+      );
+      return;
+    }
+
+    // No invoice for this case yet → create one from the charge and issue it.
+    const invoice = await this.buildFromChargesSystem(
+      event.organization_id,
+      {
+        branch_id: event.branch_id,
+        patient_id: event.patient_id,
+        visit_id: event.visit_id,
+        charge_ids: [event.charge_id],
+      },
+      event.captured_by_id,
+    );
+    await this.issueSystem(
       event.organization_id,
       invoice.id,
-      [event.charge_id],
-      { throwIfEmpty: false },
+      event.captured_by_id,
     );
+  }
+
+  /**
+   * Add open (PENDING) charges to an existing DRAFT invoice, keeping it DRAFT.
+   * Mirrors {@link appendChargesSystem} but for a not-yet-issued invoice: totals
+   * are recomputed directly (balance_due = total) rather than via the payment
+   * balance recompute, which would derive a status and flip DRAFT → ISSUED.
+   * Best-effort: a no-op (returns the unchanged invoice) when nothing's pending.
+   */
+  async addChargesToDraftSystem(
+    organizationId: string,
+    invoiceId: string,
+    chargeIds?: string[],
+  ) {
+    const invoice = await this.findOneOrThrow(organizationId, invoiceId);
+    this.assertDraft(invoice);
+
+    return this.prismaService.db.$transaction(async (tx) => {
+      const charges = await tx.charge.findMany({
+        where: {
+          organization_id: organizationId,
+          branch_id: invoice.branch_id,
+          patient_id: invoice.patient_id,
+          status: ChargeStatus.PENDING,
+          is_deleted: false,
+          ...(chargeIds?.length && { id: { in: chargeIds } }),
+        },
+        orderBy: { captured_at: 'asc' },
+      });
+
+      if (charges.length === 0) {
+        return tx.invoice.findUniqueOrThrow({
+          where: { id: invoiceId },
+          include: { items: true },
+        });
+      }
+
+      await tx.invoiceItem.createMany({
+        data: charges.map((charge) => ({
+          invoice_id: invoiceId,
+          ...this.toItemData({
+            service_id: charge.service_id ?? undefined,
+            charge_id: charge.id,
+            description: charge.description,
+            quantity: charge.quantity,
+            unit_price: charge.unit_price,
+            currency: charge.currency,
+            discount_amount: Money.zero(),
+            total_amount: Money.multiply(charge.unit_price, charge.quantity),
+            pricing_source: charge.pricing_source,
+          }),
+        })),
+      });
+
+      await tx.charge.updateMany({
+        where: { id: { in: charges.map((c) => c.id) } },
+        data: { status: ChargeStatus.INVOICED },
+      });
+
+      const allItems = await tx.invoiceItem.findMany({
+        where: { invoice_id: invoiceId },
+      });
+      const { subtotal, discountAmount, total } = this.computeTotals(
+        allItems,
+        { type: invoice.discount_type, value: invoice.discount_value },
+        invoice.tax_amount,
+      );
+      return tx.invoice.update({
+        where: { id: invoiceId },
+        data: {
+          subtotal,
+          discount_amount: discountAmount,
+          total_amount: total,
+          balance_due: total,
+        },
+        include: { items: true },
+      });
+    });
   }
 
   async update(
@@ -732,6 +859,19 @@ export class InvoicingService {
 
   async issue(organizationId: string, invoiceId: string, user: AuthContext) {
     await this.access.assertIsReceptionistOrOwner(user, organizationId);
+    return this.issueSystem(organizationId, invoiceId, user.profileId);
+  }
+
+  /**
+   * Core of {@link issue} without the user/role assertion — shared by the public
+   * method (after auth) and the event-driven auto-bill path, which has no
+   * AuthContext. `actorId` stamps `issued_by_id`.
+   */
+  async issueSystem(
+    organizationId: string,
+    invoiceId: string,
+    actorId: string,
+  ) {
     const invoice = await this.findOneOrThrow(organizationId, invoiceId);
     this.assertDraft(invoice);
 
@@ -754,7 +894,7 @@ export class InvoicingService {
       branch_id: issued.branch_id,
       patient_id: issued.patient_id,
       total_amount: issued.total_amount,
-      issued_by_id: user.profileId,
+      issued_by_id: actorId,
     });
     return issued;
   }

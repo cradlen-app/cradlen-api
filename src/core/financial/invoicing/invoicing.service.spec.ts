@@ -333,48 +333,147 @@ describe('InvoicingService', () => {
     });
   });
 
-  describe('autoAppendChargeFromEvent', () => {
+  describe('addChargesToDraftSystem', () => {
+    const draft = {
+      id: 'inv-draft',
+      status: InvoiceStatus.DRAFT,
+      branch_id: BRANCH,
+      patient_id: 'pat-1',
+      discount_type: null,
+      discount_value: null,
+      tax_amount: d('0.00'),
+    };
+
+    it('adds the charge and recomputes totals, keeping the invoice DRAFT', async () => {
+      mockDb.invoice.findFirst.mockResolvedValue(draft);
+      mockDb.charge.findMany.mockResolvedValue([
+        {
+          id: 'c1',
+          service_id: null,
+          description: 'Consultation',
+          quantity: 1,
+          unit_price: d('150.00'),
+          currency: 'EGP',
+          pricing_source: PricingSource.CUSTOM,
+        },
+      ]);
+      mockDb.charge.updateMany.mockResolvedValue({ count: 1 });
+      mockDb.invoiceItem.findMany.mockResolvedValue([
+        { total_amount: d('150.00') },
+      ]);
+
+      await service.addChargesToDraftSystem(ORG, 'inv-draft', ['c1']);
+
+      const data = mockDb.invoice.update.mock.calls[0][0].data;
+      expect(data.subtotal.toFixed(2)).toBe('150.00');
+      expect(data.total_amount.toFixed(2)).toBe('150.00');
+      expect(data.balance_due.toFixed(2)).toBe('150.00');
+      // The draft is NOT issued — recompute would have derived a status.
+      expect(data.status).toBeUndefined();
+      expect(mockBalance.recompute).not.toHaveBeenCalled();
+      expect(mockDb.charge.updateMany.mock.calls[0][0].data.status).toBe(
+        ChargeStatus.INVOICED,
+      );
+    });
+
+    it('rejects a non-DRAFT invoice', async () => {
+      mockDb.invoice.findFirst.mockResolvedValue({
+        ...draft,
+        status: InvoiceStatus.ISSUED,
+      });
+      await expect(
+        service.addChargesToDraftSystem(ORG, 'inv-draft', ['c1']),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('ensureInvoiceForCharge', () => {
     const event = {
       organization_id: ORG,
       branch_id: BRANCH,
+      patient_id: 'pat-1',
       visit_id: 'visit-1',
       charge_id: 'charge-1',
+      captured_by_id: 'rec-1',
     };
 
-    it('appends the charge to the episode open invoice', async () => {
+    it('appends the charge to an already-issued case invoice', async () => {
       mockDb.visit.findFirst.mockResolvedValue({ episode_id: 'ep-1' });
-      mockDb.invoice.findFirst.mockResolvedValue({ id: 'inv-1' });
-      const spy = jest
+      mockDb.invoice.findFirst.mockResolvedValue({
+        id: 'inv-1',
+        status: InvoiceStatus.ISSUED,
+      });
+      const append = jest
         .spyOn(service, 'appendChargesSystem')
         .mockResolvedValue({} as never);
+      const draft = jest
+        .spyOn(service, 'addChargesToDraftSystem')
+        .mockResolvedValue({} as never);
+      const build = jest
+        .spyOn(service, 'buildFromChargesSystem')
+        .mockResolvedValue({ id: 'inv-new' } as never);
 
-      await service.autoAppendChargeFromEvent(event);
+      await service.ensureInvoiceForCharge(event);
 
-      expect(spy).toHaveBeenCalledWith(ORG, 'inv-1', ['charge-1'], {
+      expect(append).toHaveBeenCalledWith(ORG, 'inv-1', ['charge-1'], {
         throwIfEmpty: false,
       });
+      expect(draft).not.toHaveBeenCalled();
+      expect(build).not.toHaveBeenCalled();
     });
 
-    it('no-ops when the episode has no open issued invoice', async () => {
+    it('adds the charge to an existing DRAFT, keeping it DRAFT', async () => {
       mockDb.visit.findFirst.mockResolvedValue({ episode_id: 'ep-1' });
-      mockDb.invoice.findFirst.mockResolvedValue(null);
-      const spy = jest
+      mockDb.invoice.findFirst.mockResolvedValue({
+        id: 'inv-draft',
+        status: InvoiceStatus.DRAFT,
+      });
+      const draft = jest
+        .spyOn(service, 'addChargesToDraftSystem')
+        .mockResolvedValue({} as never);
+      const append = jest
         .spyOn(service, 'appendChargesSystem')
         .mockResolvedValue({} as never);
 
-      await service.autoAppendChargeFromEvent(event);
+      await service.ensureInvoiceForCharge(event);
 
-      expect(spy).not.toHaveBeenCalled();
+      expect(draft).toHaveBeenCalledWith(ORG, 'inv-draft', ['charge-1']);
+      expect(append).not.toHaveBeenCalled();
+    });
+
+    it('creates and issues a new invoice when the case has none', async () => {
+      mockDb.visit.findFirst.mockResolvedValue({ episode_id: 'ep-1' });
+      mockDb.invoice.findFirst.mockResolvedValue(null);
+      const build = jest
+        .spyOn(service, 'buildFromChargesSystem')
+        .mockResolvedValue({ id: 'inv-new' } as never);
+      const issue = jest
+        .spyOn(service, 'issueSystem')
+        .mockResolvedValue({} as never);
+
+      await service.ensureInvoiceForCharge(event);
+
+      expect(build).toHaveBeenCalledWith(
+        ORG,
+        {
+          branch_id: BRANCH,
+          patient_id: 'pat-1',
+          visit_id: 'visit-1',
+          charge_ids: ['charge-1'],
+        },
+        'rec-1',
+      );
+      expect(issue).toHaveBeenCalledWith(ORG, 'inv-new', 'rec-1');
     });
 
     it('no-ops when the charge has no visit', async () => {
-      const spy = jest
-        .spyOn(service, 'appendChargesSystem')
+      const build = jest
+        .spyOn(service, 'buildFromChargesSystem')
         .mockResolvedValue({} as never);
 
-      await service.autoAppendChargeFromEvent({ ...event, visit_id: null });
+      await service.ensureInvoiceForCharge({ ...event, visit_id: null });
 
-      expect(spy).not.toHaveBeenCalled();
+      expect(build).not.toHaveBeenCalled();
       expect(mockDb.visit.findFirst).not.toHaveBeenCalled();
     });
   });
