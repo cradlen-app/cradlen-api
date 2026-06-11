@@ -237,6 +237,21 @@ describe('Financial RCM — lifecycle + cross-tenant (integration)', () => {
     return { invoiceId, serviceId: svc.body.data.id, invoice: inv.body.data };
   }
 
+  /** Open the caller's cash drawer at a branch so payments can be recorded. */
+  async function openDrawer(
+    base: string,
+    auth: (r: request.Test) => request.Test,
+    branchId: string,
+    openingFloat = 0,
+  ): Promise<string> {
+    const open = await auth(
+      request(app.getHttpServer()).post(`${base}/financial/cash-sessions`),
+    )
+      .send({ branch_id: branchId, opening_float: openingFloat })
+      .expect(201);
+    return open.body.data.id as string;
+  }
+
   // ---------- tests ----------
 
   it('drives the full charge → invoice → pay → receipt → refund lifecycle', async () => {
@@ -258,6 +273,9 @@ describe('Financial RCM — lifecycle + cross-tenant (integration)', () => {
     expect(money(invoice.discount_amount)).toBe(20);
     expect(money(invoice.total_amount)).toBe(180);
     expect(money(invoice.balance_due)).toBe(180);
+
+    // recording a payment requires an open drawer at the branch
+    await openDrawer(base, auth, a.branch.id);
 
     // partial payment 100 → PARTIALLY_PAID, balance 80, returns { payment, invoice }
     const pay1 = await auth(
@@ -500,6 +518,7 @@ describe('Financial RCM — lifecycle + cross-tenant (integration)', () => {
       a.ownerProfileId,
       { unit_price: 200 },
     );
+    await openDrawer(base, auth, a.branch.id);
     const payFull = await auth(
       request(http).post(`${base}/invoices/${invoiceId}/payments`),
     )
@@ -607,6 +626,8 @@ describe('Financial RCM — lifecycle + cross-tenant (integration)', () => {
       { unit_price: 5000 },
     );
     expect(money(invoice.total_amount)).toBe(5000);
+
+    await openDrawer(base, auth, a.branch.id);
 
     // First installment.
     const pay1 = await auth(

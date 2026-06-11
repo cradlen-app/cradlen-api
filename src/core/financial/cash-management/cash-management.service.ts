@@ -4,7 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CashSessionStatus, PaymentStatus, Prisma } from '@prisma/client';
+import {
+  CashSessionStatus,
+  PaymentMethod,
+  PaymentStatus,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { EventBus } from '@infrastructure/messaging/event-bus.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
@@ -271,6 +276,7 @@ export class CashManagementService {
     const payments = await this.prismaService.db.payment.findMany({
       where: {
         cash_session_id: sessionId,
+        payment_method: PaymentMethod.CASH,
         status: PaymentStatus.COMPLETED,
         is_deleted: false,
       },
