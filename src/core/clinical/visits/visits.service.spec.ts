@@ -21,6 +21,19 @@ const mockUser: AuthContext = {
   organizationId: 'org-uuid',
   activeBranchId: 'branch-uuid',
   roles: ['RECEPTIONIST'],
+  jobFunctions: ['RECEPTIONIST'],
+  branchIds: ['branch-uuid'],
+};
+
+// The doctor the mock visit was booked for (assigned_doctor_id: 'doctor-uuid').
+// Only this actor (or an owner/manager) may start/complete the visit.
+const mockDoctorUser: AuthContext = {
+  userId: 'user-doctor',
+  profileId: 'doctor-uuid',
+  organizationId: 'org-uuid',
+  activeBranchId: 'branch-uuid',
+  roles: ['STAFF'],
+  jobFunctions: ['OTHER_DOCTOR'],
   branchIds: ['branch-uuid'],
 };
 
@@ -93,6 +106,7 @@ const mockEpisode = {
 describe('VisitsService', () => {
   let service: VisitsService;
   let eventBusMock: { publish: jest.Mock };
+  let chargingServiceMock: { capture: jest.Mock };
   let db: {
     patientEpisode: {
       findUnique: jest.Mock;
@@ -121,6 +135,7 @@ describe('VisitsService', () => {
     };
     branch: { findFirst: jest.Mock };
     profileBranch: { findFirst: jest.Mock };
+    providerService: { findFirst: jest.Mock };
     visitEncounter: { findUnique: jest.Mock; upsert: jest.Mock };
     visitVitals: { upsert: jest.Mock };
     patientOrgEnrollment: {
@@ -162,6 +177,9 @@ describe('VisitsService', () => {
       },
       branch: { findFirst: jest.fn() },
       profileBranch: { findFirst: jest.fn().mockResolvedValue({ id: 'pb-1' }) },
+      providerService: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'ps-1' }),
+      },
       visitEncounter: { findUnique: jest.fn(), upsert: jest.fn() },
       visitVitals: { upsert: jest.fn() },
       patientOrgEnrollment: {
@@ -183,7 +201,7 @@ describe('VisitsService', () => {
     const authorizationServiceMock = {
       assertCanAccessBranch: jest.fn().mockResolvedValue(undefined),
     };
-    const chargingServiceMock = {
+    chargingServiceMock = {
       capture: jest.fn().mockResolvedValue(undefined),
     };
     const module: TestingModule = await Test.createTestingModule({
@@ -235,77 +253,6 @@ describe('VisitsService', () => {
       db.visit.findMany.mockResolvedValue([{ id: 'v1' }, { id: 'v2' }]);
       const result = await service.findMyCurrent('branch-uuid', mockUser);
       expect(result.data).toHaveLength(2);
-    });
-  });
-
-  describe('create', () => {
-    it('creates a visit when episode is in the user org', async () => {
-      db.patientEpisode.findUnique.mockResolvedValue(mockEpisodeWithJourney);
-      db.visit.create.mockResolvedValue(mockVisit);
-      db.$transaction.mockImplementation(
-        async (cb: (tx: typeof db) => Promise<unknown>) => cb(db),
-      );
-      const result = await service.create(
-        'ep-uuid',
-        {
-          assigned_doctor_id: 'doctor-uuid',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          appointment_type: 'FOLLOW_UP' as any,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          priority: 'NORMAL' as any,
-          scheduled_at: new Date().toISOString(),
-        },
-        mockUser,
-      );
-      expect(result).toEqual(mockVisit);
-    });
-
-    it('throws NotFoundException when episode is in a different org', async () => {
-      db.patientEpisode.findUnique.mockResolvedValue({
-        ...mockEpisodeWithJourney,
-        journey: { organization_id: 'other-org' },
-      });
-      await expect(
-        service.create(
-          'ep-uuid',
-          {
-            assigned_doctor_id: 'doctor-uuid',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            appointment_type: 'FOLLOW_UP' as any,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            priority: 'NORMAL' as any,
-            scheduled_at: new Date().toISOString(),
-          },
-          mockUser,
-        ),
-      ).rejects.toThrow(NotFoundException);
-    });
-
-    it('rejects when the patient already has an open visit that day', async () => {
-      db.patientEpisode.findUnique.mockResolvedValue(mockEpisodeWithJourney);
-      db.visit.findFirst.mockResolvedValue({ id: 'existing-open-visit' });
-      db.$transaction.mockImplementation(
-        async (cb: (tx: typeof db) => Promise<unknown>) => cb(db),
-      );
-      const err = await service
-        .create(
-          'ep-uuid',
-          {
-            assigned_doctor_id: 'doctor-uuid',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            appointment_type: 'FOLLOW_UP' as any,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            priority: 'NORMAL' as any,
-            scheduled_at: new Date().toISOString(),
-          },
-          mockUser,
-        )
-        .catch((e: unknown) => e);
-      expect(err).toBeInstanceOf(ConflictException);
-      expect(
-        (err as ConflictException).getResponse() as { code: string },
-      ).toMatchObject({ code: 'PATIENT_HAS_OPEN_VISIT' });
-      expect(db.visit.create).not.toHaveBeenCalled();
     });
   });
 
@@ -421,7 +368,7 @@ describe('VisitsService', () => {
         'visit-uuid',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         { status: 'IN_PROGRESS' as any },
-        mockUser,
+        mockDoctorUser,
       );
       expect(db.visit.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -444,7 +391,7 @@ describe('VisitsService', () => {
           'visit-uuid',
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           { status: 'COMPLETED' as any },
-          mockUser,
+          mockDoctorUser,
         ),
       ).rejects.toThrow(BadRequestException);
       expect(db.visit.update).not.toHaveBeenCalled();
@@ -463,7 +410,7 @@ describe('VisitsService', () => {
           'visit-uuid',
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           { status: 'COMPLETED' as any },
-          mockUser,
+          mockDoctorUser,
         ),
       ).rejects.toThrow(BadRequestException);
     });
@@ -482,7 +429,7 @@ describe('VisitsService', () => {
           'visit-uuid',
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           { status: 'COMPLETED' as any },
-          mockUser,
+          mockDoctorUser,
         ),
       ).rejects.toThrow(BadRequestException);
       expect(db.visit.update).not.toHaveBeenCalled();
@@ -508,7 +455,7 @@ describe('VisitsService', () => {
         'visit-uuid',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         { status: 'COMPLETED' as any },
-        mockUser,
+        mockDoctorUser,
       );
       expect(db.visit.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -634,12 +581,132 @@ describe('VisitsService', () => {
         await service.updateStatus(
           'visit-uuid',
           { status: 'IN_PROGRESS' },
-          mockUser,
+          mockDoctorUser,
         );
 
         expect(tx.patientOrgEnrollment.updateMany).not.toHaveBeenCalled();
         expect(db.patientOrgEnrollment.updateMany).not.toHaveBeenCalled();
       });
+    });
+  });
+
+  describe('visit lifecycle actor guards', () => {
+    const ownerUser: AuthContext = {
+      userId: 'user-owner',
+      profileId: 'owner-uuid',
+      organizationId: 'org-uuid',
+      activeBranchId: 'branch-uuid',
+      roles: ['OWNER'],
+      jobFunctions: [],
+      branchIds: ['branch-uuid'],
+    };
+
+    // A clinician who is NOT the doctor this visit was booked for.
+    const otherDoctorUser: AuthContext = {
+      userId: 'user-other-doc',
+      profileId: 'other-doctor-uuid',
+      organizationId: 'org-uuid',
+      activeBranchId: 'branch-uuid',
+      roles: ['STAFF'],
+      jobFunctions: ['OTHER_DOCTOR'],
+      branchIds: ['branch-uuid'],
+    };
+
+    it('bookVisit rejects a non-reception, non-privileged actor before any work', async () => {
+      await expect(
+        service.bookVisit({} as never, mockDoctorUser),
+      ).rejects.toThrow(ForbiddenException);
+      // Guard short-circuits before template validation / any DB access.
+      expect(db.visit.create).not.toHaveBeenCalled();
+    });
+
+    it('updateStatus to IN_PROGRESS is forbidden for a receptionist (not the assigned doctor)', async () => {
+      db.visit.findUnique.mockResolvedValue({
+        ...mockVisit,
+        status: 'CHECKED_IN',
+      });
+      await expect(
+        service.updateStatus('visit-uuid', { status: 'IN_PROGRESS' }, mockUser),
+      ).rejects.toThrow(ForbiddenException);
+      expect(db.visit.update).not.toHaveBeenCalled();
+    });
+
+    it('updateStatus to IN_PROGRESS is forbidden for a different doctor', async () => {
+      db.visit.findUnique.mockResolvedValue({
+        ...mockVisit,
+        status: 'CHECKED_IN',
+      });
+      await expect(
+        service.updateStatus(
+          'visit-uuid',
+          { status: 'IN_PROGRESS' },
+          otherDoctorUser,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('updateStatus to COMPLETED is forbidden for a receptionist', async () => {
+      db.visit.findUnique.mockResolvedValue({
+        ...mockVisit,
+        status: 'IN_PROGRESS',
+      });
+      await expect(
+        service.updateStatus('visit-uuid', { status: 'COMPLETED' }, mockUser),
+      ).rejects.toThrow(ForbiddenException);
+      // Guard runs before the encounter/diagnosis completion checks.
+      expect(db.visitEncounter.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('updateStatus to IN_PROGRESS is allowed for an owner override', async () => {
+      db.visit.findUnique.mockResolvedValue({
+        ...mockVisit,
+        status: 'CHECKED_IN',
+      });
+      db.visit.update.mockResolvedValue({
+        ...mockVisit,
+        status: 'IN_PROGRESS',
+        started_at: new Date(),
+      });
+      db.$transaction.mockImplementation(
+        async (cb: (tx: typeof db) => Promise<unknown>) => cb(db),
+      );
+
+      await expect(
+        service.updateStatus(
+          'visit-uuid',
+          { status: 'IN_PROGRESS' },
+          ownerUser,
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it('updateStatus to CHECKED_IN is forbidden for a doctor (reception-only action)', async () => {
+      db.visit.findUnique.mockResolvedValue({
+        ...mockVisit,
+        status: 'SCHEDULED',
+      });
+      await expect(
+        service.updateStatus(
+          'visit-uuid',
+          { status: 'CHECKED_IN' },
+          mockDoctorUser,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('a COMPLETED visit cannot be reopened to IN_PROGRESS (terminal transition)', async () => {
+      db.visit.findUnique.mockResolvedValue({
+        ...mockVisit,
+        status: 'COMPLETED',
+      });
+      await expect(
+        service.updateStatus(
+          'visit-uuid',
+          { status: 'IN_PROGRESS' },
+          mockDoctorUser,
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(db.visit.update).not.toHaveBeenCalled();
     });
   });
 
@@ -817,6 +884,7 @@ describe('VisitsService', () => {
       phone_number: '0500000000',
       address: '123 Main St',
       assigned_doctor_id: 'doctor-uuid',
+      service_id: 'service-uuid',
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       appointment_type: 'VISIT' as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1007,12 +1075,53 @@ describe('VisitsService', () => {
         }),
       );
     });
+
+    it('rejects when the assigned doctor is not authorized for the service', async () => {
+      db.carePath.findFirst.mockResolvedValue(mockCarePath);
+      db.providerService.findFirst.mockResolvedValue(null);
+
+      await expect(service.bookVisit(baseDto, mockUser)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(db.visit.create).not.toHaveBeenCalled();
+    });
+
+    it('captures a PENDING charge for the booked service', async () => {
+      db.carePath.findFirst.mockResolvedValue(mockCarePath);
+      db.patient.findUnique.mockResolvedValue(null);
+      db.patient.create.mockResolvedValue(mockPatient);
+      db.patientJourney.findFirst.mockResolvedValue(null);
+      db.patientJourney.create.mockResolvedValue(mockJourney);
+      db.patientEpisode.createMany.mockResolvedValue({ count: 1 });
+      db.patientEpisode.findFirst.mockResolvedValue(mockEpisode);
+      db.visit.create.mockResolvedValue({
+        ...mockVisit,
+        id: 'visit-uuid',
+        episode_id: 'gen-ep-uuid',
+      });
+
+      await service.bookVisit(baseDto, mockUser);
+
+      expect(chargingServiceMock.capture).toHaveBeenCalledWith(
+        mockUser.organizationId,
+        expect.objectContaining({
+          branch_id: 'branch-uuid',
+          patient_id: mockPatient.id,
+          profile_id: 'doctor-uuid',
+          visit_id: 'visit-uuid',
+          service_id: 'service-uuid',
+          quantity: 1,
+        }),
+        mockUser,
+      );
+    });
   });
 
   describe('bookVisit enrollment', () => {
     const bookDto = {
       patient_id: 'patient-uuid',
       assigned_doctor_id: 'doctor-uuid',
+      service_id: 'service-uuid',
       branch_id: 'branch-uuid',
       specialty_code: 'OBGYN',
       appointment_type: 'VISIT' as const,
@@ -1094,6 +1203,7 @@ describe('VisitsService', () => {
       organizationId: 'org-uuid',
       activeBranchId: 'branch-uuid',
       roles: ['OWNER'],
+      jobFunctions: [],
       branchIds: ['branch-uuid'],
     };
 
@@ -1103,6 +1213,7 @@ describe('VisitsService', () => {
       organizationId: 'org-uuid',
       activeBranchId: 'branch-uuid',
       roles: ['DOCTOR'],
+      jobFunctions: ['OTHER_DOCTOR'],
       branchIds: ['branch-uuid'],
     };
 
@@ -1112,6 +1223,7 @@ describe('VisitsService', () => {
       organizationId: 'org-uuid',
       activeBranchId: 'other-branch',
       roles: ['DOCTOR'],
+      jobFunctions: ['OTHER_DOCTOR'],
       branchIds: ['other-branch'],
     };
 

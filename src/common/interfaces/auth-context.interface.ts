@@ -4,5 +4,6 @@ export interface AuthContext {
   organizationId: string;
   activeBranchId?: string;
   roles: string[];
+  jobFunctions: string[];
   branchIds: string[];
 }
