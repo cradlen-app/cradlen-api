@@ -132,7 +132,12 @@ describe('Financial — cash-session payment gate (integration + security)', () 
     await openDrawer(app, base, authA, a.branch.id, 0);
 
     // B is a receptionist at the same branch with no drawer of their own.
-    await seedReceptionist(prisma, a.org.id, a.branch.id, 'recep.b@example.com');
+    await seedReceptionist(
+      prisma,
+      a.org.id,
+      a.branch.id,
+      'recep.b@example.com',
+    );
     const authB = bearer(await loginAs(app, 'recep.b@example.com'));
 
     // B passes the front-desk role gate but has no open session → rejected,
@@ -159,7 +164,12 @@ describe('Financial — cash-session payment gate (integration + security)', () 
     );
     const aSessionId = await openDrawer(app, base, authA, a.branch.id, 0);
 
-    await seedReceptionist(prisma, a.org.id, a.branch.id, 'recep.b@example.com');
+    await seedReceptionist(
+      prisma,
+      a.org.id,
+      a.branch.id,
+      'recep.b@example.com',
+    );
     const authB = bearer(await loginAs(app, 'recep.b@example.com'));
 
     // cash_session_id is not an accepted payload field (the server derives it),

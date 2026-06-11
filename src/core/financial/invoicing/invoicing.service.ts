@@ -550,9 +550,12 @@ export class InvoicingService {
     });
     if (!invoice) return;
 
-    await this.appendChargesSystem(event.organization_id, invoice.id, [
-      event.charge_id,
-    ], { throwIfEmpty: false });
+    await this.appendChargesSystem(
+      event.organization_id,
+      invoice.id,
+      [event.charge_id],
+      { throwIfEmpty: false },
+    );
   }
 
   async update(

@@ -536,9 +536,7 @@ describe('Financial RCM — lifecycle + cross-tenant (integration)', () => {
         service_type: 'CONSULTATION',
       })
       .expect(201);
-    const charge2 = await auth(
-      request(http).post(`${base}/financial/charges`),
-    )
+    const charge2 = await auth(request(http).post(`${base}/financial/charges`))
       .send({
         branch_id: a.branch.id,
         patient_id: patientId,
@@ -599,7 +597,7 @@ describe('Financial RCM — lifecycle + cross-tenant (integration)', () => {
 
     // The reception billing panel filters by date_from = date_to = today; the
     // invoice was created moments ago, so an inclusive upper bound must return it.
-    const today = new Date().toISOString().split('T')[0]!;
+    const today = new Date().toISOString().split('T')[0];
     const list = await auth(
       request(http).get(
         `${base}/invoices?branch_id=${a.branch.id}&date_from=${today}&date_to=${today}`,
@@ -672,9 +670,9 @@ describe('Financial RCM — lifecycle + cross-tenant (integration)', () => {
       a.ownerProfileId,
       { unit_price: 200 },
     );
-    await auth(
-      request(http).post(`${base}/invoices/${invoiceId}/void`),
-    ).expect(201);
+    await auth(request(http).post(`${base}/invoices/${invoiceId}/void`)).expect(
+      201,
+    );
 
     // A new PENDING charge exists, but the invoice is VOID → append blocked.
     const svc = await auth(

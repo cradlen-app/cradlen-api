@@ -138,9 +138,9 @@ describe('Financial — reports (integration)', () => {
     const res = await auth(
       request(http).get(`${reports}/payments-by-method`),
     ).expect(200);
-    const cash = (res.body.data.by_method as Array<Record<string, unknown>>).find(
-      (r) => r.payment_method === 'CASH',
-    );
+    const cash = (
+      res.body.data.by_method as Array<Record<string, unknown>>
+    ).find((r) => r.payment_method === 'CASH');
     expect(cash).toBeDefined();
     expect(num(cash!.total)).toBe(400);
     expect(cash!.count).toBe(1);
@@ -148,7 +148,9 @@ describe('Financial — reports (integration)', () => {
 
   it('ar-aging: outstanding sits in the current bucket', async () => {
     const { auth, reports, http } = await seedReportingFixture();
-    const res = await auth(request(http).get(`${reports}/ar-aging`)).expect(200);
+    const res = await auth(request(http).get(`${reports}/ar-aging`)).expect(
+      200,
+    );
     const d = res.body.data;
     expect(num(d.total_outstanding)).toBe(600);
     expect(num(d.buckets.current)).toBe(600);
@@ -156,9 +158,9 @@ describe('Financial — reports (integration)', () => {
 
   it('collections: by_staff resolves the recorder name, not the id', async () => {
     const { a, auth, reports, http } = await seedReportingFixture();
-    const res = await auth(
-      request(http).get(`${reports}/collections`),
-    ).expect(200);
+    const res = await auth(request(http).get(`${reports}/collections`)).expect(
+      200,
+    );
     const d = res.body.data;
     expect(num(d.total)).toBe(400);
     const staff = (d.by_staff as Array<Record<string, unknown>>).find(
@@ -190,9 +192,9 @@ describe('Financial — reports (integration)', () => {
 
   it('write-offs: zero when no charges were written off', async () => {
     const { auth, reports, http } = await seedReportingFixture();
-    const res = await auth(
-      request(http).get(`${reports}/write-offs`),
-    ).expect(200);
+    const res = await auth(request(http).get(`${reports}/write-offs`)).expect(
+      200,
+    );
     expect(num(res.body.data.total_written_off)).toBe(0);
     expect(res.body.data.count).toBe(0);
   });
