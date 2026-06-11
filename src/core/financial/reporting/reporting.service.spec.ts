@@ -224,14 +224,45 @@ describe('ReportingService', () => {
     });
   });
 
+  describe('collections', () => {
+    it('resolves staff profile names for the by-staff breakdown', async () => {
+      mockDb.payment.groupBy
+        .mockResolvedValueOnce([
+          {
+            payment_method: 'CASH',
+            _sum: { amount: new Prisma.Decimal('300.00') },
+            _count: 3,
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            recorded_by_id: 'staff-1',
+            _sum: { amount: new Prisma.Decimal('300.00') },
+            _count: 3,
+          },
+        ]);
+      mockDb.profile.findMany.mockResolvedValue([
+        { id: 'staff-1', user: { first_name: 'Mona', last_name: 'Hassan' } },
+      ]);
+
+      const result = await service.collections(ORG, {}, USER);
+
+      expect(result.by_staff[0].profile_id).toBe('staff-1');
+      expect(result.by_staff[0].staff_name).toBe('Mona Hassan');
+      expect(result.total.toFixed(2)).toBe('300.00');
+    });
+  });
+
   describe('outstandingInvoices', () => {
     it('lists unpaid invoices with aging and a total', async () => {
       const now = Date.now();
+      const lastPaid = new Date(now - 5 * 86_400_000);
       mockDb.invoice.findMany.mockResolvedValue([
         {
           id: 'inv-1',
           invoice_number: 'INV-2026-00001',
           patient_id: 'pat-1',
+          assigned_doctor_id: 'doc-1',
           status: 'PARTIALLY_PAID',
           total_amount: new Prisma.Decimal('200.00'),
           paid_amount: new Prisma.Decimal('50.00'),
@@ -239,10 +270,14 @@ describe('ReportingService', () => {
           issued_at: new Date(now - 40 * 86_400_000),
           due_date: null,
           created_at: new Date(now - 40 * 86_400_000),
+          payments: [{ payment_date: lastPaid }],
         },
       ]);
       mockDb.patient.findMany.mockResolvedValue([
         { id: 'pat-1', full_name: 'Jane Doe' },
+      ]);
+      mockDb.profile.findMany.mockResolvedValue([
+        { id: 'doc-1', user: { first_name: 'Sara', last_name: 'Ali' } },
       ]);
 
       const result = await service.outstandingInvoices(ORG, {}, USER);
@@ -250,6 +285,8 @@ describe('ReportingService', () => {
       expect(result.count).toBe(1);
       expect(result.total_outstanding.toFixed(2)).toBe('150.00');
       expect(result.invoices[0].patient_name).toBe('Jane Doe');
+      expect(result.invoices[0].doctor_name).toBe('Sara Ali');
+      expect(result.invoices[0].last_payment_date).toBe(lastPaid);
       expect(result.invoices[0].aging_bucket).toBe('d31_60');
     });
   });
