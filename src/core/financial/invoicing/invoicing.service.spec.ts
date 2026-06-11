@@ -34,7 +34,7 @@ const mockDb = {
     count: jest.fn(),
   },
   charge: { findMany: jest.fn(), updateMany: jest.fn() },
-  visit: { findFirst: jest.fn() },
+  visit: { findFirst: jest.fn(), findUnique: jest.fn() },
   patientEpisode: { findFirst: jest.fn() },
   $transaction: jest.fn(),
 };
@@ -171,6 +171,47 @@ describe('InvoicingService', () => {
       expect(data.discount_amount.toFixed(2)).toBe('20.00');
       expect(data.total_amount.toFixed(2)).toBe('180.00');
       expect(data.balance_due.toFixed(2)).toBe('180.00');
+    });
+  });
+
+  describe('create() doctor backfill', () => {
+    const baseDto = {
+      branch_id: BRANCH,
+      patient_id: 'pat-1',
+      items: [{ description: 'A', unit_price: 100, quantity: 1 }],
+    };
+
+    it('backfills assigned_doctor_id from the visit when the dto omits it', async () => {
+      mockDb.visit.findUnique.mockResolvedValue({ assigned_doctor_id: 'doc-v' });
+
+      await service.create(ORG, { ...baseDto, visit_id: 'v1' }, USER);
+
+      const data = mockDb.invoice.create.mock.calls[0][0].data;
+      expect(data.assigned_doctor_id).toBe('doc-v');
+      expect(mockDb.visit.findUnique).toHaveBeenCalledWith({
+        where: { id: 'v1' },
+        select: { assigned_doctor_id: true },
+      });
+    });
+
+    it('keeps an explicit assigned_doctor_id and skips the visit lookup', async () => {
+      await service.create(
+        ORG,
+        { ...baseDto, visit_id: 'v1', assigned_doctor_id: 'doc-explicit' },
+        USER,
+      );
+
+      const data = mockDb.invoice.create.mock.calls[0][0].data;
+      expect(data.assigned_doctor_id).toBe('doc-explicit');
+      expect(mockDb.visit.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('leaves the doctor unset when there is no visit and no explicit doctor', async () => {
+      await service.create(ORG, baseDto, USER);
+
+      const data = mockDb.invoice.create.mock.calls[0][0].data;
+      expect(data.assigned_doctor_id).toBeUndefined();
+      expect(mockDb.visit.findUnique).not.toHaveBeenCalled();
     });
   });
 
