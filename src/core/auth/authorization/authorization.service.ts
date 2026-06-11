@@ -38,6 +38,7 @@ export class AuthorizationService {
       },
       include: {
         roles: { include: { role: true } },
+        job_functions: { include: { job_function: true } },
       },
     });
 
@@ -74,6 +75,7 @@ export class AuthorizationService {
       organizationId,
       activeBranchId,
       roles: profile.roles.map((item) => item.role.code),
+      jobFunctions: profile.job_functions.map((link) => link.job_function.code),
       branchIds,
     };
   }
