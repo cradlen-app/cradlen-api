@@ -218,9 +218,9 @@ describe('VisitsService', () => {
 
   describe('findMyCurrent', () => {
     it('scopes to the branch AND the current doctor', async () => {
-      db.visit.findFirst.mockResolvedValue(null);
+      db.visit.findMany.mockResolvedValue([]);
       await service.findMyCurrent('branch-uuid', mockUser);
-      expect(db.visit.findFirst).toHaveBeenCalledWith(
+      expect(db.visit.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
             assigned_doctor_id: mockUser.profileId,
@@ -229,6 +229,12 @@ describe('VisitsService', () => {
           }),
         }),
       );
+    });
+
+    it('returns every in-progress visit, not just one', async () => {
+      db.visit.findMany.mockResolvedValue([{ id: 'v1' }, { id: 'v2' }]);
+      const result = await service.findMyCurrent('branch-uuid', mockUser);
+      expect(result.data).toHaveLength(2);
     });
   });
 
