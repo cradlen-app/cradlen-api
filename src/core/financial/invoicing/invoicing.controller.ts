@@ -53,6 +53,7 @@ export class InvoicingController {
         invoiceType: query.type,
         dateFrom: query.date_from,
         dateTo: query.date_to,
+        search: query.search,
       },
       query.page ?? 1,
       query.limit ?? 20,
