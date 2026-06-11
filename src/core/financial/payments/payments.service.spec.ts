@@ -17,6 +17,7 @@ import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 const mockDb = {
   invoice: { findFirst: jest.fn() },
   payment: { create: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
+  cashSession: { findFirst: jest.fn() },
   $transaction: jest.fn(),
 };
 const mockPrisma = { db: mockDb };
@@ -55,6 +56,8 @@ describe('PaymentsService', () => {
 
     service = module.get(PaymentsService);
     jest.clearAllMocks();
+    // Default: the cashier holds an open drawer at the invoice's branch.
+    mockDb.cashSession.findFirst.mockResolvedValue({ id: 'sess-1' });
     mockDb.$transaction.mockImplementation(
       (fn: (tx: typeof mockDb) => unknown) => fn(mockDb),
     );
@@ -98,6 +101,29 @@ describe('PaymentsService', () => {
       // Returns both the payment row (receipt) and the recomputed invoice.
       expect(result.payment.id).toBe('pay-1');
       expect(result.invoice.status).toBe(InvoiceStatus.PARTIALLY_PAID);
+    });
+
+    it('rejects a payment when the cashier has no open cash session', async () => {
+      mockDb.invoice.findFirst.mockResolvedValue({
+        id: INVOICE,
+        status: InvoiceStatus.ISSUED,
+        currency: 'EGP',
+        branch_id: 'br-1',
+        patient_id: 'pat-1',
+        total_amount: new Prisma.Decimal('200.00'),
+        paid_amount: new Prisma.Decimal('0.00'),
+      });
+      mockDb.cashSession.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.recordPayment(
+          ORG,
+          INVOICE,
+          { amount: 100, payment_method: PaymentMethod.CARD },
+          USER,
+        ),
+      ).rejects.toThrow('Open a cash session at this branch');
+      expect(mockDb.payment.create).not.toHaveBeenCalled();
     });
 
     it('emits invoice.paid when the invoice becomes fully paid', async () => {
