@@ -69,7 +69,7 @@ export class ChargingService {
     const charge = await this.prismaService.db.$transaction((tx) =>
       this.captureInTx(tx, organizationId, dto, user),
     );
-    await this.finalizeCapture(charge);
+    this.finalizeCapture(charge);
     return charge;
   }
 
@@ -78,7 +78,7 @@ export class ChargingService {
    * creates the Charge row on the supplied transaction client. Performs **no**
    * access checks (the caller owns authorization) and triggers **no** side
    * effects — call {@link finalizeCapture} after the transaction commits to
-   * auto-bill and fan out.
+   * fan out `charge.captured` (which the invoice accrual listener bills on).
    *
    * The booking flow uses this so a visit and its charge commit atomically: a
    * visit must never exist without its charge.
@@ -100,7 +100,7 @@ export class ChargingService {
    * directly, keeping the cross-module side effect on the EventBus. Reception
    * notification and the realtime relay subscribe the same way.
    */
-  async finalizeCapture(charge: Charge): Promise<void> {
+  finalizeCapture(charge: Charge): void {
     this.eventBus.publish<ChargeCapturedEvent>(
       FINANCIAL_EVENTS.charge.captured,
       {
