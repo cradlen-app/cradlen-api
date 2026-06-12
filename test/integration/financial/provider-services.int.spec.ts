@@ -59,7 +59,9 @@ describe('Financial — provider services & overrides (integration)', () => {
     base: string,
     http: ReturnType<INestApplication['getHttpServer']>,
   ): Promise<string> {
-    const res = await auth(request(http).post(`${base}/financial/catalog/services`))
+    const res = await auth(
+      request(http).post(`${base}/financial/catalog/services`),
+    )
       .send({
         code: `S-${Math.floor(Math.random() * 1e6)}`,
         name: 'Consultation',
@@ -77,9 +79,13 @@ describe('Financial — provider services & overrides (integration)', () => {
       .send({ service_id: serviceId, duration_minutes: 30 })
       .expect(201);
 
-    const list = await auth(request(http).get(`${provider}/services`)).expect(200);
+    const list = await auth(request(http).get(`${provider}/services`)).expect(
+      200,
+    );
     expect(
-      list.body.data.some((s: { service_id: string }) => s.service_id === serviceId),
+      list.body.data.some(
+        (s: { service_id: string }) => s.service_id === serviceId,
+      ),
     ).toBe(true);
 
     const off = await auth(
@@ -93,9 +99,13 @@ describe('Financial — provider services & overrides (integration)', () => {
     await auth(
       request(http).delete(`${provider}/services/${serviceId}`),
     ).expect(204);
-    const after = await auth(request(http).get(`${provider}/services`)).expect(200);
+    const after = await auth(request(http).get(`${provider}/services`)).expect(
+      200,
+    );
     expect(
-      after.body.data.some((s: { service_id: string }) => s.service_id === serviceId),
+      after.body.data.some(
+        (s: { service_id: string }) => s.service_id === serviceId,
+      ),
     ).toBe(false);
   });
 
@@ -125,7 +135,9 @@ describe('Financial — provider services & overrides (integration)', () => {
       .send({ service_id: serviceId })
       .expect(201);
 
-    const created = await auth(request(http).post(`${provider}/price-overrides`))
+    const created = await auth(
+      request(http).post(`${provider}/price-overrides`),
+    )
       .send({ service_id: serviceId, price: 500 })
       .expect(201);
     const id = created.body.data.id;

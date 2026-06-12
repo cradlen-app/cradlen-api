@@ -70,7 +70,9 @@ describe('Financial — service catalog (integration)', () => {
       .send(makeService({ name: 'Active one' }))
       .expect(201);
     await auth(
-      request(http).post(svc).send(makeService({ name: 'Procedure', service_type: 'PROCEDURE' })),
+      request(http)
+        .post(svc)
+        .send(makeService({ name: 'Procedure', service_type: 'PROCEDURE' })),
     ).expect(201);
     await auth(
       request(http).post(`${svc}/${a.body.data.id}/deactivate`),
@@ -115,7 +117,9 @@ describe('Financial — service catalog (integration)', () => {
       .send(makeService())
       .expect(201);
 
-    const res = await auth(request(http).patch(`${svc}/${created.body.data.id}`))
+    const res = await auth(
+      request(http).patch(`${svc}/${created.body.data.id}`),
+    )
       .send({ name: 'Renamed', service_type: 'IMAGING' })
       .expect(200);
     expect(res.body.data).toMatchObject({
@@ -158,7 +162,11 @@ describe('Financial — service catalog (integration)', () => {
 
   it('rejects a duplicate code within the org (409)', async () => {
     const { auth, svc, http } = await setup();
-    await auth(request(http).post(svc)).send(makeService({ code: 'DUP-1' })).expect(201);
-    await auth(request(http).post(svc)).send(makeService({ code: 'DUP-1' })).expect(409);
+    await auth(request(http).post(svc))
+      .send(makeService({ code: 'DUP-1' }))
+      .expect(201);
+    await auth(request(http).post(svc))
+      .send(makeService({ code: 'DUP-1' }))
+      .expect(409);
   });
 });

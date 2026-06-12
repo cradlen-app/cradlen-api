@@ -59,12 +59,16 @@ describe('Financial — pricing security (integration)', () => {
       .expect(201);
 
     await authB(request(http).get(listsBase(a.org.id))).expect(403);
-    await authB(request(http).post(listsBase(a.org.id)).send({ name: 'X' })).expect(403);
+    await authB(
+      request(http).post(listsBase(a.org.id)).send({ name: 'X' }),
+    ).expect(403);
     await authB(
       request(http).get(`${listsBase(a.org.id)}/${created.body.data.id}`),
     ).expect(403);
 
-    await authA(request(http).get(`${listsBase(a.org.id)}/${randomUUID()}`)).expect(404);
+    await authA(
+      request(http).get(`${listsBase(a.org.id)}/${randomUUID()}`),
+    ).expect(404);
     await authA(
       request(http).get('/v1/organizations/not-a-uuid/financial/price-lists'),
     ).expect(400);
