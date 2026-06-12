@@ -391,7 +391,7 @@ Copy `.env.example` to `.env`. `ConfigModule` loads `.env.{NODE_ENV}` then `.env
 | `JWT_ACCESS_SECRET`                  | Signing secret for access tokens                |
 | `JWT_REFRESH_SECRET`                 | Signing secret for refresh tokens               |
 | `JWT_RESET_SECRET`                   | Signing secret for password-reset tokens        |
-| `JWT_ACCESS_EXPIRATION`              | e.g. `15m` (default)                            |
+| `JWT_ACCESS_EXPIRATION`              | e.g. `30m` (default)                            |
 | `JWT_REFRESH_EXPIRATION`             | e.g. `7d` (default)                             |
 | `JWT_REGISTRATION_EXPIRATION`        | e.g. `30m` (default)                            |
 | `JWT_WS_TICKET_EXPIRATION`           | Socket.IO handshake ticket TTL (default `60s`)  |
