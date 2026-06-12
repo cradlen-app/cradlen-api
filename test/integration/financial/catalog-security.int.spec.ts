@@ -73,12 +73,20 @@ describe('Financial — catalog security (integration)', () => {
     const http = app.getHttpServer();
 
     await authB(request(http).get(svcBase(a.org.id))).expect(403);
-    await authB(request(http).post(svcBase(a.org.id)).send(makeService())).expect(403);
-    await authB(request(http).get(`${svcBase(a.org.id)}/${serviceA}`)).expect(403);
     await authB(
-      request(http).patch(`${svcBase(a.org.id)}/${serviceA}`).send({ name: 'x' }),
+      request(http).post(svcBase(a.org.id)).send(makeService()),
     ).expect(403);
-    await authB(request(http).delete(`${svcBase(a.org.id)}/${serviceA}`)).expect(403);
+    await authB(request(http).get(`${svcBase(a.org.id)}/${serviceA}`)).expect(
+      403,
+    );
+    await authB(
+      request(http)
+        .patch(`${svcBase(a.org.id)}/${serviceA}`)
+        .send({ name: 'x' }),
+    ).expect(403);
+    await authB(
+      request(http).delete(`${svcBase(a.org.id)}/${serviceA}`),
+    ).expect(403);
 
     await authB(request(http).get(catBase(a.org.id))).expect(403);
     await authB(
@@ -101,9 +109,13 @@ describe('Financial — catalog security (integration)', () => {
     const http = app.getHttpServer();
 
     await authStaff(request(http).get(svcBase(a.org.id))).expect(200);
-    await authStaff(request(http).post(svcBase(a.org.id)).send(makeService())).expect(403);
     await authStaff(
-      request(http).patch(`${svcBase(a.org.id)}/${serviceA}`).send({ name: 'x' }),
+      request(http).post(svcBase(a.org.id)).send(makeService()),
+    ).expect(403);
+    await authStaff(
+      request(http)
+        .patch(`${svcBase(a.org.id)}/${serviceA}`)
+        .send({ name: 'x' }),
     ).expect(403);
     await authStaff(
       request(http).delete(`${svcBase(a.org.id)}/${serviceA}`),
@@ -118,17 +130,29 @@ describe('Financial — catalog security (integration)', () => {
 
     await auth(request(http).get(`${svcBase(a.org.id)}/${ghost}`)).expect(404);
     await auth(
-      request(http).patch(`${svcBase(a.org.id)}/${ghost}`).send({ name: 'x' }),
+      request(http)
+        .patch(`${svcBase(a.org.id)}/${ghost}`)
+        .send({ name: 'x' }),
     ).expect(404);
-    await auth(request(http).delete(`${svcBase(a.org.id)}/${ghost}`)).expect(404);
+    await auth(request(http).delete(`${svcBase(a.org.id)}/${ghost}`)).expect(
+      404,
+    );
   });
 
   it('rejects a duplicate service code with 409', async () => {
     const a = await seedOrg(prisma, 'Org A', 'owner.a@example.com');
     const auth = bearer(await loginAs(app, a.ownerEmail));
     const http = app.getHttpServer();
-    await auth(request(http).post(svcBase(a.org.id)).send(makeService({ code: 'DUP' }))).expect(201);
-    await auth(request(http).post(svcBase(a.org.id)).send(makeService({ code: 'DUP' }))).expect(409);
+    await auth(
+      request(http)
+        .post(svcBase(a.org.id))
+        .send(makeService({ code: 'DUP' })),
+    ).expect(201);
+    await auth(
+      request(http)
+        .post(svcBase(a.org.id))
+        .send(makeService({ code: 'DUP' })),
+    ).expect(409);
   });
 
   it('rejects malformed input with 400', async () => {
@@ -138,19 +162,27 @@ describe('Financial — catalog security (integration)', () => {
 
     // Missing required code.
     await auth(
-      request(http).post(svcBase(a.org.id)).send({ name: 'No code', service_type: 'CONSULTATION' }),
+      request(http)
+        .post(svcBase(a.org.id))
+        .send({ name: 'No code', service_type: 'CONSULTATION' }),
     ).expect(400);
     // Bad enum.
     await auth(
-      request(http).post(svcBase(a.org.id)).send(makeService({ service_type: 'BOGUS' })),
+      request(http)
+        .post(svcBase(a.org.id))
+        .send(makeService({ service_type: 'BOGUS' })),
     ).expect(400);
     // Non-UUID category_id.
     await auth(
-      request(http).post(svcBase(a.org.id)).send(makeService({ category_id: 'not-a-uuid' })),
+      request(http)
+        .post(svcBase(a.org.id))
+        .send(makeService({ category_id: 'not-a-uuid' })),
     ).expect(400);
     // Non-UUID orgId path.
     await auth(
-      request(http).get('/v1/organizations/not-a-uuid/financial/catalog/services'),
+      request(http).get(
+        '/v1/organizations/not-a-uuid/financial/catalog/services',
+      ),
     ).expect(400);
   });
 });
