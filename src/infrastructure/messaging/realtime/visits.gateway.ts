@@ -86,7 +86,12 @@ export class VisitsGateway implements OnGatewayConnection {
       const claims = this.jwtService.verify<SocketTokenClaims>(token, {
         secret: this.accessSecret,
       });
-      if (claims.type !== 'access') throw new Error('invalid token type');
+      // Browsers connect with a short-lived `ws` ticket (the access token stays
+      // httpOnly and never reaches client JS); `access` is still accepted for
+      // direct API/testing clients that hold a raw bearer token.
+      if (claims.type !== 'ws' && claims.type !== 'access') {
+        throw new Error('invalid token type');
+      }
 
       const data = client.data as SocketData;
       data.profileId = claims.profileId;
