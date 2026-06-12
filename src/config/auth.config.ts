@@ -33,7 +33,7 @@ export default registerAs(
       accessSecret: requireEnv('JWT_ACCESS_SECRET'),
       refreshSecret: requireEnv('JWT_REFRESH_SECRET'),
       resetSecret: requireEnv('JWT_RESET_SECRET'),
-      accessExpiration: process.env.JWT_ACCESS_EXPIRATION ?? '15m',
+      accessExpiration: process.env.JWT_ACCESS_EXPIRATION ?? '30m',
       refreshExpiration: process.env.JWT_REFRESH_EXPIRATION ?? '7d',
       registrationExpiration: process.env.JWT_REGISTRATION_EXPIRATION ?? '30m',
       wsTicketExpiration: process.env.JWT_WS_TICKET_EXPIRATION ?? '60s',

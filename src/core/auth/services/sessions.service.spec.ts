@@ -502,7 +502,7 @@ describe('SessionsService', () => {
         token_hash,
         is_revoked: true,
         replaced_by_jti: 'jti-successor',
-        revoked_at: new Date(Date.now() - 120_000), // 2 min ago, beyond grace
+        revoked_at: new Date(Date.now() - 360_000), // 6 min ago, beyond the 5-min grace
         expires_at: new Date(Date.now() + 60_000),
         profile_id: profileId,
         organization_id: organizationId,
