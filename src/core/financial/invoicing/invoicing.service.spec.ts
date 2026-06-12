@@ -8,6 +8,10 @@ import {
   Prisma,
 } from '@prisma/client';
 import { InvoicingService } from './invoicing.service.js';
+import { InvoiceCompositionService } from './invoice-composition.service.js';
+import { ChargeAccrualService } from './charge-accrual.service.js';
+import { InvoiceLifecycleService } from './invoice-lifecycle.service.js';
+import { InvoiceItemService } from './invoice-item.service.js';
 import { InvoiceNumberService } from './invoice-number.service.js';
 import { InvoiceBalanceService } from './invoice-balance.service.js';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
@@ -72,11 +76,17 @@ const USER: AuthContext = {
 
 describe('InvoicingService', () => {
   let service: InvoicingService;
+  let accrual: ChargeAccrualService;
+  let lifecycle: InvoiceLifecycleService;
 
   beforeEach(async () => {
     const module = await Test.createTestingModule({
       providers: [
         InvoicingService,
+        InvoiceCompositionService,
+        ChargeAccrualService,
+        InvoiceLifecycleService,
+        InvoiceItemService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuthorizationService, useValue: mockAuth },
         { provide: FinancialAccessService, useValue: mockAccess },
@@ -88,6 +98,8 @@ describe('InvoicingService', () => {
     }).compile();
 
     service = module.get(InvoicingService);
+    accrual = module.get(ChargeAccrualService);
+    lifecycle = module.get(InvoiceLifecycleService);
     jest.clearAllMocks();
     mockAccess.assertIsReceptionistOrOwner.mockResolvedValue(undefined);
     mockAuth.assertCanAccessBranch.mockResolvedValue(undefined);
@@ -372,7 +384,7 @@ describe('InvoicingService', () => {
         { total_amount: d('150.00') },
       ]);
 
-      await service.addChargesToDraftSystem(ORG, 'inv-draft', ['c1']);
+      await accrual.addChargesToDraftSystem(ORG, 'inv-draft', ['c1']);
 
       const data = mockDb.invoice.update.mock.calls[0][0].data;
       expect(data.subtotal.toFixed(2)).toBe('150.00');
@@ -392,7 +404,7 @@ describe('InvoicingService', () => {
         status: InvoiceStatus.ISSUED,
       });
       await expect(
-        service.addChargesToDraftSystem(ORG, 'inv-draft', ['c1']),
+        accrual.addChargesToDraftSystem(ORG, 'inv-draft', ['c1']),
       ).rejects.toThrow(BadRequestException);
     });
   });
@@ -414,13 +426,13 @@ describe('InvoicingService', () => {
         status: InvoiceStatus.ISSUED,
       });
       const append = jest
-        .spyOn(service, 'appendChargesSystem')
+        .spyOn(accrual, 'appendChargesSystem')
         .mockResolvedValue({} as never);
       const draft = jest
-        .spyOn(service, 'addChargesToDraftSystem')
+        .spyOn(accrual, 'addChargesToDraftSystem')
         .mockResolvedValue({} as never);
       const build = jest
-        .spyOn(service, 'buildFromChargesSystem')
+        .spyOn(accrual, 'buildFromChargesSystem')
         .mockResolvedValue({ id: 'inv-new' } as never);
 
       await service.ensureInvoiceForCharge(event);
@@ -439,10 +451,10 @@ describe('InvoicingService', () => {
         status: InvoiceStatus.DRAFT,
       });
       const draft = jest
-        .spyOn(service, 'addChargesToDraftSystem')
+        .spyOn(accrual, 'addChargesToDraftSystem')
         .mockResolvedValue({} as never);
       const append = jest
-        .spyOn(service, 'appendChargesSystem')
+        .spyOn(accrual, 'appendChargesSystem')
         .mockResolvedValue({} as never);
 
       await service.ensureInvoiceForCharge(event);
@@ -455,10 +467,10 @@ describe('InvoicingService', () => {
       mockDb.visit.findFirst.mockResolvedValue({ episode_id: 'ep-1' });
       mockDb.invoice.findFirst.mockResolvedValue(null);
       const build = jest
-        .spyOn(service, 'buildFromChargesSystem')
+        .spyOn(accrual, 'buildFromChargesSystem')
         .mockResolvedValue({ id: 'inv-new' } as never);
       const issue = jest
-        .spyOn(service, 'issueSystem')
+        .spyOn(lifecycle, 'issueSystem')
         .mockResolvedValue({} as never);
 
       await service.ensureInvoiceForCharge(event);
@@ -478,7 +490,7 @@ describe('InvoicingService', () => {
 
     it('no-ops when the charge has no visit', async () => {
       const build = jest
-        .spyOn(service, 'buildFromChargesSystem')
+        .spyOn(accrual, 'buildFromChargesSystem')
         .mockResolvedValue({} as never);
 
       await service.ensureInvoiceForCharge({ ...event, visit_id: null });
@@ -513,7 +525,9 @@ describe('InvoicingService', () => {
       });
       mockDb.service.findFirst.mockResolvedValue({ name: 'New Service' });
       mockDb.charge.create.mockResolvedValue({ id: 'chg-new' });
-      mockDb.invoiceItem.findMany.mockResolvedValue([{ total_amount: d('150') }]);
+      mockDb.invoiceItem.findMany.mockResolvedValue([
+        { total_amount: d('150') },
+      ]);
     });
 
     function mockUnpaidIssuedInvoice() {
