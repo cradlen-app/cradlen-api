@@ -37,9 +37,11 @@ import { VerifyResetCodeDto } from './dto/verify-reset-code.dto.js';
 import { ResetPasswordDto } from './dto/reset-password.dto.js';
 import { ResetTokenResponseDto } from './dto/reset-token-response.dto.js';
 import { SwitchBranchDto } from './dto/switch-branch.dto.js';
+import { WsTicketResponseDto } from './dto/ws-ticket-response.dto.js';
 import { SignupService } from './services/signup.service.js';
 import { SessionsService } from './services/sessions.service.js';
 import { PasswordResetService } from './services/password-reset.service.js';
+import { TokensService } from './services/tokens.service.js';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -48,6 +50,7 @@ export class AuthController {
     private readonly signupService: SignupService,
     private readonly sessionsService: SessionsService,
     private readonly passwordResetService: PasswordResetService,
+    private readonly tokensService: TokensService,
   ) {}
 
   @Get('me')
@@ -58,6 +61,22 @@ export class AuthController {
   @ApiStandardResponse(MeResponseDto)
   getMe(@CurrentUser() user: AuthContext) {
     return this.sessionsService.getMe(user.userId, user.profileId);
+  }
+
+  @Post('ws-ticket')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Mint a short-lived ticket for the realtime Socket.IO handshake',
+  })
+  @ApiStandardResponse(WsTicketResponseDto)
+  mintWsTicket(@CurrentUser() user: AuthContext): WsTicketResponseDto {
+    return this.tokensService.issueWsTicket({
+      user: { id: user.userId },
+      profileId: user.profileId,
+      organizationId: user.organizationId,
+      activeBranchId: user.activeBranchId,
+    });
   }
 
   @Post('signup/start')

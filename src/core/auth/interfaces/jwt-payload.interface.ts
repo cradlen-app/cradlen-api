@@ -8,6 +8,23 @@ export interface JwtAccessPayload {
   exp?: number;
 }
 
+/**
+ * Short-lived ticket the browser passes in the Socket.IO handshake
+ * (`handshake.auth.token`). Minted from a valid access token via
+ * `POST /auth/ws-ticket` so the real access token can stay httpOnly and never
+ * reach client JS. Mirrors the access-token claims the gateway needs to derive
+ * room membership (`profileId`, `activeBranchId`).
+ */
+export interface JwtWsTicketPayload {
+  userId: string;
+  profileId: string;
+  organizationId: string;
+  activeBranchId?: string;
+  type: 'ws';
+  iat?: number;
+  exp?: number;
+}
+
 export interface JwtRefreshPayload {
   userId: string;
   profileId?: string;

@@ -394,6 +394,7 @@ Copy `.env.example` to `.env`. `ConfigModule` loads `.env.{NODE_ENV}` then `.env
 | `JWT_ACCESS_EXPIRATION`              | e.g. `15m` (default)                            |
 | `JWT_REFRESH_EXPIRATION`             | e.g. `7d` (default)                             |
 | `JWT_REGISTRATION_EXPIRATION`        | e.g. `30m` (default)                            |
+| `JWT_WS_TICKET_EXPIRATION`           | Socket.IO handshake ticket TTL (default `60s`)  |
 | `RESEND_API_KEY`                     | Resend API key for transactional email          |
 | `RESEND_FROM_EMAIL`                  | Sender address (default `noreply@example.com`)  |
 | `FREE_TRIAL_DAYS`                    | Days before free-trial subscription expires (default `14`) |
