@@ -41,6 +41,11 @@ export const Money = {
     return new Decimal(amount).times(new Decimal(quantity));
   },
 
+  /** Divide one amount by another (e.g. a percentage base by 100). */
+  divide(amount: DecimalInput, divisor: DecimalInput): Prisma.Decimal {
+    return new Decimal(amount).dividedBy(new Decimal(divisor));
+  },
+
   /** Sum a list of amounts; empty list → 0. */
   sum(values: readonly DecimalInput[]): Prisma.Decimal {
     return values.reduce<Prisma.Decimal>(
@@ -52,6 +57,29 @@ export const Money = {
   /** -1 if a < b, 0 if equal, 1 if a > b. */
   compare(a: DecimalInput, b: DecimalInput): number {
     return new Decimal(a).comparedTo(new Decimal(b));
+  },
+
+  /** The smaller of two amounts. */
+  min(a: DecimalInput, b: DecimalInput): Prisma.Decimal {
+    const da = new Decimal(a);
+    const db = new Decimal(b);
+    return da.lessThanOrEqualTo(db) ? da : db;
+  },
+
+  /** The larger of two amounts. */
+  max(a: DecimalInput, b: DecimalInput): Prisma.Decimal {
+    const da = new Decimal(a);
+    const db = new Decimal(b);
+    return da.greaterThanOrEqualTo(db) ? da : db;
+  },
+
+  /** Constrain `value` to the inclusive `[lo, hi]` range. */
+  clamp(
+    value: DecimalInput,
+    lo: DecimalInput,
+    hi: DecimalInput,
+  ): Prisma.Decimal {
+    return this.max(lo, this.min(hi, value));
   },
 
   equals(a: DecimalInput, b: DecimalInput): boolean {
