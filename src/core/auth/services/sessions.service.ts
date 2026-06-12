@@ -52,9 +52,15 @@ export class SessionsService {
   /**
    * How long after a refresh token is rotated it may still be redeemed once
    * more, to absorb concurrent refresh requests racing the same token (see
-   * `refresh`). Short enough to keep single-use rotation meaningful.
+   * `refresh`). A page that fires many authenticated calls at once after the
+   * access token expired triggers several parallel rotations; in a serverless
+   * deployment the frontend's in-process refresh dedup does not span instances,
+   * and cookie write-back races can leave the browser holding a just-rotated
+   * token. A 5-minute window absorbs those races while keeping single-use
+   * rotation meaningful — only tokens revoked *by rotation* (replaced_by_jti
+   * set) are re-honored; logout-revoked tokens are always rejected.
    */
-  private static readonly REFRESH_REUSE_GRACE_MS = 60_000;
+  private static readonly REFRESH_REUSE_GRACE_MS = 300_000;
 
   constructor(
     private readonly prismaService: PrismaService,
