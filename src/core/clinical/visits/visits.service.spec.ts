@@ -587,8 +587,11 @@ describe('VisitsService', () => {
           status: 'CHECKED_IN' as const,
         };
         db.visit.findUnique.mockResolvedValue(checkedInVisit);
-        db.patientEpisode.findUnique.mockResolvedValue({
-          journey_id: 'journey-uuid',
+        // IN_PROGRESS is a single-row update — it takes the bare-update path,
+        // not a transaction, so no enrollment side-effect can fire.
+        db.visit.update.mockResolvedValue({
+          ...checkedInVisit,
+          status: 'IN_PROGRESS',
         });
         const tx = {
           visit: {
@@ -768,6 +771,7 @@ describe('VisitsService', () => {
       episode: {
         id: 'ep-uuid',
         journey: {
+          id: 'journey-uuid',
           organization_id: 'org-uuid',
           patient: { id: 'patient-uuid', full_name: 'Jane Doe' },
           care_path: null,
@@ -777,9 +781,6 @@ describe('VisitsService', () => {
 
     it('soft-deletes PENDING enrollment when cascade fires and no other journeys remain', async () => {
       db.visit.findUnique.mockResolvedValue(scheduledVisit);
-      db.patientEpisode.findUnique.mockResolvedValue({
-        journey_id: 'journey-uuid',
-      });
       const tx = {
         visit: {
           update: jest
@@ -830,9 +831,6 @@ describe('VisitsService', () => {
 
     it('does not soft-delete patient when other journeys exist', async () => {
       db.visit.findUnique.mockResolvedValue(scheduledVisit);
-      db.patientEpisode.findUnique.mockResolvedValue({
-        journey_id: 'journey-uuid',
-      });
       const tx = {
         visit: {
           update: jest
@@ -882,9 +880,6 @@ describe('VisitsService', () => {
 
     it('does not clean up enrollment when checked-in visits still exist (cascade not entered)', async () => {
       db.visit.findUnique.mockResolvedValue(scheduledVisit);
-      db.patientEpisode.findUnique.mockResolvedValue({
-        journey_id: 'journey-uuid',
-      });
       const tx = {
         visit: {
           update: jest
