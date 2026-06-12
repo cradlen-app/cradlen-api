@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
-import { VisitsService } from '@core/clinical/visits/visits.service.js';
+import { VisitStatusService } from '@core/clinical/visits/visit-status.service.js';
 import { AuthContext } from '@common/interfaces/auth-context.interface.js';
 
 const SYSTEM_AUTH_CONTEXT: AuthContext = {
@@ -23,7 +23,7 @@ export class OverdueVisitSweepService {
 
   constructor(
     private readonly prismaService: PrismaService,
-    private readonly visitsService: VisitsService,
+    private readonly visitStatusService: VisitStatusService,
   ) {}
 
   @Cron('0 2 * * *')
@@ -60,7 +60,7 @@ export class OverdueVisitSweepService {
       };
 
       try {
-        await this.visitsService.updateStatus(
+        await this.visitStatusService.updateStatus(
           visit.id,
           { status: 'NO_SHOW' },
           visitAuthContext,

@@ -17,6 +17,7 @@ import {
 } from '@nestjs/swagger';
 import { VisitStatus } from '@prisma/client';
 import { VisitsService } from './visits.service';
+import { VisitStatusService } from './visit-status.service';
 import { BookVisitDto } from './dto/book-visit.dto';
 import { UpdateVisitDto } from './dto/update-visit.dto';
 import { UpdateVisitStatusDto } from './dto/update-visit-status.dto';
@@ -41,7 +42,10 @@ import { AuthContext } from '@common/interfaces/auth-context.interface';
 @ApiTags('Visits')
 @Controller()
 export class VisitsController {
-  constructor(private readonly visitsService: VisitsService) {}
+  constructor(
+    private readonly visitsService: VisitsService,
+    private readonly visitStatusService: VisitStatusService,
+  ) {}
 
   @Get('episodes/:episodeId/visits')
   @ApiPaginatedResponse(VisitDto)
@@ -145,7 +149,7 @@ export class VisitsController {
     @Body() dto: UpdateVisitStatusDto,
     @CurrentUser() user: AuthContext,
   ) {
-    return this.visitsService.updateStatus(id, dto, user);
+    return this.visitStatusService.updateStatus(id, dto, user);
   }
 
   @Put('visits/:id/follow-up')
@@ -155,7 +159,7 @@ export class VisitsController {
     @Body() dto: SetFollowUpDto,
     @CurrentUser() user: AuthContext,
   ) {
-    return this.visitsService.setFollowUp(id, dto, user);
+    return this.visitStatusService.setFollowUp(id, dto, user);
   }
 
   @Get('branches/:branchId/visits/waiting-list')
