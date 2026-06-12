@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -17,6 +18,7 @@ import { PatientAccessService } from '@core/patient/patient-access/patient-acces
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import { paginated } from '@common/utils/pagination.utils.js';
 import { PricingResolverService } from '../pricing/pricing-resolver.service.js';
+import { InvoicingService } from '../invoicing/invoicing.service.js';
 import { Money } from '../shared/money/money.js';
 import { DEFAULT_CURRENCY } from '../shared/currency.js';
 import {
@@ -42,11 +44,14 @@ interface ListChargesFilters {
  */
 @Injectable()
 export class ChargingService {
+  private readonly logger = new Logger(ChargingService.name);
+
   constructor(
     private readonly prismaService: PrismaService,
     private readonly authorizationService: AuthorizationService,
     private readonly pricingResolver: PricingResolverService,
     private readonly patientAccess: PatientAccessService,
+    private readonly invoicingService: InvoicingService,
     private readonly eventBus: EventBus,
   ) {}
 
@@ -141,6 +146,29 @@ export class ChargingService {
       },
     });
 
+    // Auto-bill the charge onto its case's invoice inline (awaited) so the
+    // response reflects the invoiced state — a service the doctor adds mid-visit
+    // lands on the bill immediately, with no manual "add charges to invoice"
+    // step. Best-effort: the charge is already persisted, so a billing failure
+    // (e.g. a pricing/transaction edge) is logged but never fails the capture;
+    // the charge stays PENDING and reception can still settle it manually.
+    try {
+      await this.invoicingService.ensureInvoiceForCharge({
+        organization_id: charge.organization_id,
+        branch_id: charge.branch_id,
+        patient_id: charge.patient_id,
+        visit_id: charge.visit_id,
+        charge_id: charge.id,
+        captured_by_id: charge.captured_by_id,
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to auto-bill charge ${charge.id} onto its case invoice`,
+        err as Error,
+      );
+    }
+
+    // Fan-out for downstream consumers (reception notification, realtime relay).
     this.eventBus.publish<ChargeCapturedEvent>(
       FINANCIAL_EVENTS.charge.captured,
       {
