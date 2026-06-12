@@ -31,9 +31,19 @@ const mockDb = {
     deleteMany: jest.fn(),
     createMany: jest.fn(),
     findMany: jest.fn(),
+    findFirst: jest.fn(),
+    create: jest.fn(),
+    delete: jest.fn(),
     count: jest.fn(),
   },
-  charge: { findMany: jest.fn(), updateMany: jest.fn() },
+  charge: {
+    findMany: jest.fn(),
+    findFirst: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn(),
+  },
+  service: { findFirst: jest.fn() },
   visit: { findFirst: jest.fn(), findUnique: jest.fn() },
   patientEpisode: { findFirst: jest.fn() },
   $transaction: jest.fn(),
@@ -475,6 +485,117 @@ describe('InvoicingService', () => {
 
       expect(build).not.toHaveBeenCalled();
       expect(mockDb.visit.findFirst).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('swapVisitBookingService', () => {
+    const params = {
+      organizationId: ORG,
+      visitId: 'visit-1',
+      newServiceId: 'svc-new',
+      profileId: 'doc-1',
+      branchId: BRANCH,
+      capturedById: 'rec-1',
+    };
+
+    const bookingCharge = {
+      id: 'chg-old',
+      service_id: 'svc-old',
+      patient_id: 'pat-1',
+      quantity: 1,
+    };
+
+    beforeEach(() => {
+      mockResolver.resolvePrice.mockResolvedValue({
+        price: d('150'),
+        currency: 'EGP',
+        source: PricingSource.CUSTOM,
+      });
+      mockDb.service.findFirst.mockResolvedValue({ name: 'New Service' });
+      mockDb.charge.create.mockResolvedValue({ id: 'chg-new' });
+      mockDb.invoiceItem.findMany.mockResolvedValue([{ total_amount: d('150') }]);
+    });
+
+    function mockUnpaidIssuedInvoice() {
+      mockDb.charge.findFirst.mockResolvedValue(bookingCharge);
+      mockDb.invoiceItem.findFirst.mockResolvedValue({
+        id: 'item-old',
+        invoice: {
+          id: 'inv-1',
+          status: InvoiceStatus.ISSUED,
+          paid_amount: d('0'),
+          discount_type: null,
+          discount_value: null,
+          tax_amount: d('0'),
+        },
+      });
+    }
+
+    it('voids the old charge, replaces the invoice line, and recomputes totals (unpaid ISSUED)', async () => {
+      mockUnpaidIssuedInvoice();
+
+      await service.swapVisitBookingService(params);
+
+      expect(mockDb.charge.update).toHaveBeenCalledWith({
+        where: { id: 'chg-old' },
+        data: { status: ChargeStatus.VOID },
+      });
+      const created = mockDb.charge.create.mock.calls[0][0].data;
+      expect(created).toMatchObject({
+        service_id: 'svc-new',
+        visit_id: 'visit-1',
+        profile_id: 'doc-1',
+        status: ChargeStatus.INVOICED,
+      });
+      expect(created.unit_price.toFixed(2)).toBe('150.00');
+      expect(mockDb.invoiceItem.delete).toHaveBeenCalledWith({
+        where: { id: 'item-old' },
+      });
+      expect(mockDb.invoiceItem.create).toHaveBeenCalled();
+      expect(mockBalance.recompute).toHaveBeenCalledWith(mockDb, 'inv-1');
+    });
+
+    it('blocks the swap when a payment has been recorded (unpaid guard)', async () => {
+      mockDb.charge.findFirst.mockResolvedValue(bookingCharge);
+      mockDb.invoiceItem.findFirst.mockResolvedValue({
+        id: 'item-old',
+        invoice: {
+          id: 'inv-1',
+          status: InvoiceStatus.PARTIALLY_PAID,
+          paid_amount: d('50'),
+          discount_type: null,
+          discount_value: null,
+          tax_amount: d('0'),
+        },
+      });
+
+      await expect(service.swapVisitBookingService(params)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mockDb.charge.update).not.toHaveBeenCalled();
+      expect(mockDb.charge.create).not.toHaveBeenCalled();
+      expect(mockDb.invoiceItem.delete).not.toHaveBeenCalled();
+    });
+
+    it('no-ops when the service is unchanged', async () => {
+      mockDb.charge.findFirst.mockResolvedValue({
+        ...bookingCharge,
+        service_id: 'svc-new',
+      });
+
+      await service.swapVisitBookingService(params);
+
+      expect(mockResolver.resolvePrice).not.toHaveBeenCalled();
+      expect(mockDb.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('no-ops when the visit has no booking charge', async () => {
+      mockDb.charge.findFirst.mockResolvedValue(null);
+
+      await service.swapVisitBookingService(params);
+
+      expect(mockResolver.resolvePrice).not.toHaveBeenCalled();
+      expect(mockDb.$transaction).not.toHaveBeenCalled();
     });
   });
 });

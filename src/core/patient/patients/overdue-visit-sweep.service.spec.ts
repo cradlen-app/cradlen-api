@@ -1,16 +1,16 @@
 import { Test } from '@nestjs/testing';
 import { OverdueVisitSweepService } from './overdue-visit-sweep.service.js';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
-import { VisitsService } from '@core/clinical/visits/visits.service.js';
+import { VisitStatusService } from '@core/clinical/visits/visit-status.service.js';
 
 describe('OverdueVisitSweepService', () => {
   let service: OverdueVisitSweepService;
   let db: { visit: { findMany: jest.Mock } };
-  let visitsServiceMock: { updateStatus: jest.Mock };
+  let visitStatusServiceMock: { updateStatus: jest.Mock };
 
   beforeEach(async () => {
     db = { visit: { findMany: jest.fn().mockResolvedValue([]) } };
-    visitsServiceMock = {
+    visitStatusServiceMock = {
       updateStatus: jest.fn().mockResolvedValue(undefined),
     };
 
@@ -18,7 +18,7 @@ describe('OverdueVisitSweepService', () => {
       providers: [
         OverdueVisitSweepService,
         { provide: PrismaService, useValue: { db } },
-        { provide: VisitsService, useValue: visitsServiceMock },
+        { provide: VisitStatusService, useValue: visitStatusServiceMock },
       ],
     }).compile();
 
@@ -33,8 +33,8 @@ describe('OverdueVisitSweepService', () => {
 
     await service.sweepOverdueVisits();
 
-    expect(visitsServiceMock.updateStatus).toHaveBeenCalledTimes(2);
-    expect(visitsServiceMock.updateStatus).toHaveBeenCalledWith(
+    expect(visitStatusServiceMock.updateStatus).toHaveBeenCalledTimes(2);
+    expect(visitStatusServiceMock.updateStatus).toHaveBeenCalledWith(
       'v1',
       { status: 'NO_SHOW' },
       expect.objectContaining({
@@ -43,7 +43,7 @@ describe('OverdueVisitSweepService', () => {
         organizationId: 'org-1',
       }),
     );
-    expect(visitsServiceMock.updateStatus).toHaveBeenCalledWith(
+    expect(visitStatusServiceMock.updateStatus).toHaveBeenCalledWith(
       'v2',
       { status: 'NO_SHOW' },
       expect.objectContaining({
@@ -74,7 +74,7 @@ describe('OverdueVisitSweepService', () => {
 
     await service.sweepOverdueVisits();
 
-    expect(visitsServiceMock.updateStatus).not.toHaveBeenCalled();
+    expect(visitStatusServiceMock.updateStatus).not.toHaveBeenCalled();
   });
 
   it('continues processing remaining visits when one fails', async () => {
@@ -82,14 +82,14 @@ describe('OverdueVisitSweepService', () => {
       { id: 'v1', episode: { journey: { organization_id: 'org-1' } } },
       { id: 'v2', episode: { journey: { organization_id: 'org-2' } } },
     ]);
-    visitsServiceMock.updateStatus
+    visitStatusServiceMock.updateStatus
       .mockRejectedValueOnce(new Error('visit locked'))
       .mockResolvedValueOnce(undefined);
 
     await service.sweepOverdueVisits();
 
-    expect(visitsServiceMock.updateStatus).toHaveBeenCalledTimes(2);
-    expect(visitsServiceMock.updateStatus).toHaveBeenCalledWith(
+    expect(visitStatusServiceMock.updateStatus).toHaveBeenCalledTimes(2);
+    expect(visitStatusServiceMock.updateStatus).toHaveBeenCalledWith(
       'v2',
       { status: 'NO_SHOW' },
       expect.objectContaining({ organizationId: 'org-2' }),

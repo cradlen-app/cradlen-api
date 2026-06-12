@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { VisitsService } from './visits.service';
+import { VisitStatusService } from './visit-status.service';
 import { EventBus } from '@infrastructure/messaging/event-bus';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
@@ -14,6 +15,7 @@ import { TemplateValidator } from '@builder/validator/template.validator';
 import { TemplatesService } from '@builder/templates/templates.service';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service';
 import { ChargingService } from '@core/financial/charging/charging.service';
+import { InvoicingService } from '@core/financial/invoicing/invoicing.service';
 
 const mockUser: AuthContext = {
   userId: 'user-uuid',
@@ -105,8 +107,12 @@ const mockEpisode = {
 
 describe('VisitsService', () => {
   let service: VisitsService;
+  let statusService: VisitStatusService;
   let eventBusMock: { publish: jest.Mock };
-  let chargingServiceMock: { capture: jest.Mock };
+  let chargingServiceMock: {
+    captureInTx: jest.Mock;
+    finalizeCapture: jest.Mock;
+  };
   let db: {
     patientEpisode: {
       findUnique: jest.Mock;
@@ -202,20 +208,27 @@ describe('VisitsService', () => {
       assertCanAccessBranch: jest.fn().mockResolvedValue(undefined),
     };
     chargingServiceMock = {
-      capture: jest.fn().mockResolvedValue(undefined),
+      captureInTx: jest.fn().mockResolvedValue({ id: 'charge-uuid' }),
+      finalizeCapture: jest.fn().mockResolvedValue(undefined),
+    };
+    const invoicingServiceMock = {
+      ensureInvoiceForCharge: jest.fn().mockResolvedValue(undefined),
     };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         VisitsService,
+        VisitStatusService,
         { provide: PrismaService, useValue: prismaMock },
         { provide: EventBus, useValue: eventBusMock },
         { provide: TemplateValidator, useValue: templateValidatorMock },
         { provide: TemplatesService, useValue: templatesServiceMock },
         { provide: AuthorizationService, useValue: authorizationServiceMock },
         { provide: ChargingService, useValue: chargingServiceMock },
+        { provide: InvoicingService, useValue: invoicingServiceMock },
       ],
     }).compile();
     service = module.get<VisitsService>(VisitsService);
+    statusService = module.get<VisitStatusService>(VisitStatusService);
   });
 
   describe('findMyWaitingList', () => {
@@ -306,7 +319,7 @@ describe('VisitsService', () => {
         status: 'COMPLETED',
       });
       await expect(
-        service.updateStatus(
+        statusService.updateStatus(
           'visit-uuid',
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           { status: 'CHECKED_IN' as any },
@@ -329,7 +342,7 @@ describe('VisitsService', () => {
         assigned_doctor_id: 'doctor-uuid',
       });
 
-      const result = await service.updateStatus(
+      const result = await statusService.updateStatus(
         'visit-uuid',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         { status: 'CHECKED_IN' as any },
@@ -365,7 +378,7 @@ describe('VisitsService', () => {
       });
 
       // Moving a checked-in patient into the queue is a front-desk action.
-      await service.updateStatus(
+      await statusService.updateStatus(
         'visit-uuid',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         { status: 'IN_PROGRESS' as any },
@@ -392,7 +405,7 @@ describe('VisitsService', () => {
         consultation_started_at: new Date(),
       });
 
-      await service.updateStatus(
+      await statusService.updateStatus(
         'visit-uuid',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         { status: 'IN_CONSULTATION' as any },
@@ -415,7 +428,7 @@ describe('VisitsService', () => {
       });
       db.visitEncounter.findUnique.mockResolvedValue(null);
       await expect(
-        service.updateStatus(
+        statusService.updateStatus(
           'visit-uuid',
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           { status: 'COMPLETED' as any },
@@ -434,7 +447,7 @@ describe('VisitsService', () => {
         chief_complaint: '   ', // whitespace only
       });
       await expect(
-        service.updateStatus(
+        statusService.updateStatus(
           'visit-uuid',
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           { status: 'COMPLETED' as any },
@@ -453,7 +466,7 @@ describe('VisitsService', () => {
         provisional_diagnosis: null,
       });
       await expect(
-        service.updateStatus(
+        statusService.updateStatus(
           'visit-uuid',
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           { status: 'COMPLETED' as any },
@@ -479,7 +492,7 @@ describe('VisitsService', () => {
         assigned_doctor_id: 'doctor-uuid',
       });
 
-      await service.updateStatus(
+      await statusService.updateStatus(
         'visit-uuid',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         { status: 'COMPLETED' as any },
@@ -507,7 +520,7 @@ describe('VisitsService', () => {
         assigned_doctor_id: 'doctor-uuid',
       });
 
-      await service.updateStatus(
+      await statusService.updateStatus(
         'visit-uuid',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         { status: 'CHECKED_IN' as any },
@@ -559,7 +572,7 @@ describe('VisitsService', () => {
           async (cb: (tx: unknown) => Promise<unknown>) => cb(tx),
         );
 
-        await service.updateStatus(
+        await statusService.updateStatus(
           'visit-uuid',
           { status: 'CHECKED_IN' },
           mockUser,
@@ -609,7 +622,7 @@ describe('VisitsService', () => {
           async (cb: (tx: unknown) => Promise<unknown>) => cb(tx),
         );
 
-        await service.updateStatus(
+        await statusService.updateStatus(
           'visit-uuid',
           { status: 'IN_PROGRESS' },
           mockUser,
@@ -657,7 +670,7 @@ describe('VisitsService', () => {
         status: 'IN_PROGRESS',
       });
       await expect(
-        service.updateStatus(
+        statusService.updateStatus(
           'visit-uuid',
           { status: 'IN_CONSULTATION' },
           mockUser,
@@ -672,7 +685,7 @@ describe('VisitsService', () => {
         status: 'IN_PROGRESS',
       });
       await expect(
-        service.updateStatus(
+        statusService.updateStatus(
           'visit-uuid',
           { status: 'IN_CONSULTATION' },
           otherDoctorUser,
@@ -686,7 +699,7 @@ describe('VisitsService', () => {
         status: 'IN_CONSULTATION',
       });
       await expect(
-        service.updateStatus('visit-uuid', { status: 'COMPLETED' }, mockUser),
+        statusService.updateStatus('visit-uuid', { status: 'COMPLETED' }, mockUser),
       ).rejects.toThrow(ForbiddenException);
       // Guard runs before the encounter/diagnosis completion checks.
       expect(db.visitEncounter.findUnique).not.toHaveBeenCalled();
@@ -707,7 +720,7 @@ describe('VisitsService', () => {
       );
 
       await expect(
-        service.updateStatus('visit-uuid', { status: 'IN_PROGRESS' }, mockUser),
+        statusService.updateStatus('visit-uuid', { status: 'IN_PROGRESS' }, mockUser),
       ).resolves.toBeDefined();
     });
 
@@ -726,7 +739,7 @@ describe('VisitsService', () => {
       );
 
       await expect(
-        service.updateStatus(
+        statusService.updateStatus(
           'visit-uuid',
           { status: 'IN_CONSULTATION' },
           ownerUser,
@@ -740,7 +753,7 @@ describe('VisitsService', () => {
         status: 'SCHEDULED',
       });
       await expect(
-        service.updateStatus(
+        statusService.updateStatus(
           'visit-uuid',
           { status: 'CHECKED_IN' },
           mockDoctorUser,
@@ -754,7 +767,7 @@ describe('VisitsService', () => {
         status: 'COMPLETED',
       });
       await expect(
-        service.updateStatus(
+        statusService.updateStatus(
           'visit-uuid',
           { status: 'IN_PROGRESS' },
           mockDoctorUser,
@@ -809,7 +822,7 @@ describe('VisitsService', () => {
         async (cb: (tx: unknown) => Promise<unknown>) => cb(tx),
       );
 
-      await service.updateStatus(
+      await statusService.updateStatus(
         'visit-uuid',
         { status: 'CANCELLED' },
         mockUser,
@@ -859,7 +872,7 @@ describe('VisitsService', () => {
         async (cb: (tx: unknown) => Promise<unknown>) => cb(tx),
       );
 
-      await service.updateStatus(
+      await statusService.updateStatus(
         'visit-uuid',
         { status: 'CANCELLED' },
         mockUser,
@@ -908,7 +921,7 @@ describe('VisitsService', () => {
         async (cb: (tx: unknown) => Promise<unknown>) => cb(tx),
       );
 
-      await service.updateStatus(
+      await statusService.updateStatus(
         'visit-uuid',
         { status: 'CANCELLED' },
         mockUser,
@@ -1134,7 +1147,7 @@ describe('VisitsService', () => {
       expect(db.visit.create).not.toHaveBeenCalled();
     });
 
-    it('captures a PENDING charge for the booked service', async () => {
+    it('captures a PENDING charge in-transaction, then finalizes it after commit', async () => {
       db.carePath.findFirst.mockResolvedValue(mockCarePath);
       db.patient.findUnique.mockResolvedValue(null);
       db.patient.create.mockResolvedValue(mockPatient);
@@ -1150,7 +1163,10 @@ describe('VisitsService', () => {
 
       await service.bookVisit(baseDto, mockUser);
 
-      expect(chargingServiceMock.capture).toHaveBeenCalledWith(
+      // Charge is created on the transaction client (first arg = tx), so it
+      // commits or rolls back atomically with the visit.
+      expect(chargingServiceMock.captureInTx).toHaveBeenCalledWith(
+        db,
         mockUser.organizationId,
         expect.objectContaining({
           branch_id: 'branch-uuid',
@@ -1162,6 +1178,35 @@ describe('VisitsService', () => {
         }),
         mockUser,
       );
+      // Side effects (auto-bill + fan-out) run after the transaction commits.
+      expect(chargingServiceMock.finalizeCapture).toHaveBeenCalledWith({
+        id: 'charge-uuid',
+      });
+    });
+
+    it('aborts the booking when in-transaction charge capture fails (invariant: no visit without a charge)', async () => {
+      db.carePath.findFirst.mockResolvedValue(mockCarePath);
+      db.patient.findUnique.mockResolvedValue(null);
+      db.patient.create.mockResolvedValue(mockPatient);
+      db.patientJourney.findFirst.mockResolvedValue(null);
+      db.patientJourney.create.mockResolvedValue(mockJourney);
+      db.patientEpisode.createMany.mockResolvedValue({ count: 1 });
+      db.patientEpisode.findFirst.mockResolvedValue(mockEpisode);
+      db.visit.create.mockResolvedValue({
+        ...mockVisit,
+        id: 'visit-uuid',
+        episode_id: 'gen-ep-uuid',
+      });
+      chargingServiceMock.captureInTx.mockRejectedValue(
+        new Error('pricing gap'),
+      );
+
+      await expect(service.bookVisit(baseDto, mockUser)).rejects.toThrow(
+        'pricing gap',
+      );
+      // The capture threw inside the $transaction → the real tx rolls back the
+      // visit; the post-commit finalize never runs.
+      expect(chargingServiceMock.finalizeCapture).not.toHaveBeenCalled();
     });
   });
 
