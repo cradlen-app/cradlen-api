@@ -30,6 +30,15 @@ export class UpdateVisitDto extends VisitIntakeFieldsDto {
 
   @IsUUID() @IsOptional() assigned_doctor_id?: string;
   @IsUUID() @IsOptional() branch_id?: string;
+
+  /**
+   * Billable service for the visit. Not a Visit column — when this differs from
+   * the service captured at booking, VisitsService.update triggers a booking-service
+   * swap (void the old charge + invoice line, re-bill the new one), allowed only
+   * while the case invoice is still unpaid.
+   */
+  @IsUUID() @IsOptional() service_id?: string;
+
   @IsEnum(AppointmentType) @IsOptional() appointment_type?: AppointmentType;
   @IsEnum(VisitPriority) @IsOptional() priority?: VisitPriority;
   @IsDateString() @IsOptional() scheduled_at?: string;

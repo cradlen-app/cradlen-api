@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  ChargeSource,
   ChargeStatus,
   DiscountType,
   InvoiceStatus,
@@ -605,6 +606,173 @@ export class InvoicingService {
       invoice.id,
       event.captured_by_id,
     );
+  }
+
+  /**
+   * Swap the service captured at booking for a visit, applied to billing only
+   * while the case invoice is still unpaid. Finds the visit's booking charge
+   * (earliest service-bearing, still-eligible charge), voids it and removes its
+   * invoice line, then captures a new INVOICED charge for `newServiceId` (priced
+   * for the assigned doctor) and re-bills it onto the same invoice, recomputing
+   * totals.
+   *
+   * No-op when the visit has no booking charge (legacy) or the service is
+   * unchanged. Throws `BadRequestException` when a payment has already been
+   * recorded on the invoice (the unpaid guard) or no price resolves for the new
+   * service. The whole swap runs in one transaction, so a guard failure rolls back.
+   */
+  async swapVisitBookingService(params: {
+    organizationId: string;
+    visitId: string;
+    newServiceId: string;
+    /** Final assigned doctor — the charge is priced for, and attributed to, them. */
+    profileId: string;
+    branchId: string;
+    capturedById: string;
+  }): Promise<void> {
+    const {
+      organizationId,
+      visitId,
+      newServiceId,
+      profileId,
+      branchId,
+      capturedById,
+    } = params;
+
+    // Booking charge: earliest service-bearing, non-deleted charge for the visit
+    // still eligible to swap (PENDING, or already INVOICED onto the case invoice).
+    const oldCharge = await this.prismaService.db.charge.findFirst({
+      where: {
+        organization_id: organizationId,
+        visit_id: visitId,
+        is_deleted: false,
+        service_id: { not: null },
+        status: { in: [ChargeStatus.PENDING, ChargeStatus.INVOICED] },
+      },
+      orderBy: { captured_at: 'asc' },
+    });
+    if (!oldCharge) return; // legacy visit with no booking charge — nothing to swap
+    if (oldCharge.service_id === newServiceId) return; // unchanged
+
+    // Price the new service for the final assigned doctor.
+    const resolved = await this.pricingResolver.resolvePrice({
+      organizationId,
+      branchId,
+      serviceId: newServiceId,
+      profileId,
+      quantity: oldCharge.quantity,
+    });
+    if (!resolved) {
+      throw new BadRequestException(
+        'No price could be resolved for the selected service.',
+      );
+    }
+    const service = await this.prismaService.db.service.findFirst({
+      where: {
+        id: newServiceId,
+        OR: [{ organization_id: organizationId }, { organization_id: null }],
+        is_deleted: false,
+      },
+      select: { name: true },
+    });
+    if (!service) throw new NotFoundException('Service not found');
+
+    const quantity = oldCharge.quantity;
+    const lineTotal = Money.multiply(resolved.price, quantity);
+
+    await this.prismaService.db.$transaction(async (tx) => {
+      const oldItem = await tx.invoiceItem.findFirst({
+        where: { charge_id: oldCharge.id },
+        include: { invoice: true },
+      });
+
+      // Unpaid guard — checked before any write so a violation rolls back cleanly.
+      if (oldItem) {
+        const invoice = oldItem.invoice;
+        if (
+          invoice.paid_amount.greaterThan(0) ||
+          invoice.status === InvoiceStatus.PARTIALLY_PAID ||
+          invoice.status === InvoiceStatus.PAID
+        ) {
+          throw new BadRequestException(
+            "Cannot change the service after a payment has been recorded on this visit's invoice.",
+          );
+        }
+      }
+
+      await tx.charge.update({
+        where: { id: oldCharge.id },
+        data: { status: ChargeStatus.VOID },
+      });
+
+      const newCharge = await tx.charge.create({
+        data: {
+          organization_id: organizationId,
+          branch_id: branchId,
+          patient_id: oldCharge.patient_id,
+          visit_id: visitId,
+          profile_id: profileId,
+          service_id: newServiceId,
+          description: service.name,
+          quantity,
+          unit_price: resolved.price,
+          currency: resolved.currency,
+          pricing_source: resolved.source,
+          source: ChargeSource.RECEPTION,
+          status: oldItem ? ChargeStatus.INVOICED : ChargeStatus.PENDING,
+          captured_by_id: capturedById,
+        },
+      });
+
+      if (!oldItem) return; // old charge was never billed — nothing to recompute
+
+      const invoice = oldItem.invoice;
+      await tx.invoiceItem.delete({ where: { id: oldItem.id } });
+      await tx.invoiceItem.create({
+        data: {
+          invoice_id: invoice.id,
+          ...this.toItemData({
+            service_id: newServiceId,
+            charge_id: newCharge.id,
+            description: service.name,
+            quantity,
+            unit_price: resolved.price,
+            currency: resolved.currency,
+            discount_amount: Money.zero(),
+            total_amount: lineTotal,
+            pricing_source: resolved.source,
+          }),
+        },
+      });
+
+      const allItems = await tx.invoiceItem.findMany({
+        where: { invoice_id: invoice.id },
+      });
+      const { subtotal, discountAmount, total } = this.computeTotals(
+        allItems,
+        { type: invoice.discount_type, value: invoice.discount_value },
+        invoice.tax_amount,
+      );
+      await tx.invoice.update({
+        where: { id: invoice.id },
+        data: {
+          subtotal,
+          discount_amount: discountAmount,
+          total_amount: total,
+        },
+      });
+
+      if (invoice.status === InvoiceStatus.DRAFT) {
+        // Keep a DRAFT in DRAFT — set the balance directly rather than via the
+        // payment recompute, which would derive a status and flip DRAFT → ISSUED.
+        await tx.invoice.update({
+          where: { id: invoice.id },
+          data: { balance_due: total },
+        });
+      } else {
+        await this.balanceService.recompute(tx, invoice.id);
+      }
+    });
   }
 
   /**

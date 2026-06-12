@@ -7,19 +7,21 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { isDeepStrictEqual } from 'node:util';
-import { MaritalStatus, Prisma, Visit, VisitStatus } from '@prisma/client';
+import {
+  ChargeStatus,
+  MaritalStatus,
+  Prisma,
+  VisitStatus,
+} from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { UpdateVisitDto } from './dto/update-visit.dto';
-import { UpdateVisitStatusDto } from './dto/update-visit-status.dto';
 import { BookVisitDto } from './dto/book-visit.dto';
-import { SetFollowUpDto } from './dto/set-follow-up.dto';
 import { VisitIntakeFieldsDto } from './dto/visit-intake.dto';
 import { EventBus } from '@infrastructure/messaging/event-bus';
 import { paginated } from '@common/utils/pagination.utils';
 import { dayBounds, todayBounds } from '@common/utils/date-range.utils.js';
 import { ERROR_CODES } from '@common/constant/error-codes.js';
-import { assertStatusTransition } from '@common/utils/state-transition.js';
 import { assertBookVisitPayloadValid } from '../shared/book-visit-validation.js';
 import { nextQueueNumber } from '../shared/queue-number.js';
 import {
@@ -29,8 +31,8 @@ import {
 import { TemplatesService } from '@builder/templates/templates.service.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import { ChargingService } from '@core/financial/charging/charging.service.js';
+import { InvoicingService } from '@core/financial/invoicing/invoicing.service.js';
 import { buildRevision } from '@common/utils/revisions.helper.js';
-import { CLINICAL_EVENTS } from '@core/clinical/events/clinical-events.js';
 import { VitalsTrendPointDto } from './dto/vitals-trend-point.dto.js';
 import {
   visitHistoryInclude,
@@ -38,27 +40,11 @@ import {
   toVisitHistorySummary,
   toVitalsTrendPoint,
 } from './visits.mapper.js';
+import { assertReceptionAction } from './visit-actor.guards.js';
+import { TERMINAL_STATES } from './visit-status.constants.js';
 
-const RECEPTIONIST_JOB_FUNCTION = 'RECEPTIONIST';
-
-const TERMINAL_STATES: VisitStatus[] = ['COMPLETED', 'CANCELLED', 'NO_SHOW'];
-
-const VALID_TRANSITIONS: Record<VisitStatus, VisitStatus[]> = {
-  SCHEDULED: ['CHECKED_IN', 'CANCELLED', 'NO_SHOW'],
-  CHECKED_IN: ['IN_PROGRESS', 'CANCELLED', 'NO_SHOW'],
-  IN_PROGRESS: ['IN_CONSULTATION', 'CANCELLED', 'NO_SHOW'],
-  IN_CONSULTATION: ['COMPLETED', 'CANCELLED'],
-  COMPLETED: [],
-  CANCELLED: [],
-  NO_SHOW: [],
-};
-
-const STATUS_TIMESTAMPS: Partial<Record<VisitStatus, string>> = {
-  CHECKED_IN: 'checked_in_at',
-  IN_PROGRESS: 'started_at',
-  IN_CONSULTATION: 'consultation_started_at',
-  COMPLETED: 'completed_at',
-};
+/** Care path a booking falls back to when none is supplied on the DTO. */
+const DEFAULT_CARE_PATH_CODE = 'OBGYN_GENERAL';
 
 @Injectable()
 export class VisitsService {
@@ -69,6 +55,7 @@ export class VisitsService {
     private readonly templatesService: TemplatesService,
     private readonly authorizationService: AuthorizationService,
     private readonly chargingService: ChargingService,
+    private readonly invoicingService: InvoicingService,
   ) {}
 
   private readonly logger = new Logger(VisitsService.name);
@@ -313,48 +300,8 @@ export class VisitsService {
     }
   }
 
-  /**
-   * Owners and branch managers may drive any step of the visit lifecycle as an
-   * administrative override.
-   */
-  private isPrivileged(user: AuthContext): boolean {
-    return (
-      user.roles.includes('OWNER') ||
-      user.roles.includes('BRANCH_MANAGER') ||
-      user.roles.includes('SYSTEM')
-    );
-  }
-
-  /**
-   * Front-desk actions — booking a visit and the reception-driven status
-   * transitions (check-in, cancel, no-show). Restricted to receptionists, with
-   * an owner/branch-manager override.
-   */
-  private assertReceptionAction(user: AuthContext, message: string): void {
-    if (this.isPrivileged(user)) return;
-    if (user.jobFunctions.includes(RECEPTIONIST_JOB_FUNCTION)) return;
-    throw new ForbiddenException(message);
-  }
-
-  /**
-   * Clinical actions — starting the consultation (IN_CONSULTATION) and
-   * completing (COMPLETED) a visit may only be done by the doctor the visit was
-   * booked for, with an owner/branch-manager override. A receptionist (or any
-   * other doctor) cannot start or complete a visit they were not assigned.
-   */
-  private assertAssignedDoctor(
-    assignedDoctorId: string,
-    user: AuthContext,
-  ): void {
-    if (this.isPrivileged(user)) return;
-    if (assignedDoctorId === user.profileId) return;
-    throw new ForbiddenException(
-      'Only the assigned doctor can start or complete this visit',
-    );
-  }
-
   async bookVisit(dto: BookVisitDto, user: AuthContext) {
-    this.assertReceptionAction(user, 'Only reception can book visits');
+    assertReceptionAction(user, 'Only reception can book visits');
     await this.assertTemplateValid(dto as unknown as Record<string, unknown>, {
       extensionKey: dto.specialty_code,
     });
@@ -424,7 +371,7 @@ export class VisitsService {
     const { carePathId, template, firstEpisodeTemplate } =
       await this.resolveCarePathTemplate(
         dto.specialty_code,
-        dto.care_path_code ?? 'OBGYN_GENERAL',
+        dto.care_path_code ?? DEFAULT_CARE_PATH_CODE,
         user.organizationId,
       );
 
@@ -473,6 +420,26 @@ export class VisitsService {
       });
       await this.applyIntake(tx, visit.id, dto, user.profileId);
 
+      // Capture the billable charge in the SAME transaction as the visit, so a
+      // visit can never exist without its charge (a hard financial invariant).
+      // Price/authorization was pre-validated above (assertDoctorAuthorizedForService),
+      // so an in-tx failure here is genuinely exceptional and correctly aborts
+      // the whole booking. Side effects (auto-bill + charge.captured fan-out) are
+      // deferred to finalizeCapture() after commit.
+      const charge = await this.chargingService.captureInTx(
+        tx,
+        user.organizationId,
+        {
+          branch_id: branchId,
+          patient_id: patient.id,
+          profile_id: dto.assigned_doctor_id,
+          visit_id: visit.id,
+          service_id: dto.service_id,
+          quantity: 1,
+        },
+        user,
+      );
+
       // Enroll the patient in the org, atomically with the booking. createMany
       // + skipDuplicates compiles to INSERT … ON CONFLICT DO NOTHING, so a
       // concurrent booking that already created the (live) enrollment is
@@ -497,30 +464,19 @@ export class VisitsService {
         episode: episode,
         journey,
         patient,
+        charge,
       };
     });
 
-    // Best-effort: capture the PENDING charge for the chosen service, priced for
-    // the assigned doctor. The charge.captured event then auto-bills it onto the
-    // case invoice (creating and issuing one when the case has none yet). A
-    // pricing gap must never fail the clinical booking — reception can still add
-    // the charge via the collect flow.
+    // Post-commit charge side effects: auto-bill onto the case invoice + fan out
+    // charge.captured. Best-effort — the charge already committed atomically with
+    // the visit above, so a billing/fan-out hiccup here must not fail the booking
+    // (reception can still settle the PENDING charge manually).
     try {
-      await this.chargingService.capture(
-        user.organizationId,
-        {
-          branch_id: branchId,
-          patient_id: result.patient.id,
-          profile_id: dto.assigned_doctor_id,
-          visit_id: result.visit.id,
-          service_id: dto.service_id,
-          quantity: 1,
-        },
-        user,
-      );
+      await this.chargingService.finalizeCapture(result.charge);
     } catch (err) {
       this.logger.error(
-        `Failed to capture booking charge (visit=${result.visit.id}, service=${dto.service_id})`,
+        `Failed to finalize booking charge (visit=${result.visit.id}, charge=${result.charge.id})`,
         err as Error,
       );
     }
@@ -1128,6 +1084,45 @@ export class VisitsService {
       );
     }
 
+    // Service change: re-validate doctor authorization and swap the booking
+    // charge/invoice line before persisting field edits, so an unauthorized
+    // service or an already-paid invoice 400s without a partial visit update.
+    // The frontend resubmits the prefilled service on every edit, so act only
+    // when it actually differs from the service captured at booking (and the
+    // visit has a booking charge to swap).
+    if (dto.service_id) {
+      const bookingCharge = await this.prismaService.db.charge.findFirst({
+        where: {
+          organization_id: user.organizationId,
+          visit_id: id,
+          is_deleted: false,
+          service_id: { not: null },
+          status: { in: [ChargeStatus.PENDING, ChargeStatus.INVOICED] },
+        },
+        orderBy: { captured_at: 'asc' },
+        select: { service_id: true },
+      });
+      if (bookingCharge && bookingCharge.service_id !== dto.service_id) {
+        const finalDoctorId =
+          dto.assigned_doctor_id ?? visit.assigned_doctor_id;
+        const finalBranchId = dto.branch_id ?? visit.branch_id;
+        await this.assertDoctorAuthorizedForService(
+          user.organizationId,
+          finalDoctorId,
+          dto.service_id,
+          finalBranchId,
+        );
+        await this.invoicingService.swapVisitBookingService({
+          organizationId: user.organizationId,
+          visitId: id,
+          newServiceId: dto.service_id,
+          profileId: finalDoctorId,
+          branchId: finalBranchId,
+          capturedById: user.profileId,
+        });
+      }
+    }
+
     const resolvedMaritalStatus = dto.marital_status;
 
     const updated = await this.prismaService.db.$transaction(async (tx) => {
@@ -1203,222 +1198,5 @@ export class VisitsService {
       payload: updated,
     });
     return updated;
-  }
-
-  async updateStatus(id: string, dto: UpdateVisitStatusDto, user: AuthContext) {
-    const visit = await this.findOne(id, user);
-    assertStatusTransition(
-      VALID_TRANSITIONS,
-      visit.status,
-      dto.status,
-      (current, next) => `Cannot transition from ${current} to ${next}`,
-    );
-    // Enforce *who* may drive each step: the assigned doctor starts the
-    // consultation (IN_CONSULTATION) and completes it; reception drives the
-    // queue — checks in, moves to IN_PROGRESS, cancels, marks no-show. Owners
-    // and branch managers override either side.
-    if (dto.status === 'IN_CONSULTATION' || dto.status === 'COMPLETED') {
-      this.assertAssignedDoctor(visit.assigned_doctor_id, user);
-    } else {
-      this.assertReceptionAction(
-        user,
-        'Only reception can change this visit status',
-      );
-    }
-    if (dto.status === 'COMPLETED') {
-      const encounter = await this.prismaService.db.visitEncounter.findUnique({
-        where: { visit_id: id },
-        select: { chief_complaint: true, provisional_diagnosis: true },
-      });
-      if (!encounter || !encounter.chief_complaint?.trim()) {
-        throw new BadRequestException(
-          'Cannot complete visit without an encounter and a main complaint',
-        );
-      }
-      if (!encounter.provisional_diagnosis?.trim()) {
-        throw new BadRequestException(
-          'Cannot complete visit without a provisional diagnosis',
-        );
-      }
-    }
-    const timestampField = STATUS_TIMESTAMPS[dto.status];
-    const now = new Date();
-    const isTerminal = dto.status === 'CANCELLED' || dto.status === 'NO_SHOW';
-
-    // Journey id is already loaded via `listInclude` — no extra round-trip.
-    const journeyId = visit.episode?.journey?.id;
-
-    // The interactive transaction only earns its BEGIN/COMMIT round-trips when
-    // there's a multi-write side effect: the terminal cancel/no-show cascade or
-    // the CHECKED_IN enrollment activation. Every other transition is a single
-    // row update — do it bare and skip the transaction overhead.
-    const needsTransaction =
-      (isTerminal && !!journeyId) || dto.status === 'CHECKED_IN';
-
-    const updateData: Prisma.VisitUpdateInput = {
-      status: dto.status,
-      ...(timestampField ? { [timestampField]: now } : {}),
-    };
-
-    let updatedVisit: Visit;
-    let cascaded = false;
-
-    if (!needsTransaction) {
-      updatedVisit = await this.prismaService.db.visit.update({
-        where: { id },
-        data: updateData,
-      });
-    } else {
-      ({ updatedVisit, cascaded } = await this.prismaService.db.$transaction(
-        async (tx) => {
-          const next = await tx.visit.update({
-            where: { id },
-            data: updateData,
-          });
-
-          let didCascade = false;
-          if (isTerminal && journeyId) {
-            // F5 — if this cancel/no-show leaves the journey with no real
-            // (ever-checked-in) visits and no remaining live visits, soft-delete
-            // the whole journey + episodes + visits + encounter/vitals.
-            const [realCount, liveCount] = await Promise.all([
-              tx.visit.count({
-                where: {
-                  episode: { journey_id: journeyId },
-                  checked_in_at: { not: null },
-                  is_deleted: false,
-                },
-              }),
-              tx.visit.count({
-                where: {
-                  episode: { journey_id: journeyId },
-                  is_deleted: false,
-                  status: { notIn: ['CANCELLED', 'NO_SHOW'] },
-                },
-              }),
-            ]);
-
-            if (realCount === 0 && liveCount === 0) {
-              await tx.visitEncounter.updateMany({
-                where: {
-                  visit: { episode: { journey_id: journeyId } },
-                  is_deleted: false,
-                },
-                data: { is_deleted: true, deleted_at: now },
-              });
-              await tx.visitVitals.updateMany({
-                where: {
-                  visit: { episode: { journey_id: journeyId } },
-                  is_deleted: false,
-                },
-                data: { is_deleted: true, deleted_at: now },
-              });
-              await tx.visit.updateMany({
-                where: {
-                  episode: { journey_id: journeyId },
-                  is_deleted: false,
-                },
-                data: { is_deleted: true, deleted_at: now },
-              });
-              await tx.patientEpisode.updateMany({
-                where: { journey_id: journeyId, is_deleted: false },
-                data: { is_deleted: true, deleted_at: now },
-              });
-              await tx.patientJourney.update({
-                where: { id: journeyId },
-                data: {
-                  is_deleted: true,
-                  deleted_at: now,
-                  status: 'CANCELLED',
-                  ended_at: now,
-                },
-              });
-              didCascade = true;
-
-              const patientId = visit.episode?.journey?.patient?.id;
-              const orgId = visit.episode?.journey?.organization_id;
-              if (patientId && orgId) {
-                await tx.patientOrgEnrollment.updateMany({
-                  where: {
-                    patient_id: patientId,
-                    organization_id: orgId,
-                    status: 'PENDING',
-                    is_deleted: false,
-                  },
-                  data: { is_deleted: true, deleted_at: now },
-                });
-                await tx.$executeRaw`
-                UPDATE "patients" SET is_deleted = true, deleted_at = NOW()
-                WHERE id = ${patientId}::uuid
-                AND NOT EXISTS (
-                  SELECT 1 FROM "patient_journeys"
-                  WHERE patient_id = ${patientId}::uuid AND is_deleted = false
-                )
-              `;
-              }
-            }
-          }
-
-          if (dto.status === 'CHECKED_IN') {
-            const patientId = visit.episode?.journey?.patient?.id;
-            const organizationId = visit.episode?.journey?.organization_id;
-            if (patientId && organizationId) {
-              await tx.patientOrgEnrollment.updateMany({
-                where: {
-                  patient_id: patientId,
-                  organization_id: organizationId,
-                  status: 'PENDING',
-                  is_deleted: false,
-                },
-                data: { status: 'ACTIVE', activated_at: now },
-              });
-            }
-          }
-
-          return { updatedVisit: next, cascaded: didCascade };
-        },
-      ));
-    }
-
-    if (cascaded) {
-      this.eventBus.publish(CLINICAL_EVENTS.journey.cancelledEmpty, {
-        journeyId,
-        patientId: visit.episode?.journey?.patient.id,
-        organizationId: visit.episode?.journey?.organization_id,
-      });
-    }
-    this.eventBus.publish('visit.status_updated', {
-      assignedDoctorId: updatedVisit.assigned_doctor_id,
-      branchId: updatedVisit.branch_id,
-      payload: updatedVisit,
-    });
-    return updatedVisit;
-  }
-
-  async setFollowUp(id: string, dto: SetFollowUpDto, user: AuthContext) {
-    const visit = await this.findOne(id, user);
-    if (visit.assigned_doctor_id !== user.profileId) {
-      throw new ForbiddenException(
-        'Only the assigned doctor can set follow-up',
-      );
-    }
-    if (TERMINAL_STATES.includes(visit.status)) {
-      throw new BadRequestException(
-        `Cannot set follow-up while visit is ${visit.status}`,
-      );
-    }
-    return this.prismaService.db.visit.update({
-      where: { id },
-      data: {
-        ...(dto.follow_up_date !== undefined && {
-          follow_up_date: dto.follow_up_date
-            ? new Date(dto.follow_up_date)
-            : null,
-        }),
-        ...(dto.follow_up_notes !== undefined && {
-          follow_up_notes: dto.follow_up_notes,
-        }),
-      },
-    });
   }
 }
