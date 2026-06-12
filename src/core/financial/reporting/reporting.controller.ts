@@ -8,6 +8,7 @@ import { ReportQueryDto } from './dto/report-query.dto.js';
 import { DailyRevenueReportDto } from './dto/daily-revenue.dto.js';
 import { RevenueByServiceReportDto } from './dto/revenue-by-service.dto.js';
 import { RevenueByDoctorReportDto } from './dto/revenue-by-doctor.dto.js';
+import { RevenueByBranchReportDto } from './dto/revenue-by-branch.dto.js';
 import { OutstandingInvoicesReportDto } from './dto/outstanding-invoices.dto.js';
 import { PaymentsByMethodReportDto } from './dto/payments-by-method.dto.js';
 
@@ -89,6 +90,20 @@ export class ReportingController {
     @CurrentUser() user: AuthContext,
   ) {
     return this.reportingService.revenueByDoctor(
+      orgId,
+      this.scope(query),
+      user,
+    );
+  }
+
+  @Get('revenue-by-branch')
+  @ApiStandardResponse(RevenueByBranchReportDto)
+  revenueByBranch(
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Query() query: ReportQueryDto,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.reportingService.revenueByBranch(
       orgId,
       this.scope(query),
       user,

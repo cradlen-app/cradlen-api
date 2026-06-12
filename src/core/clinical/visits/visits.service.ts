@@ -424,8 +424,8 @@ export class VisitsService {
       // visit can never exist without its charge (a hard financial invariant).
       // Price/authorization was pre-validated above (assertDoctorAuthorizedForService),
       // so an in-tx failure here is genuinely exceptional and correctly aborts
-      // the whole booking. Side effects (auto-bill + charge.captured fan-out) are
-      // deferred to finalizeCapture() after commit.
+      // the whole booking. The charge.captured fan-out (which the invoice
+      // accrual listener bills on) is deferred to finalizeCapture() after commit.
       const charge = await this.chargingService.captureInTx(
         tx,
         user.organizationId,
@@ -468,12 +468,12 @@ export class VisitsService {
       };
     });
 
-    // Post-commit charge side effects: auto-bill onto the case invoice + fan out
-    // charge.captured. Best-effort — the charge already committed atomically with
-    // the visit above, so a billing/fan-out hiccup here must not fail the booking
-    // (reception can still settle the PENDING charge manually).
+    // Post-commit fan-out: publish charge.captured (the invoice accrual listener
+    // bills the case invoice off it). Best-effort — the charge already committed
+    // atomically with the visit above, so a fan-out hiccup must not fail the
+    // booking (reception can still settle the PENDING charge manually).
     try {
-      await this.chargingService.finalizeCapture(result.charge);
+      this.chargingService.finalizeCapture(result.charge);
     } catch (err) {
       this.logger.error(
         `Failed to finalize booking charge (visit=${result.visit.id}, charge=${result.charge.id})`,
