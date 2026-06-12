@@ -49,7 +49,10 @@ describe('Financial — service categories (integration)', () => {
     const created = await auth(request(http).post(cats))
       .send({ code: 'LAB', name: 'Laboratory' })
       .expect(201);
-    expect(created.body.data).toMatchObject({ code: 'LAB', name: 'Laboratory' });
+    expect(created.body.data).toMatchObject({
+      code: 'LAB',
+      name: 'Laboratory',
+    });
     const id = created.body.data.id;
 
     const list = await auth(request(http).get(cats)).expect(200);
@@ -62,14 +65,20 @@ describe('Financial — service categories (integration)', () => {
 
     await auth(request(http).delete(`${cats}/${id}`)).expect(204);
     const after = await auth(request(http).get(cats)).expect(200);
-    expect(after.body.data.some((c: { id: string }) => c.id === id)).toBe(false);
+    expect(after.body.data.some((c: { id: string }) => c.id === id)).toBe(
+      false,
+    );
   });
 
   it('rejects a duplicate category code within the org (409)', async () => {
     const { auth, base, http } = await setup();
     const cats = `${base}/categories`;
-    await auth(request(http).post(cats)).send({ code: 'IMG', name: 'Imaging' }).expect(201);
-    await auth(request(http).post(cats)).send({ code: 'IMG', name: 'Imaging 2' }).expect(409);
+    await auth(request(http).post(cats))
+      .send({ code: 'IMG', name: 'Imaging' })
+      .expect(201);
+    await auth(request(http).post(cats))
+      .send({ code: 'IMG', name: 'Imaging 2' })
+      .expect(409);
   });
 
   it('lets a service reference the category and embeds it on the response', async () => {

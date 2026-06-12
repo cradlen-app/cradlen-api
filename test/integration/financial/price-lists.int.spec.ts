@@ -100,9 +100,9 @@ describe('Financial — price lists (integration)', () => {
       .expect(201);
     const id = created.body.data.id;
 
-    const off = await auth(request(http).post(`${lists}/${id}/deactivate`)).expect(
-      201,
-    );
+    const off = await auth(
+      request(http).post(`${lists}/${id}/deactivate`),
+    ).expect(201);
     expect(off.body.data.is_active).toBe(false);
     const on = await auth(request(http).post(`${lists}/${id}/activate`)).expect(
       201,
@@ -142,7 +142,9 @@ describe('Financial — price lists (integration)', () => {
     expect(afterBulk.body.data[0].service_id).toBe(service2);
 
     await auth(
-      request(http).delete(`${lists}/${listId}/items/${afterBulk.body.data[0].id}`),
+      request(http).delete(
+        `${lists}/${listId}/items/${afterBulk.body.data[0].id}`,
+      ),
     ).expect(204);
     const empty = await auth(
       request(http).get(`${lists}/${listId}/items`),
@@ -153,14 +155,22 @@ describe('Financial — price lists (integration)', () => {
   it('rejects an inverted valid_from/valid_to range (400)', async () => {
     const { auth, lists, http } = await setup();
     await auth(request(http).post(lists))
-      .send({ name: 'Bad dates', valid_from: '2026-02-01', valid_to: '2026-01-01' })
+      .send({
+        name: 'Bad dates',
+        valid_from: '2026-02-01',
+        valid_to: '2026-01-01',
+      })
       .expect(400);
   });
 
   it('rejects a PERCENTAGE discount over 100 (400)', async () => {
     const { auth, lists, http } = await setup();
     await auth(request(http).post(lists))
-      .send({ name: 'Bad discount', discount_type: 'PERCENTAGE', discount_value: 150 })
+      .send({
+        name: 'Bad discount',
+        discount_type: 'PERCENTAGE',
+        discount_value: 150,
+      })
       .expect(400);
   });
 });
