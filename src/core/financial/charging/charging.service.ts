@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  type Charge,
   ChargeSource,
   ChargeStatus,
   PricingSource,
@@ -70,6 +71,84 @@ export class ChargingService {
       await this.patientAccess.assertVisitInOrg(dto.visit_id, user);
     }
 
+    const charge = await this.prismaService.db.$transaction((tx) =>
+      this.captureInTx(tx, organizationId, dto, user),
+    );
+    await this.finalizeCapture(charge);
+    return charge;
+  }
+
+  /**
+   * Transaction-composable charge persistence. Resolves price + source and
+   * creates the Charge row on the supplied transaction client. Performs **no**
+   * access checks (the caller owns authorization) and triggers **no** side
+   * effects — call {@link finalizeCapture} after the transaction commits to
+   * auto-bill and fan out.
+   *
+   * The booking flow uses this so a visit and its charge commit atomically: a
+   * visit must never exist without its charge.
+   */
+  async captureInTx(
+    tx: Prisma.TransactionClient,
+    organizationId: string,
+    dto: CaptureChargeDto,
+    user: AuthContext,
+  ): Promise<Charge> {
+    const data = await this.resolveChargeData(organizationId, dto, user);
+    return tx.charge.create({ data });
+  }
+
+  /**
+   * Post-commit side effects for a captured charge: auto-bill it onto its
+   * case's invoice (best-effort — the charge is already persisted, so a billing
+   * gap is logged, never thrown) and fan out `charge.captured` for downstream
+   * consumers (reception notification, realtime relay).
+   */
+  async finalizeCapture(charge: Charge): Promise<void> {
+    try {
+      await this.invoicingService.ensureInvoiceForCharge({
+        organization_id: charge.organization_id,
+        branch_id: charge.branch_id,
+        patient_id: charge.patient_id,
+        visit_id: charge.visit_id,
+        charge_id: charge.id,
+        captured_by_id: charge.captured_by_id,
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to auto-bill charge ${charge.id} onto its case invoice`,
+        err as Error,
+      );
+    }
+
+    this.eventBus.publish<ChargeCapturedEvent>(
+      FINANCIAL_EVENTS.charge.captured,
+      {
+        charge_id: charge.id,
+        organization_id: charge.organization_id,
+        branch_id: charge.branch_id,
+        patient_id: charge.patient_id,
+        visit_id: charge.visit_id,
+        service_id: charge.service_id,
+        amount: Money.multiply(charge.unit_price, charge.quantity),
+        pricing_source: charge.pricing_source,
+        source: charge.source,
+        captured_by_id: charge.captured_by_id,
+      },
+    );
+  }
+
+  /**
+   * Resolves the effective price, currency and source for a charge and builds
+   * the row payload. Reads reference data (the service catalog, price lists)
+   * only — no access checks, no writes — so it is safe to call inside or outside
+   * a transaction. Throws when no price can be resolved.
+   */
+  private async resolveChargeData(
+    organizationId: string,
+    dto: CaptureChargeDto,
+    user: AuthContext,
+  ): Promise<Prisma.ChargeUncheckedCreateInput> {
     let description = dto.description;
     if (dto.service_id) {
       const service = await this.prismaService.db.service.findFirst({
@@ -127,65 +206,22 @@ export class ChargingService {
         ? ChargeSource.DOCTOR
         : ChargeSource.RECEPTION);
 
-    const charge = await this.prismaService.db.charge.create({
-      data: {
-        organization_id: organizationId,
-        branch_id: dto.branch_id,
-        patient_id: dto.patient_id,
-        visit_id: dto.visit_id ?? null,
-        profile_id: dto.profile_id,
-        service_id: dto.service_id ?? null,
-        description,
-        quantity: dto.quantity ?? 1,
-        unit_price: unitPrice,
-        currency,
-        pricing_source: pricingSource,
-        source,
-        status: ChargeStatus.PENDING,
-        captured_by_id: user.profileId,
-      },
-    });
-
-    // Auto-bill the charge onto its case's invoice inline (awaited) so the
-    // response reflects the invoiced state — a service the doctor adds mid-visit
-    // lands on the bill immediately, with no manual "add charges to invoice"
-    // step. Best-effort: the charge is already persisted, so a billing failure
-    // (e.g. a pricing/transaction edge) is logged but never fails the capture;
-    // the charge stays PENDING and reception can still settle it manually.
-    try {
-      await this.invoicingService.ensureInvoiceForCharge({
-        organization_id: charge.organization_id,
-        branch_id: charge.branch_id,
-        patient_id: charge.patient_id,
-        visit_id: charge.visit_id,
-        charge_id: charge.id,
-        captured_by_id: charge.captured_by_id,
-      });
-    } catch (err) {
-      this.logger.error(
-        `Failed to auto-bill charge ${charge.id} onto its case invoice`,
-        err as Error,
-      );
-    }
-
-    // Fan-out for downstream consumers (reception notification, realtime relay).
-    this.eventBus.publish<ChargeCapturedEvent>(
-      FINANCIAL_EVENTS.charge.captured,
-      {
-        charge_id: charge.id,
-        organization_id: charge.organization_id,
-        branch_id: charge.branch_id,
-        patient_id: charge.patient_id,
-        visit_id: charge.visit_id,
-        service_id: charge.service_id,
-        amount: Money.multiply(charge.unit_price, charge.quantity),
-        pricing_source: charge.pricing_source,
-        source: charge.source,
-        captured_by_id: charge.captured_by_id,
-      },
-    );
-
-    return charge;
+    return {
+      organization_id: organizationId,
+      branch_id: dto.branch_id,
+      patient_id: dto.patient_id,
+      visit_id: dto.visit_id ?? null,
+      profile_id: dto.profile_id,
+      service_id: dto.service_id ?? null,
+      description,
+      quantity: dto.quantity ?? 1,
+      unit_price: unitPrice,
+      currency,
+      pricing_source: pricingSource,
+      source,
+      status: ChargeStatus.PENDING,
+      captured_by_id: user.profileId,
+    };
   }
 
   async list(
