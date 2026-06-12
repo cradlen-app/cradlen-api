@@ -46,7 +46,9 @@ describe('InvoiceAccrualListener', () => {
   });
 
   it('swallows accrual failures (best-effort — the charge is already persisted)', async () => {
-    invoicing.ensureInvoiceForCharge.mockRejectedValue(new Error('pricing gap'));
+    invoicing.ensureInvoiceForCharge.mockRejectedValue(
+      new Error('pricing gap'),
+    );
 
     await expect(listener.handleChargeCaptured(event)).resolves.toBeUndefined();
   });
