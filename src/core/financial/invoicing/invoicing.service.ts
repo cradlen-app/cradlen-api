@@ -690,7 +690,7 @@ export class InvoicingService {
       if (oldItem) {
         const invoice = oldItem.invoice;
         if (
-          invoice.paid_amount.greaterThan(0) ||
+          Money.isPositive(invoice.paid_amount) ||
           invoice.status === InvoiceStatus.PARTIALLY_PAID ||
           invoice.status === InvoiceStatus.PAID
         ) {
@@ -904,9 +904,12 @@ export class InvoicingService {
           invoice.subtotal,
           discount,
         );
-        total = Prisma.Decimal.max(
+        total = Money.max(
           Money.zero(),
-          invoice.subtotal.minus(discountAmount).plus(invoice.tax_amount),
+          Money.add(
+            Money.subtract(invoice.subtotal, discountAmount),
+            invoice.tax_amount,
+          ),
         );
       }
 
@@ -925,9 +928,9 @@ export class InvoicingService {
           discount_amount: discountAmount,
           subtotal,
           total_amount: total,
-          balance_due: Prisma.Decimal.max(
+          balance_due: Money.max(
             Money.zero(),
-            total.minus(invoice.paid_amount),
+            Money.subtract(total, invoice.paid_amount),
           ),
         },
         include: { items: true },
@@ -973,9 +976,9 @@ export class InvoicingService {
           subtotal,
           discount_amount: discountAmount,
           total_amount: total,
-          balance_due: Prisma.Decimal.max(
+          balance_due: Money.max(
             Money.zero(),
-            total.minus(invoice.paid_amount),
+            Money.subtract(total, invoice.paid_amount),
           ),
         },
         include: { items: true },
@@ -1016,9 +1019,9 @@ export class InvoicingService {
           subtotal,
           discount_amount: discountAmount,
           total_amount: total,
-          balance_due: Prisma.Decimal.max(
+          balance_due: Money.max(
             Money.zero(),
-            total.minus(invoice.paid_amount),
+            Money.subtract(total, invoice.paid_amount),
           ),
         },
       });
@@ -1162,7 +1165,7 @@ export class InvoicingService {
           Money.multiply(unitPrice, quantity),
           discountAmount,
         );
-        const total_amount = Prisma.Decimal.max(Money.zero(), lineTotal);
+        const total_amount = Money.max(Money.zero(), lineTotal);
 
         return {
           service_id: item.service_id,
@@ -1200,12 +1203,11 @@ export class InvoicingService {
     if (discount.type === null || discount.value === null) return Money.zero();
     const amount =
       discount.type === DiscountType.PERCENTAGE
-        ? Money.round(Money.multiply(subtotal, discount.value).dividedBy(100))
+        ? Money.round(
+            Money.divide(Money.multiply(subtotal, discount.value), 100),
+          )
         : discount.value;
-    return Prisma.Decimal.min(
-      subtotal,
-      Prisma.Decimal.max(Money.zero(), amount),
-    );
+    return Money.clamp(amount, Money.zero(), subtotal);
   }
 
   private computeTotals(
@@ -1219,9 +1221,9 @@ export class InvoicingService {
   } {
     const subtotal = Money.sum(items.map((item) => item.total_amount));
     const discountAmount = this.resolveInvoiceDiscount(subtotal, discount);
-    const total = Prisma.Decimal.max(
+    const total = Money.max(
       Money.zero(),
-      subtotal.minus(discountAmount).plus(taxAmount),
+      Money.add(Money.subtract(subtotal, discountAmount), taxAmount),
     );
     return { subtotal, discountAmount, total };
   }
