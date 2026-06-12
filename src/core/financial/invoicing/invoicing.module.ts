@@ -6,17 +6,11 @@ import { InvoicingController } from './invoicing.controller.js';
 import { InvoicingService } from './invoicing.service.js';
 import { InvoiceNumberService } from './invoice-number.service.js';
 import { InvoiceBalanceService } from './invoice-balance.service.js';
-import { InvoiceAutoAppendListener } from './invoice-auto-append.listener.js';
 
 @Module({
   imports: [AuthorizationModule, PricingModule, FinancialAccessModule],
   controllers: [InvoicingController],
-  providers: [
-    InvoicingService,
-    InvoiceNumberService,
-    InvoiceBalanceService,
-    InvoiceAutoAppendListener,
-  ],
-  exports: [InvoiceBalanceService],
+  providers: [InvoicingService, InvoiceNumberService, InvoiceBalanceService],
+  exports: [InvoicingService, InvoiceBalanceService],
 })
 export class InvoicingModule {}
