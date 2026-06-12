@@ -9,6 +9,7 @@ export interface AuthConfig {
     accessExpiration: string;
     refreshExpiration: string;
     registrationExpiration: string;
+    wsTicketExpiration: string;
   };
   resend: {
     apiKey: string;
@@ -35,6 +36,7 @@ export default registerAs(
       accessExpiration: process.env.JWT_ACCESS_EXPIRATION ?? '15m',
       refreshExpiration: process.env.JWT_REFRESH_EXPIRATION ?? '7d',
       registrationExpiration: process.env.JWT_REGISTRATION_EXPIRATION ?? '30m',
+      wsTicketExpiration: process.env.JWT_WS_TICKET_EXPIRATION ?? '60s',
     },
     resend: {
       apiKey: requireEnv('RESEND_API_KEY'),

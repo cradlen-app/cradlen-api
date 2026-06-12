@@ -14,11 +14,13 @@ import { EventBus } from '@infrastructure/messaging/event-bus.js';
 import authConfig, { type AuthConfig } from '@config/auth.config.js';
 import type { AuthTokensDto } from '../dto/auth-tokens.dto.js';
 import type { ResetTokenResponseDto } from '../dto/reset-token-response.dto.js';
+import type { WsTicketResponseDto } from '../dto/ws-ticket-response.dto.js';
 import type {
   JwtAccessPayload,
   JwtPatientAccessPayload,
   JwtPatientRefreshPayload,
   JwtRefreshPayload,
+  JwtWsTicketPayload,
   PasswordResetTokenPayload,
   PatientSignupTokenPayload,
   SignupTokenPayload,
@@ -340,6 +342,34 @@ export class TokensService {
       token_type: 'Bearer',
       expires_in: accessExpiresIn,
     };
+  }
+
+  /**
+   * Mints a short-lived ticket the browser passes in the Socket.IO handshake.
+   * The caller is already authenticated (a valid access token reached the
+   * `@CurrentUser` context), so there is no profile assertion and no
+   * refresh-token row — the ticket is single-purpose, stateless, and expires in
+   * seconds. It carries the same `profileId`/`activeBranchId` the gateway uses
+   * to derive room membership.
+   */
+  issueWsTicket(args: IssueTokenPairArgs): WsTicketResponseDto {
+    const expires_in = this.parseDurationToSeconds(
+      this.authConfig.jwt.wsTicketExpiration,
+    );
+    const payload: JwtWsTicketPayload = {
+      userId: args.user.id,
+      profileId: args.profileId,
+      organizationId: args.organizationId,
+      ...(args.activeBranchId && { activeBranchId: args.activeBranchId }),
+      type: 'ws',
+    };
+    const ws_ticket = this.jwtService.sign(payload, {
+      secret: this.authConfig.jwt.accessSecret,
+      audience: JWT_AUDIENCE,
+      issuer: JWT_ISSUER,
+      expiresIn: expires_in,
+    });
+    return { ws_ticket, expires_in };
   }
 
   /**
