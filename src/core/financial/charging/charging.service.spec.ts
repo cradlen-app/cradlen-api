@@ -16,7 +16,6 @@ import { EventBus } from '@infrastructure/messaging/event-bus.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import { PatientAccessService } from '@core/patient/patient-access/patient-access.public.js';
 import { PricingResolverService } from '../pricing/pricing-resolver.service.js';
-import { InvoicingService } from '../invoicing/invoicing.service.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 
 const mockDb = {
@@ -47,7 +46,6 @@ const mockPatientAccess = {
   assertVisitInOrg: jest.fn(),
 };
 const mockEventBus = { publish: jest.fn() };
-const mockInvoicing = { ensureInvoiceForCharge: jest.fn() };
 
 const ORG = 'org-1';
 const BRANCH = 'br-1';
@@ -70,7 +68,6 @@ describe('ChargingService', () => {
         { provide: AuthorizationService, useValue: mockAuth },
         { provide: PricingResolverService, useValue: mockResolver },
         { provide: PatientAccessService, useValue: mockPatientAccess },
-        { provide: InvoicingService, useValue: mockInvoicing },
         { provide: EventBus, useValue: mockEventBus },
       ],
     }).compile();
@@ -133,52 +130,8 @@ describe('ChargingService', () => {
       // amount = unit_price * quantity = 300.00
       expect(payload.amount.toFixed(2)).toBe('300.00');
       expect(payload.source).toBe(ChargeSource.RECEPTION);
-      // the charge is auto-billed onto its case invoice inline (awaited)
-      expect(mockInvoicing.ensureInvoiceForCharge).toHaveBeenCalledWith(
-        expect.objectContaining({
-          charge_id: 'chg-1',
-          organization_id: ORG,
-          branch_id: BRANCH,
-          patient_id: 'pat-1',
-          captured_by_id: 'p1',
-        }),
-      );
-    });
-
-    it('still returns the charge when auto-billing fails (best-effort)', async () => {
-      mockDb.service.findFirst.mockResolvedValue({ name: 'Consultation' });
-      mockResolver.resolvePrice.mockResolvedValue({
-        price: new Prisma.Decimal('150.00'),
-        currency: 'EGP',
-        source: PricingSource.ORG_PRICE_LIST,
-      });
-      const created = {
-        id: 'chg-2',
-        organization_id: ORG,
-        branch_id: BRANCH,
-        patient_id: 'pat-1',
-        visit_id: 'visit-1',
-        service_id: 'svc-1',
-        unit_price: new Prisma.Decimal('150.00'),
-        quantity: 1,
-        pricing_source: PricingSource.ORG_PRICE_LIST,
-        source: ChargeSource.DOCTOR,
-        captured_by_id: 'p1',
-      };
-      mockDb.charge.create.mockResolvedValue(created);
-      mockInvoicing.ensureInvoiceForCharge.mockRejectedValue(
-        new Error('pricing gap'),
-      );
-
-      const result = await service.capture(
-        ORG,
-        { ...baseDto, service_id: 'svc-1' },
-        USER,
-      );
-
-      // capture succeeds and the fan-out event still fires
-      expect(result).toBe(created);
-      expect(mockEventBus.publish).toHaveBeenCalled();
+      // auto-billing is no longer charging's concern — it fans out via
+      // charge.captured and InvoiceAccrualListener bills the case invoice.
     });
 
     it('uses an explicit unit_price as CUSTOM and skips resolution', async () => {

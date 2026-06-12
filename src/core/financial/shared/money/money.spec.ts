@@ -27,6 +27,22 @@ describe('Money', () => {
     expect(Money.isPositive('0')).toBe(false);
   });
 
+  it('divides without binary-float drift', () => {
+    expect(Money.divide('10', '4').toFixed(2)).toBe('2.50');
+    expect(Money.divide(Money.multiply('200', 15), 100).toFixed(2)).toBe(
+      '30.00',
+    );
+  });
+
+  it('picks min / max and clamps to a range', () => {
+    expect(Money.min('10', '20').toFixed(2)).toBe('10.00');
+    expect(Money.max('10', '20').toFixed(2)).toBe('20.00');
+    // clamp keeps an in-range value, floors below lo, caps above hi
+    expect(Money.clamp('15', '0', '20').toFixed(2)).toBe('15.00');
+    expect(Money.clamp('-5', '0', '20').toFixed(2)).toBe('0.00');
+    expect(Money.clamp('25', '0', '20').toFixed(2)).toBe('20.00');
+  });
+
   it('rounds half-up to currency scale', () => {
     expect(Money.round('1.005').toFixed(2)).toBe('1.01');
     expect(Money.round('1.004').toFixed(2)).toBe('1.00');

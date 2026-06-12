@@ -366,6 +366,45 @@ export class ReportingService {
     return { by_doctor, total: Money.sum(by_doctor.map((r) => r.total)) };
   }
 
+  /** Billed revenue, collections and outstanding grouped by branch. */
+  async revenueByBranch(
+    organizationId: string,
+    scope: ReportScope,
+    user: AuthContext,
+  ) {
+    await this.authorizeScope(organizationId, scope.branchId, user);
+
+    const grouped = await this.prismaService.db.invoice.groupBy({
+      by: ['branch_id'],
+      where: {
+        organization_id: organizationId,
+        is_deleted: false,
+        status: { in: REVENUE_INVOICE_STATUSES },
+        ...(scope.branchId && { branch_id: scope.branchId }),
+        ...this.dateRange('issued_at', scope),
+      },
+      _sum: { total_amount: true, paid_amount: true, balance_due: true },
+      _count: true,
+    });
+
+    const names = await this.resolveBranchNames(
+      grouped.map((g) => g.branch_id).filter((id): id is string => id !== null),
+    );
+
+    const by_branch = grouped.map((g) => ({
+      branch_id: g.branch_id,
+      branch_name: g.branch_id
+        ? (names.get(g.branch_id) ?? 'Unknown branch')
+        : 'Unassigned',
+      invoice_count: g._count,
+      billed: g._sum.total_amount ?? Money.zero(),
+      collected: g._sum.paid_amount ?? Money.zero(),
+      outstanding: g._sum.balance_due ?? Money.zero(),
+    }));
+
+    return { by_branch, total: Money.sum(by_branch.map((r) => r.billed)) };
+  }
+
   /** Unpaid invoices (balance_due > 0) with per-invoice aging. */
   async outstandingInvoices(
     organizationId: string,
@@ -485,6 +524,17 @@ export class ReportingService {
   ): Promise<Map<string, string>> {
     if (ids.length === 0) return new Map();
     const rows = await this.prismaService.db.service.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, name: true },
+    });
+    return new Map(rows.map((r) => [r.id, r.name]));
+  }
+
+  private async resolveBranchNames(
+    ids: string[],
+  ): Promise<Map<string, string>> {
+    if (ids.length === 0) return new Map();
+    const rows = await this.prismaService.db.branch.findMany({
       where: { id: { in: ids } },
       select: { id: true, name: true },
     });

@@ -13,6 +13,7 @@ const mockDb = {
   service: { findMany: jest.fn() },
   profile: { findMany: jest.fn() },
   patient: { findMany: jest.fn() },
+  branch: { findMany: jest.fn() },
 };
 const mockPrisma = { db: mockDb };
 const mockAuth = {
@@ -220,6 +221,47 @@ describe('ReportingService', () => {
 
       expect(result.by_doctor[0].doctor_name).toBe('Sara Ali');
       expect(result.by_doctor[1].doctor_name).toBe('Unassigned');
+      expect(result.total.toFixed(2)).toBe('500.00');
+    });
+  });
+
+  describe('revenueByBranch', () => {
+    it('groups by branch with billed/collected/outstanding and resolves names', async () => {
+      mockDb.invoice.groupBy.mockResolvedValue([
+        {
+          branch_id: 'br-1',
+          _sum: {
+            total_amount: new Prisma.Decimal('300.00'),
+            paid_amount: new Prisma.Decimal('200.00'),
+            balance_due: new Prisma.Decimal('100.00'),
+          },
+          _count: 3,
+        },
+        {
+          branch_id: null,
+          _sum: {
+            total_amount: new Prisma.Decimal('200.00'),
+            paid_amount: new Prisma.Decimal('200.00'),
+            balance_due: new Prisma.Decimal('0.00'),
+          },
+          _count: 2,
+        },
+      ] as never);
+      mockDb.branch.findMany.mockResolvedValue([
+        { id: 'br-1', name: 'Main Clinic' },
+      ]);
+
+      const result = await service.revenueByBranch(ORG, {}, USER);
+
+      expect(mockAuth.assertCanManageOrganization).toHaveBeenCalledWith(
+        'p1',
+        ORG,
+      );
+      expect(result.by_branch[0].branch_name).toBe('Main Clinic');
+      expect(result.by_branch[0].invoice_count).toBe(3);
+      expect(result.by_branch[0].collected.toFixed(2)).toBe('200.00');
+      expect(result.by_branch[0].outstanding.toFixed(2)).toBe('100.00');
+      expect(result.by_branch[1].branch_name).toBe('Unassigned');
       expect(result.total.toFixed(2)).toBe('500.00');
     });
   });
