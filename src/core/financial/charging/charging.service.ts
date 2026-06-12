@@ -2,7 +2,6 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
-  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -19,7 +18,6 @@ import { PatientAccessService } from '@core/patient/patient-access/patient-acces
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import { paginated } from '@common/utils/pagination.utils.js';
 import { PricingResolverService } from '../pricing/pricing-resolver.service.js';
-import { InvoicingService } from '../invoicing/invoicing.service.js';
 import { Money } from '../shared/money/money.js';
 import { DEFAULT_CURRENCY } from '../shared/currency.js';
 import {
@@ -45,14 +43,11 @@ interface ListChargesFilters {
  */
 @Injectable()
 export class ChargingService {
-  private readonly logger = new Logger(ChargingService.name);
-
   constructor(
     private readonly prismaService: PrismaService,
     private readonly authorizationService: AuthorizationService,
     private readonly pricingResolver: PricingResolverService,
     private readonly patientAccess: PatientAccessService,
-    private readonly invoicingService: InvoicingService,
     private readonly eventBus: EventBus,
   ) {}
 
@@ -99,28 +94,13 @@ export class ChargingService {
   }
 
   /**
-   * Post-commit side effects for a captured charge: auto-bill it onto its
-   * case's invoice (best-effort — the charge is already persisted, so a billing
-   * gap is logged, never thrown) and fan out `charge.captured` for downstream
-   * consumers (reception notification, realtime relay).
+   * Post-commit fan-out for a captured charge: publishes `charge.captured` for
+   * downstream consumers. Auto-billing onto the case invoice is one such
+   * consumer (`InvoiceAccrualListener`) — charging no longer calls invoicing
+   * directly, keeping the cross-module side effect on the EventBus. Reception
+   * notification and the realtime relay subscribe the same way.
    */
   async finalizeCapture(charge: Charge): Promise<void> {
-    try {
-      await this.invoicingService.ensureInvoiceForCharge({
-        organization_id: charge.organization_id,
-        branch_id: charge.branch_id,
-        patient_id: charge.patient_id,
-        visit_id: charge.visit_id,
-        charge_id: charge.id,
-        captured_by_id: charge.captured_by_id,
-      });
-    } catch (err) {
-      this.logger.error(
-        `Failed to auto-bill charge ${charge.id} onto its case invoice`,
-        err as Error,
-      );
-    }
-
     this.eventBus.publish<ChargeCapturedEvent>(
       FINANCIAL_EVENTS.charge.captured,
       {
