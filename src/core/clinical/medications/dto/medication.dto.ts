@@ -42,3 +42,8 @@ export class MedicationWithStatsDto extends MedicationDto {
   @ApiProperty({ type: [MedicationRepSummaryDto] })
   medical_reps!: MedicationRepSummaryDto[];
 }
+
+export class MedicationFacetsDto {
+  @ApiProperty({ type: [String] }) categories!: string[];
+  @ApiProperty({ type: [String] }) forms!: string[];
+}
