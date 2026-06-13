@@ -543,6 +543,11 @@ export class VisitsService {
         specialty: { code: specialtyCode, is_deleted: false },
         OR: [{ organization_id: null }, { organization_id: organizationId }],
       },
+      // Prefer an org-specific override over the global fallback, deterministically:
+      // a non-null organization_id sorts before null with NULLS LAST. Without this
+      // the choice is arbitrary and the same booking can resolve to different
+      // care_path_ids, spawning duplicate active journeys for one journey template.
+      orderBy: { organization_id: { sort: 'desc', nulls: 'last' } },
       include: {
         journey_template: {
           include: {
@@ -653,12 +658,15 @@ export class VisitsService {
       createdById,
     } = params;
 
+    // Match on the journey template, NOT care_path_id: a patient has at most one
+    // active journey per template (enforced by a partial unique index). Keying on
+    // care_path_id here would let a divergent care path spawn a duplicate active
+    // journey of the same template — the bug this guards against.
     let journey = await tx.patientJourney.findFirst({
       where: {
         patient_id: patientId,
         organization_id: organizationId,
         journey_template_id: template.id,
-        care_path_id: carePathId,
         status: 'ACTIVE',
         is_deleted: false,
       },
