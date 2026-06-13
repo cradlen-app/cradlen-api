@@ -58,7 +58,10 @@ const mockAuth = {
   assertCanAccessBranch: jest.fn(),
   assertCanManageOrganization: jest.fn(),
 };
-const mockAccess = { assertIsReceptionistOrOwner: jest.fn() };
+const mockAccess = {
+  assertIsReceptionistOrOwner: jest.fn(),
+  assertProviderAuthorizedForItems: jest.fn(),
+};
 const mockResolver = { resolvePrice: jest.fn() };
 const mockNumber = { generate: jest.fn() };
 const mockBalance = { recompute: jest.fn() };
@@ -102,6 +105,7 @@ describe('InvoicingService', () => {
     lifecycle = module.get(InvoiceLifecycleService);
     jest.clearAllMocks();
     mockAccess.assertIsReceptionistOrOwner.mockResolvedValue(undefined);
+    mockAccess.assertProviderAuthorizedForItems.mockResolvedValue(undefined);
     mockAuth.assertCanAccessBranch.mockResolvedValue(undefined);
     mockAuth.assertCanManageOrganization.mockResolvedValue(undefined);
     mockNumber.generate.mockResolvedValue('INV-2026-00001');
@@ -257,6 +261,63 @@ describe('InvoicingService', () => {
     });
   });
 
+  describe('create() doctor↔service authorization', () => {
+    const baseDto = {
+      branch_id: BRANCH,
+      patient_id: 'pat-1',
+      items: [{ description: 'A', unit_price: 100, quantity: 1, service_id: 'svc-x' }],
+    };
+
+    it('asserts the assigned doctor is authorized for the items, then creates', async () => {
+      await service.create(
+        ORG,
+        { ...baseDto, assigned_doctor_id: 'doc-1' },
+        USER,
+      );
+
+      expect(mockAccess.assertProviderAuthorizedForItems).toHaveBeenCalledWith(
+        ORG,
+        'doc-1',
+        BRANCH,
+        baseDto.items,
+      );
+      expect(mockDb.invoice.create).toHaveBeenCalled();
+    });
+
+    it('checks the visit-backfilled doctor', async () => {
+      mockDb.visit.findUnique.mockResolvedValue({ assigned_doctor_id: 'doc-v' });
+
+      await service.create(ORG, { ...baseDto, visit_id: 'v1' }, USER);
+
+      expect(mockAccess.assertProviderAuthorizedForItems).toHaveBeenCalledWith(
+        ORG,
+        'doc-v',
+        BRANCH,
+        baseDto.items,
+      );
+    });
+
+    it('propagates the authorization error and does NOT create the invoice', async () => {
+      mockAccess.assertProviderAuthorizedForItems.mockRejectedValueOnce(
+        new BadRequestException('Doctor is not authorized for: X (X-1).'),
+      );
+
+      await expect(
+        service.create(ORG, { ...baseDto, assigned_doctor_id: 'doc-1' }, USER),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockDb.invoice.create).not.toHaveBeenCalled();
+    });
+
+    it('skips the check when no doctor is resolvable', async () => {
+      await service.create(ORG, baseDto, USER);
+
+      expect(
+        mockAccess.assertProviderAuthorizedForItems,
+      ).not.toHaveBeenCalled();
+      expect(mockDb.invoice.create).toHaveBeenCalled();
+    });
+  });
+
   describe('buildFromCharges', () => {
     it('applies a FIXED discount and flips the charges to INVOICED', async () => {
       mockDb.charge.findMany.mockResolvedValue([
@@ -353,6 +414,74 @@ describe('InvoicingService', () => {
       await expect(
         service.update(ORG, 'inv-1', { notes: 'x' }, USER),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('checks doctor↔service authorization when items change (effective doctor)', async () => {
+      mockDb.invoice.findFirst.mockResolvedValue({
+        ...draftInvoice,
+        assigned_doctor_id: 'doc-existing',
+      });
+      const items = [
+        { description: 'A', unit_price: 100, quantity: 1, service_id: 'svc-x' },
+      ];
+
+      await service.update(ORG, 'inv-1', { items }, USER);
+
+      expect(mockAccess.assertProviderAuthorizedForItems).toHaveBeenCalledWith(
+        ORG,
+        'doc-existing',
+        BRANCH,
+        items,
+      );
+      // incoming assigned_doctor_id wins over the invoice's current one
+      mockAccess.assertProviderAuthorizedForItems.mockClear();
+      await service.update(
+        ORG,
+        'inv-1',
+        { items, assigned_doctor_id: 'doc-new' },
+        USER,
+      );
+      expect(mockAccess.assertProviderAuthorizedForItems).toHaveBeenCalledWith(
+        ORG,
+        'doc-new',
+        BRANCH,
+        items,
+      );
+    });
+
+    it('rejects an item-changing update when the doctor is unauthorized', async () => {
+      mockDb.invoice.findFirst.mockResolvedValue({
+        ...draftInvoice,
+        assigned_doctor_id: 'doc-existing',
+      });
+      mockAccess.assertProviderAuthorizedForItems.mockRejectedValueOnce(
+        new BadRequestException('Doctor is not authorized for: X (X-1).'),
+      );
+
+      await expect(
+        service.update(
+          ORG,
+          'inv-1',
+          { items: [{ description: 'A', unit_price: 1, service_id: 'svc-x' }] },
+          USER,
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockDb.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('skips the authorization check when no items are supplied', async () => {
+      mockDb.invoice.findFirst.mockResolvedValue(draftInvoice);
+
+      await service.update(
+        ORG,
+        'inv-1',
+        { discount_type: DiscountType.PERCENTAGE, discount_value: 25 },
+        USER,
+      );
+
+      expect(
+        mockAccess.assertProviderAuthorizedForItems,
+      ).not.toHaveBeenCalled();
     });
   });
 
