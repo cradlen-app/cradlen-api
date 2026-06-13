@@ -4,7 +4,11 @@ import { FinancialAccessService } from './financial-access.service.js';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 
-const mockDb = { profileJobFunction: { findFirst: jest.fn() } };
+const mockDb = {
+  profileJobFunction: { findFirst: jest.fn() },
+  providerService: { findMany: jest.fn() },
+  service: { findMany: jest.fn() },
+};
 const mockPrisma = { db: mockDb };
 
 const ORG = 'org-1';
@@ -65,5 +69,67 @@ describe('FinancialAccessService', () => {
     await expect(
       service.assertIsReceptionistOrOwner(ctx({ roles: ['STAFF'] }), ORG),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  describe('assertProviderAuthorizedForItems', () => {
+    const DOC = 'doc-1';
+    const BR = 'br-1';
+
+    it('no-ops when no item carries a service_id (custom lines)', async () => {
+      await expect(
+        service.assertProviderAuthorizedForItems(ORG, DOC, BR, [
+          { description: 'custom' } as never,
+          { service_id: null },
+        ]),
+      ).resolves.toBeUndefined();
+      expect(mockDb.providerService.findMany).not.toHaveBeenCalled();
+    });
+
+    it('passes when every service is authorized (branch or org-wide)', async () => {
+      mockDb.providerService.findMany.mockResolvedValue([
+        { service_id: 'svc-a' },
+        { service_id: 'svc-b' },
+      ]);
+
+      await expect(
+        service.assertProviderAuthorizedForItems(ORG, DOC, BR, [
+          { service_id: 'svc-a' },
+          { service_id: 'svc-b' },
+          { service_id: 'svc-a' }, // duplicate collapses
+        ]),
+      ).resolves.toBeUndefined();
+
+      const where = mockDb.providerService.findMany.mock.calls[0][0].where;
+      expect(where).toMatchObject({
+        organization_id: ORG,
+        profile_id: DOC,
+        is_active: true,
+        is_deleted: false,
+      });
+      expect(where.service_id).toEqual({ in: ['svc-a', 'svc-b'] });
+      expect(where.OR).toEqual([{ branch_id: BR }, { branch_id: null }]);
+      expect(mockDb.service.findMany).not.toHaveBeenCalled();
+    });
+
+    it('throws BadRequestException naming the unauthorized services', async () => {
+      mockDb.providerService.findMany.mockResolvedValue([
+        { service_id: 'svc-a' },
+      ]);
+      mockDb.service.findMany.mockResolvedValue([
+        { name: 'Ultrasound', code: 'US-01' },
+      ]);
+
+      await expect(
+        service.assertProviderAuthorizedForItems(ORG, DOC, BR, [
+          { service_id: 'svc-a' },
+          { service_id: 'svc-b' },
+        ]),
+      ).rejects.toThrow(/Ultrasound \(US-01\)/);
+
+      expect(mockDb.service.findMany).toHaveBeenCalledWith({
+        where: { id: { in: ['svc-b'] } },
+        select: { name: true, code: true },
+      });
+    });
   });
 });
