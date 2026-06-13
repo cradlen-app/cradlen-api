@@ -1074,6 +1074,53 @@ describe('VisitsService', () => {
       );
     });
 
+    it('resolves the care path deterministically, preferring an org-scoped override', async () => {
+      db.carePath.findFirst.mockResolvedValue(mockCarePath);
+      db.patient.findUnique.mockResolvedValue(null);
+      db.patient.create.mockResolvedValue(mockPatient);
+      db.patientJourney.findFirst.mockResolvedValue(mockJourney);
+      db.patientEpisode.findFirst.mockResolvedValue(mockEpisode);
+      db.visit.create.mockResolvedValue(mockVisit);
+
+      await service.bookVisit(baseDto, mockUser);
+
+      expect(db.carePath.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: { organization_id: { sort: 'desc', nulls: 'last' } },
+        }),
+      );
+    });
+
+    it('reuses the active journey by template, not care_path_id, to avoid duplicates', async () => {
+      db.carePath.findFirst.mockResolvedValue(mockCarePath);
+      db.patient.findUnique.mockResolvedValue(null);
+      db.patient.create.mockResolvedValue(mockPatient);
+      // An active journey exists for this template — even if its care_path_id
+      // differs from the one this booking resolved, it must be reused.
+      db.patientJourney.findFirst.mockResolvedValue(mockJourney);
+      db.patientEpisode.findFirst.mockResolvedValue(mockEpisode);
+      db.visit.create.mockResolvedValue(mockVisit);
+
+      await service.bookVisit(baseDto, mockUser);
+
+      expect(db.patientJourney.create).not.toHaveBeenCalled();
+      expect(db.patientJourney.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.not.objectContaining({
+            care_path_id: expect.anything(),
+          }),
+        }),
+      );
+      expect(db.patientJourney.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            journey_template_id: expect.anything(),
+            status: 'ACTIVE',
+          }),
+        }),
+      );
+    });
+
     it('rejects with PATIENT_HAS_OPEN_VISIT when patient already has an open visit that day', async () => {
       db.carePath.findFirst.mockResolvedValue(mockCarePath);
       db.patient.findUnique.mockResolvedValue(mockPatient);
