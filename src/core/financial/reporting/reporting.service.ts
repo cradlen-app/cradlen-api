@@ -80,6 +80,79 @@ export class ReportingService {
     };
   }
 
+  /**
+   * Per-status invoice counts and amounts for the billing dashboard cards. Our
+   * schema has no PENDING/OVERDUE status, so they're derived:
+   *   - paid    = PAID                                  → Σ total_amount
+   *   - pending = DRAFT (not yet issued)                → Σ total_amount
+   *   - overdue = ISSUED/PARTIALLY_PAID, balance due, past due_date → Σ balance_due
+   *   - unpaid  = ISSUED/PARTIALLY_PAID, balance due, not overdue   → Σ balance_due
+   */
+  async invoiceStats(
+    organizationId: string,
+    scope: ReportScope,
+    user: AuthContext,
+  ) {
+    await this.authorizeScope(organizationId, scope.branchId, user);
+
+    const now = new Date();
+    const base: Prisma.InvoiceWhereInput = {
+      organization_id: organizationId,
+      is_deleted: false,
+      ...(scope.branchId && { branch_id: scope.branchId }),
+    };
+    const withBalance: Prisma.InvoiceWhereInput = {
+      ...base,
+      status: { in: [InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID] },
+      balance_due: { gt: 0 },
+    };
+
+    const [paid, pending, overdue, unpaid] = await Promise.all([
+      this.prismaService.db.invoice.aggregate({
+        where: { ...base, status: InvoiceStatus.PAID },
+        _sum: { total_amount: true },
+        _count: true,
+      }),
+      this.prismaService.db.invoice.aggregate({
+        where: { ...base, status: InvoiceStatus.DRAFT },
+        _sum: { total_amount: true },
+        _count: true,
+      }),
+      this.prismaService.db.invoice.aggregate({
+        where: { ...withBalance, due_date: { lt: now } },
+        _sum: { balance_due: true },
+        _count: true,
+      }),
+      this.prismaService.db.invoice.aggregate({
+        where: {
+          ...withBalance,
+          OR: [{ due_date: null }, { due_date: { gte: now } }],
+        },
+        _sum: { balance_due: true },
+        _count: true,
+      }),
+    ]);
+
+    return {
+      paid: {
+        count: paid._count,
+        amount: paid._sum.total_amount ?? Money.zero(),
+      },
+      unpaid: {
+        count: unpaid._count,
+        amount: unpaid._sum.balance_due ?? Money.zero(),
+      },
+      pending: {
+        count: pending._count,
+        amount: pending._sum.total_amount ?? Money.zero(),
+      },
+      overdue: {
+        count: overdue._count,
+        amount: overdue._sum.balance_due ?? Money.zero(),
+      },
+    };
+  }
+
   async arAging(organizationId: string, scope: ReportScope, user: AuthContext) {
     await this.authorizeScope(organizationId, scope.branchId, user);
 
