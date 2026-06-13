@@ -420,6 +420,12 @@ export class PatientsService {
     return new Date(now.getFullYear(), now.getMonth(), 1);
   }
 
+  /** Local-time first day of the previous month — baseline for "new last month". */
+  private startOfPreviousMonth(): Date {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  }
+
   /**
    * Shared engine for {@link getBranchStats} / {@link getOrgStats}. The care-path
    * breakdown is **discovered from the data** (a `groupBy` over the qualifying
@@ -433,6 +439,7 @@ export class PatientsService {
   ): Promise<PatientStatsDto> {
     const db = this.prismaService.db;
     const cutoff = this.startOfCurrentMonth();
+    const prevCutoff = this.startOfPreviousMonth();
 
     // A journey only counts for a branch once one of its episodes has a visit
     // that was actually checked in at the branch (mirrors findAllForBranch). For
@@ -485,11 +492,13 @@ export class PatientsService {
         })
       : [];
 
-    // 3. One round trip: total (current + previous) then each template's pair.
-    const [totalCurrent, totalPrevious, ...perTemplate] =
+    // 3. One round trip: total (current + previous), patients at the start of the
+    //    previous month (for the "new this month" trend), then each template's pair.
+    const [totalCurrent, totalPrevious, totalPrevPrev, ...perTemplate] =
       await db.$transaction([
         db.patient.count({ where: patientWhere({}) }),
         db.patient.count({ where: patientWhere({ cutoff }) }),
+        db.patient.count({ where: patientWhere({ cutoff: prevCutoff }) }),
         ...templates.flatMap((tpl) => [
           db.patient.count({ where: patientWhere({ templateId: tpl.id }) }),
           db.patient.count({
@@ -513,6 +522,10 @@ export class PatientsService {
 
     return {
       total: { current: totalCurrent, previous: totalPrevious },
+      new_this_month: {
+        current: totalCurrent - totalPrevious,
+        previous: totalPrevious - totalPrevPrev,
+      },
       by_care_path,
     };
   }

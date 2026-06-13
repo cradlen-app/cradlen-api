@@ -24,6 +24,8 @@ export class CarePathStatDto {
 
 export class PatientStatsDto {
   total!: PatientStatMetricDto;
+  /** Patients added this month vs last month (drives a MoM trend chip). */
+  new_this_month!: PatientStatMetricDto;
   /** Dynamic, data-driven list (not a fixed-length enum list). */
   by_care_path!: CarePathStatDto[];
 }

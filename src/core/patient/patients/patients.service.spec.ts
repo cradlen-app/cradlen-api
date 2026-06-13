@@ -396,12 +396,14 @@ describe('PatientsService', () => {
     });
 
     it('returns total + a data-driven per-care-path breakdown, sorted desc', async () => {
-      // [totalCur, totalPrev, preg cur/prev, derm cur/prev]
-      db.$transaction.mockResolvedValue([10, 7, 4, 3, 6, 5]);
+      // [totalCur, totalPrev, totalPrevPrev, preg cur/prev, derm cur/prev]
+      db.$transaction.mockResolvedValue([10, 7, 5, 4, 3, 6, 5]);
 
       const result = await service.getBranchStats('branch-uuid', mockUser);
 
       expect(result.total).toEqual({ current: 10, previous: 7 });
+      // new this month = 10 - 7; new last month = 7 - 5.
+      expect(result.new_this_month).toEqual({ current: 3, previous: 2 });
       expect(result.by_care_path).toEqual([
         {
           journey_template_id: 'tpl-derm',
@@ -425,7 +427,7 @@ describe('PatientsService', () => {
     });
 
     it('drops care paths with a zero current count', async () => {
-      db.$transaction.mockResolvedValue([4, 2, 4, 2, 0, 0]);
+      db.$transaction.mockResolvedValue([4, 2, 1, 4, 2, 0, 0]);
       const result = await service.getBranchStats('branch-uuid', mockUser);
       expect(result.by_care_path).toHaveLength(1);
       expect(result.by_care_path[0].journey_template_id).toBe('tpl-preg');
@@ -434,7 +436,7 @@ describe('PatientsService', () => {
     it('returns an empty breakdown when no journeys are present', async () => {
       db.patientJourney.groupBy.mockResolvedValue([]);
       db.journeyTemplate.findMany.mockResolvedValue([]);
-      db.$transaction.mockResolvedValue([0, 0]);
+      db.$transaction.mockResolvedValue([0, 0, 0]);
       const result = await service.getBranchStats('branch-uuid', mockUser);
       expect(result.by_care_path).toEqual([]);
       expect(db.journeyTemplate.findMany).not.toHaveBeenCalled();
