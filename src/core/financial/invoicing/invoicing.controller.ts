@@ -50,6 +50,7 @@ export class InvoicingController {
         patientId: query.patient_id,
         branchId: query.branch_id,
         episodeId: query.episode_id,
+        episodeIds: query.episode_ids,
         invoiceType: query.type,
         dateFrom: query.date_from,
         dateTo: query.date_to,
