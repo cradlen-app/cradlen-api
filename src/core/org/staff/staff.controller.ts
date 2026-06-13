@@ -26,6 +26,7 @@ import {
   StaffResponseDto,
   UpdateStaffDto,
 } from './dto/staff.dto.js';
+import { StaffStatsDto } from './dto/staff-stats.dto.js';
 import { StaffService } from './staff.service.js';
 
 @ApiTags('Staff')
@@ -69,6 +70,25 @@ export class StaffController {
       organizationId,
       branchId,
       query,
+    );
+  }
+
+  @Get('stats')
+  @ApiOperation({
+    summary: 'Branch staff analytics (total + per-role + clinical, with trend)',
+    description:
+      'Returns active-staff counts for this branch — a total, a data-driven per-role breakdown, and a clinical subtotal — each with the value at the start of the current month so the client can show a month-over-month trend.',
+  })
+  @ApiStandardResponse(StaffStatsDto)
+  staffStats(
+    @CurrentUser() user: AuthContext,
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('branchId', ParseUUIDPipe) branchId: string,
+  ) {
+    return this.staffService.getBranchStats(
+      user.profileId,
+      organizationId,
+      branchId,
     );
   }
 
