@@ -120,7 +120,12 @@ describe('VisitsService', () => {
       createMany: jest.Mock;
     };
     patient: { findUnique: jest.Mock; create: jest.Mock; update: jest.Mock };
-    patientJourney: { findFirst: jest.Mock; create: jest.Mock };
+    patientJourney: {
+      findFirst: jest.Mock;
+      create: jest.Mock;
+      findMany: jest.Mock;
+      count: jest.Mock;
+    };
     guardian: { findFirst: jest.Mock; upsert: jest.Mock; create: jest.Mock };
     patientGuardian: {
       findFirst: jest.Mock;
@@ -162,7 +167,12 @@ describe('VisitsService', () => {
         createMany: jest.fn(),
       },
       patient: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
-      patientJourney: { findFirst: jest.fn(), create: jest.fn() },
+      patientJourney: {
+        findFirst: jest.fn(),
+        create: jest.fn(),
+        findMany: jest.fn(),
+        count: jest.fn(),
+      },
       guardian: { findFirst: jest.fn(), upsert: jest.fn(), create: jest.fn() },
       patientGuardian: {
         findFirst: jest.fn(),
@@ -1548,6 +1558,91 @@ describe('VisitsService', () => {
       expect(result.items[0].medications).toEqual([
         { name: 'Paracetamol', dose: '500 mg' },
       ]);
+    });
+  });
+
+  describe('findPatientJourneyTimeline', () => {
+    it('groups completed visits under their episode/journey, newest journey first, with journey-level pagination', async () => {
+      const completedAt = new Date('2025-09-30T10:00:00Z');
+      const mockJourney = {
+        id: 'journey-uuid',
+        status: 'ACTIVE',
+        started_at: new Date('2025-01-01T00:00:00Z'),
+        ended_at: null,
+        journey_template: { name: 'Pregnancy', type: 'PREGNANCY' },
+        episodes: [
+          {
+            id: 'episode-uuid',
+            name: 'First Trimester',
+            order: 1,
+            status: 'ACTIVE',
+            started_at: new Date('2025-01-02T00:00:00Z'),
+            ended_at: null,
+            visits: [
+              {
+                id: 'history-visit-uuid',
+                appointment_type: 'VISIT',
+                completed_at: completedAt,
+                encounter: { provisional_diagnosis: 'Routine ANC' },
+                prescription: {
+                  items: [
+                    {
+                      medication: { name: 'Folic Acid' },
+                      custom_drug_name: null,
+                      dose: '5 mg',
+                    },
+                  ],
+                },
+                investigations: [
+                  { lab_test: { name: 'CBC' }, custom_test_name: null },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+
+      db.patientJourney.findMany.mockResolvedValue([mockJourney]);
+      db.patientJourney.count.mockResolvedValue(1);
+      db.$transaction.mockImplementation((queries: Promise<unknown>[]) =>
+        Promise.all(queries),
+      );
+
+      const result = await service.findPatientJourneyTimeline(
+        'patient-uuid',
+        'org-uuid',
+        { page: 1, limit: 5, excludeVisitId: 'current-visit-uuid' },
+      );
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toMatchObject({
+        id: 'journey-uuid',
+        name: 'Pregnancy',
+        type: 'PREGNANCY',
+        status: 'ACTIVE',
+      });
+      expect(result.items[0].episodes[0]).toMatchObject({
+        id: 'episode-uuid',
+        name: 'First Trimester',
+        order: 1,
+      });
+      expect(result.items[0].episodes[0].visits[0]).toMatchObject({
+        id: 'history-visit-uuid',
+        diagnosis: 'Routine ANC',
+        medications: [{ name: 'Folic Acid', dose: '5 mg' }],
+        investigations: ['CBC'],
+      });
+      expect(result.meta.total).toBe(1);
+      expect(db.patientJourney.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            patient_id: 'patient-uuid',
+            organization_id: 'org-uuid',
+            is_deleted: false,
+          }),
+          orderBy: { started_at: 'desc' },
+        }),
+      );
     });
   });
 });
