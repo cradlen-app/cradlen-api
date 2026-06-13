@@ -31,6 +31,7 @@ import { GuardiansModule } from '@core/patient/guardians/guardians.module';
 import { VisitsModule } from '@core/clinical/visits/visits.module';
 import { MedicalRepModule } from '@core/clinical/medical-rep/medical-rep.module';
 import { MedicationsModule } from '@core/clinical/medications/medications.module';
+import { PrescriptionsModule } from '@core/clinical/prescriptions/prescriptions.module';
 import { CarePathsModule } from '@core/clinical/care-paths/care-paths.module';
 import { JourneysModule } from '@core/clinical/journeys/journeys.module';
 import { DiagnosisCodesModule } from '@core/clinical/diagnosis-codes/diagnosis-codes.module';
@@ -83,6 +84,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     VisitsModule,
     MedicalRepModule,
     MedicationsModule,
+    PrescriptionsModule,
     CarePathsModule,
     JourneysModule,
     DiagnosisCodesModule,
