@@ -29,6 +29,8 @@ export interface InvoiceFilters {
   branchId?: string;
   patientId?: string;
   episodeId?: string;
+  /** Filter by a set of clinical cases (episodes) — used by the billing queue. */
+  episodeIds?: string[];
   status?: InvoiceStatus;
   invoiceType?: InvoiceType;
   dateFrom?: string;
@@ -86,6 +88,9 @@ export class InvoicingService {
       ...(filters.branchId && { branch_id: filters.branchId }),
       ...(filters.patientId && { patient_id: filters.patientId }),
       ...(filters.episodeId && { episode_id: filters.episodeId }),
+      ...(filters.episodeIds?.length && {
+        episode_id: { in: filters.episodeIds },
+      }),
       ...(filters.status && { status: filters.status }),
       ...(filters.invoiceType && { invoice_type: filters.invoiceType }),
       ...(filters.search
