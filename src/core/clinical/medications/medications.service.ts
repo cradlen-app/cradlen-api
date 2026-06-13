@@ -35,7 +35,7 @@ export class MedicationsService {
   async findAll(query: ListMedicationsQueryDto, user: AuthContext) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 50;
-    const sort = query.sort ?? 'name';
+    const sort = query.sort ?? 'name_asc';
 
     const where: Prisma.MedicationWhereInput = {
       is_deleted: false,
@@ -108,12 +108,13 @@ export class MedicationsService {
       return paginated(orderedEnriched, { page, limit, total });
     }
 
+    const nameDir = sort === 'name_desc' ? 'desc' : 'asc';
     const [items, total] = await this.prismaService.db.$transaction([
       this.prismaService.db.medication.findMany({
         where,
         orderBy: [
           { organization_id: { sort: 'asc', nulls: 'first' } },
-          { name: 'asc' },
+          { name: nameDir },
         ],
         skip: (page - 1) * limit,
         take: limit,
