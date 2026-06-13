@@ -167,51 +167,6 @@ export class InvoiceCompositionService {
     }
   }
 
-  /**
-   * The case (episode) an invoice bills. Prefer an explicit episode_id; otherwise
-   * derive it from the originating visit so per-visit billing still groups under
-   * its episode.
-   *
-   * Both ids are client-supplied, so each lookup is scoped to the invoice's
-   * organization + patient (and branch, for the visit) — a foreign tenant's
-   * episode/visit id must never be dereferenced and persisted onto the invoice.
-   */
-  async resolveEpisodeId(
-    organizationId: string,
-    patientId: string,
-    branchId: string,
-    explicitEpisodeId: string | undefined,
-    visitId: string | undefined,
-  ): Promise<string | undefined> {
-    if (explicitEpisodeId) {
-      const episode = await this.prismaService.db.patientEpisode.findFirst({
-        where: {
-          id: explicitEpisodeId,
-          is_deleted: false,
-          journey: { organization_id: organizationId, patient_id: patientId },
-        },
-        select: { id: true },
-      });
-      if (!episode) {
-        throw new BadRequestException('Invalid episode_id for this patient');
-      }
-      return episode.id;
-    }
-    if (!visitId) return undefined;
-    const visit = await this.prismaService.db.visit.findFirst({
-      where: {
-        id: visitId,
-        is_deleted: false,
-        branch_id: branchId,
-        episode: {
-          journey: { organization_id: organizationId, patient_id: patientId },
-        },
-      },
-      select: { episode_id: true },
-    });
-    return visit?.episode_id ?? undefined;
-  }
-
   /** End of the given UTC day — inclusive upper bound for a date-only filter. */
   endOfDay(date: string): Date {
     const end = new Date(date);
