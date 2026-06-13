@@ -18,6 +18,7 @@ import {
   type ResetStaffPasswordDto,
   type UpdateStaffDto,
 } from './dto/staff.dto.js';
+import type { RoleStatDto, StaffStatsDto } from './dto/staff-stats.dto.js';
 import { persistSchedules } from './schedule.helpers.js';
 import { createUserWithGeneratedEmail } from './staff-email.helper.js';
 import {
@@ -377,6 +378,124 @@ export class StaffService {
     );
 
     return paginated(items, { page, limit, total });
+  }
+
+  /**
+   * Branch staff analytics: a total + a data-driven per-role breakdown + a
+   * clinical subtotal, each with a start-of-month `previous` value so the client
+   * can render month-over-month trend chips. Mirrors the patient-stats engine.
+   */
+  async getBranchStats(
+    profileId: string,
+    organizationId: string,
+    branchId: string,
+  ): Promise<StaffStatsDto> {
+    await this.authorizationService.assertCanViewStaff(
+      profileId,
+      organizationId,
+    );
+    // Branch-scoped: OWNER passes for all branches; BRANCH_MANAGER only theirs.
+    await this.authorizationService.assertCanAccessBranch(
+      profileId,
+      organizationId,
+      branchId,
+    );
+    return this.computeStaffStats(organizationId, branchId);
+  }
+
+  /** Local-time first day of the current month — the trend comparison baseline. */
+  private startOfCurrentMonth(): Date {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  }
+
+  /**
+   * Shared engine for {@link getBranchStats}. The per-role breakdown is
+   * **discovered from the data** (a `groupBy` over the qualifying staff's role
+   * links) rather than enumerated, so a new role code surfaces without code
+   * changes. `previous` re-runs each count gated on when the staff member joined
+   * this branch (`ProfileBranch.created_at <= cutoff`) — the branch-scoped
+   * analog of the patient endpoint's `journey.started_at` cutoff.
+   */
+  private async computeStaffStats(
+    organizationId: string,
+    branchId: string,
+  ): Promise<StaffStatsDto> {
+    const db = this.prismaService.db;
+    const cutoff = this.startOfCurrentMonth();
+
+    const profileWhere = (opts: {
+      roleCode?: string;
+      clinical?: boolean;
+      cutoff?: Date;
+    }): Prisma.ProfileWhereInput => ({
+      organization_id: organizationId,
+      is_deleted: false,
+      is_active: true,
+      branches: {
+        some: {
+          branch_id: branchId,
+          ...(opts.cutoff ? { created_at: { lte: opts.cutoff } } : {}),
+        },
+      },
+      ...(opts.roleCode
+        ? { roles: { some: { role: { code: opts.roleCode } } } }
+        : {}),
+      ...(opts.clinical
+        ? { job_functions: { some: { job_function: { is_clinical: true } } } }
+        : {}),
+    });
+
+    // 1. Which roles are actually held by active staff at this branch.
+    const groups = await db.profileRole.groupBy({
+      by: ['role_id'],
+      where: { profile: profileWhere({}) },
+    });
+    const roleIds = groups.map((g) => g.role_id);
+
+    // 2. Resolve each role's code + display name.
+    const roles = roleIds.length
+      ? await db.role.findMany({
+          where: { id: { in: roleIds } },
+          select: { id: true, code: true, name: true },
+        })
+      : [];
+
+    // 3. One round trip: total + clinical (current/previous) then each role pair.
+    const [
+      totalCurrent,
+      totalPrevious,
+      clinicalCurrent,
+      clinicalPrevious,
+      ...perRole
+    ] = await db.$transaction([
+      db.profile.count({ where: profileWhere({}) }),
+      db.profile.count({ where: profileWhere({ cutoff }) }),
+      db.profile.count({ where: profileWhere({ clinical: true }) }),
+      db.profile.count({ where: profileWhere({ clinical: true, cutoff }) }),
+      ...roles.flatMap((role) => [
+        db.profile.count({ where: profileWhere({ roleCode: role.code }) }),
+        db.profile.count({
+          where: profileWhere({ roleCode: role.code, cutoff }),
+        }),
+      ]),
+    ]);
+
+    const by_role: RoleStatDto[] = roles
+      .map((role, i) => ({
+        role_code: role.code,
+        role_name: role.name,
+        current: perRole[i * 2] ?? 0,
+        previous: perRole[i * 2 + 1] ?? 0,
+      }))
+      .filter((r) => r.current > 0)
+      .sort((a, b) => b.current - a.current);
+
+    return {
+      total: { current: totalCurrent, previous: totalPrevious },
+      by_role,
+      clinical: { current: clinicalCurrent, previous: clinicalPrevious },
+    };
   }
 
   async updateStaff(
