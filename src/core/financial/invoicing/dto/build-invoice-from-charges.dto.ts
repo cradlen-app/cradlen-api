@@ -31,11 +31,6 @@ export class BuildInvoiceFromChargesDto {
   @IsOptional()
   visit_id?: string;
 
-  /** Clinical case this invoice bills. Derived from the visit's episode when omitted. */
-  @IsUUID()
-  @IsOptional()
-  episode_id?: string;
-
   @IsEnum(InvoiceType)
   @IsOptional()
   invoice_type?: InvoiceType;
