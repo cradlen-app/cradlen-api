@@ -33,6 +33,13 @@ export class VisitHistoryQueryDto {
   @IsOptional() @IsUUID() exclude?: string;
 }
 
+export class JourneyTimelineQueryDto {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number = 1;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit?: number =
+    5;
+  @IsOptional() @IsUUID() exclude?: string;
+}
+
 export class VitalsTrendQueryDto {
   @IsOptional() @IsUUID() exclude?: string;
 }

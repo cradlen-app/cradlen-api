@@ -38,7 +38,9 @@ import { VitalsTrendPointDto } from './dto/vitals-trend-point.dto.js';
 import {
   visitHistoryInclude,
   vitalsTrendSelect,
+  journeyTimelineInclude,
   toVisitHistorySummary,
+  toJourneyTimeline,
   toVitalsTrendPoint,
 } from './visits.mapper.js';
 import { assertReceptionAction } from './visit-actor.guards.js';
@@ -753,6 +755,41 @@ export class VisitsService {
     const summaries = visits.map(toVisitHistorySummary);
 
     return paginated(summaries, { page, limit, total });
+  }
+
+  /**
+   * Patient journey tree for the Overview timeline: journeys (newest first),
+   * each with its episodes and the completed visits under them. Paginated by
+   * journey so a group never splits across pages.
+   */
+  async findPatientJourneyTimeline(
+    patientId: string,
+    organizationId: string,
+    query: { page?: number; limit?: number; excludeVisitId?: string },
+  ) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 5;
+
+    const where: Prisma.PatientJourneyWhereInput = {
+      is_deleted: false,
+      patient_id: patientId,
+      organization_id: organizationId,
+    };
+
+    const [journeys, total] = await this.prismaService.db.$transaction([
+      this.prismaService.db.patientJourney.findMany({
+        where,
+        orderBy: { started_at: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: journeyTimelineInclude(query.excludeVisitId),
+      }),
+      this.prismaService.db.patientJourney.count({ where }),
+    ]);
+
+    const timeline = journeys.map(toJourneyTimeline);
+
+    return paginated(timeline, { page, limit, total });
   }
 
   async findPatientVitalsTrend(
