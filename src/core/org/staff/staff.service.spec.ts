@@ -533,3 +533,110 @@ describe('StaffService.resetStaffPassword', () => {
     expect(db.user.update).not.toHaveBeenCalled();
   });
 });
+
+describe('StaffService.getBranchStats', () => {
+  let service: StaffService;
+  let db: {
+    profile: { count: jest.Mock };
+    profileRole: { groupBy: jest.Mock };
+    role: { findMany: jest.Mock };
+    $transaction: jest.Mock;
+  };
+  let authMock: {
+    assertCanViewStaff: jest.Mock;
+    assertCanAccessBranch: jest.Mock;
+  };
+
+  // Two roles — proves the breakdown is discovered from data, not a fixed enum.
+  const roles = [
+    { id: 'role-staff', code: 'STAFF', name: 'Staff' },
+    { id: 'role-ext', code: 'EXTERNAL', name: 'External' },
+  ];
+
+  beforeEach(async () => {
+    db = {
+      profile: { count: jest.fn() },
+      profileRole: {
+        groupBy: jest
+          .fn()
+          .mockResolvedValue([{ role_id: 'role-staff' }, { role_id: 'role-ext' }]),
+      },
+      role: { findMany: jest.fn().mockResolvedValue(roles) },
+      $transaction: jest.fn(),
+    };
+    authMock = {
+      assertCanViewStaff: jest.fn().mockResolvedValue(undefined),
+      assertCanAccessBranch: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        StaffService,
+        { provide: PrismaService, useValue: { db } },
+        { provide: AuthorizationService, useValue: authMock },
+        {
+          provide: SubscriptionsService,
+          useValue: { assertStaffLimit: jest.fn() },
+        },
+        {
+          provide: StorageService,
+          useValue: { createPresignedDownloadUrl: jest.fn() },
+        },
+      ],
+    }).compile();
+
+    service = module.get<StaffService>(StaffService);
+  });
+
+  it('asserts viewer role and branch access before computing stats', async () => {
+    authMock.assertCanAccessBranch.mockRejectedValue(new ForbiddenException());
+    await expect(
+      service.getBranchStats('caller-uuid', ORG, BRANCH),
+    ).rejects.toThrow(ForbiddenException);
+    expect(db.profileRole.groupBy).not.toHaveBeenCalled();
+  });
+
+  it('returns total + clinical + a data-driven per-role breakdown, sorted desc', async () => {
+    // [totalCur, totalPrev, clinicalCur, clinicalPrev, staff cur/prev, ext cur/prev]
+    db.$transaction.mockResolvedValue([12, 9, 7, 6, 3, 2, 5, 4]);
+
+    const result = await service.getBranchStats('caller-uuid', ORG, BRANCH);
+
+    expect(result.total).toEqual({ current: 12, previous: 9 });
+    expect(result.clinical).toEqual({ current: 7, previous: 6 });
+    expect(result.by_role).toEqual([
+      { role_code: 'EXTERNAL', role_name: 'External', current: 5, previous: 4 },
+      { role_code: 'STAFF', role_name: 'Staff', current: 3, previous: 2 },
+    ]);
+  });
+
+  it('scopes the previous snapshot to staff who joined the branch before the cutoff', async () => {
+    db.$transaction.mockResolvedValue([1, 1, 0, 0, 1, 1]);
+    db.profileRole.groupBy.mockResolvedValue([{ role_id: 'role-staff' }]);
+    db.role.findMany.mockResolvedValue([roles[0]]);
+
+    await service.getBranchStats('caller-uuid', ORG, BRANCH);
+
+    // Count calls run in array order: [0]=total current, [1]=total previous.
+    // The `previous` snapshot gates the branch join on a start-of-month cutoff.
+    const currentTotalWhere = db.profile.count.mock.calls[0][0].where;
+    const previousTotalWhere = db.profile.count.mock.calls[1][0].where;
+    expect(currentTotalWhere.branches.some.created_at).toBeUndefined();
+    expect(previousTotalWhere.branches.some.created_at.lte).toBeInstanceOf(Date);
+  });
+
+  it('drops roles with a zero current count', async () => {
+    db.$transaction.mockResolvedValue([4, 2, 1, 1, 4, 2, 0, 0]);
+    const result = await service.getBranchStats('caller-uuid', ORG, BRANCH);
+    expect(result.by_role).toHaveLength(1);
+    expect(result.by_role[0].role_code).toBe('STAFF');
+  });
+
+  it('returns an empty breakdown when no roles are present', async () => {
+    db.profileRole.groupBy.mockResolvedValue([]);
+    db.$transaction.mockResolvedValue([0, 0, 0, 0]);
+    const result = await service.getBranchStats('caller-uuid', ORG, BRANCH);
+    expect(result.by_role).toEqual([]);
+    expect(db.role.findMany).not.toHaveBeenCalled();
+  });
+});
