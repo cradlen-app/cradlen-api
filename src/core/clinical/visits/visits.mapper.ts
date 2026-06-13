@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { VisitHistorySummaryDto } from './dto/visit-history-summary.dto.js';
+import { JourneyTimelineDto } from './dto/journey-timeline.dto.js';
 import { VitalsTrendPointDto } from './dto/vitals-trend-point.dto.js';
 
 /** Prisma `include` for a completed-visit history summary row. */
@@ -39,6 +40,56 @@ export function toVisitHistorySummary(
     investigations: (v.investigations ?? [])
       .map((inv) => inv.lab_test?.name ?? inv.custom_test_name ?? '')
       .filter(Boolean),
+  };
+}
+
+/**
+ * Prisma `include` for a patient journey tree: episodes (ordered) → completed
+ * visits (newest first), each visit carrying its history summary relations.
+ * `excludeVisitId` drops the currently-open visit from the tree.
+ */
+export function journeyTimelineInclude(excludeVisitId?: string) {
+  return {
+    journey_template: { select: { name: true, type: true } },
+    episodes: {
+      where: { is_deleted: false },
+      orderBy: { order: 'asc' },
+      include: {
+        visits: {
+          where: {
+            is_deleted: false,
+            status: 'COMPLETED' as const,
+            ...(excludeVisitId ? { id: { not: excludeVisitId } } : {}),
+          },
+          orderBy: { completed_at: 'desc' },
+          include: visitHistoryInclude,
+        },
+      },
+    },
+  } satisfies Prisma.PatientJourneyInclude;
+}
+
+type JourneyTimelineRow = Prisma.PatientJourneyGetPayload<{
+  include: ReturnType<typeof journeyTimelineInclude>;
+}>;
+
+export function toJourneyTimeline(j: JourneyTimelineRow): JourneyTimelineDto {
+  return {
+    id: j.id,
+    name: j.journey_template?.name ?? '',
+    type: j.journey_template?.type ?? '',
+    status: j.status,
+    started_at: j.started_at,
+    ended_at: j.ended_at,
+    episodes: (j.episodes ?? []).map((e) => ({
+      id: e.id,
+      name: e.name,
+      order: e.order,
+      status: e.status,
+      started_at: e.started_at,
+      ended_at: e.ended_at,
+      visits: e.visits.map(toVisitHistorySummary),
+    })),
   };
 }
 
