@@ -1,7 +1,8 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { InvoiceStatus, InvoiceType } from '@prisma/client';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
+  IsArray,
   IsDateString,
   IsEnum,
   IsInt,
@@ -43,6 +44,23 @@ export class ListInvoicesQueryDto {
   @IsUUID('4')
   @IsOptional()
   episode_id?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Filter invoices by multiple clinical cases (episodes); comma-separated UUIDs.',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }): unknown =>
+    typeof value === 'string'
+      ? value
+          .split(',')
+          .map((v) => v.trim())
+          .filter(Boolean)
+      : value,
+  )
+  @IsArray()
+  @IsUUID('4', { each: true })
+  episode_ids?: string[];
 
   @ApiPropertyOptional({ enum: InvoiceType })
   @IsEnum(InvoiceType)

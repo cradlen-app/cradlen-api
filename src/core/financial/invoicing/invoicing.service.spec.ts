@@ -159,6 +159,21 @@ describe('InvoicingService', () => {
       );
     });
 
+    it('filters by a set of episodes (episode_id IN) regardless of created_at — the billing-queue path', async () => {
+      await service.findAll(
+        ORG,
+        { branchId: BRANCH, episodeIds: ['ep-1', 'ep-2'] },
+        1,
+        20,
+        USER,
+      );
+
+      const args = mockDb.invoice.findMany.mock.calls[0][0];
+      expect(args.where.episode_id).toEqual({ in: ['ep-1', 'ep-2'] });
+      // no date constraint is applied for this path
+      expect(args.where.created_at).toBeUndefined();
+    });
+
     it('returns paginated meta (page/limit/total/totalPages)', async () => {
       mockDb.invoice.count.mockResolvedValue(25);
       const res = await service.findAll(ORG, {}, 2, 10, USER);

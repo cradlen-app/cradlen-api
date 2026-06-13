@@ -17,6 +17,8 @@ describe('NotificationsListener', () => {
     profile: { findMany: jest.Mock; findUnique: jest.Mock };
     patient: { findUnique: jest.Mock };
     service: { findUnique: jest.Mock };
+    visit: { findFirst: jest.Mock };
+    invoice: { findFirst: jest.Mock };
   };
 
   const acceptedEvent = new InvitationAcceptedEvent({
@@ -49,6 +51,8 @@ describe('NotificationsListener', () => {
       profile: { findMany: jest.fn(), findUnique: jest.fn() },
       patient: { findUnique: jest.fn() },
       service: { findUnique: jest.fn() },
+      visit: { findFirst: jest.fn() },
+      invoice: { findFirst: jest.fn() },
     };
     listener = new NotificationsListener(
       service as unknown as NotificationsService,
@@ -130,6 +134,8 @@ describe('NotificationsListener', () => {
       user: { first_name: 'Sara', last_name: 'Ali' },
     });
     db.service.findUnique.mockResolvedValue({ name: 'Consultation' });
+    db.visit.findFirst.mockResolvedValue({ episode_id: 'ep-1' });
+    db.invoice.findFirst.mockResolvedValue({ id: 'inv-1' });
 
     await listener.handleChargeCaptured(chargeEvent());
 
@@ -140,19 +146,42 @@ describe('NotificationsListener', () => {
         code: NOTIFICATION_CODES.SERVICE_CHARGE_ADDED.code,
         category: 'billing',
         description: 'Dr. Sara Ali added "Consultation" for Jane Doe.',
-        // Deep-links to the visits page so reception can auto-open the invoice
-        // drawer for this visit (resolved to its invoice client-side).
-        navigateTo: '/org-1/branch-1/dashboard/visits?invoiceVisit=visit-1',
+        // Deep-links straight to the case invoice's detail page so reception can
+        // collect — booking already created it before the doctor's mid-visit add.
+        navigateTo: '/org-1/branch-1/dashboard/financial/invoices/inv-1',
         metadata: expect.objectContaining({
           chargeId: 'chg-1',
           patientId: 'pat-1',
           visitId: 'visit-1',
+          episodeId: 'ep-1',
+          invoiceId: 'inv-1',
         }),
       }),
     );
   });
 
-  it('falls back to the bare visits path when the charge has no visit', async () => {
+  it('falls back to the episode-scoped search page when the invoice does not exist yet', async () => {
+    db.profile.findMany.mockResolvedValue([{ id: 'recep-1' }]);
+    db.patient.findUnique.mockResolvedValue({ full_name: 'Jane Doe' });
+    db.profile.findUnique.mockResolvedValue({
+      user: { first_name: 'Sara', last_name: 'Ali' },
+    });
+    db.service.findUnique.mockResolvedValue({ name: 'Consultation' });
+    db.visit.findFirst.mockResolvedValue({ episode_id: 'ep-1' });
+    // Rare failed-booking-accrual: the open invoice isn't there yet.
+    db.invoice.findFirst.mockResolvedValue(null);
+
+    await listener.handleChargeCaptured(chargeEvent());
+
+    expect(service.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        navigateTo: '/org-1/branch-1/dashboard/financial/invoices?episode=ep-1',
+        metadata: expect.objectContaining({ episodeId: 'ep-1', invoiceId: null }),
+      }),
+    );
+  });
+
+  it('falls back to the bare invoices path when the charge has no visit', async () => {
     db.profile.findMany.mockResolvedValue([{ id: 'recep-1' }]);
     db.patient.findUnique.mockResolvedValue({ full_name: 'Jane Doe' });
     db.profile.findUnique.mockResolvedValue({
@@ -162,10 +191,16 @@ describe('NotificationsListener', () => {
 
     await listener.handleChargeCaptured(chargeEvent({ visit_id: null }));
 
+    expect(db.visit.findFirst).not.toHaveBeenCalled();
+    expect(db.invoice.findFirst).not.toHaveBeenCalled();
     expect(service.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        navigateTo: '/org-1/branch-1/dashboard/visits',
-        metadata: expect.objectContaining({ visitId: null }),
+        navigateTo: '/org-1/branch-1/dashboard/financial/invoices',
+        metadata: expect.objectContaining({
+          visitId: null,
+          episodeId: null,
+          invoiceId: null,
+        }),
       }),
     );
   });
