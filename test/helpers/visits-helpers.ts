@@ -1,4 +1,8 @@
-import type { PrismaClient, VisitStatus } from '@prisma/client';
+import type {
+  AppointmentType,
+  PrismaClient,
+  VisitStatus,
+} from '@prisma/client';
 
 /**
  * Clinical-visit integration helpers. Seed the journey → episode → visit graph
@@ -20,6 +24,10 @@ export interface SeedVisitArgs {
   /** When omitted for IN_CONSULTATION, defaults to now. */
   consultationStartedAt?: Date | null;
   scheduledAt?: Date;
+  /** Defaults to `VISIT`. Use `FOLLOW_UP` to exercise the visit-stats grouping. */
+  appointmentType?: AppointmentType;
+  /** Attendance timestamp the monthly visit-stats endpoint counts on. */
+  checkedInAt?: Date | null;
 }
 
 export interface SeededVisit {
@@ -91,12 +99,13 @@ export async function seedVisit(
       assigned_doctor_id: args.doctorProfileId,
       branch_id: args.branchId,
       created_by_id: createdById,
-      appointment_type: 'VISIT',
+      appointment_type: args.appointmentType ?? 'VISIT',
       priority: 'NORMAL',
       status,
       scheduled_at: args.scheduledAt ?? new Date(),
       started_at: startedAt,
       consultation_started_at: consultationStartedAt,
+      checked_in_at: args.checkedInAt ?? null,
     },
   });
 
