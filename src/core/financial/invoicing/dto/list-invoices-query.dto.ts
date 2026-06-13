@@ -39,15 +39,8 @@ export class ListInvoicesQueryDto {
   branch_id?: string;
 
   @ApiPropertyOptional({
-    description: 'Filter invoices by clinical case (episode).',
-  })
-  @IsUUID('4')
-  @IsOptional()
-  episode_id?: string;
-
-  @ApiPropertyOptional({
     description:
-      'Filter invoices by multiple clinical cases (episodes); comma-separated UUIDs.',
+      'Filter invoices by multiple visits (encounters); comma-separated UUIDs.',
   })
   @IsOptional()
   @Transform(({ value }: { value: unknown }): unknown =>
@@ -60,7 +53,7 @@ export class ListInvoicesQueryDto {
   )
   @IsArray()
   @IsUUID('4', { each: true })
-  episode_ids?: string[];
+  visit_ids?: string[];
 
   @ApiPropertyOptional({ enum: InvoiceType })
   @IsEnum(InvoiceType)

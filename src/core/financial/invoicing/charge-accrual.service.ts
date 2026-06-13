@@ -80,14 +80,6 @@ export class ChargeAccrualService {
     const invoiceNumber =
       await this.invoiceNumberService.generate(organizationId);
 
-    const episodeId = await this.composition.resolveEpisodeId(
-      organizationId,
-      dto.patient_id,
-      dto.branch_id,
-      dto.episode_id,
-      dto.visit_id,
-    );
-
     const invoice = await this.prismaService.db.$transaction(async (tx) => {
       const charges = await tx.charge.findMany({
         where: {
@@ -133,7 +125,6 @@ export class ChargeAccrualService {
           branch_id: dto.branch_id,
           patient_id: dto.patient_id,
           visit_id: dto.visit_id,
-          episode_id: episodeId,
           // The case's rendering provider — taken from the charges so the
           // invoice records (and can display) the doctor.
           assigned_doctor_id: charges[0].profile_id,
@@ -373,16 +364,17 @@ export class ChargeAccrualService {
   }
 
   /**
-   * Ensure a captured charge lands on its case's invoice — the event-driven
-   * auto-bill path that enforces one open invoice per episode:
+   * Ensure a captured charge lands on its visit's invoice — the event-driven
+   * auto-bill path that enforces one open invoice per visit (encounter):
    *   • an ISSUED / PARTIALLY_PAID / PAID invoice exists → append to it (so a
-   *     service the doctor adds mid-visit lands on the bill);
+   *     service the doctor adds mid-visit lands on the same visit's bill);
    *   • a DRAFT exists → add the charge to that draft, which stays DRAFT (a
    *     human started it intentionally);
    *   • none exists → build a fresh invoice from the charge and issue it, so the
    *     fee is ready to collect without a manual create/pull step (e.g. the
    *     service reception picked at booking).
-   * Best-effort: a no-op when there's no visit or no episode.
+   * Billing is per-visit, so a returning patient's next visit gets its own
+   * invoice. Best-effort: a no-op when the charge has no visit.
    */
   async ensureInvoiceForCharge(event: {
     organization_id: string;
@@ -393,17 +385,12 @@ export class ChargeAccrualService {
     captured_by_id: string;
   }): Promise<void> {
     if (!event.visit_id) return;
-    const visit = await this.prismaService.db.visit.findFirst({
-      where: { id: event.visit_id, is_deleted: false },
-      select: { episode_id: true },
-    });
-    if (!visit?.episode_id) return;
 
     const openInvoice = await this.prismaService.db.invoice.findFirst({
       where: {
         organization_id: event.organization_id,
         branch_id: event.branch_id,
-        episode_id: visit.episode_id,
+        visit_id: event.visit_id,
         is_deleted: false,
         status: {
           in: [

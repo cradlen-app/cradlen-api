@@ -159,17 +159,17 @@ describe('InvoicingService', () => {
       );
     });
 
-    it('filters by a set of episodes (episode_id IN) regardless of created_at — the billing-queue path', async () => {
+    it('filters by a set of visits (visit_id IN) regardless of created_at — the billing-queue path', async () => {
       await service.findAll(
         ORG,
-        { branchId: BRANCH, episodeIds: ['ep-1', 'ep-2'] },
+        { branchId: BRANCH, visitIds: ['visit-1', 'visit-2'] },
         1,
         20,
         USER,
       );
 
       const args = mockDb.invoice.findMany.mock.calls[0][0];
-      expect(args.where.episode_id).toEqual({ in: ['ep-1', 'ep-2'] });
+      expect(args.where.visit_id).toEqual({ in: ['visit-1', 'visit-2'] });
       // no date constraint is applied for this path
       expect(args.where.created_at).toBeUndefined();
     });
@@ -434,8 +434,7 @@ describe('InvoicingService', () => {
       captured_by_id: 'rec-1',
     };
 
-    it('appends the charge to an already-issued case invoice', async () => {
-      mockDb.visit.findFirst.mockResolvedValue({ episode_id: 'ep-1' });
+    it("appends the charge to the visit's already-issued invoice", async () => {
       mockDb.invoice.findFirst.mockResolvedValue({
         id: 'inv-1',
         status: InvoiceStatus.ISSUED,
@@ -460,7 +459,6 @@ describe('InvoicingService', () => {
     });
 
     it('adds the charge to an existing DRAFT, keeping it DRAFT', async () => {
-      mockDb.visit.findFirst.mockResolvedValue({ episode_id: 'ep-1' });
       mockDb.invoice.findFirst.mockResolvedValue({
         id: 'inv-draft',
         status: InvoiceStatus.DRAFT,
@@ -478,8 +476,7 @@ describe('InvoicingService', () => {
       expect(append).not.toHaveBeenCalled();
     });
 
-    it('creates and issues a new invoice when the case has none', async () => {
-      mockDb.visit.findFirst.mockResolvedValue({ episode_id: 'ep-1' });
+    it('creates and issues a new invoice when the visit has none', async () => {
       mockDb.invoice.findFirst.mockResolvedValue(null);
       const build = jest
         .spyOn(accrual, 'buildFromChargesSystem')
@@ -511,7 +508,7 @@ describe('InvoicingService', () => {
       await service.ensureInvoiceForCharge({ ...event, visit_id: null });
 
       expect(build).not.toHaveBeenCalled();
-      expect(mockDb.visit.findFirst).not.toHaveBeenCalled();
+      expect(mockDb.invoice.findFirst).not.toHaveBeenCalled();
     });
   });
 
