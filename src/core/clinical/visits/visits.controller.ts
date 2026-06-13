@@ -25,12 +25,13 @@ import { SetFollowUpDto } from './dto/set-follow-up.dto';
 import { VisitDto } from './dto/visit.dto';
 import { VisitHistorySummaryDto } from './dto/visit-history-summary.dto';
 import { VitalsTrendPointDto } from './dto/vitals-trend-point.dto';
-import { VisitStatsDto } from './dto/visit-stats.dto';
+import { VisitStatsDto, VisitTodayStatsDto } from './dto/visit-stats.dto';
 import {
   ListVisitsQueryDto,
   ListBranchVisitsQueryDto,
   VisitHistoryQueryDto,
   VitalsTrendQueryDto,
+  VisitTodayStatsQueryDto,
 } from './dto/list-visits-query.dto';
 import {
   ApiStandardResponse,
@@ -188,6 +189,21 @@ export class VisitsController {
     @CurrentUser() user: AuthContext,
   ) {
     return this.visitsService.getOrgVisitStats(user);
+  }
+
+  @Get('branches/:branchId/visits/today-stats')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      "Today's visit counts for a branch (total / visits / follow-ups / medical reps); optional `date` and `assigned_to_me`",
+  })
+  @ApiStandardResponse(VisitTodayStatsDto)
+  getBranchTodayVisitStats(
+    @Param('branchId', ParseUUIDPipe) branchId: string,
+    @Query() query: VisitTodayStatsQueryDto,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.visitsService.getBranchTodayVisitStats(branchId, query, user);
   }
 
   @Get('branches/:branchId/visits/waiting-list')
