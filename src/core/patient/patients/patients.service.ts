@@ -12,6 +12,10 @@ import { paginated } from '@common/utils/pagination.utils.js';
 import { PatientOrgEnrollmentStatus } from '@prisma/client';
 import { DEFAULT_PATIENT_PAGE_SIZE } from './patients.constants.js';
 import { toEpisodeSummary } from './patients.mapper.js';
+import {
+  CarePathStatDto,
+  PatientStatsDto,
+} from './dto/patient-stats.dto.js';
 
 @Injectable()
 export class PatientsService {
@@ -379,5 +383,137 @@ export class PatientsService {
         ...(dto.address !== undefined && { address: dto.address }),
       },
     });
+  }
+
+  /**
+   * Patient analytics for a branch: a total count plus a per-care-path breakdown,
+   * each with the value as it stood at the start of this month (for the
+   * month-over-month trend). Branch membership mirrors {@link findAllForBranch}.
+   */
+  async getBranchStats(
+    branchId: string,
+    user: AuthContext,
+  ): Promise<PatientStatsDto> {
+    await this.authorizationService.assertCanAccessBranch(
+      user.profileId,
+      user.organizationId,
+      branchId,
+    );
+    return this.computePatientStats(user.organizationId, branchId);
+  }
+
+  /**
+   * OWNER-only org-wide patient analytics — same shape as {@link getBranchStats}
+   * but counting every patient with a journey in the org, across all branches.
+   */
+  async getOrgStats(user: AuthContext): Promise<PatientStatsDto> {
+    await this.authorizationService.assertCanManageOrganization(
+      user.profileId,
+      user.organizationId,
+    );
+    return this.computePatientStats(user.organizationId, null);
+  }
+
+  /** Local-time first day of the current month — the trend comparison baseline. */
+  private startOfCurrentMonth(): Date {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  }
+
+  /**
+   * Shared engine for {@link getBranchStats} / {@link getOrgStats}. The care-path
+   * breakdown is **discovered from the data** (a `groupBy` over the qualifying
+   * journeys' template ids) rather than enumerated, so it adapts to whatever
+   * specialties the org runs. `branchId === null` ⇒ org-wide (no branch-checkin
+   * requirement). `previous` re-runs each count with a start-of-month cutoff.
+   */
+  private async computePatientStats(
+    organizationId: string,
+    branchId: string | null,
+  ): Promise<PatientStatsDto> {
+    const db = this.prismaService.db;
+    const cutoff = this.startOfCurrentMonth();
+
+    // A journey only counts for a branch once one of its episodes has a visit
+    // that was actually checked in at the branch (mirrors findAllForBranch). For
+    // the previous snapshot, that check-in must predate the cutoff.
+    const branchEpisodeFilter = (checkinUpTo?: Date) => ({
+      some: {
+        is_deleted: false,
+        visits: {
+          some: {
+            branch_id: branchId!,
+            is_deleted: false,
+            checked_in_at: checkinUpTo
+              ? { not: null, lte: checkinUpTo }
+              : { not: null },
+          },
+        },
+      },
+    });
+
+    const journeyWhere = (opts: { templateId?: string; cutoff?: Date }) => ({
+      organization_id: organizationId,
+      is_deleted: false,
+      ...(opts.templateId ? { journey_template_id: opts.templateId } : {}),
+      ...(opts.cutoff ? { started_at: { lte: opts.cutoff } } : {}),
+      ...(branchId ? { episodes: branchEpisodeFilter(opts.cutoff) } : {}),
+    });
+
+    const patientWhere = (opts: { templateId?: string; cutoff?: Date }) => ({
+      is_deleted: false,
+      journeys: { some: journeyWhere(opts) },
+    });
+
+    // 1. Which journey templates are actually present among qualifying journeys.
+    const groups = await db.patientJourney.groupBy({
+      by: ['journey_template_id'],
+      where: journeyWhere({}),
+    });
+    const templateIds = groups.map((g) => g.journey_template_id);
+
+    // 2. Resolve each template's display name + owning specialty + type hint.
+    const templates = templateIds.length
+      ? await db.journeyTemplate.findMany({
+          where: { id: { in: templateIds } },
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            specialty: { select: { id: true, name: true } },
+          },
+        })
+      : [];
+
+    // 3. One round trip: total (current + previous) then each template's pair.
+    const [totalCurrent, totalPrevious, ...perTemplate] =
+      await db.$transaction([
+        db.patient.count({ where: patientWhere({}) }),
+        db.patient.count({ where: patientWhere({ cutoff }) }),
+        ...templates.flatMap((tpl) => [
+          db.patient.count({ where: patientWhere({ templateId: tpl.id }) }),
+          db.patient.count({
+            where: patientWhere({ templateId: tpl.id, cutoff }),
+          }),
+        ]),
+      ]);
+
+    const by_care_path: CarePathStatDto[] = templates
+      .map((tpl, i) => ({
+        journey_template_id: tpl.id,
+        name: tpl.name,
+        specialty_id: tpl.specialty.id,
+        specialty_name: tpl.specialty.name,
+        type: tpl.type,
+        current: perTemplate[i * 2] ?? 0,
+        previous: perTemplate[i * 2 + 1] ?? 0,
+      }))
+      .filter((c) => c.current > 0)
+      .sort((a, b) => b.current - a.current);
+
+    return {
+      total: { current: totalCurrent, previous: totalPrevious },
+      by_care_path,
+    };
   }
 }
