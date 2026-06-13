@@ -83,6 +83,45 @@ describe('ReportingService', () => {
     });
   });
 
+  describe('invoiceStats', () => {
+    it('returns per-status counts/amounts and gates branch-scoped access', async () => {
+      // Promise.all order in the service: paid, pending, overdue, unpaid.
+      mockDb.invoice.aggregate
+        .mockResolvedValueOnce({
+          _sum: { total_amount: new Prisma.Decimal('1000.00') },
+          _count: 4,
+        })
+        .mockResolvedValueOnce({
+          _sum: { total_amount: new Prisma.Decimal('300.00') },
+          _count: 2,
+        })
+        .mockResolvedValueOnce({
+          _sum: { balance_due: new Prisma.Decimal('250.00') },
+          _count: 3,
+        })
+        .mockResolvedValueOnce({
+          _sum: { balance_due: null },
+          _count: 0,
+        });
+
+      const result = await service.invoiceStats(ORG, { branchId: 'br-1' }, USER);
+
+      expect(mockAuth.assertCanAccessBranch).toHaveBeenCalledWith(
+        'p1',
+        ORG,
+        'br-1',
+      );
+      expect(result.paid.count).toBe(4);
+      expect(result.paid.amount.toFixed(2)).toBe('1000.00');
+      expect(result.pending.count).toBe(2);
+      expect(result.pending.amount.toFixed(2)).toBe('300.00');
+      expect(result.overdue.count).toBe(3);
+      expect(result.overdue.amount.toFixed(2)).toBe('250.00');
+      expect(result.unpaid.count).toBe(0);
+      expect(result.unpaid.amount.toFixed(2)).toBe('0.00');
+    });
+  });
+
   describe('arAging', () => {
     it('buckets outstanding by age and skips settled invoices', async () => {
       const now = Date.now();
