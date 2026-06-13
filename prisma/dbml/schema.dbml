@@ -914,6 +914,20 @@ Table prescription_items {
   updated_at DateTime [not null]
 }
 
+Table prescription_templates {
+  id String [pk]
+  organization_id String
+  branch_id String
+  profile_id String
+  name String [not null]
+  is_system Boolean [not null, default: false]
+  layout Json [not null]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
 Table patient_history_notes {
   id String [pk]
   patient_id String [not null]

@@ -1438,6 +1438,33 @@ model PrescriptionItem {
   @@map("prescription_items")
 }
 
+// Customizable layout for the printed prescription ("paper"). Resolution is
+// most-specific-wins: a row scoped to a profile (doctor) beats a branch row,
+// which beats an organization row, which beats the global system default
+// (organization_id/branch_id/profile_id all null, is_system = true). v1 ships
+// only the seeded system default; the future template editor is CRUD over this
+// table. `layout` is a PrescriptionTemplateLayout JSON (ordered blocks) — the
+// frontend renders it through a block registry, so new blocks need no schema
+// change. Scope columns are plain UUIDs (no FK) to keep this table additive.
+model PrescriptionTemplate {
+  id              String    @id @default(uuid()) @db.Uuid
+  organization_id String?   @db.Uuid
+  branch_id       String?   @db.Uuid
+  profile_id      String?   @db.Uuid
+  name            String
+  is_system       Boolean   @default(false)
+  layout          Json
+  is_deleted      Boolean   @default(false)
+  deleted_at      DateTime?
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  @@index([organization_id])
+  @@index([branch_id])
+  @@index([profile_id])
+  @@map("prescription_templates")
+}
+
 // Patient-history repeatable collections (allergies, pregnancies, family
 // history, contraceptives, non-gyn surgeries, medications) were folded from
 // their own relational tables into JSON-array columns on PatientObgynHistory —
