@@ -46,7 +46,9 @@ import { TERMINAL_STATES } from './visit-status.constants.js';
 import {
   VisitDailyPointDto,
   VisitStatsDto,
+  VisitTodayStatsDto,
 } from './dto/visit-stats.dto.js';
+import { VisitTodayStatsQueryDto } from './dto/list-visits-query.dto.js';
 
 /** Care path a booking falls back to when none is supplied on the DTO. */
 const DEFAULT_CARE_PATH_CODE = 'OBGYN_GENERAL';
@@ -1236,6 +1238,64 @@ export class VisitsService {
     return this.computeVisitStats(user.organizationId, null);
   }
 
+  /**
+   * Today's operational visit counts for a branch (or `query.date`): clinical
+   * visits split by appointment type plus medical-rep visits, all counted by
+   * `scheduled_at` within the day's bounds (matching the waiting-list view).
+   * `assigned_to_me` narrows to the current doctor's own queue. Branch access is
+   * asserted the same way the branch waiting-list/stats endpoints do.
+   */
+  async getBranchTodayVisitStats(
+    branchId: string,
+    query: VisitTodayStatsQueryDto,
+    user: AuthContext,
+  ): Promise<VisitTodayStatsDto> {
+    await this.authorizationService.assertCanAccessBranch(
+      user.profileId,
+      user.organizationId,
+      branchId,
+    );
+
+    const { start, end } = query.date
+      ? dayBounds(new Date(query.date))
+      : todayBounds();
+    const doctorScope = query.assigned_to_me
+      ? { assigned_doctor_id: user.profileId }
+      : {};
+
+    const visitBase: Prisma.VisitWhereInput = {
+      branch_id: branchId,
+      is_deleted: false,
+      scheduled_at: { gte: start, lte: end },
+      ...doctorScope,
+    };
+
+    const db = this.prismaService.db;
+    const [visits, follow_ups, medical_reps] = await db.$transaction([
+      db.visit.count({
+        where: { ...visitBase, appointment_type: AppointmentType.VISIT },
+      }),
+      db.visit.count({
+        where: { ...visitBase, appointment_type: AppointmentType.FOLLOW_UP },
+      }),
+      db.medicalRepVisit.count({
+        where: {
+          branch_id: branchId,
+          is_deleted: false,
+          scheduled_at: { gte: start, lte: end },
+          ...doctorScope,
+        },
+      }),
+    ]);
+
+    return {
+      total_visits: visits + follow_ups,
+      visits,
+      follow_ups,
+      medical_reps,
+    };
+  }
+
   /** Local-time first day of the current month — the trend comparison baseline. */
   private startOfCurrentMonth(): Date {
     const now = new Date();
@@ -1277,25 +1337,19 @@ export class VisitsService {
       ...scope,
     });
 
-    const [
-      visitsCur,
-      visitsPrev,
-      followCur,
-      followPrev,
-      totalCur,
-      totalPrev,
-    ] = await db.$transaction([
-      db.visit.count({ where: where(AppointmentType.VISIT, curStart) }),
-      db.visit.count({
-        where: where(AppointmentType.VISIT, prevStart, curStart),
-      }),
-      db.visit.count({ where: where(AppointmentType.FOLLOW_UP, curStart) }),
-      db.visit.count({
-        where: where(AppointmentType.FOLLOW_UP, prevStart, curStart),
-      }),
-      db.visit.count({ where: where(undefined, curStart) }),
-      db.visit.count({ where: where(undefined, prevStart, curStart) }),
-    ]);
+    const [visitsCur, visitsPrev, followCur, followPrev, totalCur, totalPrev] =
+      await db.$transaction([
+        db.visit.count({ where: where(AppointmentType.VISIT, curStart) }),
+        db.visit.count({
+          where: where(AppointmentType.VISIT, prevStart, curStart),
+        }),
+        db.visit.count({ where: where(AppointmentType.FOLLOW_UP, curStart) }),
+        db.visit.count({
+          where: where(AppointmentType.FOLLOW_UP, prevStart, curStart),
+        }),
+        db.visit.count({ where: where(undefined, curStart) }),
+        db.visit.count({ where: where(undefined, prevStart, curStart) }),
+      ]);
 
     // Per-day series for the current month: bucket attended visits in memory
     // (per-branch monthly volume is modest; avoids a raw date_trunc query).
@@ -1316,7 +1370,11 @@ export class VisitsService {
     }
 
     const daily: VisitDailyPointDto[] = [...buckets.entries()]
-      .map(([date, c]) => ({ date, visits: c.visits, follow_ups: c.follow_ups }))
+      .map(([date, c]) => ({
+        date,
+        visits: c.visits,
+        follow_ups: c.follow_ups,
+      }))
       .sort((a, b) => a.date.localeCompare(b.date));
 
     return {
