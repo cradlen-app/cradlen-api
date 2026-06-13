@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { isDeepStrictEqual } from 'node:util';
 import {
+  AppointmentType,
   ChargeStatus,
   MaritalStatus,
   Prisma,
@@ -42,6 +43,10 @@ import {
 } from './visits.mapper.js';
 import { assertReceptionAction } from './visit-actor.guards.js';
 import { TERMINAL_STATES } from './visit-status.constants.js';
+import {
+  VisitDailyPointDto,
+  VisitStatsDto,
+} from './dto/visit-stats.dto.js';
 
 /** Care path a booking falls back to when none is supplied on the DTO. */
 const DEFAULT_CARE_PATH_CODE = 'OBGYN_GENERAL';
@@ -1198,5 +1203,127 @@ export class VisitsService {
       payload: updated,
     });
     return updated;
+  }
+
+  /**
+   * Monthly visit analytics for a branch: attended-visit counts (total, plain
+   * visits, follow-ups) for the current vs the previous calendar month, plus a
+   * per-day series for the current month. Branch access is asserted the same way
+   * the branch waiting-list endpoints do.
+   */
+  async getBranchVisitStats(
+    branchId: string,
+    user: AuthContext,
+  ): Promise<VisitStatsDto> {
+    await this.authorizationService.assertCanAccessBranch(
+      user.profileId,
+      user.organizationId,
+      branchId,
+    );
+    return this.computeVisitStats(user.organizationId, branchId);
+  }
+
+  /**
+   * OWNER-only org-wide visit analytics — same shape as
+   * {@link getBranchVisitStats} but counting every attended visit across the
+   * organization's branches.
+   */
+  async getOrgVisitStats(user: AuthContext): Promise<VisitStatsDto> {
+    await this.authorizationService.assertCanManageOrganization(
+      user.profileId,
+      user.organizationId,
+    );
+    return this.computeVisitStats(user.organizationId, null);
+  }
+
+  /** Local-time first day of the current month — the trend comparison baseline. */
+  private startOfCurrentMonth(): Date {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  }
+
+  /** Local-time first day of the previous month. */
+  private startOfPreviousMonth(): Date {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  }
+
+  /**
+   * Shared engine for {@link getBranchVisitStats} / {@link getOrgVisitStats}.
+   * "Attended" = `checked_in_at` set (matches how patient stats attribute a
+   * visit to a branch). `branchId === null` ⇒ org-wide (scope by the branch's
+   * organization). Each metric pairs the current month with the previous one.
+   */
+  private async computeVisitStats(
+    organizationId: string,
+    branchId: string | null,
+  ): Promise<VisitStatsDto> {
+    const db = this.prismaService.db;
+    const curStart = this.startOfCurrentMonth();
+    const prevStart = this.startOfPreviousMonth();
+
+    const scope: Prisma.VisitWhereInput = branchId
+      ? { branch_id: branchId }
+      : { branch: { organization_id: organizationId } };
+
+    const where = (
+      type: AppointmentType | undefined,
+      from: Date,
+      to?: Date,
+    ): Prisma.VisitWhereInput => ({
+      is_deleted: false,
+      checked_in_at: { not: null, gte: from, ...(to ? { lt: to } : {}) },
+      ...(type ? { appointment_type: type } : {}),
+      ...scope,
+    });
+
+    const [
+      visitsCur,
+      visitsPrev,
+      followCur,
+      followPrev,
+      totalCur,
+      totalPrev,
+    ] = await db.$transaction([
+      db.visit.count({ where: where(AppointmentType.VISIT, curStart) }),
+      db.visit.count({
+        where: where(AppointmentType.VISIT, prevStart, curStart),
+      }),
+      db.visit.count({ where: where(AppointmentType.FOLLOW_UP, curStart) }),
+      db.visit.count({
+        where: where(AppointmentType.FOLLOW_UP, prevStart, curStart),
+      }),
+      db.visit.count({ where: where(undefined, curStart) }),
+      db.visit.count({ where: where(undefined, prevStart, curStart) }),
+    ]);
+
+    // Per-day series for the current month: bucket attended visits in memory
+    // (per-branch monthly volume is modest; avoids a raw date_trunc query).
+    const rows = await db.visit.findMany({
+      where: where(undefined, curStart),
+      select: { checked_in_at: true, appointment_type: true },
+    });
+
+    const buckets = new Map<string, { visits: number; follow_ups: number }>();
+    for (const r of rows) {
+      if (!r.checked_in_at) continue;
+      const d = r.checked_in_at;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const bucket = buckets.get(key) ?? { visits: 0, follow_ups: 0 };
+      if (r.appointment_type === AppointmentType.FOLLOW_UP) bucket.follow_ups++;
+      else bucket.visits++;
+      buckets.set(key, bucket);
+    }
+
+    const daily: VisitDailyPointDto[] = [...buckets.entries()]
+      .map(([date, c]) => ({ date, visits: c.visits, follow_ups: c.follow_ups }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    return {
+      total: { current: totalCur, previous: totalPrev },
+      visits: { current: visitsCur, previous: visitsPrev },
+      follow_ups: { current: followCur, previous: followPrev },
+      daily,
+    };
   }
 }
