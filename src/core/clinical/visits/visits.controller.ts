@@ -24,12 +24,14 @@ import { UpdateVisitStatusDto } from './dto/update-visit-status.dto';
 import { SetFollowUpDto } from './dto/set-follow-up.dto';
 import { VisitDto } from './dto/visit.dto';
 import { VisitHistorySummaryDto } from './dto/visit-history-summary.dto';
+import { JourneyTimelineDto } from './dto/journey-timeline.dto';
 import { VitalsTrendPointDto } from './dto/vitals-trend-point.dto';
 import { VisitStatsDto, VisitTodayStatsDto } from './dto/visit-stats.dto';
 import {
   ListVisitsQueryDto,
   ListBranchVisitsQueryDto,
   VisitHistoryQueryDto,
+  JourneyTimelineQueryDto,
   VitalsTrendQueryDto,
   VisitTodayStatsQueryDto,
 } from './dto/list-visits-query.dto';
@@ -110,6 +112,25 @@ export class VisitsController {
     @CurrentUser() user: AuthContext,
   ) {
     return this.visitsService.findPatientVisitHistory(
+      patientId,
+      user.organizationId,
+      { page: query.page, limit: query.limit, excludeVisitId: query.exclude },
+    );
+  }
+
+  @Get('patients/:patientId/journeys/timeline')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Patient journey timeline: journeys → episodes → completed visits (paginated by journey)',
+  })
+  @ApiPaginatedResponse(JourneyTimelineDto)
+  findPatientJourneyTimeline(
+    @Param('patientId', ParseUUIDPipe) patientId: string,
+    @Query() query: JourneyTimelineQueryDto,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.visitsService.findPatientJourneyTimeline(
       patientId,
       user.organizationId,
       { page: query.page, limit: query.limit, excludeVisitId: query.exclude },
