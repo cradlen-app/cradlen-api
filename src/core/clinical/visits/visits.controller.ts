@@ -25,6 +25,7 @@ import { SetFollowUpDto } from './dto/set-follow-up.dto';
 import { VisitDto } from './dto/visit.dto';
 import { VisitHistorySummaryDto } from './dto/visit-history-summary.dto';
 import { VitalsTrendPointDto } from './dto/vitals-trend-point.dto';
+import { VisitStatsDto } from './dto/visit-stats.dto';
 import {
   ListVisitsQueryDto,
   ListBranchVisitsQueryDto,
@@ -160,6 +161,33 @@ export class VisitsController {
     @CurrentUser() user: AuthContext,
   ) {
     return this.visitStatusService.setFollowUp(id, dto, user);
+  }
+
+  @Get('branches/:branchId/visits/stats')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Monthly visit analytics for a branch — total / visits / follow-ups for the current vs previous calendar month, plus a per-day series',
+  })
+  @ApiStandardResponse(VisitStatsDto)
+  getBranchVisitStats(
+    @Param('branchId', ParseUUIDPipe) branchId: string,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.visitsService.getBranchVisitStats(branchId, user);
+  }
+
+  @Get('organizations/:orgId/visits/stats')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'OWNER-only org-wide monthly visit analytics (all branches)',
+  })
+  @ApiStandardResponse(VisitStatsDto)
+  getOrgVisitStats(
+    @Param('orgId', ParseUUIDPipe) _orgId: string,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.visitsService.getOrgVisitStats(user);
   }
 
   @Get('branches/:branchId/visits/waiting-list')
