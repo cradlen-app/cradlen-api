@@ -28,9 +28,8 @@ import type { AppendChargesDto } from './dto/append-charges.dto.js';
 export interface InvoiceFilters {
   branchId?: string;
   patientId?: string;
-  episodeId?: string;
-  /** Filter by a set of clinical cases (episodes) — used by the billing queue. */
-  episodeIds?: string[];
+  /** Filter by a set of visits (encounters) — used by the billing queue. */
+  visitIds?: string[];
   status?: InvoiceStatus;
   invoiceType?: InvoiceType;
   dateFrom?: string;
@@ -87,9 +86,8 @@ export class InvoicingService {
       is_deleted: false,
       ...(filters.branchId && { branch_id: filters.branchId }),
       ...(filters.patientId && { patient_id: filters.patientId }),
-      ...(filters.episodeId && { episode_id: filters.episodeId }),
-      ...(filters.episodeIds?.length && {
-        episode_id: { in: filters.episodeIds },
+      ...(filters.visitIds?.length && {
+        visit_id: { in: filters.visitIds },
       }),
       ...(filters.status && { status: filters.status }),
       ...(filters.invoiceType && { invoice_type: filters.invoiceType }),
@@ -225,14 +223,6 @@ export class InvoicingService {
       Money.zero(),
     );
 
-    const episodeId = await this.composition.resolveEpisodeId(
-      organizationId,
-      dto.patient_id,
-      dto.branch_id,
-      dto.episode_id,
-      dto.visit_id,
-    );
-
     // Backfill the rendering provider from the linked visit when the caller
     // didn't pass one, so the invoice attributes to a doctor (and the By Doctor
     // report doesn't bucket it as "Unassigned"). Visit.assigned_doctor_id is
@@ -254,7 +244,6 @@ export class InvoicingService {
         branch_id: dto.branch_id,
         patient_id: dto.patient_id,
         visit_id: dto.visit_id,
-        episode_id: episodeId,
         assigned_doctor_id: assignedDoctorId,
         currency,
         notes: dto.notes,
