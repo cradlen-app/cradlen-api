@@ -39,9 +39,15 @@ describe('PatientsService', () => {
     };
     profileJobFunction: { findFirst: jest.Mock };
     visit: { findMany: jest.Mock };
+    patientJourney: { groupBy: jest.Mock };
+    journeyTemplate: { findMany: jest.Mock };
     $transaction: jest.Mock;
   };
-  let authMock: { assertCanAccessBranch: jest.Mock; isClinical: jest.Mock };
+  let authMock: {
+    assertCanAccessBranch: jest.Mock;
+    assertCanManageOrganization: jest.Mock;
+    isClinical: jest.Mock;
+  };
   let accessMock: { assertPatientAccessible: jest.Mock };
 
   beforeEach(async () => {
@@ -56,10 +62,13 @@ describe('PatientsService', () => {
       // Non-clinical caller by default (no clinical job function).
       profileJobFunction: { findFirst: jest.fn().mockResolvedValue(null) },
       visit: { findMany: jest.fn().mockResolvedValue([]) },
+      patientJourney: { groupBy: jest.fn().mockResolvedValue([]) },
+      journeyTemplate: { findMany: jest.fn().mockResolvedValue([]) },
       $transaction: jest.fn(),
     };
     authMock = {
       assertCanAccessBranch: jest.fn(),
+      assertCanManageOrganization: jest.fn(),
       isClinical: jest.fn().mockResolvedValue(false),
     };
     accessMock = {
@@ -347,6 +356,88 @@ describe('PatientsService', () => {
       );
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       expect((result as any).items[0].last_visit_date).toBeNull();
+    });
+  });
+
+  describe('getBranchStats', () => {
+    // Two templates from two different specialties — proves the breakdown is
+    // discovered from data, not bound to a hardcoded enum.
+    const templates = [
+      {
+        id: 'tpl-preg',
+        name: 'Pregnancy',
+        type: 'PREGNANCY',
+        specialty: { id: 'spec-obgyn', name: 'OB/GYN' },
+      },
+      {
+        id: 'tpl-derm',
+        name: 'Acne Follow-up',
+        type: 'CHRONIC_CONDITION',
+        specialty: { id: 'spec-derm', name: 'Dermatology' },
+      },
+    ];
+
+    beforeEach(() => {
+      authMock.assertCanAccessBranch.mockResolvedValue(undefined);
+      db.patientJourney.groupBy.mockResolvedValue([
+        { journey_template_id: 'tpl-preg' },
+        { journey_template_id: 'tpl-derm' },
+      ]);
+      db.journeyTemplate.findMany.mockResolvedValue(templates);
+    });
+
+    it('asserts branch access before computing stats', async () => {
+      authMock.assertCanAccessBranch.mockRejectedValue(
+        new ForbiddenException('Branch access denied'),
+      );
+      await expect(
+        service.getBranchStats('branch-uuid', mockUser),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('returns total + a data-driven per-care-path breakdown, sorted desc', async () => {
+      // [totalCur, totalPrev, preg cur/prev, derm cur/prev]
+      db.$transaction.mockResolvedValue([10, 7, 4, 3, 6, 5]);
+
+      const result = await service.getBranchStats('branch-uuid', mockUser);
+
+      expect(result.total).toEqual({ current: 10, previous: 7 });
+      expect(result.by_care_path).toEqual([
+        {
+          journey_template_id: 'tpl-derm',
+          name: 'Acne Follow-up',
+          specialty_id: 'spec-derm',
+          specialty_name: 'Dermatology',
+          type: 'CHRONIC_CONDITION',
+          current: 6,
+          previous: 5,
+        },
+        {
+          journey_template_id: 'tpl-preg',
+          name: 'Pregnancy',
+          specialty_id: 'spec-obgyn',
+          specialty_name: 'OB/GYN',
+          type: 'PREGNANCY',
+          current: 4,
+          previous: 3,
+        },
+      ]);
+    });
+
+    it('drops care paths with a zero current count', async () => {
+      db.$transaction.mockResolvedValue([4, 2, 4, 2, 0, 0]);
+      const result = await service.getBranchStats('branch-uuid', mockUser);
+      expect(result.by_care_path).toHaveLength(1);
+      expect(result.by_care_path[0].journey_template_id).toBe('tpl-preg');
+    });
+
+    it('returns an empty breakdown when no journeys are present', async () => {
+      db.patientJourney.groupBy.mockResolvedValue([]);
+      db.journeyTemplate.findMany.mockResolvedValue([]);
+      db.$transaction.mockResolvedValue([0, 0]);
+      const result = await service.getBranchStats('branch-uuid', mockUser);
+      expect(result.by_care_path).toEqual([]);
+      expect(db.journeyTemplate.findMany).not.toHaveBeenCalled();
     });
   });
 });
