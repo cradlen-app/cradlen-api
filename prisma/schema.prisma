@@ -1055,6 +1055,9 @@ model PatientJourney {
   @@index([patient_id, organization_id, is_deleted])
   @@index([organization_id, status, is_deleted])
   @@index([care_path_id])
+  // Partial unique index `patient_journeys_one_active_per_template` enforces at
+  // most one ACTIVE, non-deleted journey per (patient_id, journey_template_id).
+  // Added via raw SQL — partial indexes can't be expressed in the Prisma schema.
   @@map("patient_journeys")
 }
 
