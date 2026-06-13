@@ -1072,7 +1072,6 @@ model PatientEpisode {
   started_at           DateTime?
   ended_at             DateTime?
   visits               Visit[]
-  invoices             Invoice[]               @relation("EpisodeInvoices")
   pregnancy_record     PregnancyEpisodeRecord?
   created_at           DateTime                @default(now())
   updated_at           DateTime                @updatedAt
@@ -1085,56 +1084,56 @@ model PatientEpisode {
 }
 
 model Visit {
-  id                  String                @id @default(uuid()) @db.Uuid
-  episode_id          String                @db.Uuid
-  episode             PatientEpisode        @relation(fields: [episode_id], references: [id], onDelete: Cascade)
-  assigned_doctor_id  String                @db.Uuid
-  assigned_doctor     Profile               @relation("DoctorVisits", fields: [assigned_doctor_id], references: [id], onDelete: Cascade)
-  branch_id           String                @db.Uuid
-  branch              Branch                @relation(fields: [branch_id], references: [id], onDelete: Cascade)
-  created_by_id       String                @db.Uuid
-  created_by          Profile               @relation("CreatedVisits", fields: [created_by_id], references: [id], onDelete: Cascade)
-  appointment_type    AppointmentType
-  priority            VisitPriority
-  status              VisitStatus           @default(SCHEDULED)
-  scheduled_at        DateTime
-  checked_in_at       DateTime?
+  id                      String                @id @default(uuid()) @db.Uuid
+  episode_id              String                @db.Uuid
+  episode                 PatientEpisode        @relation(fields: [episode_id], references: [id], onDelete: Cascade)
+  assigned_doctor_id      String                @db.Uuid
+  assigned_doctor         Profile               @relation("DoctorVisits", fields: [assigned_doctor_id], references: [id], onDelete: Cascade)
+  branch_id               String                @db.Uuid
+  branch                  Branch                @relation(fields: [branch_id], references: [id], onDelete: Cascade)
+  created_by_id           String                @db.Uuid
+  created_by              Profile               @relation("CreatedVisits", fields: [created_by_id], references: [id], onDelete: Cascade)
+  appointment_type        AppointmentType
+  priority                VisitPriority
+  status                  VisitStatus           @default(SCHEDULED)
+  scheduled_at            DateTime
+  checked_in_at           DateTime?
   // started_at marks queue entry (IN_PROGRESS, set by reception).
-  started_at          DateTime?
+  started_at              DateTime?
   // consultation_started_at marks when the doctor actually began the
   // consultation (IN_CONSULTATION). Distinct from started_at so we keep both
   // the queue-entry and consultation-start timestamps.
   consultation_started_at DateTime?
-  completed_at        DateTime?
-  notes               String?
-  queue_number        Int?
-  follow_up_date      DateTime?
-  follow_up_notes     String?
+  completed_at            DateTime?
+  notes                   String?
+  queue_number            Int?
+  follow_up_date          DateTime?
+  follow_up_notes         String?
   // Single optimistic-concurrency token for the unified Examination tab
   // (PATCH /v1/visits/:id/examination). Bumped on every successful save.
-  examination_version Int                   @default(1)
+  examination_version     Int                   @default(1)
   // Specialty captured at booking. Drives the patient-history template
   // resolver on the frontend (e.g. "OBGYN" → obgyn_patient_history). Nullable
   // for pre-existing rows; new bookings always populate it.
-  specialty_code      String?
+  specialty_code          String?
   // Audit anchor: which form-template version this visit was booked from.
   // Never mutated on update — the original booking's contract is the legal
   // record. SetNull so deleting a template (rare) doesn't cascade visits.
-  form_template_id    String?               @db.Uuid
-  form_template       FormTemplate?         @relation("VisitFormTemplate", fields: [form_template_id], references: [id], onDelete: Restrict)
-  vitals              VisitVitals?
-  encounter           VisitEncounter?
-  obgyn_encounter     VisitObgynEncounter?
-  pregnancy_record    VisitPregnancyRecord?
-  investigations      VisitInvestigation[]
-  diagnoses           VisitDiagnosis[]
-  prescription        Prescription?
-  invoices            Invoice[]             @relation("VisitInvoices")
-  charges             Charge[]              @relation("VisitCharges")
-  created_at          DateTime              @default(now())
-  updated_at          DateTime              @updatedAt
-  is_deleted          Boolean               @default(false)
-  deleted_at          DateTime?
+  form_template_id        String?               @db.Uuid
+  form_template           FormTemplate?         @relation("VisitFormTemplate", fields: [form_template_id], references: [id], onDelete: Restrict)
+  vitals                  VisitVitals?
+  encounter               VisitEncounter?
+  obgyn_encounter         VisitObgynEncounter?
+  pregnancy_record        VisitPregnancyRecord?
+  investigations          VisitInvestigation[]
+  diagnoses               VisitDiagnosis[]
+  prescription            Prescription?
+  invoices                Invoice[]             @relation("VisitInvoices")
+  charges                 Charge[]              @relation("VisitCharges")
+  created_at              DateTime              @default(now())
+  updated_at              DateTime              @updatedAt
+  is_deleted              Boolean               @default(false)
+  deleted_at              DateTime?
 
   @@index([episode_id, is_deleted])
   @@index([branch_id, status, is_deleted])
@@ -2430,7 +2429,6 @@ model Invoice {
   branch_id          String        @db.Uuid
   patient_id         String        @db.Uuid
   visit_id           String?       @db.Uuid
-  episode_id         String?       @db.Uuid
   assigned_doctor_id String?       @db.Uuid
   status             InvoiceStatus @default(DRAFT)
   subtotal           Decimal       @default(0) @db.Decimal(10, 2)
@@ -2455,7 +2453,6 @@ model Invoice {
   branch          Branch                 @relation("BranchInvoices", fields: [branch_id], references: [id])
   patient         Patient                @relation("PatientInvoices", fields: [patient_id], references: [id])
   visit           Visit?                 @relation("VisitInvoices", fields: [visit_id], references: [id])
-  episode         PatientEpisode?        @relation("EpisodeInvoices", fields: [episode_id], references: [id])
   assigned_doctor Profile?               @relation("InvoiceDoctor", fields: [assigned_doctor_id], references: [id])
   created_by      Profile                @relation("InvoiceCreatedBy", fields: [created_by_id], references: [id])
   items           InvoiceItem[]
@@ -2466,7 +2463,7 @@ model Invoice {
   @@unique([organization_id, invoice_number])
   @@index([organization_id, branch_id, status, is_deleted])
   @@index([patient_id, is_deleted])
-  @@index([episode_id, is_deleted])
+  @@index([visit_id, is_deleted])
   @@map("invoices")
 }
 

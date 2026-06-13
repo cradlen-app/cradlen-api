@@ -7,7 +7,7 @@ import {
 import { InvoicingService } from './invoicing.service.js';
 
 /**
- * Auto-bills a captured charge onto its case (episode) invoice — creating and
+ * Auto-bills a captured charge onto its visit (encounter) invoice — creating and
  * issuing one when none exists, or appending to the open invoice otherwise.
  *
  * Cross-module side effect handled via the EventBus pattern (charging no longer
@@ -35,7 +35,7 @@ export class InvoiceAccrualListener {
       });
     } catch (err) {
       this.logger.error(
-        `Failed to auto-bill charge ${event.charge_id} onto its case invoice`,
+        `Failed to auto-bill charge ${event.charge_id} onto its visit invoice`,
         err as Error,
       );
     }

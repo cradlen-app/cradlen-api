@@ -47,11 +47,6 @@ export class CreateInvoiceDto {
   @IsOptional()
   visit_id?: string;
 
-  /** Clinical case this invoice bills. Derived from the visit's episode when omitted. */
-  @IsUUID()
-  @IsOptional()
-  episode_id?: string;
-
   @IsUUID()
   @IsOptional()
   assigned_doctor_id?: string;
