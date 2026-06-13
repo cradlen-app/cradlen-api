@@ -30,3 +30,22 @@ export class VisitStatsDto {
   /** Per-day series for the current month. */
   daily!: VisitDailyPointDto[];
 }
+
+/**
+ * Today's operational visit counts for a branch (or a specific `date`), powering
+ * the visits-page stat cards. Unlike {@link VisitStatsDto} these are plain
+ * single-day counts — visits are counted by `scheduled_at` falling within the
+ * day's bounds (matching the waiting-list view), `is_deleted: false`, regardless
+ * of status. `total_visits` covers the clinical Visit table (VISIT + FOLLOW_UP);
+ * `medical_reps` is the separate medical-rep-visit entity, reported alongside.
+ */
+export class VisitTodayStatsDto {
+  /** Clinical visits scheduled for the day (VISIT + FOLLOW_UP). */
+  total_visits!: number;
+  /** `appointment_type = VISIT`. */
+  visits!: number;
+  /** `appointment_type = FOLLOW_UP`. */
+  follow_ups!: number;
+  /** Medical-rep visits scheduled for the day. */
+  medical_reps!: number;
+}
