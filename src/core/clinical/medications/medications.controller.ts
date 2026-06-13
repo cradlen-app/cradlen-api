@@ -16,7 +16,11 @@ import { MedicationsService } from './medications.service';
 import { CreateMedicationDto } from './dto/create-medication.dto';
 import { UpdateMedicationDto } from './dto/update-medication.dto';
 import { ListMedicationsQueryDto } from './dto/list-medications-query.dto';
-import { MedicationDto, MedicationWithStatsDto } from './dto/medication.dto';
+import {
+  MedicationDto,
+  MedicationFacetsDto,
+  MedicationWithStatsDto,
+} from './dto/medication.dto';
 import {
   ApiPaginatedResponse,
   ApiStandardResponse,
@@ -37,6 +41,12 @@ export class MedicationsController {
     @CurrentUser() user: AuthContext,
   ) {
     return this.medicationsService.findAll(query, user);
+  }
+
+  @Get('facets')
+  @ApiStandardResponse(MedicationFacetsDto)
+  getFacets(@CurrentUser() user: AuthContext) {
+    return this.medicationsService.getFacets(user);
   }
 
   @Post()

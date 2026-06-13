@@ -35,9 +35,12 @@ export class MedicationsService {
   async findAll(query: ListMedicationsQueryDto, user: AuthContext) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 50;
+    const sort = query.sort ?? 'name';
 
     const where: Prisma.MedicationWhereInput = {
       is_deleted: false,
+      ...(query.category ? { category: query.category } : {}),
+      ...(query.form ? { form: query.form } : {}),
       AND: [
         orgScopedReadFilter(user.organizationId),
         ...(query.search
@@ -69,6 +72,42 @@ export class MedicationsService {
       ],
     };
 
+    // Usage sort must rank across the FULL filtered set before slicing, since
+    // the prescription count is derived (not a column). Resolve the ordered ids
+    // first, then paginate and hydrate only the page.
+    if (sort === 'usage') {
+      const allRows = await this.prismaService.db.medication.findMany({
+        where,
+        select: { id: true, name: true },
+      });
+      const total = allRows.length;
+      if (total === 0) return paginated([], { page, limit, total });
+
+      const counts = await this.countByMedication(
+        allRows.map((r) => r.id),
+        user.organizationId,
+      );
+      const ordered = [...allRows].sort((a, b) => {
+        const diff = (counts.get(b.id) ?? 0) - (counts.get(a.id) ?? 0);
+        return diff !== 0 ? diff : a.name.localeCompare(b.name);
+      });
+      const pageIds = ordered
+        .slice((page - 1) * limit, page * limit)
+        .map((r) => r.id);
+
+      const pageRows = await this.prismaService.db.medication.findMany({
+        where: { id: { in: pageIds } },
+      });
+      const enriched = await this.enrich(pageRows, user.organizationId);
+      // findMany does not preserve the `in` order — re-sort to the ranked order.
+      const byId = new Map(enriched.map((m) => [m.id, m]));
+      const orderedEnriched = pageIds
+        .map((id) => byId.get(id))
+        .filter((m): m is NonNullable<typeof m> => m != null);
+
+      return paginated(orderedEnriched, { page, limit, total });
+    }
+
     const [items, total] = await this.prismaService.db.$transaction([
       this.prismaService.db.medication.findMany({
         where,
@@ -83,21 +122,55 @@ export class MedicationsService {
     ]);
     if (items.length === 0) return paginated([], { page, limit, total });
 
+    const enriched = await this.enrich(items, user.organizationId);
+    return paginated(enriched, { page, limit, total });
+  }
+
+  /**
+   * Distinct, non-null `category` / `form` values across the caller's readable
+   * catalog (global ∪ org), sorted — backs the medicines-page filter dropdowns.
+   */
+  async getFacets(user: AuthContext) {
+    const base: Prisma.MedicationWhereInput = {
+      is_deleted: false,
+      AND: [orgScopedReadFilter(user.organizationId)],
+    };
+    const [categories, forms] = await Promise.all([
+      this.prismaService.db.medication.groupBy({
+        by: ['category'],
+        where: { ...base, category: { not: null } },
+      }),
+      this.prismaService.db.medication.groupBy({
+        by: ['form'],
+        where: { ...base, form: { not: null } },
+      }),
+    ]);
+    return {
+      categories: categories
+        .map((c) => c.category)
+        .filter((c): c is string => c != null)
+        .sort((a, b) => a.localeCompare(b)),
+      forms: forms
+        .map((f) => f.form)
+        .filter((f): f is string => f != null)
+        .sort((a, b) => a.localeCompare(b)),
+    };
+  }
+
+  /** Enriches medication rows with usage stats and medical-rep links. */
+  private async enrich(items: Medication[], organizationId: string) {
     const ids = items.map((m) => m.id);
-    const stats = await this.gatherStats(ids, user.organizationId);
+    const stats = await this.gatherStats(ids, organizationId);
     const repsByMed = await this.medicalRepService.findRepsByMedicationIds(
       ids,
-      user.organizationId,
+      organizationId,
     );
-
-    const enriched = items.map((m) => ({
+    return items.map((m) => ({
       ...m,
       total_prescriptions: stats.get(m.id)?.total_prescriptions ?? 0,
       top_prescribers: stats.get(m.id)?.top_prescribers ?? [],
       medical_reps: repsByMed.get(m.id) ?? [],
     }));
-
-    return paginated(enriched, { page, limit, total });
   }
 
   async create(dto: CreateMedicationDto, user: AuthContext) {
@@ -222,20 +295,50 @@ export class MedicationsService {
     return med;
   }
 
+  /**
+   * Shared filter for "prescriptions of these medications, made within this
+   * org": non-deleted items on non-deleted prescriptions authored by an org
+   * profile. Used by both the usage count and the per-row stats.
+   */
+  private prescriptionItemWhere(
+    medicationIds: string[],
+    organizationId: string,
+  ): Prisma.PrescriptionItemWhereInput {
+    return {
+      medication_id: { in: medicationIds },
+      is_deleted: false,
+      prescription: {
+        is_deleted: false,
+        prescribed_by: { organization_id: organizationId },
+      },
+    };
+  }
+
+  /** Usage count (number of prescription items) per medication id. */
+  private async countByMedication(
+    medicationIds: string[],
+    organizationId: string,
+  ): Promise<Map<string, number>> {
+    if (medicationIds.length === 0) return new Map();
+    const grouped = await this.prismaService.db.prescriptionItem.groupBy({
+      by: ['medication_id'],
+      where: this.prescriptionItemWhere(medicationIds, organizationId),
+      _count: { _all: true },
+    });
+    const map = new Map<string, number>();
+    for (const g of grouped) {
+      if (g.medication_id) map.set(g.medication_id, g._count._all);
+    }
+    return map;
+  }
+
   private async gatherStats(
     medicationIds: string[],
     organizationId: string,
   ): Promise<Map<string, MedicationStats>> {
     const prescriptionItems =
       await this.prismaService.db.prescriptionItem.findMany({
-        where: {
-          medication_id: { in: medicationIds },
-          is_deleted: false,
-          prescription: {
-            is_deleted: false,
-            prescribed_by: { organization_id: organizationId },
-          },
-        },
+        where: this.prescriptionItemWhere(medicationIds, organizationId),
         select: {
           medication_id: true,
           prescription: {
