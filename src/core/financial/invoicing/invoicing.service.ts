@@ -236,6 +236,18 @@ export class InvoicingService {
       assignedDoctorId = visit?.assigned_doctor_id ?? undefined;
     }
 
+    // Hard-enforce doctor↔service authorization: an assigned doctor may only be
+    // billed for services they're authorized to deliver (UI filters this, but
+    // the API is the source of truth).
+    if (assignedDoctorId) {
+      await this.access.assertProviderAuthorizedForItems(
+        organizationId,
+        assignedDoctorId,
+        dto.branch_id,
+        dto.items ?? [],
+      );
+    }
+
     const invoice = await this.prismaService.db.invoice.create({
       data: {
         invoice_number: invoiceNumber,
@@ -282,6 +294,20 @@ export class InvoicingService {
       invoiceId,
     );
     this.composition.assertDraft(invoice);
+
+    // Re-validate doctor↔service authorization when items change — the effective
+    // doctor is the incoming one (if provided) or the invoice's current one.
+    if (dto.items !== undefined) {
+      const doctorId = dto.assigned_doctor_id ?? invoice.assigned_doctor_id;
+      if (doctorId) {
+        await this.access.assertProviderAuthorizedForItems(
+          organizationId,
+          doctorId,
+          invoice.branch_id,
+          dto.items,
+        );
+      }
+    }
 
     const discountChanged =
       dto.discount_type !== undefined || dto.discount_value !== undefined;
