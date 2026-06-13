@@ -120,15 +120,6 @@ export class NotificationsListener {
       });
       if (receptionists.length === 0) return;
 
-      // Resolve the case (episode) first — the invoice lookup keys off it.
-      const visit = event.visit_id
-        ? await this.prismaService.db.visit.findFirst({
-            where: { id: event.visit_id, is_deleted: false },
-            select: { episode_id: true },
-          })
-        : null;
-      const episodeId = visit?.episode_id ?? null;
-
       const [patient, doctor, service, invoice] = await Promise.all([
         this.prismaService.db.patient.findUnique({
           where: { id: event.patient_id },
@@ -144,15 +135,15 @@ export class NotificationsListener {
               select: { name: true },
             })
           : Promise.resolve(null),
-        // The case's open invoice (one per episode). A doctor's charge is added
+        // The visit's open invoice (one per visit). A doctor's charge is added
         // mid-visit, so booking already created this invoice — we can link
         // straight to it. Mirrors the accrual router's "open invoice" lookup.
-        episodeId
+        event.visit_id
           ? this.prismaService.db.invoice.findFirst({
               where: {
                 organization_id: event.organization_id,
                 branch_id: event.branch_id,
-                episode_id: episodeId,
+                visit_id: event.visit_id,
                 is_deleted: false,
                 status: {
                   in: [
@@ -181,16 +172,11 @@ export class NotificationsListener {
       // fetches clinical resources reception isn't authorized for, nor the
       // visits billing drawer, which only lists pre-consultation SCHEDULED/
       // CHECKED_IN visits — by the time a doctor adds a charge the visit is
-      // IN_CONSULTATION and has left that queue). Deep-link straight to the case
-      // invoice when it exists (the common path — booking already created it);
-      // fall back to the episode-scoped search page when it doesn't yet (a rare
-      // failed-booking-accrual where this charge first creates it concurrently).
+      // IN_CONSULTATION and has left that queue). Deep-link straight to the
+      // visit's invoice when it exists (the common path — booking already
+      // created it); fall back to the invoices list otherwise.
       const base = `/${event.organization_id}/${event.branch_id}/dashboard/financial/invoices`;
-      const navigateTo = invoiceId
-        ? `${base}/${invoiceId}`
-        : episodeId
-          ? `${base}?episode=${episodeId}`
-          : base;
+      const navigateTo = invoiceId ? `${base}/${invoiceId}` : base;
 
       await Promise.all(
         receptionists.map((receptionist) =>
@@ -207,7 +193,6 @@ export class NotificationsListener {
               branchId: event.branch_id,
               serviceId: event.service_id,
               visitId: event.visit_id,
-              episodeId,
               invoiceId,
             },
           }),
