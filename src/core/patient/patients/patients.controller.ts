@@ -19,6 +19,7 @@ import {
   PatientLookupDto,
   BranchPatientDto,
 } from './dto/patient.dto.js';
+import { PatientStatsDto } from './dto/patient-stats.dto.js';
 import { ApiStandardResponse, ApiPaginatedResponse } from '@common/swagger';
 import { CurrentUser } from '@common/decorators/current-user.decorator.js';
 import { AuthContext } from '@common/interfaces/auth-context.interface.js';
@@ -52,6 +53,13 @@ export class PatientsController {
     return this.patientsService.findAllForOrg(query, user);
   }
 
+  // Declared before `/patients/:id` so "stats" isn't parsed as a patient id.
+  @Get('/patients/stats')
+  @ApiStandardResponse(PatientStatsDto)
+  orgStats(@CurrentUser() user: AuthContext) {
+    return this.patientsService.getOrgStats(user);
+  }
+
   @Get('/patients/:id')
   @ApiStandardResponse(PatientDto)
   findOne(
@@ -79,5 +87,14 @@ export class PatientsController {
     @CurrentUser() user: AuthContext,
   ) {
     return this.patientsService.findAllForBranch(branchId, query, user);
+  }
+
+  @Get('/branches/:branchId/patients/stats')
+  @ApiStandardResponse(PatientStatsDto)
+  branchStats(
+    @Param('branchId', ParseUUIDPipe) branchId: string,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.patientsService.getBranchStats(branchId, user);
   }
 }
