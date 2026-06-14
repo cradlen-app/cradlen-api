@@ -1265,13 +1265,16 @@ export class VisitsService {
   async getBranchVisitStats(
     branchId: string,
     user: AuthContext,
+    assignedToMe = false,
   ): Promise<VisitStatsDto> {
     await this.authorizationService.assertCanAccessBranch(
       user.profileId,
       user.organizationId,
       branchId,
     );
-    return this.computeVisitStats(user.organizationId, branchId);
+    return this.computeVisitStats(user.organizationId, branchId, {
+      assignedDoctorId: assignedToMe ? user.profileId : undefined,
+    });
   }
 
   /**
@@ -1370,14 +1373,21 @@ export class VisitsService {
   private async computeVisitStats(
     organizationId: string,
     branchId: string | null,
+    opts: { assignedDoctorId?: string } = {},
   ): Promise<VisitStatsDto> {
     const db = this.prismaService.db;
     const curStart = this.startOfCurrentMonth();
     const prevStart = this.startOfPreviousMonth();
 
-    const scope: Prisma.VisitWhereInput = branchId
-      ? { branch_id: branchId }
-      : { branch: { organization_id: organizationId } };
+    const scope: Prisma.VisitWhereInput = {
+      ...(branchId
+        ? { branch_id: branchId }
+        : { branch: { organization_id: organizationId } }),
+      // Personal scope: narrow to the doctor's own attended visits.
+      ...(opts.assignedDoctorId
+        ? { assigned_doctor_id: opts.assignedDoctorId }
+        : {}),
+    };
 
     const where = (
       type: AppointmentType | undefined,

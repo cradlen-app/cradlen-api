@@ -390,13 +390,16 @@ export class PatientsService {
   async getBranchStats(
     branchId: string,
     user: AuthContext,
+    assignedToMe = false,
   ): Promise<PatientStatsDto> {
     await this.authorizationService.assertCanAccessBranch(
       user.profileId,
       user.organizationId,
       branchId,
     );
-    return this.computePatientStats(user.organizationId, branchId);
+    return this.computePatientStats(user.organizationId, branchId, {
+      assignedDoctorId: assignedToMe ? user.profileId : undefined,
+    });
   }
 
   /**
@@ -433,6 +436,7 @@ export class PatientsService {
   private async computePatientStats(
     organizationId: string,
     branchId: string | null,
+    opts: { assignedDoctorId?: string } = {},
   ): Promise<PatientStatsDto> {
     const db = this.prismaService.db;
     const cutoff = this.startOfCurrentMonth();
@@ -440,7 +444,9 @@ export class PatientsService {
 
     // A journey only counts for a branch once one of its episodes has a visit
     // that was actually checked in at the branch (mirrors findAllForBranch). For
-    // the previous snapshot, that check-in must predate the cutoff.
+    // the previous snapshot, that check-in must predate the cutoff. When a doctor
+    // views their personal stats, "my patients" are those whose qualifying visit
+    // was assigned to them.
     const branchEpisodeFilter = (checkinUpTo?: Date) => ({
       some: {
         is_deleted: false,
@@ -448,6 +454,9 @@ export class PatientsService {
           some: {
             branch_id: branchId!,
             is_deleted: false,
+            ...(opts.assignedDoctorId
+              ? { assigned_doctor_id: opts.assignedDoctorId }
+              : {}),
             checked_in_at: checkinUpTo
               ? { not: null, lte: checkinUpTo }
               : { not: null },

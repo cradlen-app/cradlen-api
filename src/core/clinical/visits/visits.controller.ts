@@ -34,6 +34,7 @@ import {
   JourneyTimelineQueryDto,
   VitalsTrendQueryDto,
   VisitTodayStatsQueryDto,
+  VisitStatsQueryDto,
 } from './dto/list-visits-query.dto';
 import {
   ApiStandardResponse,
@@ -194,9 +195,14 @@ export class VisitsController {
   @ApiStandardResponse(VisitStatsDto)
   getBranchVisitStats(
     @Param('branchId', ParseUUIDPipe) branchId: string,
+    @Query() query: VisitStatsQueryDto,
     @CurrentUser() user: AuthContext,
   ) {
-    return this.visitsService.getBranchVisitStats(branchId, user);
+    return this.visitsService.getBranchVisitStats(
+      branchId,
+      user,
+      query.assigned_to_me ?? false,
+    );
   }
 
   @Get('organizations/:orgId/visits/stats')
