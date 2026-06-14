@@ -11,6 +11,67 @@ Table subscription_plans {
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   subscriptions subscriptions [not null]
+  prices plan_prices [not null]
+  payments subscription_payments [not null]
+}
+
+Table plan_prices {
+  id String [pk]
+  subscription_plan_id String [not null]
+  billing_interval BillingInterval [not null]
+  price Decimal [not null]
+  currency String [not null, default: 'EGP']
+  is_active Boolean [not null, default: true]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  subscription_plan subscription_plans [not null]
+  payments subscription_payments [not null]
+
+  indexes {
+    (subscription_plan_id, billing_interval, currency) [unique]
+  }
+}
+
+Table subscription_payments {
+  id String [pk]
+  organization_id String [not null]
+  subscription_id String
+  subscription_plan_id String [not null]
+  plan_price_id String
+  provider SubscriptionPaymentProvider [not null]
+  provider_ref String
+  billing_interval BillingInterval [not null]
+  amount Decimal [not null]
+  currency String [not null, default: 'EGP']
+  status SubscriptionPaymentStatus [not null, default: 'PENDING']
+  submitted_by_id String
+  verified_by_id String
+  verified_at DateTime
+  rejection_reason String
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  organization organizations [not null]
+  subscription subscriptions
+  subscription_plan subscription_plans [not null]
+  plan_price plan_prices
+  proofs subscription_payment_proofs [not null]
+}
+
+Table subscription_payment_proofs {
+  id String [pk]
+  subscription_payment_id String [not null]
+  object_key String [not null]
+  content_type String
+  size_bytes Int
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  payment subscription_payments [not null]
 }
 
 Table organizations {
@@ -49,6 +110,7 @@ Table organizations {
   receipt_sequences receipt_sequences [not null]
   charges charges [not null]
   cash_sessions cash_sessions [not null]
+  subscription_payments subscription_payments [not null]
 }
 
 Table branches {
@@ -279,6 +341,7 @@ Table subscriptions {
   deleted_at DateTime
   organization organizations [not null]
   subscription_plan subscription_plans [not null]
+  payments subscription_payments [not null]
 }
 
 Table refresh_tokens {
@@ -1979,6 +2042,24 @@ Enum SubscriptionStatus {
   CANCELLED
 }
 
+Enum BillingInterval {
+  MONTHLY
+  YEARLY
+}
+
+Enum SubscriptionPaymentProvider {
+  INSTAPAY
+  WALLET
+}
+
+Enum SubscriptionPaymentStatus {
+  PENDING
+  AWAITING_VERIFICATION
+  VERIFIED
+  REJECTED
+  CANCELLED
+}
+
 Enum InvitationStatus {
   PENDING
   ACCEPTED
@@ -2305,6 +2386,18 @@ Enum CalendarVisibility {
   PRIVATE
   ORGANIZATION
 }
+
+Ref: plan_prices.subscription_plan_id > subscription_plans.id [delete: Cascade]
+
+Ref: subscription_payments.organization_id > organizations.id [delete: Cascade]
+
+Ref: subscription_payments.subscription_id > subscriptions.id [delete: Set Null]
+
+Ref: subscription_payments.subscription_plan_id > subscription_plans.id
+
+Ref: subscription_payments.plan_price_id > plan_prices.id [delete: Set Null]
+
+Ref: subscription_payment_proofs.subscription_payment_id > subscription_payments.id [delete: Cascade]
 
 Ref: branches.organization_id > organizations.id [delete: Cascade]
 

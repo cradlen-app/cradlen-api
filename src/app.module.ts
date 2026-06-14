@@ -8,6 +8,7 @@ import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
 import authConfig from './config/auth.config';
 import storageConfig from './config/storage.config';
+import paymentsConfig from './config/payments.config';
 import { DatabaseModule } from '@infrastructure/database/database.module';
 import { StorageModule } from '@infrastructure/storage/storage.module.js';
 import { MessagingModule } from '@infrastructure/messaging/messaging.module';
@@ -43,6 +44,7 @@ import { ObgynModule } from '@specialties/obgyn/obgyn.module';
 import { TemplatesModule } from '@builder/templates/templates.module.js';
 import { FinancialModule } from '@core/financial/financial.module.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { SubscriptionGuard } from '@core/org/subscriptions/subscription.guard.js';
 
 @Module({
   imports: [
@@ -53,7 +55,13 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: [`.env.${process.env.NODE_ENV ?? 'development'}`, '.env'],
-      load: [appConfig, databaseConfig, authConfig, storageConfig],
+      load: [
+        appConfig,
+        databaseConfig,
+        authConfig,
+        storageConfig,
+        paymentsConfig,
+      ],
     }),
     ThrottlerModule.forRootAsync({
       inject: [appConfig.KEY],
@@ -104,6 +112,12 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+    // Runs after JwtAuthGuard (so request.user is populated): blocks writes for
+    // orgs whose subscription has lapsed.
+    {
+      provide: APP_GUARD,
+      useClass: SubscriptionGuard,
     },
   ],
 })
