@@ -100,18 +100,29 @@ Table users {
   onboarding_completed Boolean [not null, default: false]
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
-  patient_id String [unique]
-  guardian_id String [unique]
-  security_question String
-  security_answer_hashed String
-  patient patients
-  guardian guardians
   profiles profiles [not null]
   refreshTokens refresh_tokens [not null]
   verificationCodes verification_codes [not null]
   passwordResetTokens password_reset_tokens [not null]
   authAuditLogs auth_audit_log [not null]
   sentInvitations invitations [not null]
+}
+
+Table patient_accounts {
+  id String [pk]
+  password_hashed String
+  security_question String
+  security_answer_hashed String
+  is_active Boolean [not null, default: true]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  patient_id String [unique]
+  guardian_id String [unique]
+  patient patients
+  guardian guardians
+  refreshTokens refresh_tokens [not null]
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
 }
 
 Table roles {
@@ -274,7 +285,8 @@ Table refresh_tokens {
   id String [pk]
   jti String [unique, not null]
   token_hash String [not null]
-  user_id String [not null]
+  user_id String
+  patient_account_id String
   profile_id String
   organization_id String
   active_branch_id String
@@ -283,7 +295,8 @@ Table refresh_tokens {
   revoked_at DateTime
   replaced_by_jti String
   created_at DateTime [default: `now()`, not null]
-  user users [not null]
+  user users
+  patientAccount patient_accounts
 }
 
 Table auth_audit_log {
@@ -571,7 +584,7 @@ Table patients {
   field_flags patient_field_flags [not null]
   guardian_links patient_guardians [not null]
   guardian_record guardians
-  user users
+  account patient_accounts
   obgyn_history patient_obgyn_histories
   calendar_events calendar_events [not null]
   enrollments patient_org_enrollments [not null]
@@ -977,7 +990,7 @@ Table guardians {
   patient_id String [unique]
   patient patients
   patient_links patient_guardians [not null]
-  user users
+  account patient_accounts
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
   created_at DateTime [default: `now()`, not null]
@@ -2295,9 +2308,9 @@ Enum CalendarVisibility {
 
 Ref: branches.organization_id > organizations.id [delete: Cascade]
 
-Ref: users.patient_id - patients.id [delete: Set Null]
+Ref: patient_accounts.patient_id - patients.id [delete: Set Null]
 
-Ref: users.guardian_id - guardians.id [delete: Set Null]
+Ref: patient_accounts.guardian_id - guardians.id [delete: Set Null]
 
 Ref: profile_job_functions.profile_id > profiles.id [delete: Cascade]
 
@@ -2320,6 +2333,8 @@ Ref: subscriptions.organization_id > organizations.id [delete: Cascade]
 Ref: subscriptions.subscription_plan_id > subscription_plans.id
 
 Ref: refresh_tokens.user_id > users.id [delete: Cascade]
+
+Ref: refresh_tokens.patient_account_id > patient_accounts.id [delete: Cascade]
 
 Ref: auth_audit_log.user_id > users.id [delete: Set Null]
 

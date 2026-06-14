@@ -4,7 +4,8 @@
  * profile/organization. Exactly one of `patientId` / `guardianId` is set.
  */
 export interface PatientAuthContext {
-  userId: string;
+  /** The PatientAccount id backing this portal session (never a staff User id). */
+  accountId: string;
   patientId?: string;
   guardianId?: string;
   /**

@@ -70,9 +70,9 @@ describe('Visits — monthly stats (integration)', () => {
     await seedVisit(prisma, { ...common, checkedInAt: null });
 
     const auth = bearer(await loginAs(app, a.ownerEmail));
-    const res = await auth(request(http()).get(branchStats(a.branch.id))).expect(
-      200,
-    );
+    const res = await auth(
+      request(http()).get(branchStats(a.branch.id)),
+    ).expect(200);
 
     const data = res.body.data;
     expect(data.visits).toEqual({ current: 2, previous: 1 });
@@ -111,9 +111,9 @@ describe('Visits — monthly stats (integration)', () => {
     });
 
     const auth = bearer(await loginAs(app, a.ownerEmail));
-    const res = await auth(
-      request(http()).get(branchStats(branch2.id)),
-    ).expect(200);
+    const res = await auth(request(http()).get(branchStats(branch2.id))).expect(
+      200,
+    );
 
     // Only branch2's single visit — branch1's must not leak.
     expect(res.body.data.total.current).toBe(1);

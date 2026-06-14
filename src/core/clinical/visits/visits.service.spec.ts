@@ -709,7 +709,11 @@ describe('VisitsService', () => {
         status: 'IN_CONSULTATION',
       });
       await expect(
-        statusService.updateStatus('visit-uuid', { status: 'COMPLETED' }, mockUser),
+        statusService.updateStatus(
+          'visit-uuid',
+          { status: 'COMPLETED' },
+          mockUser,
+        ),
       ).rejects.toThrow(ForbiddenException);
       // Guard runs before the encounter/diagnosis completion checks.
       expect(db.visitEncounter.findUnique).not.toHaveBeenCalled();
@@ -730,7 +734,11 @@ describe('VisitsService', () => {
       );
 
       await expect(
-        statusService.updateStatus('visit-uuid', { status: 'IN_PROGRESS' }, mockUser),
+        statusService.updateStatus(
+          'visit-uuid',
+          { status: 'IN_PROGRESS' },
+          mockUser,
+        ),
       ).resolves.toBeDefined();
     });
 

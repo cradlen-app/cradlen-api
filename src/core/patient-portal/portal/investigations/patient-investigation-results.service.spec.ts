@@ -30,7 +30,7 @@ describe('PatientInvestigationResultsService', () => {
   };
 
   const ctx: PatientAuthContext = {
-    userId: 'u1',
+    accountId: 'u1',
     patientId: 'p1',
     accessiblePatientIds: ['p1'],
   };
@@ -151,7 +151,7 @@ describe('PatientInvestigationResultsService', () => {
     it('throws when no accessible patients', async () => {
       await expect(
         service.createUploadUrl(
-          { userId: 'u1', accessiblePatientIds: [] },
+          { accountId: 'u1', accessiblePatientIds: [] },
           'inv-1',
           { content_type: 'application/pdf', size_bytes: 100 },
         ),

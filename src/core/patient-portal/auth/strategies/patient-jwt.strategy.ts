@@ -49,16 +49,16 @@ export class PatientJwtStrategy extends PassportStrategy(
       throw new UnauthorizedException('Invalid token issuer');
     }
 
-    const user = await this.prismaService.db.user.findFirst({
-      where: { id: payload.userId, is_active: true, is_deleted: false },
+    const account = await this.prismaService.db.patientAccount.findFirst({
+      where: { id: payload.accountId, is_active: true, is_deleted: false },
       select: { id: true, patient_id: true, guardian_id: true },
     });
-    if (!user) throw new UnauthorizedException('Invalid auth context');
+    if (!account) throw new UnauthorizedException('Invalid auth context');
 
     const accessiblePatientIds = await this.resolveAccessiblePatients(payload);
 
     return {
-      userId: user.id,
+      accountId: account.id,
       ...(payload.patientId && { patientId: payload.patientId }),
       ...(payload.guardianId && { guardianId: payload.guardianId }),
       accessiblePatientIds,
