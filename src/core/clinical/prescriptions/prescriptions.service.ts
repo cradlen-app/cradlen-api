@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
@@ -28,11 +29,12 @@ const PRESCRIPTION_PRINT_INCLUDE = {
   visit: {
     include: {
       encounter: true,
-      patient: true,
+      // Visit has no direct patient relation — reach it via episode → journey.
+      episode: { include: { journey: { include: { patient: true } } } },
       branch: { include: { organization: true } },
     },
   },
-} as const;
+} as const satisfies Prisma.PrescriptionInclude;
 
 @Injectable()
 export class PrescriptionsService {
@@ -129,6 +131,7 @@ export class PrescriptionsService {
   ): PrescriptionDocumentDto {
     const { visit } = prescription;
     const organization = visit.branch.organization;
+    const patient = visit.episode.journey.patient;
     const prescriber = prescription.prescribed_by;
     const user = prescriber.user;
 
@@ -164,10 +167,10 @@ export class PrescriptionsService {
         signature_object_key: null,
       },
       patient: {
-        id: visit.patient.id,
-        full_name: visit.patient.full_name,
-        phone_number: visit.patient.phone_number,
-        date_of_birth: visit.patient.date_of_birth,
+        id: patient.id,
+        full_name: patient.full_name,
+        phone_number: patient.phone_number,
+        date_of_birth: patient.date_of_birth,
       },
       diagnosis: {
         chief_complaint: visit.encounter?.chief_complaint ?? null,
@@ -188,21 +191,7 @@ export class PrescriptionsService {
   }
 }
 
-type PrescriptionWithRelations = import('@prisma/client').Prescription & {
-  items: (import('@prisma/client').PrescriptionItem & {
-    medication: import('@prisma/client').Medication | null;
-  })[];
-  prescribed_by: import('@prisma/client').Profile & {
-    user: import('@prisma/client').User | null;
-    specialty_links: (import('@prisma/client').ProfileSpecialty & {
-      specialty: import('@prisma/client').Specialty | null;
-    })[];
-  };
-  visit: import('@prisma/client').Visit & {
-    encounter: import('@prisma/client').VisitEncounter | null;
-    patient: import('@prisma/client').Patient;
-    branch: import('@prisma/client').Branch & {
-      organization: import('@prisma/client').Organization;
-    };
-  };
-};
+// Derived from the include above so the row type can never drift from the query.
+type PrescriptionWithRelations = Prisma.PrescriptionGetPayload<{
+  include: typeof PRESCRIPTION_PRINT_INCLUDE;
+}>;
