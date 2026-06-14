@@ -23,8 +23,8 @@ export class ListBranchPatientsQueryDto {
   limit?: number = 11;
 
   /**
-   * When true, restricts the directory to patients whose qualifying checked-in
-   * visit at the branch was assigned to the current doctor (their own patients).
+   * Deprecated/ignored: scope is derived server-side from the caller role (a
+   * doctor always sees only their own patients). Accepted for backward-compat.
    */
   @IsOptional()
   @Type(() => Boolean)

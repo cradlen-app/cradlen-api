@@ -94,13 +94,11 @@ export class PatientsController {
   @ApiStandardResponse(PatientStatsDto)
   branchStats(
     @Param('branchId', ParseUUIDPipe) branchId: string,
-    @Query() query: BranchPatientStatsQueryDto,
+    @Query() _query: BranchPatientStatsQueryDto,
     @CurrentUser() user: AuthContext,
   ) {
-    return this.patientsService.getBranchStats(
-      branchId,
-      user,
-      query.assigned_to_me ?? false,
-    );
+    // `assigned_to_me` is accepted for backward-compat but ignored: scope is
+    // derived server-side from the caller's role.
+    return this.patientsService.getBranchStats(branchId, user);
   }
 }

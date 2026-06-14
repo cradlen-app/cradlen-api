@@ -299,6 +299,25 @@ describe('CalendarService', () => {
         }),
       );
     });
+
+    it('resolves created_by_name from the owner profile', async () => {
+      db.branch.findFirst.mockResolvedValue({ id: 'branch-1' });
+      db.calendarEvent.create.mockResolvedValue({
+        ...mockEventRow,
+        branch_id: 'branch-1',
+        profile: { user: { first_name: 'Sara', last_name: 'Ali' } },
+      });
+
+      const result = await service.create(mockUser, {
+        event_type: CalendarEventType.MEETING,
+        title: 'standup',
+        start_at: '2026-06-01T10:00:00Z',
+        end_at: '2026-06-01T11:00:00Z',
+        branch_id: 'branch-1',
+      });
+
+      expect(result.created_by_name).toBe('Sara Ali');
+    });
   });
 
   describe('list', () => {

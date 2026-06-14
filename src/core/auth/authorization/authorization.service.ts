@@ -12,7 +12,7 @@ const STAFF_VIEWER_ROLES = ['OWNER', 'BRANCH_MANAGER'];
 const STAFF_VIEWER_JOB_FUNCTIONS = ['RECEPTIONIST'];
 const ORG_WIDE_ROLES = ['OWNER'];
 const OWNER_ONLY_ROLES = ['OWNER'];
-const FINANCIAL_MANAGER_ROLES = ['OWNER', 'BRANCH_MANAGER'];
+const MANAGER_ROLES = ['OWNER', 'BRANCH_MANAGER'];
 
 @Injectable()
 export class AuthorizationService {
@@ -196,6 +196,14 @@ export class AuthorizationService {
   }
 
   /**
+   * Whether the profile is an organization manager — owner or branch manager.
+   * The single source of truth for "sees all providers' data" vs "scoped to self".
+   */
+  async isManager(profileId: string, organizationId: string): Promise<boolean> {
+    return this.hasAnyRole(profileId, organizationId, MANAGER_ROLES);
+  }
+
+  /**
    * Whether the profile may view financial reports across the branch/org (all
    * providers). Owners and branch managers qualify; anyone else (e.g. a doctor)
    * is restricted to their own revenue by the reporting layer.
@@ -204,7 +212,21 @@ export class AuthorizationService {
     profileId: string,
     organizationId: string,
   ): Promise<boolean> {
-    return this.hasAnyRole(profileId, organizationId, FINANCIAL_MANAGER_ROLES);
+    return this.isManager(profileId, organizationId);
+  }
+
+  /**
+   * Whether the caller may only see their own data: a non-manager clinician
+   * (a doctor). Reception, owners and branch managers are not restricted (they
+   * see the full branch). Used to scope the patients directory and analytics
+   * server-side, independent of any client-supplied flag.
+   */
+  async isRestrictedToOwnData(
+    profileId: string,
+    organizationId: string,
+  ): Promise<boolean> {
+    if (await this.isManager(profileId, organizationId)) return false;
+    return this.isClinical(profileId);
   }
 
   async assertCanManageOrganization(
