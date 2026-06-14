@@ -736,7 +736,12 @@ export class VisitsService {
   async findPatientVisitHistory(
     patientId: string,
     organizationId: string,
-    query: { page?: number; limit?: number; excludeVisitId?: string },
+    query: {
+      page?: number;
+      limit?: number;
+      excludeVisitId?: string;
+      assignedDoctorId?: string;
+    },
   ) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 3;
@@ -750,6 +755,9 @@ export class VisitsService {
           organization_id: organizationId,
         },
       },
+      ...(query.assignedDoctorId
+        ? { assigned_doctor_id: query.assignedDoctorId }
+        : {}),
       ...(query.excludeVisitId ? { id: { not: query.excludeVisitId } } : {}),
     };
 
@@ -777,7 +785,12 @@ export class VisitsService {
   async findPatientJourneyTimeline(
     patientId: string,
     organizationId: string,
-    query: { page?: number; limit?: number; excludeVisitId?: string },
+    query: {
+      page?: number;
+      limit?: number;
+      excludeVisitId?: string;
+      assignedDoctorId?: string;
+    },
   ) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 5;
@@ -786,6 +799,24 @@ export class VisitsService {
       is_deleted: false,
       patient_id: patientId,
       organization_id: organizationId,
+      // Own-only: drop journeys that have no visit assigned to the caller, so the
+      // timeline never shows empty journeys/episodes for another doctor's care.
+      ...(query.assignedDoctorId
+        ? {
+            episodes: {
+              some: {
+                is_deleted: false,
+                visits: {
+                  some: {
+                    is_deleted: false,
+                    status: 'COMPLETED',
+                    assigned_doctor_id: query.assignedDoctorId,
+                  },
+                },
+              },
+            },
+          }
+        : {}),
     };
 
     const [journeys, total] = await this.prismaService.db.$transaction([
@@ -794,7 +825,10 @@ export class VisitsService {
         orderBy: { started_at: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
-        include: journeyTimelineInclude(query.excludeVisitId),
+        include: journeyTimelineInclude(
+          query.excludeVisitId,
+          query.assignedDoctorId,
+        ),
       }),
       this.prismaService.db.patientJourney.count({ where }),
     ]);
