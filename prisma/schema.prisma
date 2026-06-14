@@ -442,6 +442,11 @@ model User {
   // account per patient/guardian (also closes the double-signup race -> P2002).
   patient_id           String?              @unique @db.Uuid
   guardian_id          String?              @unique @db.Uuid
+  // Knowledge-based recovery for patient/guardian accounts (which have no
+  // email). Set at self-signup; verified by the patient forgot-password flow.
+  // Null for staff accounts and for patient accounts predating this feature.
+  security_question      String?
+  security_answer_hashed String?
   patient              Patient?             @relation("PatientUser", fields: [patient_id], references: [id], onDelete: SetNull)
   guardian             Guardian?            @relation("GuardianUser", fields: [guardian_id], references: [id], onDelete: SetNull)
   profiles             Profile[]
