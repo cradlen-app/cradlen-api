@@ -441,5 +441,27 @@ describe('PatientsService', () => {
       expect(result.by_care_path).toEqual([]);
       expect(db.journeyTemplate.findMany).not.toHaveBeenCalled();
     });
+
+    it('narrows to the doctor when assigned_to_me is set', async () => {
+      db.$transaction.mockResolvedValue([2, 1, 0, 2, 1, 0, 0]);
+
+      await service.getBranchStats('branch-uuid', mockUser, true);
+
+      const where = db.patientJourney.groupBy.mock.calls[0][0].where;
+      expect(where.episodes.some.visits.some.assigned_doctor_id).toBe(
+        mockUser.profileId,
+      );
+    });
+
+    it('does not filter by doctor by default', async () => {
+      db.$transaction.mockResolvedValue([2, 1, 0, 2, 1, 0, 0]);
+
+      await service.getBranchStats('branch-uuid', mockUser);
+
+      const where = db.patientJourney.groupBy.mock.calls[0][0].where;
+      expect(
+        where.episodes.some.visits.some.assigned_doctor_id,
+      ).toBeUndefined();
+    });
   });
 });

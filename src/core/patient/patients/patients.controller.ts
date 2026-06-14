@@ -14,6 +14,7 @@ import { CreatePatientDto } from './dto/create-patient.dto.js';
 import { UpdatePatientDto } from './dto/update-patient.dto.js';
 import { ListPatientsQueryDto } from './dto/list-patients-query.dto.js';
 import { ListBranchPatientsQueryDto } from './dto/list-branch-patients-query.dto.js';
+import { BranchPatientStatsQueryDto } from './dto/branch-patient-stats-query.dto.js';
 import {
   PatientDto,
   PatientLookupDto,
@@ -93,8 +94,13 @@ export class PatientsController {
   @ApiStandardResponse(PatientStatsDto)
   branchStats(
     @Param('branchId', ParseUUIDPipe) branchId: string,
+    @Query() query: BranchPatientStatsQueryDto,
     @CurrentUser() user: AuthContext,
   ) {
-    return this.patientsService.getBranchStats(branchId, user);
+    return this.patientsService.getBranchStats(
+      branchId,
+      user,
+      query.assigned_to_me ?? false,
+    );
   }
 }
