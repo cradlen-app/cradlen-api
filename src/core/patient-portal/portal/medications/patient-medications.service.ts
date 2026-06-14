@@ -83,6 +83,7 @@ export class PatientMedicationsService {
 
     return {
       id: item.id,
+      prescription_id: item.prescription.id,
       name: medication?.name ?? item.custom_drug_name ?? 'Unknown',
       generic_name: medication?.generic_name ?? null,
       strength: medication?.strength ?? null,
