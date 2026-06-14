@@ -10,11 +10,13 @@ import { ResponseInterceptor } from '../../src/common/interceptor/response.inter
 import { LoggingInterceptor } from '../../src/common/interceptor/logging.interceptor';
 import { RequestIdMiddleware } from '../../src/common/middleware/request-id.middleware';
 import { EmailService } from '../../src/infrastructure/email/email.service';
+import { StorageService } from '../../src/infrastructure/storage/storage.service';
 
 export async function createTestApp(
   mailMock: jest.Mock,
+  storageMock?: Partial<StorageService>,
 ): Promise<INestApplication> {
-  const moduleFixture = await Test.createTestingModule({
+  let builder = Test.createTestingModule({
     imports: [AppModule],
   })
     .overrideProvider(EmailService)
@@ -23,8 +25,13 @@ export async function createTestApp(
       sendPasswordResetEmail: mailMock,
       sendStaffInvitationEmail: mailMock,
       sendPhoneOtp: mailMock,
-    })
-    .compile();
+    });
+
+  if (storageMock) {
+    builder = builder.overrideProvider(StorageService).useValue(storageMock);
+  }
+
+  const moduleFixture = await builder.compile();
 
   const app = moduleFixture.createNestApplication();
 
