@@ -12,10 +12,7 @@ import { paginated } from '@common/utils/pagination.utils.js';
 import { PatientOrgEnrollmentStatus } from '@prisma/client';
 import { DEFAULT_PATIENT_PAGE_SIZE } from './patients.constants.js';
 import { toEpisodeSummary } from './patients.mapper.js';
-import {
-  CarePathStatDto,
-  PatientStatsDto,
-} from './dto/patient-stats.dto.js';
+import { CarePathStatDto, PatientStatsDto } from './dto/patient-stats.dto.js';
 
 @Injectable()
 export class PatientsService {
