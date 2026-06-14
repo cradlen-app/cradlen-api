@@ -1546,6 +1546,25 @@ describe('VisitsService', () => {
         }),
       );
     });
+
+    it('filters to the caller when assignedDoctorId is set (own-only)', async () => {
+      db.visit.findMany.mockResolvedValue([]);
+
+      await service.findPatientVitalsTrend(
+        'patient-1',
+        'org-1',
+        undefined,
+        'doc-self',
+      );
+
+      expect(db.visit.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            assigned_doctor_id: 'doc-self',
+          }),
+        }),
+      );
+    });
   });
 
   describe('findPatientVisitHistory', () => {

@@ -842,11 +842,13 @@ export class VisitsService {
     patientId: string,
     organizationId: string,
     excludeVisitId?: string,
+    assignedDoctorId?: string,
   ): Promise<VitalsTrendPointDto[]> {
     const visits = await this.prismaService.db.visit.findMany({
       where: {
         is_deleted: false,
         status: 'COMPLETED',
+        ...(assignedDoctorId ? { assigned_doctor_id: assignedDoctorId } : {}),
         ...(excludeVisitId ? { id: { not: excludeVisitId } } : {}),
         episode: {
           journey: { patient_id: patientId, organization_id: organizationId },
