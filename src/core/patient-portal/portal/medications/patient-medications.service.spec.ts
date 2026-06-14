@@ -15,7 +15,7 @@ function createEnv() {
 }
 
 function patientCtx(ids: string[]): PatientAuthContext {
-  return { userId: 'u1', patientId: ids[0], accessiblePatientIds: ids };
+  return { accountId: 'u1', patientId: ids[0], accessiblePatientIds: ids };
 }
 
 interface RowOverrides {

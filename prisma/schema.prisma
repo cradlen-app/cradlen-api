@@ -437,18 +437,8 @@ model User {
   onboarding_completed Boolean              @default(false)
   created_at           DateTime             @default(now())
   updated_at           DateTime             @updatedAt
-  // Patient-facing identity link. A self-registered patient/guardian gets a
-  // User with exactly one of these set and NO Profile. @unique enforces one
-  // account per patient/guardian (also closes the double-signup race -> P2002).
-  patient_id           String?              @unique @db.Uuid
-  guardian_id          String?              @unique @db.Uuid
-  // Knowledge-based recovery for patient/guardian accounts (which have no
-  // email). Set at self-signup; verified by the patient forgot-password flow.
-  // Null for staff accounts and for patient accounts predating this feature.
-  security_question      String?
-  security_answer_hashed String?
-  patient              Patient?             @relation("PatientUser", fields: [patient_id], references: [id], onDelete: SetNull)
-  guardian             Guardian?            @relation("GuardianUser", fields: [guardian_id], references: [id], onDelete: SetNull)
+  // `users` is staff-only. Patient/guardian portal logins live in the dedicated
+  // `patient_accounts` table (PatientAccount) — see core/patient-portal/auth.
   profiles             Profile[]
   refreshTokens        RefreshToken[]
   verificationCodes    VerificationCode[]
@@ -458,6 +448,33 @@ model User {
 
   @@index([registration_status, onboarding_completed])
   @@map("users")
+}
+
+// Portal login for a self-registered patient/guardian. Deliberately separate
+// from `users` (staff identities): patients have no email, no Profile, no
+// org/roles, log in by national_id, and authenticate via the `patient-jwt`
+// strategy. Exactly one of patient_id / guardian_id is set (@unique enforces one
+// account per subject and closes the double-signup race -> P2002). Credentials +
+// knowledge-based recovery (security question/answer) live here; nothing else.
+model PatientAccount {
+  id                     String         @id @default(uuid()) @db.Uuid
+  password_hashed        String?
+  // Knowledge-based recovery (patients have no email). Set at self-signup or via
+  // the profile "set security question" endpoint; verified by forgot-password.
+  security_question      String?
+  security_answer_hashed String?
+  is_active              Boolean        @default(true)
+  is_deleted             Boolean        @default(false)
+  deleted_at             DateTime?
+  patient_id             String?        @unique @db.Uuid
+  guardian_id            String?        @unique @db.Uuid
+  patient                Patient?       @relation("PatientAccount", fields: [patient_id], references: [id], onDelete: SetNull)
+  guardian               Guardian?      @relation("GuardianAccount", fields: [guardian_id], references: [id], onDelete: SetNull)
+  refreshTokens          RefreshToken[]
+  created_at             DateTime       @default(now())
+  updated_at             DateTime       @updatedAt
+
+  @@map("patient_accounts")
 }
 
 model Role {
@@ -632,24 +649,30 @@ model Subscription {
 }
 
 model RefreshToken {
-  id               String    @id @default(uuid()) @db.Uuid
-  jti              String    @unique @db.Uuid
-  token_hash       String
-  user_id          String    @db.Uuid
-  profile_id       String?   @db.Uuid
-  organization_id  String?   @db.Uuid
-  active_branch_id String?   @db.Uuid
-  expires_at       DateTime
-  is_revoked       Boolean   @default(false)
-  revoked_at       DateTime?
+  id                 String          @id @default(uuid()) @db.Uuid
+  jti                String          @unique @db.Uuid
+  token_hash         String
+  // Exactly one owner is set: `user_id` for a staff session, `patient_account_id`
+  // for a patient/guardian portal session. Enforced by a CHECK constraint
+  // (`refresh_tokens_exactly_one_owner`) added in the migration raw SQL.
+  user_id            String?         @db.Uuid
+  patient_account_id String?         @db.Uuid
+  profile_id         String?         @db.Uuid
+  organization_id    String?         @db.Uuid
+  active_branch_id   String?         @db.Uuid
+  expires_at         DateTime
+  is_revoked         Boolean         @default(false)
+  revoked_at         DateTime?
   // jti of the token that replaced this one on rotation. Set only when a row
   // is revoked *by rotation* (never by logout), so the refresh endpoint can
   // tell a rotation-race retry apart from a genuine replay / logout.
-  replaced_by_jti  String?   @db.Uuid
-  created_at       DateTime  @default(now())
-  user             User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  replaced_by_jti    String?         @db.Uuid
+  created_at         DateTime        @default(now())
+  user               User?           @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  patientAccount     PatientAccount? @relation(fields: [patient_account_id], references: [id], onDelete: Cascade)
 
   @@index([user_id, is_revoked])
+  @@index([patient_account_id, is_revoked])
   @@map("refresh_tokens")
 }
 
@@ -993,7 +1016,7 @@ model Patient {
   field_flags     PatientFieldFlag[]
   guardian_links  PatientGuardian[]
   guardian_record Guardian?              @relation("PatientGuardianRecord")
-  user            User?                  @relation("PatientUser")
+  account         PatientAccount?        @relation("PatientAccount")
   obgyn_history   PatientObgynHistory?
   calendar_events CalendarEvent[]
   enrollments     PatientOrgEnrollment[]
@@ -1535,7 +1558,7 @@ model Guardian {
   patient_id    String?           @unique @db.Uuid
   patient       Patient?          @relation("PatientGuardianRecord", fields: [patient_id], references: [id], onDelete: SetNull)
   patient_links PatientGuardian[]
-  user          User?             @relation("GuardianUser")
+  account       PatientAccount?   @relation("GuardianAccount")
   is_deleted    Boolean           @default(false)
   deleted_at    DateTime?
   created_at    DateTime          @default(now())

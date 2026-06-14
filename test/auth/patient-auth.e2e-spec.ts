@@ -96,20 +96,23 @@ describe('Patient self-signup and login (E2E)', () => {
     expect(accessToken).toEqual(expect.any(String));
     expect(refreshToken).toEqual(expect.any(String));
 
-    // A User is created linked to the patient, with no email and no Profile.
-    const user = await getTestPrisma().user.findFirstOrThrow({
+    // A PatientAccount is created linked to the patient — never a staff `users`
+    // row (no Profile exists, and no patient row leaked into `users`).
+    const account = await getTestPrisma().patientAccount.findFirstOrThrow({
       where: { patient_id: patient.id },
     });
-    expect(user.email).toBeNull();
-    expect(user.registration_status).toBe('ACTIVE');
+    expect(account.is_active).toBe(true);
     expect(await getTestPrisma().profile.count()).toBe(0);
+    expect(
+      await getTestPrisma().user.count({ where: { id: account.id } }),
+    ).toBe(0);
 
     const me = await http()
       .get('/v1/patient-auth/me')
       .set('Authorization', `Bearer ${accessToken}`)
       .expect(200);
     expect(me.body.data).toEqual({
-      user_id: user.id,
+      user_id: account.id,
       patient_id: patient.id,
       guardian_id: null,
       accessible_patient_ids: [patient.id],

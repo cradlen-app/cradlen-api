@@ -559,7 +559,10 @@ describe('StaffService.getBranchStats', () => {
       profileRole: {
         groupBy: jest
           .fn()
-          .mockResolvedValue([{ role_id: 'role-staff' }, { role_id: 'role-ext' }]),
+          .mockResolvedValue([
+            { role_id: 'role-staff' },
+            { role_id: 'role-ext' },
+          ]),
       },
       role: { findMany: jest.fn().mockResolvedValue(roles) },
       $transaction: jest.fn(),
@@ -622,7 +625,9 @@ describe('StaffService.getBranchStats', () => {
     const currentTotalWhere = db.profile.count.mock.calls[0][0].where;
     const previousTotalWhere = db.profile.count.mock.calls[1][0].where;
     expect(currentTotalWhere.branches.some.created_at).toBeUndefined();
-    expect(previousTotalWhere.branches.some.created_at.lte).toBeInstanceOf(Date);
+    expect(previousTotalWhere.branches.some.created_at.lte).toBeInstanceOf(
+      Date,
+    );
   });
 
   it('drops roles with a zero current count', async () => {

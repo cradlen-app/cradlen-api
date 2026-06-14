@@ -29,9 +29,7 @@ const mockDb = {
   service: { findFirst: jest.fn() },
   // capture() persists the charge inside a transaction; run the callback with
   // the same mock client so charge.create assertions keep working.
-  $transaction: jest.fn(
-    (cb: (tx: typeof mockDb) => unknown) => cb(mockDb) as unknown,
-  ),
+  $transaction: jest.fn((cb: (tx: typeof mockDb) => unknown) => cb(mockDb)),
 };
 
 const mockPrisma = { db: mockDb };

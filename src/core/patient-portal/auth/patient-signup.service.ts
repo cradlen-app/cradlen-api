@@ -15,6 +15,7 @@ import type { PatientSignupStartResponseDto } from './dto/patient-signup-start-r
 import type { PatientSignupCompleteDto } from './dto/patient-signup-complete.dto.js';
 import type { PatientLoginDto } from './dto/patient-login.dto.js';
 import type { ChangePasswordDto } from './dto/change-password.dto.js';
+import type { SetSecurityQuestionDto } from './dto/set-security-question.dto.js';
 import type { PatientForgotPasswordStartDto } from './dto/patient-forgot-password-start.dto.js';
 import type { PatientForgotPasswordStartResponseDto } from './dto/patient-forgot-password-start-response.dto.js';
 import type { PatientForgotPasswordCompleteDto } from './dto/patient-forgot-password-complete.dto.js';
@@ -25,7 +26,7 @@ import type { PatientAuthContext } from '@common/interfaces/patient-auth-context
 const PASSWORD_BCRYPT_ROUNDS = 12;
 
 /** The account fields `matchSubject` needs to gate signup vs. recovery. */
-type MatchedUser = {
+type MatchedAccount = {
   id: string;
   is_deleted: boolean;
   is_active: boolean;
@@ -38,9 +39,10 @@ type MatchedUser = {
  * Self-service registration + login for patients/guardians already on file.
  * Identity is proven by matching national_id + date_of_birth + phone_number
  * against an existing Patient/Guardian row (no OTP). A matched subject gets a
- * `User` (no Profile) linked via patient_id/guardian_id, and patient-scoped
- * tokens. Every failure path collapses into a single generic message so the
- * endpoint can't be used to enumerate which field was wrong.
+ * `PatientAccount` (dedicated portal-login table — never the staff `users`
+ * table) linked via patient_id/guardian_id, and patient-scoped tokens. Every
+ * failure path collapses into a single generic message so the endpoint can't be
+ * used to enumerate which field was wrong.
  */
 @Injectable()
 export class PatientSignupService {
@@ -53,8 +55,8 @@ export class PatientSignupService {
   async start(
     dto: PatientSignupStartDto,
   ): Promise<PatientSignupStartResponseDto> {
-    const { subjectType, subjectId, user } = await this.matchSubject(dto);
-    if (user) throw this.accountExists();
+    const { subjectType, subjectId, account } = await this.matchSubject(dto);
+    if (account) throw this.accountExists();
     return this.tokensService.issuePatientSignupToken(subjectType, subjectId);
   }
 
@@ -73,11 +75,11 @@ export class PatientSignupService {
   }): Promise<{
     subjectType: 'PATIENT' | 'GUARDIAN';
     subjectId: string;
-    user: MatchedUser | null;
+    account: MatchedAccount | null;
   }> {
     const dob = this.normalizeDob(dto.date_of_birth);
     const phone = dto.phone_number.trim();
-    const userSelect = {
+    const accountSelect = {
       id: true,
       is_deleted: true,
       is_active: true,
@@ -88,7 +90,7 @@ export class PatientSignupService {
 
     const patient = await this.prismaService.db.patient.findFirst({
       where: { national_id: dto.national_id, is_deleted: false },
-      include: { user: { select: userSelect } },
+      include: { account: { select: accountSelect } },
     });
     if (patient) {
       if (
@@ -104,13 +106,13 @@ export class PatientSignupService {
       return {
         subjectType: 'PATIENT',
         subjectId: patient.id,
-        user: patient.user,
+        account: patient.account,
       };
     }
 
     const guardian = await this.prismaService.db.guardian.findFirst({
       where: { national_id: dto.national_id, is_deleted: false },
-      include: { user: { select: userSelect } },
+      include: { account: { select: accountSelect } },
     });
     if (guardian) {
       // Guardians may pre-date the date_of_birth column; a null cannot match.
@@ -129,7 +131,7 @@ export class PatientSignupService {
       return {
         subjectType: 'GUARDIAN',
         subjectId: guardian.id,
-        user: guardian.user,
+        account: guardian.account,
       };
     }
 
@@ -151,44 +153,36 @@ export class PatientSignupService {
     if (subjectType === 'PATIENT') {
       const patient = await this.prismaService.db.patient.findFirst({
         where: { id: subjectId, is_deleted: false },
-        include: { user: { select: { id: true } } },
+        include: { account: { select: { id: true } } },
       });
       if (!patient) throw this.noMatch();
-      if (patient.user) throw this.accountExists();
-      const { first_name, last_name } = this.splitName(patient.full_name);
-      const user = await this.createUser({
-        first_name,
-        last_name,
-        phone_number: patient.phone_number,
+      if (patient.account) throw this.accountExists();
+      const account = await this.createAccount({
         password_hashed,
         patient_id: patient.id,
         security_question: dto.security_question,
         security_answer_hashed,
       });
       return this.tokensService.issuePatientTokenPair({
-        userId: user.id,
+        accountId: account.id,
         patientId: patient.id,
       });
     }
 
     const guardian = await this.prismaService.db.guardian.findFirst({
       where: { id: subjectId, is_deleted: false },
-      include: { user: { select: { id: true } } },
+      include: { account: { select: { id: true } } },
     });
     if (!guardian) throw this.noMatch();
-    if (guardian.user) throw this.accountExists();
-    const { first_name, last_name } = this.splitName(guardian.full_name);
-    const user = await this.createUser({
-      first_name,
-      last_name,
-      phone_number: guardian.phone_number,
+    if (guardian.account) throw this.accountExists();
+    const account = await this.createAccount({
       password_hashed,
       guardian_id: guardian.id,
       security_question: dto.security_question,
       security_answer_hashed,
     });
     return this.tokensService.issuePatientTokenPair({
-      userId: user.id,
+      accountId: account.id,
       guardianId: guardian.id,
     });
   }
@@ -203,29 +197,29 @@ export class PatientSignupService {
   async forgotPasswordStart(
     dto: PatientForgotPasswordStartDto,
   ): Promise<PatientForgotPasswordStartResponseDto> {
-    const { user } = await this.matchSubject(dto);
+    const { account } = await this.matchSubject(dto);
     if (
-      !user ||
-      user.is_deleted ||
-      !user.is_active ||
-      !user.password_hashed ||
-      !user.security_question ||
-      !user.security_answer_hashed
+      !account ||
+      account.is_deleted ||
+      !account.is_active ||
+      !account.password_hashed ||
+      !account.security_question ||
+      !account.security_answer_hashed
     ) {
       throw this.noMatch();
     }
 
     const { reset_token, expires_in } =
-      this.tokensService.issuePatientResetToken(user.id);
+      this.tokensService.issuePatientResetToken(account.id);
     return {
-      security_question: user.security_question,
+      security_question: account.security_question,
       reset_token,
       expires_in,
     };
   }
 
   /**
-   * Step 2 of password recovery. The reset token (bound to a userId) plus a
+   * Step 2 of password recovery. The reset token (bound to an accountId) plus a
    * correct security answer authorize setting a new password. All existing
    * refresh tokens for the account are revoked so any active session dies. No
    * auto-login — the patient signs in fresh with the new password.
@@ -233,24 +227,25 @@ export class PatientSignupService {
   async forgotPasswordComplete(
     dto: PatientForgotPasswordCompleteDto,
   ): Promise<void> {
-    const { userId } = this.tokensService.decodePatientResetToken(
+    const { accountId } = this.tokensService.decodePatientResetToken(
       dto.reset_token,
     );
 
-    const user = await this.prismaService.db.user.findFirst({
-      where: { id: userId, is_active: true, is_deleted: false },
+    const account = await this.prismaService.db.patientAccount.findFirst({
+      where: { id: accountId, is_active: true, is_deleted: false },
       select: { id: true, password_hashed: true, security_answer_hashed: true },
     });
-    if (!user || !user.security_answer_hashed) throw this.invalidCredentials();
+    if (!account || !account.security_answer_hashed)
+      throw this.invalidCredentials();
 
     const answerOk = await bcrypt.compare(
       this.normalizeSecurityAnswer(dto.security_answer),
-      user.security_answer_hashed,
+      account.security_answer_hashed,
     );
     if (!answerOk) throw this.invalidCredentials();
 
-    if (user.password_hashed) {
-      const same = await bcrypt.compare(dto.password, user.password_hashed);
+    if (account.password_hashed) {
+      const same = await bcrypt.compare(dto.password, account.password_hashed);
       if (same) {
         throw new BadRequestException(
           'New password must differ from the current password',
@@ -263,12 +258,12 @@ export class PatientSignupService {
       PASSWORD_BCRYPT_ROUNDS,
     );
     await this.prismaService.db.$transaction([
-      this.prismaService.db.user.update({
-        where: { id: user.id },
+      this.prismaService.db.patientAccount.update({
+        where: { id: account.id },
         data: { password_hashed },
       }),
       this.prismaService.db.refreshToken.updateMany({
-        where: { user_id: user.id, is_revoked: false },
+        where: { patient_account_id: account.id, is_revoked: false },
         data: { is_revoked: true, revoked_at: new Date() },
       }),
     ]);
@@ -277,31 +272,36 @@ export class PatientSignupService {
   async login(dto: PatientLoginDto): Promise<AuthTokensDto> {
     const patient = await this.prismaService.db.patient.findFirst({
       where: { national_id: dto.national_id, is_deleted: false },
-      select: { id: true, user: true },
+      select: { id: true, account: true },
     });
 
-    let user = patient?.user ?? null;
+    let account = patient?.account ?? null;
     let patientId: string | undefined = patient?.id;
     let guardianId: string | undefined;
 
-    if (!user) {
+    if (!account) {
       patientId = undefined;
       const guardian = await this.prismaService.db.guardian.findFirst({
         where: { national_id: dto.national_id, is_deleted: false },
-        select: { id: true, user: true },
+        select: { id: true, account: true },
       });
-      user = guardian?.user ?? null;
+      account = guardian?.account ?? null;
       guardianId = guardian?.id;
     }
 
-    if (!user || user.is_deleted || !user.is_active || !user.password_hashed) {
+    if (
+      !account ||
+      account.is_deleted ||
+      !account.is_active ||
+      !account.password_hashed
+    ) {
       throw this.invalidCredentials();
     }
-    const ok = await bcrypt.compare(dto.password, user.password_hashed);
+    const ok = await bcrypt.compare(dto.password, account.password_hashed);
     if (!ok) throw this.invalidCredentials();
 
     return this.tokensService.issuePatientTokenPair({
-      userId: user.id,
+      accountId: account.id,
       patientId,
       guardianId,
     });
@@ -310,7 +310,8 @@ export class PatientSignupService {
   /**
    * Exchanges a valid patient refresh token for a fresh access+refresh pair,
    * rotating the jti (old token is revoked atomically). The patient/guardian
-   * subject is re-derived from the stored User rather than trusting the token.
+   * subject is re-derived from the stored PatientAccount rather than trusting
+   * the token.
    */
   async refresh(dto: RefreshDto): Promise<AuthTokensDto> {
     const payload = this.tokensService.decodePatientRefreshToken(
@@ -319,27 +320,28 @@ export class PatientSignupService {
 
     const stored = await this.prismaService.db.refreshToken.findUnique({
       where: { jti: payload.jti },
-      include: { user: true },
+      include: { patientAccount: true },
     });
     if (!stored || stored.is_revoked || stored.expires_at < new Date()) {
       throw new UnauthorizedException('Refresh token revoked or expired');
     }
-    // Patient refresh rows carry no profile/org — reject a staff row defensively.
-    if (stored.profile_id || stored.organization_id) {
+    // A patient refresh row is owned by a PatientAccount, never a staff user.
+    // Reject a staff row (no account / has user_id) defensively.
+    if (!stored.patient_account_id || stored.user_id) {
       throw new UnauthorizedException('Invalid refresh token');
     }
     const matches = await bcrypt.compare(dto.refresh_token, stored.token_hash);
     if (!matches) throw new UnauthorizedException('Refresh token mismatch');
 
-    const user = stored.user;
-    if (!user || user.is_deleted || !user.is_active) {
+    const account = stored.patientAccount;
+    if (!account || account.is_deleted || !account.is_active) {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
     return this.tokensService.issuePatientTokenPair({
-      userId: user.id,
-      patientId: user.patient_id ?? undefined,
-      guardianId: user.guardian_id ?? undefined,
+      accountId: account.id,
+      patientId: account.patient_id ?? undefined,
+      guardianId: account.guardian_id ?? undefined,
       revokeJti: stored.jti,
     });
   }
@@ -351,25 +353,31 @@ export class PatientSignupService {
   /**
    * Changes the logged-in account's password. The current password is verified
    * against the stored hash before the new one (which must differ) is written.
-   * Keyed on the authenticated `userId` — works for both patient and guardian
-   * accounts (a guardian has its own User credential).
+   * Keyed on the authenticated `accountId` — works for both patient and guardian
+   * accounts (a guardian has its own PatientAccount credential).
    */
   async changePassword(
     ctx: PatientAuthContext,
     dto: ChangePasswordDto,
   ): Promise<void> {
-    const user = await this.prismaService.db.user.findFirst({
-      where: { id: ctx.userId, is_active: true, is_deleted: false },
+    const account = await this.prismaService.db.patientAccount.findFirst({
+      where: { id: ctx.accountId, is_active: true, is_deleted: false },
       select: { id: true, password_hashed: true },
     });
-    if (!user || !user.password_hashed) {
+    if (!account || !account.password_hashed) {
       throw this.invalidCredentials();
     }
 
-    const ok = await bcrypt.compare(dto.current_password, user.password_hashed);
+    const ok = await bcrypt.compare(
+      dto.current_password,
+      account.password_hashed,
+    );
     if (!ok) throw this.invalidCredentials();
 
-    const same = await bcrypt.compare(dto.new_password, user.password_hashed);
+    const same = await bcrypt.compare(
+      dto.new_password,
+      account.password_hashed,
+    );
     if (same) {
       throw new BadRequestException(
         'New password must differ from the current password',
@@ -380,9 +388,48 @@ export class PatientSignupService {
       dto.new_password,
       PASSWORD_BCRYPT_ROUNDS,
     );
-    await this.prismaService.db.user.update({
-      where: { id: user.id },
+    await this.prismaService.db.patientAccount.update({
+      where: { id: account.id },
       data: { password_hashed },
+    });
+  }
+
+  /**
+   * Sets or replaces the logged-in account's security question + answer (used by
+   * the portal profile page so accounts created before the feature — or anyone
+   * wanting to change it — can enable/refresh recovery). The current password is
+   * re-verified first so a hijacked session can't silently swap the recovery
+   * credential. The answer is normalized then hashed; only the question key is
+   * persisted in readable form.
+   */
+  async setSecurityQuestion(
+    ctx: PatientAuthContext,
+    dto: SetSecurityQuestionDto,
+  ): Promise<void> {
+    const account = await this.prismaService.db.patientAccount.findFirst({
+      where: { id: ctx.accountId, is_active: true, is_deleted: false },
+      select: { id: true, password_hashed: true },
+    });
+    if (!account || !account.password_hashed) {
+      throw this.invalidCredentials();
+    }
+
+    const ok = await bcrypt.compare(
+      dto.current_password,
+      account.password_hashed,
+    );
+    if (!ok) throw this.invalidCredentials();
+
+    const security_answer_hashed = await bcrypt.hash(
+      this.normalizeSecurityAnswer(dto.security_answer),
+      PASSWORD_BCRYPT_ROUNDS,
+    );
+    await this.prismaService.db.patientAccount.update({
+      where: { id: account.id },
+      data: {
+        security_question: dto.security_question,
+        security_answer_hashed,
+      },
     });
   }
 
@@ -394,6 +441,11 @@ export class PatientSignupService {
    * guardian→patient link's relation.
    */
   async me(ctx: PatientAuthContext): Promise<PatientMeResponseDto> {
+    const account = await this.prismaService.db.patientAccount.findFirst({
+      where: { id: ctx.accountId, is_deleted: false },
+      select: { security_question: true },
+    });
+
     let displayName = '';
     if (ctx.patientId) {
       const patient = await this.prismaService.db.patient.findFirst({
@@ -445,36 +497,29 @@ export class PatientSignupService {
     );
 
     return {
-      user_id: ctx.userId,
+      // `user_id` is the PatientAccount id (kept under this response key for
+      // portal API stability — it's the identity id the client already uses).
+      user_id: ctx.accountId,
       patient_id: ctx.patientId ?? null,
       guardian_id: ctx.guardianId ?? null,
       accessible_patient_ids: ctx.accessiblePatientIds,
       display_name: displayName,
+      security_question: account?.security_question ?? null,
       accessible_patients,
     };
   }
 
-  private createUser(data: {
-    first_name: string;
-    last_name: string;
-    phone_number: string | null;
+  private createAccount(data: {
     password_hashed: string;
     patient_id?: string;
     guardian_id?: string;
     security_question: string;
     security_answer_hashed: string;
   }) {
-    return this.prismaService.db.user
+    return this.prismaService.db.patientAccount
       .create({
         data: {
-          first_name: data.first_name,
-          last_name: data.last_name,
-          email: null,
-          phone_number: data.phone_number,
           password_hashed: data.password_hashed,
-          registration_status: 'ACTIVE',
-          onboarding_completed: true,
-          verified_at: new Date(),
           patient_id: data.patient_id ?? null,
           guardian_id: data.guardian_id ?? null,
           security_question: data.security_question,
@@ -519,16 +564,6 @@ export class PatientSignupService {
    */
   private normalizeSecurityAnswer(raw: string): string {
     return raw.trim().toLowerCase().replace(/\s+/g, ' ');
-  }
-
-  private splitName(fullName: string): {
-    first_name: string;
-    last_name: string;
-  } {
-    const parts = fullName.trim().split(/\s+/).filter(Boolean);
-    const first_name = parts[0] ?? fullName.trim();
-    const last_name = parts.slice(1).join(' ');
-    return { first_name, last_name };
   }
 
   private noMatch(): NotFoundException {

@@ -265,7 +265,9 @@ describe('InvoicingService', () => {
     const baseDto = {
       branch_id: BRANCH,
       patient_id: 'pat-1',
-      items: [{ description: 'A', unit_price: 100, quantity: 1, service_id: 'svc-x' }],
+      items: [
+        { description: 'A', unit_price: 100, quantity: 1, service_id: 'svc-x' },
+      ],
     };
 
     it('asserts the assigned doctor is authorized for the items, then creates', async () => {
@@ -285,7 +287,9 @@ describe('InvoicingService', () => {
     });
 
     it('checks the visit-backfilled doctor', async () => {
-      mockDb.visit.findUnique.mockResolvedValue({ assigned_doctor_id: 'doc-v' });
+      mockDb.visit.findUnique.mockResolvedValue({
+        assigned_doctor_id: 'doc-v',
+      });
 
       await service.create(ORG, { ...baseDto, visit_id: 'v1' }, USER);
 

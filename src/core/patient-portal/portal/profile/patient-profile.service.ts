@@ -20,7 +20,7 @@ import {
   ProfileImageUploadUrlDto,
 } from './dto/profile-image.dto.js';
 
-/** Prisma selection for a patient-profile row (demographics + avatar + user link). */
+/** Prisma selection for a patient-profile row (demographics + avatar). */
 const patientProfileSelect = {
   id: true,
   full_name: true,
@@ -30,7 +30,6 @@ const patientProfileSelect = {
   address: true,
   marital_status: true,
   profile_image_object_key: true,
-  user: { select: { id: true } },
 } satisfies Prisma.PatientSelect;
 
 type PatientProfileRow = Prisma.PatientGetPayload<{
@@ -102,8 +101,8 @@ export class PatientProfileService {
 
   /**
    * Updates the patient's demographics (spread-guard — only supplied fields).
-   * When the patient has a linked `User` account, name/phone are synced onto it
-   * inside the same transaction so the auth account stays consistent.
+   * The portal login (PatientAccount) holds no demographics, so there is nothing
+   * to keep in sync — name/phone live solely on the Patient row.
    */
   async updateProfile(
     ctx: PatientAuthContext,
@@ -124,26 +123,10 @@ export class PatientProfileService {
       }),
     };
 
-    // Keep the linked auth account's name/phone in sync (when present).
-    const userData: Prisma.UserUpdateInput = {
-      ...(dto.full_name !== undefined && this.splitName(dto.full_name)),
-      ...(dto.phone_number !== undefined && { phone_number: dto.phone_number }),
-    };
-    const shouldSyncUser =
-      patient.user !== null && Object.keys(userData).length > 0;
-
-    const updated = await this.prismaService.db.$transaction(async (tx) => {
-      if (shouldSyncUser && patient.user) {
-        await tx.user.update({
-          where: { id: patient.user.id },
-          data: userData,
-        });
-      }
-      return tx.patient.update({
-        where: { id: patient.id },
-        data: patientData,
-        select: patientProfileSelect,
-      });
+    const updated = await this.prismaService.db.patient.update({
+      where: { id: patient.id },
+      data: patientData,
+      select: patientProfileSelect,
     });
 
     return this.toDto(updated);
@@ -257,16 +240,6 @@ export class PatientProfileService {
     } catch {
       this.logger.warn(`Failed to delete previous avatar object ${key}`);
     }
-  }
-
-  private splitName(fullName: string): {
-    first_name: string;
-    last_name: string;
-  } {
-    const parts = fullName.trim().split(/\s+/).filter(Boolean);
-    const first_name = parts[0] ?? fullName.trim();
-    const last_name = parts.slice(1).join(' ');
-    return { first_name, last_name };
   }
 
   private async toDto(patient: PatientProfileRow): Promise<PatientProfileDto> {
