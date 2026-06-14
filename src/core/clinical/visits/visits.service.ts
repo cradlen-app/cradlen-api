@@ -44,7 +44,11 @@ import {
   toVitalsTrendPoint,
 } from './visits.mapper.js';
 import { assertReceptionAction } from './visit-actor.guards.js';
-import { TERMINAL_STATES } from './visit-status.constants.js';
+import {
+  ACTIVE_REP_VISIT_STATUSES,
+  ACTIVE_VISIT_STATUSES,
+  TERMINAL_STATES,
+} from './visit-status.constants.js';
 import {
   VisitDailyPointDto,
   VisitStatsDto,
@@ -1285,10 +1289,12 @@ export class VisitsService {
 
   /**
    * Today's operational visit counts for a branch (or `query.date`): clinical
-   * visits split by appointment type plus medical-rep visits, all counted by
-   * `scheduled_at` within the day's bounds (matching the waiting-list view).
-   * `assigned_to_me` narrows to the current doctor's own queue. Branch access is
-   * asserted the same way the branch waiting-list/stats endpoints do.
+   * visits split by appointment type plus medical-rep visits, counted by
+   * `scheduled_at` within the day's bounds. Only non-terminal/active statuses are
+   * counted (excludes COMPLETED/CANCELLED/NO_SHOW) so the numbers reconcile with the
+   * waiting-list and in-progress views. `assigned_to_me` narrows to the current
+   * doctor's own queue. Branch access is asserted the same way the branch
+   * waiting-list/stats endpoints do.
    */
   async getBranchTodayVisitStats(
     branchId: string,
@@ -1312,6 +1318,7 @@ export class VisitsService {
       branch_id: branchId,
       is_deleted: false,
       scheduled_at: { gte: start, lte: end },
+      status: { in: ACTIVE_VISIT_STATUSES },
       ...doctorScope,
     };
 
@@ -1328,6 +1335,7 @@ export class VisitsService {
           branch_id: branchId,
           is_deleted: false,
           scheduled_at: { gte: start, lte: end },
+          status: { in: ACTIVE_REP_VISIT_STATUSES },
           ...doctorScope,
         },
       }),
