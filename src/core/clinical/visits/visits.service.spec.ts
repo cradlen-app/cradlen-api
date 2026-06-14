@@ -1636,6 +1636,26 @@ describe('VisitsService', () => {
         { name: 'Paracetamol', dose: '500 mg' },
       ]);
     });
+
+    it('filters to the caller when assignedDoctorId is set (own-only)', async () => {
+      db.visit.findMany.mockResolvedValue([]);
+      db.visit.count.mockResolvedValue(0);
+      db.$transaction.mockImplementation((queries: Promise<unknown>[]) =>
+        Promise.all(queries),
+      );
+
+      await service.findPatientVisitHistory('patient-uuid', 'org-uuid', {
+        page: 1,
+        limit: 3,
+        assignedDoctorId: 'doc-self',
+      });
+
+      expect(db.visit.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ assigned_doctor_id: 'doc-self' }),
+        }),
+      );
+    });
   });
 
   describe('findPatientJourneyTimeline', () => {
@@ -1719,6 +1739,25 @@ describe('VisitsService', () => {
           }),
           orderBy: { started_at: 'desc' },
         }),
+      );
+    });
+
+    it('restricts journeys to the caller when assignedDoctorId is set (own-only)', async () => {
+      db.patientJourney.findMany.mockResolvedValue([]);
+      db.patientJourney.count.mockResolvedValue(0);
+      db.$transaction.mockImplementation((queries: Promise<unknown>[]) =>
+        Promise.all(queries),
+      );
+
+      await service.findPatientJourneyTimeline('patient-uuid', 'org-uuid', {
+        page: 1,
+        limit: 5,
+        assignedDoctorId: 'doc-self',
+      });
+
+      const where = db.patientJourney.findMany.mock.calls[0][0].where;
+      expect(where.episodes.some.visits.some.assigned_doctor_id).toBe(
+        'doc-self',
       );
     });
   });
