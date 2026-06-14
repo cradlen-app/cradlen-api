@@ -80,11 +80,15 @@ function makePrescription() {
         chief_complaint: 'Headache',
         provisional_diagnosis: 'Tension headache',
       },
-      patient: {
-        id: 'patient-1',
-        full_name: 'Mona Ali',
-        phone_number: '0100',
-        date_of_birth: new Date('1995-02-01T00:00:00.000Z'),
+      episode: {
+        journey: {
+          patient: {
+            id: 'patient-1',
+            full_name: 'Mona Ali',
+            phone_number: '0100',
+            date_of_birth: new Date('1995-02-01T00:00:00.000Z'),
+          },
+        },
       },
       branch: {
         id: 'branch-1',
