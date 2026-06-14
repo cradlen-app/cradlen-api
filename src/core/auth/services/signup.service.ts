@@ -53,11 +53,9 @@ export class SignupService {
   async start(dto: SignupStartDto) {
     const existing = await this.prismaService.db.user.findFirst({
       where: {
-        // Patient/guardian self-signup accounts share the User table but live
-        // in a separate identity space; a patient's phone must never collide
-        // with (or reactivate into) a staff signup.
-        patient_id: null,
-        guardian_id: null,
+        // `users` is staff-only — patient/guardian self-signup accounts live in
+        // the separate `patient_accounts` table, so there is no cross-space
+        // collision to guard against here.
         OR: [
           { email: dto.email },
           ...(dto.phone_number ? [{ phone_number: dto.phone_number }] : []),

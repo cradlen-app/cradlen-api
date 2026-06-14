@@ -104,7 +104,11 @@ describe('ReportingService', () => {
           _count: 0,
         });
 
-      const result = await service.invoiceStats(ORG, { branchId: 'br-1' }, USER);
+      const result = await service.invoiceStats(
+        ORG,
+        { branchId: 'br-1' },
+        USER,
+      );
 
       expect(mockAuth.assertCanAccessBranch).toHaveBeenCalledWith(
         'p1',

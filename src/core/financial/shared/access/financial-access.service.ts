@@ -56,9 +56,7 @@ export class FinancialAccessService {
   ): Promise<void> {
     const serviceIds = [
       ...new Set(
-        items
-          .map((item) => item.service_id)
-          .filter((id): id is string => !!id),
+        items.map((item) => item.service_id).filter((id): id is string => !!id),
       ),
     ];
     if (serviceIds.length === 0) return;
