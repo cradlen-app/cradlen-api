@@ -113,6 +113,10 @@ describe('VisitsService', () => {
     captureInTx: jest.Mock;
     finalizeCapture: jest.Mock;
   };
+  let authorizationServiceMock: {
+    assertCanAccessBranch: jest.Mock;
+    isRestrictedToOwnData: jest.Mock;
+  };
   let db: {
     patientEpisode: {
       findUnique: jest.Mock;
@@ -214,8 +218,10 @@ describe('VisitsService', () => {
     const templatesServiceMock = {
       findActiveByCode: jest.fn().mockResolvedValue({ id: 'tpl-uuid' }),
     };
-    const authorizationServiceMock = {
+    authorizationServiceMock = {
       assertCanAccessBranch: jest.fn().mockResolvedValue(undefined),
+      // Default: non-doctor caller — stats cover the whole branch.
+      isRestrictedToOwnData: jest.fn().mockResolvedValue(false),
     };
     chargingServiceMock = {
       captureInTx: jest.fn().mockResolvedValue({ id: 'charge-uuid' }),
@@ -293,8 +299,9 @@ describe('VisitsService', () => {
       expect(where.assigned_doctor_id).toBeUndefined();
     });
 
-    it('narrows to the doctor when assigned_to_me is set', async () => {
-      await service.getBranchVisitStats('branch-uuid', mockUser, true);
+    it('narrows to the doctor for a restricted caller', async () => {
+      authorizationServiceMock.isRestrictedToOwnData.mockResolvedValue(true);
+      await service.getBranchVisitStats('branch-uuid', mockUser);
       const where = db.visit.count.mock.calls[0][0].where;
       expect(where.branch_id).toBe('branch-uuid');
       expect(where.assigned_doctor_id).toBe(mockUser.profileId);
