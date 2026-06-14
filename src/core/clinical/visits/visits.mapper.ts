@@ -47,8 +47,12 @@ export function toVisitHistorySummary(
  * Prisma `include` for a patient journey tree: episodes (ordered) → completed
  * visits (newest first), each visit carrying its history summary relations.
  * `excludeVisitId` drops the currently-open visit from the tree.
+ * `assignedDoctorId`, when set, restricts the tree to that doctor's own visits.
  */
-export function journeyTimelineInclude(excludeVisitId?: string) {
+export function journeyTimelineInclude(
+  excludeVisitId?: string,
+  assignedDoctorId?: string,
+) {
   return {
     journey_template: { select: { name: true, type: true } },
     episodes: {
@@ -59,6 +63,9 @@ export function journeyTimelineInclude(excludeVisitId?: string) {
           where: {
             is_deleted: false,
             status: 'COMPLETED' as const,
+            ...(assignedDoctorId
+              ? { assigned_doctor_id: assignedDoctorId }
+              : {}),
             ...(excludeVisitId ? { id: { not: excludeVisitId } } : {}),
           },
           orderBy: { completed_at: 'desc' },
