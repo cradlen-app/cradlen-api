@@ -51,26 +51,53 @@ async function main() {
     });
   }
 
-  await prisma.subscriptionPlan.upsert({
-    where: { plan: 'free_trial' },
-    update: { max_organizations: 1, max_branches: 1, max_staff: 5 },
-    create: { plan: 'free_trial', max_organizations: 1, max_branches: 1, max_staff: 5 },
-  });
-  await prisma.subscriptionPlan.upsert({
-    where: { plan: 'plus' },
-    update: { max_organizations: 3, max_branches: 3, max_staff: 15 },
-    create: { plan: 'plus', max_organizations: 3, max_branches: 3, max_staff: 15 },
-  });
-  await prisma.subscriptionPlan.upsert({
-    where: { plan: 'pro' },
-    update: { max_organizations: 5, max_branches: 5, max_staff: 25 },
-    create: { plan: 'pro', max_organizations: 5, max_branches: 5, max_staff: 25 },
-  });
-  await prisma.subscriptionPlan.upsert({
-    where: { plan: 'enterprise' },
-    update: { max_organizations: 10, max_branches: 10, max_staff: 100 },
-    create: { plan: 'enterprise', max_organizations: 10, max_branches: 10, max_staff: 100 },
-  });
+  // Plan tiers (limits) + their YEARLY price (EGP). Only YEARLY is offered for
+  // now; the BillingInterval enum keeps MONTHLY for a later additive change.
+  const SUBSCRIPTION_PLANS: {
+    plan: string;
+    max_organizations: number;
+    max_branches: number;
+    max_staff: number;
+    yearly_price: number;
+  }[] = [
+    { plan: 'free_trial', max_organizations: 1, max_branches: 1, max_staff: 5, yearly_price: 0 },
+    { plan: 'plus', max_organizations: 3, max_branches: 3, max_staff: 15, yearly_price: 12000 },
+    { plan: 'pro', max_organizations: 5, max_branches: 5, max_staff: 25, yearly_price: 30000 },
+    { plan: 'enterprise', max_organizations: 10, max_branches: 10, max_staff: 100, yearly_price: 100000 },
+  ];
+  for (const p of SUBSCRIPTION_PLANS) {
+    const planRow = await prisma.subscriptionPlan.upsert({
+      where: { plan: p.plan },
+      update: {
+        max_organizations: p.max_organizations,
+        max_branches: p.max_branches,
+        max_staff: p.max_staff,
+      },
+      create: {
+        plan: p.plan,
+        max_organizations: p.max_organizations,
+        max_branches: p.max_branches,
+        max_staff: p.max_staff,
+      },
+    });
+    await prisma.planPrice.upsert({
+      where: {
+        subscription_plan_id_billing_interval_currency: {
+          subscription_plan_id: planRow.id,
+          billing_interval: 'YEARLY',
+          currency: 'EGP',
+        },
+      },
+      update: { price: p.yearly_price, is_active: true },
+      create: {
+        subscription_plan_id: planRow.id,
+        billing_interval: 'YEARLY',
+        price: p.yearly_price,
+        currency: 'EGP',
+        is_active: true,
+      },
+    });
+  }
 
   // Specialty: OB/GYN
   const gynSpecialty = await prisma.specialty.upsert({
