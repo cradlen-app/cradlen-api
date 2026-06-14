@@ -16,10 +16,16 @@ interface Mocks {
   patientFindFirst: Fn;
   guardianFindFirst: Fn;
   userCreate: Fn;
+  userFindFirst: Fn;
+  userUpdate: Fn;
   refreshTokenFindUnique: Fn;
+  refreshTokenUpdateMany: Fn;
+  transaction: Fn;
   issuePatientSignupToken: Fn;
   issuePatientTokenPair: Fn;
+  issuePatientResetToken: Fn;
   decodePatientSignupToken: Fn;
+  decodePatientResetToken: Fn;
   decodePatientRefreshToken: Fn;
   revokeRefreshToken: Fn;
 }
@@ -29,10 +35,17 @@ function createEnv(): { service: PatientSignupService; mocks: Mocks } {
     patientFindFirst: jest.fn(),
     guardianFindFirst: jest.fn(),
     userCreate: jest.fn(),
+    userFindFirst: jest.fn(),
+    userUpdate: jest.fn(),
     refreshTokenFindUnique: jest.fn(),
+    refreshTokenUpdateMany: jest.fn(),
+    // The array form of $transaction: callers await the already-issued promises.
+    transaction: jest.fn().mockResolvedValue([]),
     issuePatientSignupToken: jest.fn(),
     issuePatientTokenPair: jest.fn(),
+    issuePatientResetToken: jest.fn(),
     decodePatientSignupToken: jest.fn(),
+    decodePatientResetToken: jest.fn(),
     decodePatientRefreshToken: jest.fn(),
     revokeRefreshToken: jest.fn(),
   };
@@ -41,15 +54,25 @@ function createEnv(): { service: PatientSignupService; mocks: Mocks } {
     db: {
       patient: { findFirst: mocks.patientFindFirst },
       guardian: { findFirst: mocks.guardianFindFirst },
-      user: { create: mocks.userCreate },
-      refreshToken: { findUnique: mocks.refreshTokenFindUnique },
+      user: {
+        create: mocks.userCreate,
+        findFirst: mocks.userFindFirst,
+        update: mocks.userUpdate,
+      },
+      refreshToken: {
+        findUnique: mocks.refreshTokenFindUnique,
+        updateMany: mocks.refreshTokenUpdateMany,
+      },
+      $transaction: mocks.transaction,
     },
   } as unknown as PrismaService;
 
   const tokens = {
     issuePatientSignupToken: mocks.issuePatientSignupToken,
     issuePatientTokenPair: mocks.issuePatientTokenPair,
+    issuePatientResetToken: mocks.issuePatientResetToken,
     decodePatientSignupToken: mocks.decodePatientSignupToken,
+    decodePatientResetToken: mocks.decodePatientResetToken,
     decodePatientRefreshToken: mocks.decodePatientRefreshToken,
     revokeRefreshToken: mocks.revokeRefreshToken,
   } as unknown as TokensService;
@@ -173,6 +196,14 @@ describe('PatientSignupService', () => {
   });
 
   describe('complete', () => {
+    const COMPLETE_DTO = {
+      patient_signup_token: 'tok',
+      password: 'Password1!',
+      confirm_password: 'Password1!',
+      security_question: 'BIRTH_CITY',
+      security_answer: 'Cairo',
+    };
+
     it('creates a User (split name, no Profile) and auto-logs-in', async () => {
       const { service, mocks } = createEnv();
       mocks.decodePatientSignupToken.mockReturnValue({
@@ -183,11 +214,7 @@ describe('PatientSignupService', () => {
       mocks.userCreate.mockResolvedValue({ id: 'user-1' });
       mocks.issuePatientTokenPair.mockResolvedValue({ type: 'tokens' });
 
-      await service.complete({
-        patient_signup_token: 'tok',
-        password: 'Password1!',
-        confirm_password: 'Password1!',
-      });
+      await service.complete({ ...COMPLETE_DTO });
 
       expect(mocks.userCreate).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -207,6 +234,30 @@ describe('PatientSignupService', () => {
       });
     });
 
+    it('stores the chosen question and a hash of the normalized answer', async () => {
+      const { service, mocks } = createEnv();
+      mocks.decodePatientSignupToken.mockReturnValue({
+        subjectType: 'PATIENT',
+        subjectId: 'patient-1',
+      });
+      mocks.patientFindFirst.mockResolvedValue({ ...PATIENT });
+      mocks.userCreate.mockResolvedValue({ id: 'user-1' });
+      mocks.issuePatientTokenPair.mockResolvedValue({ type: 'tokens' });
+
+      await service.complete({ ...COMPLETE_DTO, security_answer: '  CaIRo ' });
+
+      const data = mocks.userCreate.mock.calls[0][0].data as {
+        security_question: string;
+        security_answer_hashed: string;
+      };
+      expect(data.security_question).toBe('BIRTH_CITY');
+      expect(data.security_answer_hashed).not.toBe('cairo');
+      // Normalized (trim + lowercase) before hashing, so 'cairo' verifies.
+      expect(bcrypt.compareSync('cairo', data.security_answer_hashed)).toBe(
+        true,
+      );
+    });
+
     it('maps a P2002 unique violation to a 409 (concurrent signup)', async () => {
       const { service, mocks } = createEnv();
       mocks.decodePatientSignupToken.mockReturnValue({
@@ -217,11 +268,7 @@ describe('PatientSignupService', () => {
       mocks.userCreate.mockRejectedValue({ code: 'P2002' });
 
       await expect(
-        service.complete({
-          patient_signup_token: 'tok',
-          password: 'Password1!',
-          confirm_password: 'Password1!',
-        }),
+        service.complete({ ...COMPLETE_DTO }),
       ).rejects.toBeInstanceOf(ConflictException);
     });
   });
@@ -435,6 +482,160 @@ describe('PatientSignupService', () => {
       };
       expect(data.password_hashed).not.toBe(currentHash);
       expect(bcrypt.compareSync('NewPass456', data.password_hashed)).toBe(true);
+    });
+  });
+
+  describe('forgotPasswordStart', () => {
+    const answerHash = bcrypt.hashSync('cairo', 4);
+
+    function matchedPatient(userOverrides: Record<string, unknown> | null) {
+      return {
+        ...PATIENT,
+        user:
+          userOverrides === null
+            ? null
+            : {
+                id: 'user-1',
+                is_deleted: false,
+                is_active: true,
+                password_hashed: 'hash',
+                security_question: 'BIRTH_CITY',
+                security_answer_hashed: answerHash,
+                ...userOverrides,
+              },
+      };
+    }
+
+    it('returns the stored question + a reset token on identity match', async () => {
+      const { service, mocks } = createEnv();
+      mocks.patientFindFirst.mockResolvedValue(matchedPatient({}));
+      mocks.issuePatientResetToken.mockReturnValue({
+        reset_token: 'reset-tok',
+        expires_in: 1800,
+      });
+
+      const res = await service.forgotPasswordStart(START_DTO);
+
+      expect(mocks.issuePatientResetToken).toHaveBeenCalledWith('user-1');
+      expect(res).toEqual({
+        security_question: 'BIRTH_CITY',
+        reset_token: 'reset-tok',
+        expires_in: 1800,
+      });
+    });
+
+    it('rejects (generic 404) when no account exists yet', async () => {
+      const { service, mocks } = createEnv();
+      mocks.patientFindFirst.mockResolvedValue(matchedPatient(null));
+
+      await expect(
+        service.forgotPasswordStart(START_DTO),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(mocks.issuePatientResetToken).not.toHaveBeenCalled();
+    });
+
+    it('rejects when the account has no security question on file', async () => {
+      const { service, mocks } = createEnv();
+      mocks.patientFindFirst.mockResolvedValue(
+        matchedPatient({
+          security_question: null,
+          security_answer_hashed: null,
+        }),
+      );
+
+      await expect(
+        service.forgotPasswordStart(START_DTO),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('rejects with a generic 404 when the identity does not match', async () => {
+      const { service, mocks } = createEnv();
+      mocks.patientFindFirst.mockResolvedValue(matchedPatient({}));
+
+      await expect(
+        service.forgotPasswordStart({
+          ...START_DTO,
+          phone_number: '+209999999999',
+        }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('forgotPasswordComplete', () => {
+    const answerHash = bcrypt.hashSync('cairo', 4);
+    const oldPasswordHash = bcrypt.hashSync('OldPass123!', 4);
+
+    function setup(
+      userOverrides: Record<string, unknown> | null,
+    ): ReturnType<typeof createEnv> {
+      const env = createEnv();
+      env.mocks.decodePatientResetToken.mockReturnValue({ userId: 'user-1' });
+      env.mocks.userFindFirst.mockResolvedValue(
+        userOverrides === null
+          ? null
+          : {
+              id: 'user-1',
+              password_hashed: oldPasswordHash,
+              security_answer_hashed: answerHash,
+              ...userOverrides,
+            },
+      );
+      return env;
+    }
+
+    const DTO = {
+      reset_token: 'reset-tok',
+      security_answer: 'Cairo',
+      password: 'NewPass456!',
+      confirm_password: 'NewPass456!',
+    };
+
+    it('sets a new password and revokes all refresh tokens on a correct answer', async () => {
+      const { service, mocks } = setup({});
+
+      await service.forgotPasswordComplete(DTO);
+
+      const updateData = mocks.userUpdate.mock.calls[0][0].data as {
+        password_hashed: string;
+      };
+      expect(
+        bcrypt.compareSync('NewPass456!', updateData.password_hashed),
+      ).toBe(true);
+      expect(mocks.refreshTokenUpdateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { user_id: 'user-1', is_revoked: false },
+        }),
+      );
+      expect(mocks.transaction).toHaveBeenCalled();
+    });
+
+    it('rejects (generic 401) on a wrong security answer', async () => {
+      const { service, mocks } = setup({});
+
+      await expect(
+        service.forgotPasswordComplete({ ...DTO, security_answer: 'Alex' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(mocks.userUpdate).not.toHaveBeenCalled();
+    });
+
+    it('rejects (401) when the account is gone or lacks a stored answer', async () => {
+      const { service, mocks } = setup(null);
+
+      await expect(service.forgotPasswordComplete(DTO)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      expect(mocks.userUpdate).not.toHaveBeenCalled();
+    });
+
+    it('rejects (400) when the new password equals the current one', async () => {
+      const { service, mocks } = setup({
+        password_hashed: bcrypt.hashSync('NewPass456!', 4),
+      });
+
+      await expect(service.forgotPasswordComplete(DTO)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.userUpdate).not.toHaveBeenCalled();
     });
   });
 });

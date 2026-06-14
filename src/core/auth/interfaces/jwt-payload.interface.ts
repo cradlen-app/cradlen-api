@@ -66,6 +66,18 @@ export interface PatientSignupTokenPayload {
 }
 
 /**
+ * Short-lived token bridging the patient forgot-password steps: step 1 proves
+ * identity (national ID + DOB + phone) and mints this; step 2 presents it with
+ * the security answer + new password. Bound to the existing account's userId.
+ */
+export interface PatientResetTokenPayload {
+  userId: string;
+  type: 'patient_reset';
+  iat?: number;
+  exp?: number;
+}
+
+/**
  * Access token for a self-registered patient/guardian. Carries no
  * profile/organization — the patient-facing strategy validates `type` and
  * loads a PatientAuthContext instead of a staff ProfileContext.
