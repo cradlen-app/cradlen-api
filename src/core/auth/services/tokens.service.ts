@@ -59,7 +59,7 @@ export interface IssueTokenPairArgs {
 }
 
 export interface IssuePatientTokenPairArgs {
-  userId: string;
+  accountId: string;
   patientId?: string;
   guardianId?: string;
   /**
@@ -147,11 +147,14 @@ export class TokensService {
     return { subjectType: payload.subjectType, subjectId: payload.subjectId };
   }
 
-  issuePatientResetToken(userId: string): {
+  issuePatientResetToken(accountId: string): {
     reset_token: string;
     expires_in: number;
   } {
-    const payload: PatientResetTokenPayload = { userId, type: 'patient_reset' };
+    const payload: PatientResetTokenPayload = {
+      accountId,
+      type: 'patient_reset',
+    };
     const expires_in = this.parseDurationToSeconds(
       this.authConfig.jwt.registrationExpiration,
     );
@@ -164,14 +167,14 @@ export class TokensService {
     return { reset_token, expires_in };
   }
 
-  decodePatientResetToken(token: string): { userId: string } {
+  decodePatientResetToken(token: string): { accountId: string } {
     const payload = this.verifyWithGrace<PatientResetTokenPayload>(token, {
       secret: this.authConfig.jwt.resetSecret,
       errorMessage: 'Invalid or expired reset token',
     });
     if (payload.type !== 'patient_reset')
       throw new UnauthorizedException('Invalid token type');
-    return { userId: payload.userId };
+    return { accountId: payload.accountId };
   }
 
   tryDecodeAccessToken(authorization?: string): string | null {
@@ -402,9 +405,9 @@ export class TokensService {
 
   /**
    * Issues an access + refresh pair for a self-registered patient/guardian.
-   * The refresh row is persisted with only `user_id` set (profile/org/branch
-   * are null) so a future patient-refresh endpoint can rotate it. Unlike the
-   * staff path there is no profile to assert against.
+   * The refresh row is persisted with only `patient_account_id` set (user/
+   * profile/org/branch are null) so the patient-refresh endpoint can rotate it.
+   * Unlike the staff path there is no profile to assert against.
    */
   async issuePatientTokenPair(
     args: IssuePatientTokenPairArgs,
@@ -417,13 +420,13 @@ export class TokensService {
       this.authConfig.jwt.refreshExpiration,
     );
     const accessPayload: JwtPatientAccessPayload = {
-      userId: args.userId,
+      accountId: args.accountId,
       ...(args.patientId && { patientId: args.patientId }),
       ...(args.guardianId && { guardianId: args.guardianId }),
       type: 'patient_access',
     };
     const refreshPayload: JwtPatientRefreshPayload = {
-      userId: args.userId,
+      accountId: args.accountId,
       ...(args.patientId && { patientId: args.patientId }),
       ...(args.guardianId && { guardianId: args.guardianId }),
       jti,
@@ -466,7 +469,7 @@ export class TokensService {
         data: {
           jti,
           token_hash,
-          user_id: args.userId,
+          patient_account_id: args.accountId,
           profile_id: null,
           organization_id: null,
           active_branch_id: null,
