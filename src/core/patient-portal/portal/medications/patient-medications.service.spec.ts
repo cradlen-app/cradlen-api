@@ -24,6 +24,7 @@ interface RowOverrides {
   medication?: Record<string, unknown> | null;
   duration?: string | null;
   prescribedAt?: Date;
+  prescriptionId?: string;
 }
 
 function makeRow(o: RowOverrides = {}) {
@@ -46,6 +47,7 @@ function makeRow(o: RowOverrides = {}) {
           }
         : o.medication,
     prescription: {
+      id: o.prescriptionId ?? 'rx-1',
       prescribed_at: o.prescribedAt ?? new Date(Date.now() - 2 * DAY),
       prescribed_by: { user: { first_name: 'Sara', last_name: 'Mansour' } },
       visit: {
@@ -109,6 +111,7 @@ describe('PatientMedicationsService', () => {
     const item = current[0];
 
     expect(item).toMatchObject({
+      prescription_id: 'rx-1',
       name: 'Folic acid',
       category: 'Supplement',
       strength: '5 mg',

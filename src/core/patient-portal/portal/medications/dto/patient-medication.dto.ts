@@ -4,6 +4,11 @@ export class PatientMedicationItemDto {
   @ApiProperty()
   id!: string;
 
+  @ApiProperty({
+    description: 'Id of the prescription this medicine belongs to',
+  })
+  prescription_id!: string;
+
   @ApiProperty({ description: 'Catalog name, or the free-typed drug name' })
   name!: string;
 
