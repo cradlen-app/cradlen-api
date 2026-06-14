@@ -1301,15 +1301,23 @@ export class VisitsService {
   async getBranchVisitStats(
     branchId: string,
     user: AuthContext,
-    assignedToMe = false,
   ): Promise<VisitStatsDto> {
     await this.authorizationService.assertCanAccessBranch(
       user.profileId,
       user.organizationId,
       branchId,
     );
+    // A doctor sees only their own visit stats; managers/reception see the
+    // branch. Derived server-side from role, never from a client flag.
+    const assignedDoctorId =
+      (await this.authorizationService.isRestrictedToOwnData(
+        user.profileId,
+        user.organizationId,
+      ))
+        ? user.profileId
+        : undefined;
     return this.computeVisitStats(user.organizationId, branchId, {
-      assignedDoctorId: assignedToMe ? user.profileId : undefined,
+      assignedDoctorId,
     });
   }
 

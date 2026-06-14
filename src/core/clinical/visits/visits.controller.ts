@@ -206,14 +206,12 @@ export class VisitsController {
   @ApiStandardResponse(VisitStatsDto)
   getBranchVisitStats(
     @Param('branchId', ParseUUIDPipe) branchId: string,
-    @Query() query: VisitStatsQueryDto,
+    @Query() _query: VisitStatsQueryDto,
     @CurrentUser() user: AuthContext,
   ) {
-    return this.visitsService.getBranchVisitStats(
-      branchId,
-      user,
-      query.assigned_to_me ?? false,
-    );
+    // `assigned_to_me` is accepted for backward-compat but ignored: scope is
+    // derived server-side from the caller's role.
+    return this.visitsService.getBranchVisitStats(branchId, user);
   }
 
   @Get('organizations/:orgId/visits/stats')

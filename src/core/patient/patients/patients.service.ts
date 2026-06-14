@@ -14,6 +14,36 @@ import { DEFAULT_PATIENT_PAGE_SIZE } from './patients.constants.js';
 import { toEpisodeSummary } from './patients.mapper.js';
 import { CarePathStatDto, PatientStatsDto } from './dto/patient-stats.dto.js';
 
+/**
+ * Single source of truth for "this journey has a qualifying visit at the branch":
+ * an episode with a non-deleted visit that was actually checked in at `branchId`.
+ * `assignedDoctorId` narrows to that provider's own patients; `checkinUpTo` bounds
+ * the check-in for previous-month snapshots. Shared by the directory list
+ * (`findAllForBranch`) and the analytics engine (`computePatientStats`).
+ */
+function branchCheckinEpisodeFilter(
+  branchId: string,
+  opts: { assignedDoctorId?: string; checkinUpTo?: Date } = {},
+) {
+  return {
+    some: {
+      is_deleted: false,
+      visits: {
+        some: {
+          branch_id: branchId,
+          is_deleted: false,
+          ...(opts.assignedDoctorId
+            ? { assigned_doctor_id: opts.assignedDoctorId }
+            : {}),
+          checked_in_at: opts.checkinUpTo
+            ? { not: null, lte: opts.checkinUpTo }
+            : { not: null },
+        },
+      },
+    },
+  };
+}
+
 @Injectable()
 export class PatientsService {
   constructor(
@@ -157,25 +187,21 @@ export class PatientsService {
     };
 
     // F5 — a patient counts as "in this org" only after a visit at this branch
-    // has actually been checked in. Pre-checkin bookings (and pure cancels)
-    // are not surfaced in the org's branch patient list. When `assigned_to_me`
-    // is set, the qualifying visit must also be assigned to the caller — the
-    // doctor's own patients (same definition as computePatientStats).
-    const branchVisitFilter = {
-      some: {
-        is_deleted: false,
-        visits: {
-          some: {
-            branch_id: branchId,
-            is_deleted: false,
-            checked_in_at: { not: null },
-            ...(query.assigned_to_me
-              ? { assigned_doctor_id: user.profileId }
-              : {}),
-          },
-        },
-      },
-    };
+    // has actually been checked in. Pre-checkin bookings (and pure cancels) are
+    // not surfaced. Scope is decided server-side from the caller's role: a doctor
+    // (non-manager clinician) only ever sees their own patients, regardless of any
+    // client `assigned_to_me` flag. Reception / owner / branch manager see all.
+    const assignedDoctorId =
+      (await this.authorizationService.isRestrictedToOwnData(
+        user.profileId,
+        user.organizationId,
+      ))
+        ? user.profileId
+        : undefined;
+
+    const branchVisitFilter = branchCheckinEpisodeFilter(branchId, {
+      assignedDoctorId,
+    });
 
     const where = {
       is_deleted: false,
@@ -395,15 +421,23 @@ export class PatientsService {
   async getBranchStats(
     branchId: string,
     user: AuthContext,
-    assignedToMe = false,
   ): Promise<PatientStatsDto> {
     await this.authorizationService.assertCanAccessBranch(
       user.profileId,
       user.organizationId,
       branchId,
     );
+    // A doctor sees only their own patients' stats; managers/reception see the
+    // branch. Derived server-side from role, never from a client flag.
+    const assignedDoctorId =
+      (await this.authorizationService.isRestrictedToOwnData(
+        user.profileId,
+        user.organizationId,
+      ))
+        ? user.profileId
+        : undefined;
     return this.computePatientStats(user.organizationId, branchId, {
-      assignedDoctorId: assignedToMe ? user.profileId : undefined,
+      assignedDoctorId,
     });
   }
 
@@ -452,23 +486,11 @@ export class PatientsService {
     // the previous snapshot, that check-in must predate the cutoff. When a doctor
     // views their personal stats, "my patients" are those whose qualifying visit
     // was assigned to them.
-    const branchEpisodeFilter = (checkinUpTo?: Date) => ({
-      some: {
-        is_deleted: false,
-        visits: {
-          some: {
-            branch_id: branchId!,
-            is_deleted: false,
-            ...(opts.assignedDoctorId
-              ? { assigned_doctor_id: opts.assignedDoctorId }
-              : {}),
-            checked_in_at: checkinUpTo
-              ? { not: null, lte: checkinUpTo }
-              : { not: null },
-          },
-        },
-      },
-    });
+    const branchEpisodeFilter = (checkinUpTo?: Date) =>
+      branchCheckinEpisodeFilter(branchId!, {
+        assignedDoctorId: opts.assignedDoctorId,
+        checkinUpTo,
+      });
 
     const journeyWhere = (opts: { templateId?: string; cutoff?: Date }) => ({
       organization_id: organizationId,
