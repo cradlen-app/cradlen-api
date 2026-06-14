@@ -22,6 +22,7 @@ import type {
   JwtRefreshPayload,
   JwtWsTicketPayload,
   PasswordResetTokenPayload,
+  PatientResetTokenPayload,
   PatientSignupTokenPayload,
   SignupTokenPayload,
 } from '../interfaces/jwt-payload.interface.js';
@@ -144,6 +145,33 @@ export class TokensService {
     if (payload.type !== 'patient_signup')
       throw new UnauthorizedException('Invalid token type');
     return { subjectType: payload.subjectType, subjectId: payload.subjectId };
+  }
+
+  issuePatientResetToken(userId: string): {
+    reset_token: string;
+    expires_in: number;
+  } {
+    const payload: PatientResetTokenPayload = { userId, type: 'patient_reset' };
+    const expires_in = this.parseDurationToSeconds(
+      this.authConfig.jwt.registrationExpiration,
+    );
+    const reset_token = this.jwtService.sign(payload, {
+      secret: this.authConfig.jwt.resetSecret,
+      audience: JWT_AUDIENCE,
+      issuer: JWT_ISSUER,
+      expiresIn: expires_in,
+    });
+    return { reset_token, expires_in };
+  }
+
+  decodePatientResetToken(token: string): { userId: string } {
+    const payload = this.verifyWithGrace<PatientResetTokenPayload>(token, {
+      secret: this.authConfig.jwt.resetSecret,
+      errorMessage: 'Invalid or expired reset token',
+    });
+    if (payload.type !== 'patient_reset')
+      throw new UnauthorizedException('Invalid token type');
+    return { userId: payload.userId };
   }
 
   tryDecodeAccessToken(authorization?: string): string | null {
