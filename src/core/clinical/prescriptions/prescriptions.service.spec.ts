@@ -1,6 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { PrescriptionsService } from './prescriptions.service.js';
 import type { PrismaService } from '@infrastructure/database/prisma.service.js';
+import type { StorageService } from '@infrastructure/storage/storage.service.js';
 import type { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 
@@ -17,12 +18,19 @@ function createEnv() {
   const authorization = {
     assertCanAccessBranch,
   } as unknown as AuthorizationService;
-  const service = new PrescriptionsService(prisma, authorization);
+  const createPresignedDownloadUrl = jest
+    .fn()
+    .mockResolvedValue('https://signed.example/logo.png');
+  const storage = {
+    createPresignedDownloadUrl,
+  } as unknown as StorageService;
+  const service = new PrescriptionsService(prisma, authorization, storage);
   return {
     service,
     prescriptionFindFirst,
     templateFindMany,
     assertCanAccessBranch,
+    createPresignedDownloadUrl,
   };
 }
 
@@ -148,6 +156,10 @@ describe('PrescriptionsService', () => {
       specialty: 'Obstetrics & Gynecology',
     });
     expect(document.organization.name).toBe('Jasmin Clinic');
+    // Logo key is presigned into a ready-to-render URL.
+    expect(document.organization.logo_image_url).toBe(
+      'https://signed.example/logo.png',
+    );
     expect(document.patient.full_name).toBe('Mona Ali');
     expect(document.items).toHaveLength(2);
     expect(document.items[0]).toMatchObject({
