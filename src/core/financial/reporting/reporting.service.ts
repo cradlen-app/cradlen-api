@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import {
   ChargeStatus,
   InvoiceStatus,
@@ -14,6 +14,11 @@ interface ReportScope {
   branchId?: string;
   dateFrom?: string;
   dateTo?: string;
+  /**
+   * Requested provider filter. Honored as-is for managers; ignored (and forced
+   * to the caller's own id) for non-managers.
+   */
+  doctorId?: string;
 }
 
 type AgingBucket = 'current' | 'd1_30' | 'd31_60' | 'd61_90' | 'd90_plus';
@@ -43,7 +48,7 @@ export class ReportingService {
     scope: ReportScope,
     user: AuthContext,
   ) {
-    await this.authorizeScope(organizationId, scope.branchId, user);
+    const doctorId = await this.resolveDoctorScope(organizationId, scope, user);
 
     const where: Prisma.InvoiceWhereInput = {
       organization_id: organizationId,
@@ -57,6 +62,7 @@ export class ReportingService {
         ],
       },
       ...(scope.branchId && { branch_id: scope.branchId }),
+      ...(doctorId && { assigned_doctor_id: doctorId }),
       ...this.dateRange('issued_at', scope),
     };
 
@@ -93,13 +99,14 @@ export class ReportingService {
     scope: ReportScope,
     user: AuthContext,
   ) {
-    await this.authorizeScope(organizationId, scope.branchId, user);
+    const doctorId = await this.resolveDoctorScope(organizationId, scope, user);
 
     const now = new Date();
     const base: Prisma.InvoiceWhereInput = {
       organization_id: organizationId,
       is_deleted: false,
       ...(scope.branchId && { branch_id: scope.branchId }),
+      ...(doctorId && { assigned_doctor_id: doctorId }),
     };
     const withBalance: Prisma.InvoiceWhereInput = {
       ...base,
@@ -154,7 +161,7 @@ export class ReportingService {
   }
 
   async arAging(organizationId: string, scope: ReportScope, user: AuthContext) {
-    await this.authorizeScope(organizationId, scope.branchId, user);
+    const doctorId = await this.resolveDoctorScope(organizationId, scope, user);
 
     const invoices = await this.prismaService.db.invoice.findMany({
       where: {
@@ -164,6 +171,7 @@ export class ReportingService {
           in: [InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID],
         },
         ...(scope.branchId && { branch_id: scope.branchId }),
+        ...(doctorId && { assigned_doctor_id: doctorId }),
       },
       select: {
         total_amount: true,
@@ -207,7 +215,7 @@ export class ReportingService {
     scope: ReportScope,
     user: AuthContext,
   ) {
-    await this.authorizeScope(organizationId, scope.branchId, user);
+    const doctorId = await this.resolveDoctorScope(organizationId, scope, user);
 
     const where: Prisma.PaymentWhereInput = {
       is_deleted: false,
@@ -216,6 +224,7 @@ export class ReportingService {
         organization_id: organizationId,
         is_deleted: false,
         ...(scope.branchId && { branch_id: scope.branchId }),
+        ...(doctorId && { assigned_doctor_id: doctorId }),
       },
       ...this.dateRange('payment_date', scope),
     };
@@ -264,7 +273,7 @@ export class ReportingService {
     scope: ReportScope,
     user: AuthContext,
   ) {
-    await this.authorizeScope(organizationId, scope.branchId, user);
+    const doctorId = await this.resolveDoctorScope(organizationId, scope, user);
 
     const charges = await this.prismaService.db.charge.findMany({
       where: {
@@ -272,6 +281,7 @@ export class ReportingService {
         is_deleted: false,
         status: ChargeStatus.WRITTEN_OFF,
         ...(scope.branchId && { branch_id: scope.branchId }),
+        ...(doctorId && { profile_id: doctorId }),
         ...this.dateRange('updated_at', scope),
       },
       select: { unit_price: true, quantity: true },
@@ -292,7 +302,7 @@ export class ReportingService {
     scope: ReportScope,
     user: AuthContext,
   ) {
-    await this.authorizeScope(organizationId, scope.branchId, user);
+    const doctorId = await this.resolveDoctorScope(organizationId, scope, user);
 
     const [invoices, payments] = await Promise.all([
       this.prismaService.db.invoice.findMany({
@@ -301,6 +311,7 @@ export class ReportingService {
           is_deleted: false,
           status: { in: REVENUE_INVOICE_STATUSES },
           ...(scope.branchId && { branch_id: scope.branchId }),
+          ...(doctorId && { assigned_doctor_id: doctorId }),
           ...this.dateRange('issued_at', scope),
         },
         select: { issued_at: true, total_amount: true },
@@ -313,6 +324,7 @@ export class ReportingService {
             organization_id: organizationId,
             is_deleted: false,
             ...(scope.branchId && { branch_id: scope.branchId }),
+            ...(doctorId && { assigned_doctor_id: doctorId }),
           },
           ...this.dateRange('payment_date', scope),
         },
@@ -365,7 +377,7 @@ export class ReportingService {
     scope: ReportScope,
     user: AuthContext,
   ) {
-    await this.authorizeScope(organizationId, scope.branchId, user);
+    const doctorId = await this.resolveDoctorScope(organizationId, scope, user);
 
     const grouped = await this.prismaService.db.invoiceItem.groupBy({
       by: ['service_id'],
@@ -375,6 +387,7 @@ export class ReportingService {
           is_deleted: false,
           status: { in: REVENUE_INVOICE_STATUSES },
           ...(scope.branchId && { branch_id: scope.branchId }),
+          ...(doctorId && { assigned_doctor_id: doctorId }),
           ...this.dateRange('issued_at', scope),
         },
       },
@@ -406,7 +419,7 @@ export class ReportingService {
     scope: ReportScope,
     user: AuthContext,
   ) {
-    await this.authorizeScope(organizationId, scope.branchId, user);
+    const doctorId = await this.resolveDoctorScope(organizationId, scope, user);
 
     const grouped = await this.prismaService.db.invoice.groupBy({
       by: ['assigned_doctor_id'],
@@ -415,6 +428,7 @@ export class ReportingService {
         is_deleted: false,
         status: { in: REVENUE_INVOICE_STATUSES },
         ...(scope.branchId && { branch_id: scope.branchId }),
+        ...(doctorId && { assigned_doctor_id: doctorId }),
         ...this.dateRange('issued_at', scope),
       },
       _sum: { total_amount: true },
@@ -445,7 +459,7 @@ export class ReportingService {
     scope: ReportScope,
     user: AuthContext,
   ) {
-    await this.authorizeScope(organizationId, scope.branchId, user);
+    const doctorId = await this.resolveDoctorScope(organizationId, scope, user);
 
     const grouped = await this.prismaService.db.invoice.groupBy({
       by: ['branch_id'],
@@ -454,6 +468,7 @@ export class ReportingService {
         is_deleted: false,
         status: { in: REVENUE_INVOICE_STATUSES },
         ...(scope.branchId && { branch_id: scope.branchId }),
+        ...(doctorId && { assigned_doctor_id: doctorId }),
         ...this.dateRange('issued_at', scope),
       },
       _sum: { total_amount: true, paid_amount: true, balance_due: true },
@@ -484,7 +499,7 @@ export class ReportingService {
     scope: ReportScope,
     user: AuthContext,
   ) {
-    await this.authorizeScope(organizationId, scope.branchId, user);
+    const doctorId = await this.resolveDoctorScope(organizationId, scope, user);
 
     const invoices = await this.prismaService.db.invoice.findMany({
       where: {
@@ -493,6 +508,7 @@ export class ReportingService {
         status: { in: [InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID] },
         balance_due: { gt: 0 },
         ...(scope.branchId && { branch_id: scope.branchId }),
+        ...(doctorId && { assigned_doctor_id: doctorId }),
         ...this.dateRange('issued_at', scope),
       },
       select: {
@@ -565,7 +581,7 @@ export class ReportingService {
     scope: ReportScope,
     user: AuthContext,
   ) {
-    await this.authorizeScope(organizationId, scope.branchId, user);
+    const doctorId = await this.resolveDoctorScope(organizationId, scope, user);
 
     const byMethod = await this.prismaService.db.payment.groupBy({
       by: ['payment_method'],
@@ -576,6 +592,7 @@ export class ReportingService {
           organization_id: organizationId,
           is_deleted: false,
           ...(scope.branchId && { branch_id: scope.branchId }),
+          ...(doctorId && { assigned_doctor_id: doctorId }),
         },
         ...this.dateRange('payment_date', scope),
       },
@@ -663,23 +680,57 @@ export class ReportingService {
     return { age_days, bucket };
   }
 
-  private async authorizeScope(
+  /**
+   * Authorize the request and return the provider id that every query must be
+   * filtered by (or `undefined` for an unrestricted, all-providers view).
+   *
+   * - Managers (owner / branch manager) get the full picture: a branch request is
+   *   gated by branch access; an org-wide (no branch) request is owner-only. Their
+   *   optional `doctorId` is honored as a drill-down filter.
+   * - Everyone else is a single provider: the request must name an accessible
+   *   branch, the caller must be clinical, and the filter is forced to their own
+   *   profile id — any client-supplied `doctorId` is ignored. This is what keeps a
+   *   doctor from reading branch-wide financials.
+   */
+  private async resolveDoctorScope(
     organizationId: string,
-    branchId: string | undefined,
+    scope: ReportScope,
     user: AuthContext,
-  ): Promise<void> {
-    if (branchId) {
-      await this.authorizationService.assertCanAccessBranch(
-        user.profileId,
-        organizationId,
-        branchId,
-      );
-    } else {
-      await this.authorizationService.assertCanManageOrganization(
-        user.profileId,
-        organizationId,
-      );
+  ): Promise<string | undefined> {
+    const isManager = await this.authorizationService.canViewAllFinancials(
+      user.profileId,
+      organizationId,
+    );
+
+    if (isManager) {
+      if (scope.branchId) {
+        await this.authorizationService.assertCanAccessBranch(
+          user.profileId,
+          organizationId,
+          scope.branchId,
+        );
+      } else {
+        await this.authorizationService.assertCanManageOrganization(
+          user.profileId,
+          organizationId,
+        );
+      }
+      return scope.doctorId;
     }
+
+    // Non-manager: own revenue only, always scoped to a branch they can access.
+    if (!scope.branchId) {
+      throw new ForbiddenException('Branch scope required');
+    }
+    await this.authorizationService.assertCanAccessBranch(
+      user.profileId,
+      organizationId,
+      scope.branchId,
+    );
+    if (!(await this.authorizationService.isClinical(user.profileId))) {
+      throw new ForbiddenException('Financial reports access denied');
+    }
+    return user.profileId;
   }
 
   private dateRange(
