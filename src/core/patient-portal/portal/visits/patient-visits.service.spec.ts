@@ -9,7 +9,7 @@ describe('PatientVisitsService', () => {
   let count: jest.Mock;
 
   const guardianCtx: PatientAuthContext = {
-    userId: 'u1',
+    accountId: 'u1',
     guardianId: 'g1',
     accessiblePatientIds: ['p1', 'p2'],
   };
@@ -35,7 +35,7 @@ describe('PatientVisitsService', () => {
 
   it('returns an empty page without querying when no accessible patients', async () => {
     const result = await service.listVisits(
-      { userId: 'u1', accessiblePatientIds: [] },
+      { accountId: 'u1', accessiblePatientIds: [] },
       { page: 1, limit: 10 },
     );
     expect(findMany).not.toHaveBeenCalled();
@@ -110,7 +110,7 @@ describe('PatientVisitsService', () => {
     count.mockReturnValue(1);
 
     const result = await service.listVisits(
-      { userId: 'u1', patientId: 'p1', accessiblePatientIds: ['p1'] },
+      { accountId: 'u1', patientId: 'p1', accessiblePatientIds: ['p1'] },
       { page: 1, limit: 10 },
     );
 
@@ -171,7 +171,7 @@ describe('PatientVisitsService', () => {
 
     it('returns an empty page without querying when no accessible patients', async () => {
       const result = await service.listUpcoming(
-        { userId: 'u1', accessiblePatientIds: [] },
+        { accountId: 'u1', accessiblePatientIds: [] },
         { page: 1, limit: 10 },
       );
       expect(findMany).not.toHaveBeenCalled();
@@ -213,7 +213,7 @@ describe('PatientVisitsService', () => {
       count.mockReturnValue(1);
 
       const result = await service.listUpcoming(
-        { userId: 'u1', patientId: 'p1', accessiblePatientIds: ['p1'] },
+        { accountId: 'u1', patientId: 'p1', accessiblePatientIds: ['p1'] },
         { page: 1, limit: 10 },
       );
 

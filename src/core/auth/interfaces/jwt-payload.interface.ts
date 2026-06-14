@@ -71,7 +71,7 @@ export interface PatientSignupTokenPayload {
  * the security answer + new password. Bound to the existing account's userId.
  */
 export interface PatientResetTokenPayload {
-  userId: string;
+  accountId: string;
   type: 'patient_reset';
   iat?: number;
   exp?: number;
@@ -83,7 +83,7 @@ export interface PatientResetTokenPayload {
  * loads a PatientAuthContext instead of a staff ProfileContext.
  */
 export interface JwtPatientAccessPayload {
-  userId: string;
+  accountId: string;
   patientId?: string;
   guardianId?: string;
   type: 'patient_access';
@@ -92,7 +92,7 @@ export interface JwtPatientAccessPayload {
 }
 
 export interface JwtPatientRefreshPayload {
-  userId: string;
+  accountId: string;
   patientId?: string;
   guardianId?: string;
   jti: string;

@@ -74,14 +74,12 @@ export class SessionsService {
     dto: LoginDto,
   ): Promise<ProfileSelectionResponse | OnboardingRequiredResponse> {
     const user = await this.prismaService.db.user.findFirst({
-      // Staff login only — patient/guardian accounts authenticate via
-      // /v1/patient-auth/login. (They have email=null today, so this is
-      // defensive, but keeps the two identity spaces strictly separate.)
+      // Staff login only. Patient/guardian accounts live in `patient_accounts`
+      // (PatientAccount) and authenticate via /v1/patient-auth/login — the two
+      // identity spaces are separate tables, so `users` is staff by definition.
       where: {
         email: dto.email,
         is_deleted: false,
-        patient_id: null,
-        guardian_id: null,
       },
     });
     if (!user?.password_hashed) {
@@ -197,7 +195,7 @@ export class SessionsService {
 
     const matches = await bcrypt.compare(dto.refresh_token, stored.token_hash);
     if (!matches) throw new UnauthorizedException('Refresh token mismatch');
-    if (!stored.profile_id || !stored.organization_id) {
+    if (!stored.user || !stored.profile_id || !stored.organization_id) {
       throw new UnauthorizedException('Refresh token has no profile context');
     }
 

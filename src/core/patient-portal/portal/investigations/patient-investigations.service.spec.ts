@@ -11,7 +11,7 @@ describe('PatientInvestigationsService', () => {
   let createPresignedDownloadUrl: jest.Mock;
 
   const guardianCtx: PatientAuthContext = {
-    userId: 'u1',
+    accountId: 'u1',
     guardianId: 'g1',
     accessiblePatientIds: ['p1', 'p2'],
   };
@@ -78,7 +78,7 @@ describe('PatientInvestigationsService', () => {
 
   it('returns an empty page without querying when no accessible patients', async () => {
     const result = await service.listInvestigations(
-      { userId: 'u1', accessiblePatientIds: [] },
+      { accountId: 'u1', accessiblePatientIds: [] },
       { page: 1, limit: 10 },
     );
     expect(findMany).not.toHaveBeenCalled();
@@ -124,7 +124,7 @@ describe('PatientInvestigationsService', () => {
     count.mockReturnValue(1);
 
     const result = await service.listInvestigations(
-      { userId: 'u1', patientId: 'p1', accessiblePatientIds: ['p1'] },
+      { accountId: 'u1', patientId: 'p1', accessiblePatientIds: ['p1'] },
       { page: 1, limit: 10 },
     );
 
@@ -152,7 +152,7 @@ describe('PatientInvestigationsService', () => {
     count.mockReturnValue(1);
 
     const result = await service.listInvestigations(
-      { userId: 'u1', patientId: 'p1', accessiblePatientIds: ['p1'] },
+      { accountId: 'u1', patientId: 'p1', accessiblePatientIds: ['p1'] },
       { page: 1, limit: 10 },
     );
 
@@ -185,7 +185,7 @@ describe('PatientInvestigationsService', () => {
     count.mockReturnValue(1);
 
     const result = await service.listInvestigations(
-      { userId: 'u1', patientId: 'p1', accessiblePatientIds: ['p1'] },
+      { accountId: 'u1', patientId: 'p1', accessiblePatientIds: ['p1'] },
       { page: 1, limit: 10 },
     );
 
@@ -201,7 +201,7 @@ describe('PatientInvestigationsService', () => {
     count.mockReturnValue(1);
 
     const result = await service.listInvestigations(
-      { userId: 'u1', patientId: 'p1', accessiblePatientIds: ['p1'] },
+      { accountId: 'u1', patientId: 'p1', accessiblePatientIds: ['p1'] },
       { page: 1, limit: 10 },
     );
 

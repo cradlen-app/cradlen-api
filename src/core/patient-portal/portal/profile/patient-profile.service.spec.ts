@@ -8,7 +8,6 @@ describe('PatientProfileService', () => {
   let service: PatientProfileService;
   let patientFindFirst: jest.Mock;
   let patientUpdate: jest.Mock;
-  let userUpdate: jest.Mock;
   let storage: {
     assertAllowedContentType: jest.Mock;
     assertWithinSizeLimit: jest.Mock;
@@ -20,12 +19,12 @@ describe('PatientProfileService', () => {
   };
 
   const ctx: PatientAuthContext = {
-    userId: 'u1',
+    accountId: 'u1',
     patientId: 'p1',
     accessiblePatientIds: ['p1'],
   };
   const guardianCtx: PatientAuthContext = {
-    userId: 'u1',
+    accountId: 'u1',
     guardianId: 'g1',
     accessiblePatientIds: ['p1', 'p2'],
   };
@@ -39,14 +38,12 @@ describe('PatientProfileService', () => {
     address: 'Cairo',
     marital_status: 'SINGLE',
     profile_image_object_key: null,
-    user: { id: 'usr1' },
     ...over,
   });
 
   beforeEach(() => {
     patientFindFirst = jest.fn().mockResolvedValue(patientRow());
     patientUpdate = jest.fn().mockResolvedValue(patientRow());
-    userUpdate = jest.fn().mockResolvedValue({});
     storage = {
       assertAllowedContentType: jest.fn(),
       assertWithinSizeLimit: jest.fn(),
@@ -62,15 +59,9 @@ describe('PatientProfileService', () => {
         .fn()
         .mockResolvedValue({ contentType: 'image/png', contentLength: 100 }),
     };
-    const tx = {
-      patient: { update: patientUpdate },
-      user: { update: userUpdate },
-    };
     const prisma = {
       db: {
         patient: { findFirst: patientFindFirst, update: patientUpdate },
-        user: { update: userUpdate },
-        $transaction: (cb: (t: typeof tx) => unknown) => cb(tx),
       },
     } as unknown as PrismaService;
     service = new PatientProfileService(
@@ -82,7 +73,7 @@ describe('PatientProfileService', () => {
   describe('getProfile', () => {
     it('throws 404 when the account has no accessible patients', async () => {
       await expect(
-        service.getProfile({ userId: 'u1', accessiblePatientIds: [] }),
+        service.getProfile({ accountId: 'u1', accessiblePatientIds: [] }),
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(patientFindFirst).not.toHaveBeenCalled();
     });
@@ -122,7 +113,7 @@ describe('PatientProfileService', () => {
   });
 
   describe('updateProfile', () => {
-    it('updates only provided fields and syncs the linked user', async () => {
+    it('updates only the provided demographic fields on the patient row', async () => {
       await service.updateProfile(ctx, undefined, {
         full_name: 'New Name',
         address: 'Giza',
@@ -133,18 +124,10 @@ describe('PatientProfileService', () => {
         unknown
       >;
       expect(data).toEqual({ full_name: 'New Name', address: 'Giza' });
-
-      const userData = userUpdate.mock.calls[0][0].data as Record<
-        string,
-        unknown
-      >;
-      expect(userData).toEqual({ first_name: 'New', last_name: 'Name' });
     });
 
-    it('does not touch the user when the patient has no linked account', async () => {
-      patientFindFirst.mockResolvedValue(patientRow({ user: null }));
+    it('writes a single supplied field without touching others', async () => {
       await service.updateProfile(ctx, undefined, { phone_number: '0999' });
-      expect(userUpdate).not.toHaveBeenCalled();
       const data = patientUpdate.mock.calls[0][0].data as Record<
         string,
         unknown

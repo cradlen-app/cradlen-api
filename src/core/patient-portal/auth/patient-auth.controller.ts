@@ -25,6 +25,7 @@ import { PatientSignupCompleteDto } from './dto/patient-signup-complete.dto.js';
 import { PatientLoginDto } from './dto/patient-login.dto.js';
 import { PatientMeResponseDto } from './dto/patient-me-response.dto.js';
 import { ChangePasswordDto } from './dto/change-password.dto.js';
+import { SetSecurityQuestionDto } from './dto/set-security-question.dto.js';
 import { PatientForgotPasswordStartDto } from './dto/patient-forgot-password-start.dto.js';
 import { PatientForgotPasswordStartResponseDto } from './dto/patient-forgot-password-start-response.dto.js';
 import { PatientForgotPasswordCompleteDto } from './dto/patient-forgot-password-complete.dto.js';
@@ -139,5 +140,22 @@ export class PatientAuthController {
     @Body() dto: ChangePasswordDto,
   ): Promise<void> {
     await this.patientSignupService.changePassword(patient, dto);
+  }
+
+  @Post('security-question')
+  @Public()
+  @UseGuards(PatientJwtAuthGuard)
+  @Throttle({ default: { limit: 5, ttl: 600000 } })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: "Set or update the current account's security question",
+  })
+  @ApiVoidResponse()
+  async setSecurityQuestion(
+    @CurrentPatient() patient: PatientAuthContext,
+    @Body() dto: SetSecurityQuestionDto,
+  ): Promise<void> {
+    await this.patientSignupService.setSecurityQuestion(patient, dto);
   }
 }
