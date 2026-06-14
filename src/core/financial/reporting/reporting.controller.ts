@@ -154,6 +154,7 @@ export class ReportingController {
       branchId: query.branch_id,
       dateFrom: query.date_from,
       dateTo: query.date_to,
+      doctorId: query.doctor_id,
     };
   }
 }
