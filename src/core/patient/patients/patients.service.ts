@@ -158,7 +158,9 @@ export class PatientsService {
 
     // F5 — a patient counts as "in this org" only after a visit at this branch
     // has actually been checked in. Pre-checkin bookings (and pure cancels)
-    // are not surfaced in the org's branch patient list.
+    // are not surfaced in the org's branch patient list. When `assigned_to_me`
+    // is set, the qualifying visit must also be assigned to the caller — the
+    // doctor's own patients (same definition as computePatientStats).
     const branchVisitFilter = {
       some: {
         is_deleted: false,
@@ -167,6 +169,9 @@ export class PatientsService {
             branch_id: branchId,
             is_deleted: false,
             checked_in_at: { not: null },
+            ...(query.assigned_to_me
+              ? { assigned_doctor_id: user.profileId }
+              : {}),
           },
         },
       },

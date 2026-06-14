@@ -115,7 +115,12 @@ export class VisitsController {
     return this.visitsService.findPatientVisitHistory(
       patientId,
       user.organizationId,
-      { page: query.page, limit: query.limit, excludeVisitId: query.exclude },
+      {
+        page: query.page,
+        limit: query.limit,
+        excludeVisitId: query.exclude,
+        assignedDoctorId: user.profileId,
+      },
     );
   }
 
@@ -134,7 +139,12 @@ export class VisitsController {
     return this.visitsService.findPatientJourneyTimeline(
       patientId,
       user.organizationId,
-      { page: query.page, limit: query.limit, excludeVisitId: query.exclude },
+      {
+        page: query.page,
+        limit: query.limit,
+        excludeVisitId: query.exclude,
+        assignedDoctorId: user.profileId,
+      },
     );
   }
 

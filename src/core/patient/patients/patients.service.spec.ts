@@ -303,6 +303,34 @@ describe('PatientsService', () => {
       });
     });
 
+    it('narrows the directory to the doctor when assigned_to_me is set', async () => {
+      authMock.assertCanAccessBranch.mockResolvedValue(undefined);
+      db.$transaction.mockResolvedValue([[], 0]);
+
+      await service.findAllForBranch(
+        'branch-uuid',
+        { assigned_to_me: true },
+        mockUser,
+      );
+
+      const where = db.patient.findMany.mock.calls[0][0].where;
+      expect(
+        where.journeys.some.episodes.some.visits.some.assigned_doctor_id,
+      ).toBe(mockUser.profileId);
+    });
+
+    it('stays branch-wide (no doctor filter) when assigned_to_me is absent', async () => {
+      authMock.assertCanAccessBranch.mockResolvedValue(undefined);
+      db.$transaction.mockResolvedValue([[], 0]);
+
+      await service.findAllForBranch('branch-uuid', {}, mockUser);
+
+      const where = db.patient.findMany.mock.calls[0][0].where;
+      expect(
+        where.journeys.some.episodes.some.visits.some.assigned_doctor_id,
+      ).toBeUndefined();
+    });
+
     it('returns journey: null when patient has no matching journey', async () => {
       authMock.assertCanAccessBranch.mockResolvedValue(undefined);
       db.$transaction.mockResolvedValue([[patientNoJourney], 1]);

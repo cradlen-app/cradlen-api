@@ -1,5 +1,13 @@
-import { IsOptional, IsString, IsInt, Min, Max, IsEnum } from 'class-validator';
-import { Type } from 'class-transformer';
+import {
+  IsBoolean,
+  IsOptional,
+  IsString,
+  IsInt,
+  Min,
+  Max,
+  IsEnum,
+} from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 import { JourneyStatus, JourneyTemplateType } from '@prisma/client';
 
 export class ListBranchPatientsQueryDto {
@@ -13,4 +21,14 @@ export class ListBranchPatientsQueryDto {
   @Min(1)
   @Max(100)
   limit?: number = 11;
+
+  /**
+   * When true, restricts the directory to patients whose qualifying checked-in
+   * visit at the branch was assigned to the current doctor (their own patients).
+   */
+  @IsOptional()
+  @Type(() => Boolean)
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  assigned_to_me?: boolean;
 }
