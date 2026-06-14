@@ -15,8 +15,10 @@ import { seedVisit } from '../../helpers/visits-helpers';
  * `GET /branches/:branchId/visits/today-stats` against real Postgres. The
  * endpoint reports today's (or `?date=`) operational counts — clinical visits
  * split by appointment type plus medical-rep visits — counted by `scheduled_at`
- * within the day's bounds, regardless of status. `assigned_to_me=true` narrows to
- * the current doctor's own queue.
+ * within the day's bounds. Only non-terminal/active statuses are counted
+ * (COMPLETED/CANCELLED/NO_SHOW are excluded) so the numbers reconcile with the
+ * waiting-list and in-progress views. `assigned_to_me=true` narrows to the current
+ * doctor's own queue.
  */
 describe('Visits — today stats (integration)', () => {
   let app: INestApplication;
@@ -53,6 +55,7 @@ describe('Visits — today stats (integration)', () => {
     branchId: string;
     doctorProfileId: string;
     when: Date;
+    status?: 'SCHEDULED' | 'CHECKED_IN' | 'IN_PROGRESS' | 'COMPLETED';
   }) {
     const rep = await prisma.medicalRep.create({
       data: {
@@ -69,6 +72,7 @@ describe('Visits — today stats (integration)', () => {
         assigned_doctor_id: args.doctorProfileId,
         created_by_id: args.doctorProfileId,
         scheduled_at: args.when,
+        status: args.status ?? 'SCHEDULED',
       },
     });
   }
@@ -111,6 +115,45 @@ describe('Visits — today stats (integration)', () => {
       visits: 2,
       follow_ups: 1,
       total_visits: 3,
+      medical_reps: 1,
+    });
+  });
+
+  it('counts only active statuses, excluding completed/cancelled/no-show', async () => {
+    const a = await seedOrg(prisma, 'Clinic A', 'doc.a@example.com');
+    const common = {
+      organizationId: a.org.id,
+      branchId: a.branch.id,
+      doctorProfileId: a.ownerProfileId,
+    };
+
+    // Active today: 1 scheduled visit + 1 in-progress visit.
+    await seedVisit(prisma, { ...common, status: 'SCHEDULED' });
+    await seedVisit(prisma, { ...common, status: 'IN_PROGRESS' });
+    // Terminal today — must NOT be counted.
+    await seedVisit(prisma, { ...common, status: 'COMPLETED' });
+    await seedVisit(prisma, { ...common, status: 'CANCELLED' });
+    await seedVisit(prisma, { ...common, status: 'NO_SHOW' });
+    // A terminal follow-up — also excluded.
+    await seedVisit(prisma, {
+      ...common,
+      appointmentType: 'FOLLOW_UP',
+      status: 'COMPLETED',
+    });
+
+    // Rep visits: 1 active, 1 completed (excluded).
+    await seedRepVisit({ ...common, when: now, status: 'SCHEDULED' });
+    await seedRepVisit({ ...common, when: now, status: 'COMPLETED' });
+
+    const auth = bearer(await loginAs(app, a.ownerEmail));
+    const res = await auth(request(http()).get(todayStats(a.branch.id))).expect(
+      200,
+    );
+
+    expect(res.body.data).toMatchObject({
+      visits: 2,
+      follow_ups: 0,
+      total_visits: 2,
       medical_reps: 1,
     });
   });
