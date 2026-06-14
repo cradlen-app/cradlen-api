@@ -19,6 +19,8 @@ const mockPrisma = { db: mockDb };
 const mockAuth = {
   assertCanAccessBranch: jest.fn(),
   assertCanManageOrganization: jest.fn(),
+  canViewAllFinancials: jest.fn(),
+  isClinical: jest.fn(),
 };
 
 const ORG = 'org-1';
@@ -27,6 +29,17 @@ const USER: AuthContext = {
   profileId: 'p1',
   organizationId: ORG,
   roles: ['OWNER'],
+  jobFunctions: [],
+  branchIds: ['br-1'],
+};
+
+/** A non-manager clinician (doctor): own-revenue only. */
+const DOCTOR: AuthContext = {
+  userId: 'u2',
+  profileId: 'doc-self',
+  organizationId: ORG,
+  roles: ['STAFF'],
+  jobFunctions: ['OBGYN'],
   branchIds: ['br-1'],
 };
 
@@ -44,6 +57,9 @@ describe('ReportingService', () => {
 
     service = module.get(ReportingService);
     jest.clearAllMocks();
+    // Default to the manager path so the existing suites see branch/org-wide data.
+    mockAuth.canViewAllFinancials.mockResolvedValue(true);
+    mockAuth.isClinical.mockResolvedValue(false);
   });
 
   describe('revenueSummary', () => {
@@ -395,6 +411,85 @@ describe('ReportingService', () => {
 
       expect(result.by_method).toHaveLength(2);
       expect(result.total.toFixed(2)).toBe('500.00');
+    });
+  });
+
+  describe('doctor scope enforcement', () => {
+    const emptyAggregate = {
+      _sum: { total_amount: null, paid_amount: null },
+      _count: 0,
+    };
+
+    it('forces a non-manager clinician to their own id, ignoring a passed doctor_id', async () => {
+      mockAuth.canViewAllFinancials.mockResolvedValue(false);
+      mockAuth.isClinical.mockResolvedValue(true);
+      mockDb.invoice.aggregate.mockResolvedValue(emptyAggregate);
+
+      await service.revenueSummary(
+        ORG,
+        { branchId: 'br-1', doctorId: 'someone-else' },
+        DOCTOR,
+      );
+
+      expect(mockAuth.assertCanAccessBranch).toHaveBeenCalledWith(
+        'doc-self',
+        ORG,
+        'br-1',
+      );
+      const where = mockDb.invoice.aggregate.mock.calls[0][0].where;
+      expect(where.assigned_doctor_id).toBe('doc-self');
+    });
+
+    it('rejects an org-wide (no branch) request from a non-manager', async () => {
+      mockAuth.canViewAllFinancials.mockResolvedValue(false);
+      mockAuth.isClinical.mockResolvedValue(true);
+
+      await expect(service.revenueSummary(ORG, {}, DOCTOR)).rejects.toThrow(
+        'Branch scope required',
+      );
+    });
+
+    it('rejects a non-clinical non-manager outright', async () => {
+      mockAuth.canViewAllFinancials.mockResolvedValue(false);
+      mockAuth.isClinical.mockResolvedValue(false);
+
+      await expect(
+        service.revenueSummary(ORG, { branchId: 'br-1' }, DOCTOR),
+      ).rejects.toThrow('Financial reports access denied');
+    });
+
+    it('honors a manager-supplied doctor_id as a drill-down filter', async () => {
+      // canViewAllFinancials defaults to true (manager) in beforeEach.
+      mockDb.invoice.aggregate.mockResolvedValue(emptyAggregate);
+
+      await service.revenueSummary(
+        ORG,
+        { branchId: 'br-1', doctorId: 'doc-x' },
+        USER,
+      );
+
+      const where = mockDb.invoice.aggregate.mock.calls[0][0].where;
+      expect(where.assigned_doctor_id).toBe('doc-x');
+    });
+
+    it('leaves the report unfiltered for a manager with no doctor_id', async () => {
+      mockDb.invoice.aggregate.mockResolvedValue(emptyAggregate);
+
+      await service.revenueSummary(ORG, { branchId: 'br-1' }, USER);
+
+      const where = mockDb.invoice.aggregate.mock.calls[0][0].where;
+      expect(where.assigned_doctor_id).toBeUndefined();
+    });
+
+    it('scopes charge-based write-offs by provider profile_id for a doctor', async () => {
+      mockAuth.canViewAllFinancials.mockResolvedValue(false);
+      mockAuth.isClinical.mockResolvedValue(true);
+      mockDb.charge.findMany.mockResolvedValue([]);
+
+      await service.writeOffs(ORG, { branchId: 'br-1' }, DOCTOR);
+
+      const where = mockDb.charge.findMany.mock.calls[0][0].where;
+      expect(where.profile_id).toBe('doc-self');
     });
   });
 });

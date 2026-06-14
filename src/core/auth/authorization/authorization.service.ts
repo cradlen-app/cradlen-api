@@ -12,6 +12,7 @@ const STAFF_VIEWER_ROLES = ['OWNER', 'BRANCH_MANAGER'];
 const STAFF_VIEWER_JOB_FUNCTIONS = ['RECEPTIONIST'];
 const ORG_WIDE_ROLES = ['OWNER'];
 const OWNER_ONLY_ROLES = ['OWNER'];
+const FINANCIAL_MANAGER_ROLES = ['OWNER', 'BRANCH_MANAGER'];
 
 @Injectable()
 export class AuthorizationService {
@@ -192,6 +193,18 @@ export class AuthorizationService {
     organizationId: string,
   ): Promise<boolean> {
     return this.hasAnyRole(profileId, organizationId, STAFF_MANAGER_ROLES);
+  }
+
+  /**
+   * Whether the profile may view financial reports across the branch/org (all
+   * providers). Owners and branch managers qualify; anyone else (e.g. a doctor)
+   * is restricted to their own revenue by the reporting layer.
+   */
+  async canViewAllFinancials(
+    profileId: string,
+    organizationId: string,
+  ): Promise<boolean> {
+    return this.hasAnyRole(profileId, organizationId, FINANCIAL_MANAGER_ROLES);
   }
 
   async assertCanManageOrganization(
