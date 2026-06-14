@@ -67,7 +67,7 @@ export class VisitTodayStatsQueryDto {
 export class VisitStatsQueryDto {
   @ApiPropertyOptional({
     description:
-      'When true, restricts the monthly analytics to visits assigned to the current doctor (their own activity).',
+      'Deprecated/ignored: scope is derived server-side from the caller role (a doctor always sees only their own activity). Accepted for backward-compat.',
   })
   @IsOptional()
   @Type(() => Boolean)

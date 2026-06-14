@@ -47,6 +47,7 @@ describe('PatientsService', () => {
     assertCanAccessBranch: jest.Mock;
     assertCanManageOrganization: jest.Mock;
     isClinical: jest.Mock;
+    isRestrictedToOwnData: jest.Mock;
   };
   let accessMock: { assertPatientAccessible: jest.Mock };
 
@@ -70,6 +71,8 @@ describe('PatientsService', () => {
       assertCanAccessBranch: jest.fn(),
       assertCanManageOrganization: jest.fn(),
       isClinical: jest.fn().mockResolvedValue(false),
+      // Default: a non-doctor caller (reception/owner) sees the full branch.
+      isRestrictedToOwnData: jest.fn().mockResolvedValue(false),
     };
     accessMock = {
       assertPatientAccessible: jest.fn().mockResolvedValue(undefined),
@@ -303,15 +306,13 @@ describe('PatientsService', () => {
       });
     });
 
-    it('narrows the directory to the doctor when assigned_to_me is set', async () => {
+    it('narrows the directory to a doctor (restricted caller), ignoring any client flag', async () => {
       authMock.assertCanAccessBranch.mockResolvedValue(undefined);
+      authMock.isRestrictedToOwnData.mockResolvedValue(true);
       db.$transaction.mockResolvedValue([[], 0]);
 
-      await service.findAllForBranch(
-        'branch-uuid',
-        { assigned_to_me: true },
-        mockUser,
-      );
+      // No assigned_to_me passed — scope is derived from role, not the client.
+      await service.findAllForBranch('branch-uuid', {}, mockUser);
 
       const where = db.patient.findMany.mock.calls[0][0].where;
       expect(
@@ -319,11 +320,17 @@ describe('PatientsService', () => {
       ).toBe(mockUser.profileId);
     });
 
-    it('stays branch-wide (no doctor filter) when assigned_to_me is absent', async () => {
+    it('stays branch-wide for a non-restricted caller (reception/owner/manager)', async () => {
       authMock.assertCanAccessBranch.mockResolvedValue(undefined);
+      authMock.isRestrictedToOwnData.mockResolvedValue(false);
       db.$transaction.mockResolvedValue([[], 0]);
 
-      await service.findAllForBranch('branch-uuid', {}, mockUser);
+      // Even if a client sends assigned_to_me, a non-doctor still sees the branch.
+      await service.findAllForBranch(
+        'branch-uuid',
+        { assigned_to_me: true },
+        mockUser,
+      );
 
       const where = db.patient.findMany.mock.calls[0][0].where;
       expect(
@@ -470,10 +477,11 @@ describe('PatientsService', () => {
       expect(db.journeyTemplate.findMany).not.toHaveBeenCalled();
     });
 
-    it('narrows to the doctor when assigned_to_me is set', async () => {
+    it('narrows to the doctor for a restricted caller', async () => {
+      authMock.isRestrictedToOwnData.mockResolvedValue(true);
       db.$transaction.mockResolvedValue([2, 1, 0, 2, 1, 0, 0]);
 
-      await service.getBranchStats('branch-uuid', mockUser, true);
+      await service.getBranchStats('branch-uuid', mockUser);
 
       const where = db.patientJourney.groupBy.mock.calls[0][0].where;
       expect(where.episodes.some.visits.some.assigned_doctor_id).toBe(

@@ -377,3 +377,42 @@ describe('AuthorizationService.isClinical', () => {
     await expect(service.isClinical('prof-1')).resolves.toBe(false);
   });
 });
+
+describe('AuthorizationService.isRestrictedToOwnData', () => {
+  let service: AuthorizationService;
+  let profileRole: { findFirst: jest.Mock };
+  let profileJobFunction: { findFirst: jest.Mock };
+
+  beforeEach(async () => {
+    profileRole = { findFirst: jest.fn() };
+    profileJobFunction = { findFirst: jest.fn() };
+    const module = await Test.createTestingModule({
+      providers: [
+        AuthorizationService,
+        {
+          provide: PrismaService,
+          useValue: { db: { profileRole, profileJobFunction } },
+        },
+      ],
+    }).compile();
+    service = module.get(AuthorizationService);
+  });
+
+  it('returns false for a manager (owner/branch manager) without checking clinical', async () => {
+    profileRole.findFirst.mockResolvedValue({ id: 'pr-mgr' }); // isManager → true
+    await expect(service.isRestrictedToOwnData('p', 'o')).resolves.toBe(false);
+    expect(profileJobFunction.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('returns true for a non-manager clinician (doctor)', async () => {
+    profileRole.findFirst.mockResolvedValue(null); // not a manager
+    profileJobFunction.findFirst.mockResolvedValue({ id: 'pjf' }); // clinical
+    await expect(service.isRestrictedToOwnData('p', 'o')).resolves.toBe(true);
+  });
+
+  it('returns false for a non-manager, non-clinical caller (reception)', async () => {
+    profileRole.findFirst.mockResolvedValue(null);
+    profileJobFunction.findFirst.mockResolvedValue(null);
+    await expect(service.isRestrictedToOwnData('p', 'o')).resolves.toBe(false);
+  });
+});
