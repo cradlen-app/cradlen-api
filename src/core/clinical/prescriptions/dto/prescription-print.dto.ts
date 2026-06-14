@@ -13,6 +13,11 @@ class PrescriptionPrintOrgDto {
   @ApiProperty() id!: string;
   @ApiProperty() name!: string;
   @ApiPropertyOptional({ nullable: true }) logo_object_key!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Presigned GET URL for the logo; render directly.',
+  })
+  logo_image_url!: string | null;
 }
 
 class PrescriptionPrintBranchDto {

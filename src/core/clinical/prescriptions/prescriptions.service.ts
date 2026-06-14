@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
+import { StorageService } from '@infrastructure/storage/storage.service.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import {
@@ -41,6 +42,7 @@ export class PrescriptionsService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly authorizationService: AuthorizationService,
+    private readonly storageService: StorageService,
   ) {}
 
   /**
@@ -69,7 +71,14 @@ export class PrescriptionsService {
       visit.branch_id,
     );
 
-    const document = this.toDocument(prescription);
+    // Presigned GET URL for the org logo (mirrors organizations.service) so the
+    // printout can render the image directly.
+    const logoKey = visit.branch.organization.logo_object_key;
+    const logoUrl = logoKey
+      ? await this.storageService.createPresignedDownloadUrl(logoKey)
+      : null;
+
+    const document = this.toDocument(prescription, logoUrl);
     const template = await this.resolveTemplate(
       user.organizationId,
       visit.branch_id,
@@ -128,6 +137,7 @@ export class PrescriptionsService {
 
   private toDocument(
     prescription: PrescriptionWithRelations,
+    logoUrl: string | null,
   ): PrescriptionDocumentDto {
     const { visit } = prescription;
     const organization = visit.branch.organization;
@@ -150,6 +160,7 @@ export class PrescriptionsService {
         id: organization.id,
         name: organization.name,
         logo_object_key: organization.logo_object_key,
+        logo_image_url: logoUrl,
       },
       branch: {
         id: visit.branch.id,
