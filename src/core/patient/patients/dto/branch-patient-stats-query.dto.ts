@@ -5,7 +5,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 export class BranchPatientStatsQueryDto {
   @ApiPropertyOptional({
     description:
-      'When true, restricts the analytics to patients whose qualifying visit at the branch was assigned to the current doctor (their own patients).',
+      'Deprecated/ignored: scope is derived server-side from the caller role (a doctor always sees only their own patients). Accepted for backward-compat.',
   })
   @IsOptional()
   @Type(() => Boolean)
