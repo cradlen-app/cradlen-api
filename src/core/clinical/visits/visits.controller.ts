@@ -163,6 +163,7 @@ export class VisitsController {
       patientId,
       user.organizationId,
       query.exclude,
+      user.profileId,
     );
   }
 
