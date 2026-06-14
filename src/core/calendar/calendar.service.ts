@@ -28,6 +28,11 @@ import { DEFAULT_VISIBILITY } from './calendar.policy.js';
 const EVENT_INCLUDE = {
   procedure: { select: { id: true, name: true } },
   patient: { select: { id: true, full_name: true } },
+  profile: {
+    select: {
+      user: { select: { first_name: true, last_name: true } },
+    },
+  },
   assistants: {
     select: {
       profile_id: true,
@@ -62,6 +67,9 @@ function toResponse(row: CalendarEventWithRelations): CalendarEventResponseDto {
     patient_id: row.patient_id,
     procedure_name: row.procedure?.name ?? null,
     patient_full_name: row.patient?.full_name ?? null,
+    created_by_name:
+      `${row.profile?.user?.first_name ?? ''} ${row.profile?.user?.last_name ?? ''}`.trim() ||
+      null,
     assistants: (row.assistants ?? []).map((a) => {
       const fullName =
         `${a.profile?.user?.first_name ?? ''} ${a.profile?.user?.last_name ?? ''}`.trim();
