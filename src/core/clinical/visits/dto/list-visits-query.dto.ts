@@ -63,3 +63,15 @@ export class VisitTodayStatsQueryDto {
   @IsBoolean()
   assigned_to_me?: boolean;
 }
+
+export class VisitStatsQueryDto {
+  @ApiPropertyOptional({
+    description:
+      'When true, restricts the monthly analytics to visits assigned to the current doctor (their own activity).',
+  })
+  @IsOptional()
+  @Type(() => Boolean)
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  assigned_to_me?: boolean;
+}

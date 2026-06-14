@@ -279,6 +279,28 @@ describe('VisitsService', () => {
     });
   });
 
+  describe('getBranchVisitStats', () => {
+    beforeEach(() => {
+      // [visitsCur, visitsPrev, followCur, followPrev, totalCur, totalPrev]
+      db.$transaction.mockResolvedValue([1, 0, 1, 0, 2, 0]);
+      db.visit.findMany.mockResolvedValue([]); // daily series rows
+    });
+
+    it('counts the whole branch by default', async () => {
+      await service.getBranchVisitStats('branch-uuid', mockUser);
+      const where = db.visit.count.mock.calls[0][0].where;
+      expect(where.branch_id).toBe('branch-uuid');
+      expect(where.assigned_doctor_id).toBeUndefined();
+    });
+
+    it('narrows to the doctor when assigned_to_me is set', async () => {
+      await service.getBranchVisitStats('branch-uuid', mockUser, true);
+      const where = db.visit.count.mock.calls[0][0].where;
+      expect(where.branch_id).toBe('branch-uuid');
+      expect(where.assigned_doctor_id).toBe(mockUser.profileId);
+    });
+  });
+
   describe('findAllForEpisode', () => {
     it('returns paginated visits for an episode in the user org', async () => {
       db.patientEpisode.findUnique.mockResolvedValue(mockEpisodeWithJourney);
