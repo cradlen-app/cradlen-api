@@ -25,6 +25,9 @@ import { PatientSignupCompleteDto } from './dto/patient-signup-complete.dto.js';
 import { PatientLoginDto } from './dto/patient-login.dto.js';
 import { PatientMeResponseDto } from './dto/patient-me-response.dto.js';
 import { ChangePasswordDto } from './dto/change-password.dto.js';
+import { PatientForgotPasswordStartDto } from './dto/patient-forgot-password-start.dto.js';
+import { PatientForgotPasswordStartResponseDto } from './dto/patient-forgot-password-start-response.dto.js';
+import { PatientForgotPasswordCompleteDto } from './dto/patient-forgot-password-complete.dto.js';
 
 @ApiTags('Patient Auth')
 @Controller({ path: 'patient-auth', version: '1' })
@@ -63,6 +66,33 @@ export class PatientAuthController {
   @ApiStandardResponse(AuthTokensDto)
   login(@Body() dto: PatientLoginDto) {
     return this.patientSignupService.login(dto);
+  }
+
+  @Post('forgot-password/start')
+  @Public()
+  @UseGuards(IdentifierThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 600000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Verify identity and return the account security question',
+  })
+  @ApiStandardResponse(PatientForgotPasswordStartResponseDto)
+  forgotPasswordStart(@Body() dto: PatientForgotPasswordStartDto) {
+    return this.patientSignupService.forgotPasswordStart(dto);
+  }
+
+  @Post('forgot-password/complete')
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 600000 } })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Verify the security answer and set a new password',
+  })
+  @ApiVoidResponse()
+  async forgotPasswordComplete(
+    @Body() dto: PatientForgotPasswordCompleteDto,
+  ): Promise<void> {
+    await this.patientSignupService.forgotPasswordComplete(dto);
   }
 
   @Post('refresh')
