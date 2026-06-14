@@ -102,6 +102,8 @@ Table users {
   updated_at DateTime [not null]
   patient_id String [unique]
   guardian_id String [unique]
+  security_question String
+  security_answer_hashed String
   patient patients
   guardian guardians
   profiles profiles [not null]
