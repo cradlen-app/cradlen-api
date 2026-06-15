@@ -10,7 +10,14 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiExtraModels,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+  getSchemaPath,
+} from '@nestjs/swagger';
 import { Public } from '@common/decorators/public.decorator.js';
 import { CurrentUser } from '@common/decorators/current-user.decorator.js';
 import { IdentifierThrottlerGuard } from '@common/guards/identifier-throttler.guard.js';
@@ -31,6 +38,7 @@ import { SignupStartDto } from './dto/signup-start.dto.js';
 import { SignupTokenResponseDto } from './dto/signup-token-response.dto.js';
 import { SignupVerifyDto } from './dto/signup-verify.dto.js';
 import { ProfileSelectionResponseDto } from './dto/profile-selection-response.dto.js';
+import { OnboardingRequiredResponseDto } from './dto/onboarding-required-response.dto.js';
 import { ForgotPasswordDto } from './dto/forgot-password.dto.js';
 import { ResendResetCodeDto } from './dto/resend-reset-code.dto.js';
 import { VerifyResetCodeDto } from './dto/verify-reset-code.dto.js';
@@ -145,6 +153,15 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Validate email/password and return selectable profiles',
+  })
+  @ApiExtraModels(ProfileSelectionResponseDto, OnboardingRequiredResponseDto)
+  @ApiOkResponse({
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(ProfileSelectionResponseDto) },
+        { $ref: getSchemaPath(OnboardingRequiredResponseDto) },
+      ],
+    },
   })
   login(@Body() dto: LoginDto) {
     return this.sessionsService.login(dto);
