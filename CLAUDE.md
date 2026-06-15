@@ -330,6 +330,7 @@ DB-stored form templates the frontend renders against. Authored in code (`prisma
 Core entities:
 
 - **Organization** → many **Branch**, **Profile**, **Subscription**, **Invitation**, **PatientJourney**, **OrganizationSpecialty**
+- **SubscriptionPlan** (seed-only, YEARLY pricing via **PlanPrice**) — tiers `free_trial` / `individual` (1 branch, 2 users) / `center` (1 branch, 10 users) / `network` (3 branches, 25 users); all `max_organizations = 1`. **AddOn** + **AddOnPrice** = tier-scoped extra capacity (branch bundles + extra-user seats; grant amount and price both vary per tier). **SubscriptionAddOn** = an add-on an org owns against its `Subscription` (quantity, `status`, co-terminus `ends_at`). **Effective limits = base plan + Σ(active add-on delta × quantity)** — computed by `SubscriptionsService.getEffectiveLimits`, used by `assertBranchLimit` / `assertStaffLimit`. Add-on purchases reuse the subscription-payment pipeline (`SubscriptionPayment.purpose = ADD_ON`, `add_on_id`, `quantity`; amount prorated to the remaining term); verify grants/increments the `SubscriptionAddOn` instead of activating a plan.
 - **Branch** — unique `(id, organization_id)` so M2M tables can FK against the composite key
 - **User** → many **Profile**, **RefreshToken**, **VerificationCode**
 - **Role** — seeded: `OWNER`, `STAFF`, `EXTERNAL`

@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import {
   BillingInterval,
   SubscriptionPaymentProvider,
+  SubscriptionPaymentPurpose,
   SubscriptionPaymentStatus,
 } from '@prisma/client';
 
@@ -34,6 +35,18 @@ export class SubscriptionPaymentResponseDto {
 
   @ApiProperty()
   subscription_plan_id!: string;
+
+  @ApiProperty({ enum: SubscriptionPaymentPurpose })
+  purpose!: SubscriptionPaymentPurpose;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'The purchased add-on id when purpose is ADD_ON, else null',
+  })
+  add_on_id!: string | null;
+
+  @ApiProperty({ description: 'Units of the add-on purchased (1 for plans)' })
+  quantity!: number;
 
   @ApiProperty({ enum: SubscriptionPaymentProvider })
   provider!: SubscriptionPaymentProvider;

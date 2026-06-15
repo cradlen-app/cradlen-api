@@ -13,6 +13,7 @@ Table subscription_plans {
   subscriptions subscriptions [not null]
   prices plan_prices [not null]
   payments subscription_payments [not null]
+  add_ons add_ons [not null]
 }
 
 Table plan_prices {
@@ -34,12 +35,72 @@ Table plan_prices {
   }
 }
 
+Table add_ons {
+  id String [pk]
+  code String [unique, not null]
+  name String [not null]
+  kind AddOnKind [not null]
+  subscription_plan_id String [not null]
+  delta_branches Int [not null, default: 0]
+  delta_users Int [not null, default: 0]
+  is_active Boolean [not null, default: true]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  subscription_plan subscription_plans [not null]
+  prices add_on_prices [not null]
+  subscription_add_ons subscription_add_ons [not null]
+  payments subscription_payments [not null]
+}
+
+Table add_on_prices {
+  id String [pk]
+  add_on_id String [not null]
+  billing_interval BillingInterval [not null]
+  price Decimal [not null]
+  currency String [not null, default: 'EGP']
+  is_active Boolean [not null, default: true]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  add_on add_ons [not null]
+
+  indexes {
+    (add_on_id, billing_interval, currency) [unique]
+  }
+}
+
+Table subscription_add_ons {
+  id String [pk]
+  subscription_id String [not null]
+  add_on_id String [not null]
+  quantity Int [not null, default: 1]
+  status SubscriptionAddOnStatus [not null, default: 'ACTIVE']
+  starts_at DateTime [default: `now()`, not null]
+  ends_at DateTime
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  subscription subscriptions [not null]
+  add_on add_ons [not null]
+
+  indexes {
+    (subscription_id, add_on_id) [unique]
+  }
+}
+
 Table subscription_payments {
   id String [pk]
   organization_id String [not null]
   subscription_id String
   subscription_plan_id String [not null]
   plan_price_id String
+  purpose SubscriptionPaymentPurpose [not null, default: 'PLAN']
+  add_on_id String
+  quantity Int [not null, default: 1]
   provider SubscriptionPaymentProvider [not null]
   provider_ref String
   billing_interval BillingInterval [not null]
@@ -58,6 +119,7 @@ Table subscription_payments {
   subscription subscriptions
   subscription_plan subscription_plans [not null]
   plan_price plan_prices
+  add_on add_ons
   proofs subscription_payment_proofs [not null]
 }
 
@@ -342,6 +404,7 @@ Table subscriptions {
   organization organizations [not null]
   subscription_plan subscription_plans [not null]
   payments subscription_payments [not null]
+  add_ons subscription_add_ons [not null]
 }
 
 Table refresh_tokens {
@@ -2060,6 +2123,22 @@ Enum SubscriptionPaymentStatus {
   CANCELLED
 }
 
+Enum SubscriptionPaymentPurpose {
+  PLAN
+  ADD_ON
+}
+
+Enum AddOnKind {
+  BRANCH_BUNDLE
+  EXTRA_USER
+}
+
+Enum SubscriptionAddOnStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
 Enum InvitationStatus {
   PENDING
   ACCEPTED
@@ -2389,6 +2468,14 @@ Enum CalendarVisibility {
 
 Ref: plan_prices.subscription_plan_id > subscription_plans.id [delete: Cascade]
 
+Ref: add_ons.subscription_plan_id > subscription_plans.id [delete: Cascade]
+
+Ref: add_on_prices.add_on_id > add_ons.id [delete: Cascade]
+
+Ref: subscription_add_ons.subscription_id > subscriptions.id [delete: Cascade]
+
+Ref: subscription_add_ons.add_on_id > add_ons.id
+
 Ref: subscription_payments.organization_id > organizations.id [delete: Cascade]
 
 Ref: subscription_payments.subscription_id > subscriptions.id [delete: Set Null]
@@ -2396,6 +2483,8 @@ Ref: subscription_payments.subscription_id > subscriptions.id [delete: Set Null]
 Ref: subscription_payments.subscription_plan_id > subscription_plans.id
 
 Ref: subscription_payments.plan_price_id > plan_prices.id [delete: Set Null]
+
+Ref: subscription_payments.add_on_id > add_ons.id [delete: Set Null]
 
 Ref: subscription_payment_proofs.subscription_payment_id > subscription_payments.id [delete: Cascade]
 
