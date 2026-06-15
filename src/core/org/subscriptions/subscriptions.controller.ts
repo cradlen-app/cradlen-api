@@ -7,6 +7,7 @@ import { AuthorizationService } from '@core/auth/authorization/authorization.ser
 import { SubscriptionsService } from './subscriptions.service.js';
 import { SkipSubscriptionCheck } from './skip-subscription-check.decorator.js';
 import { CurrentSubscriptionResponseDto } from './dto/current-subscription-response.dto.js';
+import { AvailableAddOnResponseDto } from './dto/available-add-on-response.dto.js';
 
 @ApiTags('Subscriptions')
 @ApiBearerAuth()
@@ -29,6 +30,14 @@ export class SubscriptionsController {
       orgId,
     );
     const sub = await this.subscriptionsService.getCurrent(orgId);
+
+    let maxBranches = sub.subscription_plan.max_branches;
+    let maxStaff = sub.subscription_plan.max_staff;
+    for (const owned of sub.add_ons) {
+      maxBranches += owned.add_on.delta_branches * owned.quantity;
+      maxStaff += owned.add_on.delta_users * owned.quantity;
+    }
+
     return {
       id: sub.id,
       status: sub.status,
@@ -42,6 +51,28 @@ export class SubscriptionsController {
         max_branches: sub.subscription_plan.max_branches,
         max_staff: sub.subscription_plan.max_staff,
       },
+      effective_limits: { max_branches: maxBranches, max_staff: maxStaff },
+      add_ons: sub.add_ons.map((owned) => ({
+        id: owned.id,
+        code: owned.add_on.code,
+        name: owned.add_on.name,
+        kind: owned.add_on.kind,
+        quantity: owned.quantity,
+        ends_at: owned.ends_at,
+      })),
     };
+  }
+
+  @Get('add-ons')
+  @ApiStandardResponse(AvailableAddOnResponseDto)
+  async listAvailableAddOns(
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @CurrentUser() user: AuthContext,
+  ): Promise<AvailableAddOnResponseDto[]> {
+    await this.authorizationService.assertCanAccessOrganization(
+      user.profileId,
+      orgId,
+    );
+    return this.subscriptionsService.listAvailableAddOns(orgId);
   }
 }

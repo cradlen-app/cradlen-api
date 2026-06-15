@@ -12,7 +12,10 @@ import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 const mockDb = {
   subscriptionPlan: { findUnique: jest.fn() },
   planPrice: { findFirst: jest.fn() },
+  addOn: { findFirst: jest.fn() },
+  addOnPrice: { findFirst: jest.fn() },
   subscription: { findFirst: jest.fn() },
+  subscriptionAddOn: { upsert: jest.fn() },
   subscriptionPayment: {
     create: jest.fn(),
     findFirst: jest.fn(),
@@ -123,6 +126,103 @@ describe('SubscriptionPaymentsService', () => {
         ),
       ).rejects.toThrow();
     });
+
+    it('prorates an add-on purchase and snapshots purpose/add_on_id/quantity', async () => {
+      const now = Date.now();
+      mockDb.subscription.findFirst.mockResolvedValue({
+        id: 'sub-1',
+        status: 'ACTIVE',
+        subscription_plan_id: 'plan-center',
+        ends_at: new Date(now + 200 * 86_400_000), // ~200 days remaining
+      });
+      mockDb.addOn.findFirst.mockResolvedValue({
+        id: 'addon-1',
+        subscription_plan_id: 'plan-center',
+      });
+      mockDb.addOnPrice.findFirst.mockResolvedValue({
+        price: new Prisma.Decimal('8000'),
+        currency: 'EGP',
+      });
+      mockDb.subscriptionPayment.create.mockImplementation((args) =>
+        Promise.resolve({
+          id: 'pay-2',
+          created_at: new Date(),
+          verified_at: null,
+          rejection_reason: null,
+          ...args.data,
+        }),
+      );
+      mockInitiate.mockResolvedValue({
+        settlement_mode: 'MANUAL_PROOF',
+        requires_proof: true,
+        instructions: {},
+      });
+
+      await service.create(
+        ORG,
+        {
+          plan: 'center',
+          provider: 'INSTAPAY' as never,
+          add_on_code: 'center_extra_branch',
+          quantity: 2,
+        },
+        USER,
+      );
+
+      const createData =
+        mockDb.subscriptionPayment.create.mock.calls[0][0].data;
+      expect(createData.purpose).toBe('ADD_ON');
+      expect(createData.add_on_id).toBe('addon-1');
+      expect(createData.quantity).toBe(2);
+      // prorated: 8000 × 2 × (~200/365) → between 0 and the full 16000
+      const amount = Number(createData.amount.toString());
+      expect(amount).toBeGreaterThan(0);
+      expect(amount).toBeLessThan(16000);
+    });
+
+    it('rejects an add-on purchase without an active paid subscription', async () => {
+      mockDb.subscription.findFirst.mockResolvedValue({
+        id: 'sub-1',
+        status: 'TRIAL',
+        subscription_plan_id: 'plan-center',
+        ends_at: null,
+      });
+      await expect(
+        service.create(
+          ORG,
+          {
+            plan: 'center',
+            provider: 'INSTAPAY' as never,
+            add_on_code: 'center_extra_branch',
+          },
+          USER,
+        ),
+      ).rejects.toThrow();
+    });
+
+    it('rejects an add-on that does not belong to the current plan', async () => {
+      mockDb.subscription.findFirst.mockResolvedValue({
+        id: 'sub-1',
+        status: 'ACTIVE',
+        subscription_plan_id: 'plan-center',
+        ends_at: new Date(Date.now() + 86_400_000),
+      });
+      mockDb.addOn.findFirst.mockResolvedValue({
+        id: 'addon-x',
+        subscription_plan_id: 'plan-network', // different tier
+      });
+      await expect(
+        service.create(
+          ORG,
+          {
+            plan: 'center',
+            provider: 'INSTAPAY' as never,
+            add_on_code: 'network_extra_branch',
+          },
+          USER,
+        ),
+      ).rejects.toThrow();
+    });
   });
 
   describe('verifyPayment', () => {
@@ -170,6 +270,64 @@ describe('SubscriptionPaymentsService', () => {
         expect.any(Object),
       );
       expect(publishMock).toHaveBeenCalledWith(
+        'subscription.activated',
+        expect.any(Object),
+      );
+    });
+
+    it('grants the add-on (not activate) and publishes addon.granted', async () => {
+      mockDb.subscriptionPayment.findFirst.mockResolvedValue({
+        id: 'pay-2',
+        organization_id: ORG,
+        subscription_id: 'sub-1',
+        subscription_plan_id: 'plan-center',
+        purpose: 'ADD_ON',
+        add_on_id: 'addon-1',
+        quantity: 2,
+        billing_interval: 'YEARLY',
+        status: SubscriptionPaymentStatus.AWAITING_VERIFICATION,
+      });
+      mockDb.subscription.findFirst.mockResolvedValue({
+        id: 'sub-1',
+        ends_at: new Date('2027-01-01T00:00:00Z'),
+      });
+      mockDb.subscriptionAddOn.upsert.mockResolvedValue({ id: 'sao-1' });
+      mockDb.subscriptionPayment.update.mockImplementation((args) =>
+        Promise.resolve({
+          id: 'pay-2',
+          organization_id: ORG,
+          subscription_plan_id: 'plan-center',
+          purpose: 'ADD_ON',
+          add_on_id: 'addon-1',
+          quantity: 2,
+          provider: 'INSTAPAY',
+          billing_interval: 'YEARLY',
+          amount: new Prisma.Decimal('4000'),
+          currency: 'EGP',
+          created_at: new Date(),
+          verified_at: new Date(),
+          rejection_reason: null,
+          ...args.data,
+        }),
+      );
+
+      const result = await service.verifyPayment('pay-2', 'admin-1');
+
+      expect(activateMock).not.toHaveBeenCalled();
+      expect(mockDb.subscriptionAddOn.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({
+            quantity: { increment: 2 },
+            ends_at: new Date('2027-01-01T00:00:00Z'),
+          }),
+        }),
+      );
+      expect(result.status).toBe(SubscriptionPaymentStatus.VERIFIED);
+      expect(publishMock).toHaveBeenCalledWith(
+        'subscription.addon.granted',
+        expect.objectContaining({ add_on_id: 'addon-1', quantity: 2 }),
+      );
+      expect(publishMock).not.toHaveBeenCalledWith(
         'subscription.activated',
         expect.any(Object),
       );
