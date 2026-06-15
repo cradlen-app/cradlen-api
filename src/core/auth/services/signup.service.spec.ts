@@ -768,6 +768,67 @@ describe('SignupService', () => {
       expect(result.selection_token).toEqual(expect.any(String));
     });
 
+    it('links the owner to the main branch and persists executive/professional titles', async () => {
+      const { env, txMock } = buildCompleteEnv();
+      const { signupService, jwtService } = env;
+
+      await signupService.complete({
+        ...baseDto,
+        signup_token: signSignupToken(jwtService, userId),
+        specialties: ['OBGYN'],
+        practitioner_specialties: ['OBGYN'],
+        job_function_codes: ['OBGYN'],
+        executive_title: 'CEO' as never,
+        professional_title: 'استشاري النساء والتوليد',
+      });
+
+      // Org gets the offered specialties.
+      expect(txMock.organization.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            specialty_links: { create: [{ specialty_id: 'spec-id' }] },
+          }),
+        }),
+      );
+      const profileData = txMock.profile.create.mock.calls[0][0].data;
+      // Owner is linked to the freshly created main branch.
+      expect(profileData.branches).toEqual({
+        create: [{ organization_id: 'org-id', branch_id: 'branch-id' }],
+      });
+      // Practitioner specialties land on the profile; titles persist.
+      expect(profileData.specialty_links).toEqual({
+        create: [{ specialty_id: 'spec-id' }],
+      });
+      expect(profileData.executive_title).toBe('CEO');
+      expect(profileData.professional_title).toBe('استشاري النساء والتوليد');
+    });
+
+    it('leaves the owner profile clinical-free when not a practitioner', async () => {
+      const { env, txMock } = buildCompleteEnv();
+      const { signupService, jwtService } = env;
+
+      await signupService.complete({
+        ...baseDto,
+        signup_token: signSignupToken(jwtService, userId),
+        specialties: ['OBGYN'],
+        executive_title: 'CEO' as never,
+      });
+
+      const profileData = txMock.profile.create.mock.calls[0][0].data;
+      // No practitioner specialties / job functions → undefined on the profile.
+      expect(profileData.specialty_links).toBeUndefined();
+      expect(profileData.job_functions).toBeUndefined();
+      expect(profileData.professional_title).toBeNull();
+      // Org still records its offered specialties.
+      expect(txMock.organization.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            specialty_links: { create: [{ specialty_id: 'spec-id' }] },
+          }),
+        }),
+      );
+    });
+
     it('throws InternalServerErrorException when the free-trial plan is not seeded', async () => {
       const { env } = buildCompleteEnv();
       env.prismaService.db.subscriptionPlan.findUnique = jest
