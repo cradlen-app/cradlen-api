@@ -125,6 +125,18 @@ export class UpdateStaffDto {
   @IsEnum(ExecutiveTitle)
   executive_title?: ExecutiveTitle | null;
 
+  @ApiPropertyOptional({
+    description:
+      'Free-text professional title shown on the profile (e.g. "استشاري النساء والتوليد"). Display only — does not drive authorization or filtering.',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @MaxLength(120)
+  professional_title?: string;
+
   @ApiPropertyOptional({ enum: EngagementType })
   @IsOptional()
   @IsEnum(EngagementType)
@@ -199,6 +211,18 @@ export class CreateStaffDto {
   @IsOptional()
   @IsEnum(ExecutiveTitle)
   executive_title?: ExecutiveTitle;
+
+  @ApiPropertyOptional({
+    description:
+      'Free-text professional title shown on the profile (e.g. "استشاري النساء والتوليد"). Display only — does not drive authorization or filtering.',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @MaxLength(120)
+  professional_title?: string;
 
   @ApiPropertyOptional({ enum: EngagementType })
   @IsOptional()

@@ -473,6 +473,7 @@ Table invitations {
   last_name String [not null]
   phone_number String
   executive_title ExecutiveTitle
+  professional_title String
   engagement_type EngagementType [not null, default: 'FULL_TIME']
   token_hash String [unique, not null]
   status InvitationStatus [not null, default: 'PENDING']
