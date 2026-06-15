@@ -45,6 +45,11 @@ export interface ProfileSelectionResponse {
 export interface OnboardingRequiredResponse {
   type: 'ONBOARDING_REQUIRED';
   step: 'VERIFY_OTP' | 'COMPLETE_ONBOARDING';
+  // Present only for COMPLETE_ONBOARDING: a fresh signup token so a verified
+  // but not-yet-onboarded user can resume onboarding straight from sign-in
+  // (login already verified the password, so minting it here is safe).
+  signup_token?: string;
+  expires_in?: number;
 }
 
 @Injectable()
@@ -386,9 +391,15 @@ export class SessionsService {
       throw new ForbiddenException('User registration is not active');
     }
     if (!user.onboarding_completed) {
+      const { signup_token, expires_in } = this.tokensService.issueSignupToken(
+        user.id,
+        'signup',
+      );
       return {
         type: 'ONBOARDING_REQUIRED',
         step: 'COMPLETE_ONBOARDING',
+        signup_token,
+        expires_in,
       };
     }
 

@@ -1,6 +1,14 @@
-import { ConflictException, HttpException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  HttpException,
+  InternalServerErrorException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { ERROR_CODES } from '@common/constant/error-codes.js';
+import { AUTH_EVENTS } from '../events/auth.events.js';
 import { createAuthTestEnv } from './test-env.js';
 
 describe('SignupService', () => {
@@ -640,6 +648,230 @@ describe('SignupService', () => {
           is_deleted: false,
         },
       });
+    });
+  });
+
+  describe('complete success path', () => {
+    const userId = 'user-id';
+    const baseDto = {
+      organization_name: 'Cradlen Clinic',
+      specialties: [] as string[],
+      branch_name: 'Main',
+      branch_address: '1 St',
+      branch_city: 'Cairo',
+      branch_governorate: 'Cairo',
+    };
+
+    function buildCompleteEnv() {
+      const txMock = {
+        user: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        organization: {
+          create: jest.fn().mockResolvedValue({ id: 'org-id' }),
+        },
+        branch: { create: jest.fn().mockResolvedValue({ id: 'branch-id' }) },
+        profile: { create: jest.fn().mockResolvedValue({ id: 'profile-id' }) },
+        subscription: { create: jest.fn().mockResolvedValue({}) },
+      };
+      const env = createAuthTestEnv({
+        $transaction: jest
+          .fn()
+          .mockImplementation((fn: (tx: typeof txMock) => Promise<unknown>) =>
+            fn(txMock),
+          ),
+        user: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: userId,
+            email: 'sara@example.com',
+            registration_status: 'ACTIVE',
+            verified_at: new Date(),
+            onboarding_completed: false,
+            is_active: true,
+          }),
+          updateMany: jest.fn(),
+        },
+        role: {
+          findUnique: jest
+            .fn()
+            .mockResolvedValue({ id: 'role-id', name: 'OWNER' }),
+        },
+        subscriptionPlan: {
+          findUnique: jest.fn().mockResolvedValue({ id: 'plan-id' }),
+        },
+        jobFunction: {
+          findMany: jest
+            .fn()
+            .mockResolvedValue([{ id: 'jf-id', code: 'OBGYN' }]),
+        },
+        specialty: {
+          findMany: jest
+            .fn()
+            .mockResolvedValue([{ id: 'spec-id', code: 'OBGYN' }]),
+        },
+        // buildProfileSelectionResponse → getSelectableProfiles
+        profile: { findMany: jest.fn().mockResolvedValue([]) },
+      });
+      return { env, txMock };
+    }
+
+    it('creates org + branch + profile + subscription, publishes signup.completed, and returns a profile selection', async () => {
+      const { env, txMock } = buildCompleteEnv();
+      const { signupService, jwtService, publish } = env;
+
+      const result = await signupService.complete({
+        ...baseDto,
+        signup_token: signSignupToken(jwtService, userId),
+        specialties: ['OBGYN'],
+        job_function_codes: ['OBGYN'],
+      });
+
+      expect(txMock.organization.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ name: 'Cradlen Clinic' }),
+        }),
+      );
+      expect(txMock.branch.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            organization_id: 'org-id',
+            is_main: true,
+          }),
+        }),
+      );
+      expect(txMock.profile.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            user_id: userId,
+            organization_id: 'org-id',
+            engagement_type: 'FULL_TIME',
+            roles: { create: [{ role_id: 'role-id' }] },
+          }),
+        }),
+      );
+      expect(txMock.subscription.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            organization_id: 'org-id',
+            subscription_plan_id: 'plan-id',
+          }),
+        }),
+      );
+      expect(publish).toHaveBeenCalledWith(
+        AUTH_EVENTS.signup.completed,
+        expect.objectContaining({
+          user_id: userId,
+          organization_id: 'org-id',
+          profile_id: 'profile-id',
+          email: 'sara@example.com',
+        }),
+      );
+      expect(result.type).toBe('profile_selection');
+      expect(result.selection_token).toEqual(expect.any(String));
+    });
+
+    it('throws InternalServerErrorException when the free-trial plan is not seeded', async () => {
+      const { env } = buildCompleteEnv();
+      env.prismaService.db.subscriptionPlan.findUnique = jest
+        .fn()
+        .mockResolvedValue(null);
+
+      await expect(
+        env.signupService.complete({
+          ...baseDto,
+          signup_token: signSignupToken(env.jwtService, userId),
+        }),
+      ).rejects.toThrow(InternalServerErrorException);
+    });
+
+    it('throws InternalServerErrorException when the OWNER role is not seeded', async () => {
+      const { env } = buildCompleteEnv();
+      env.prismaService.db.role.findUnique = jest.fn().mockResolvedValue(null);
+
+      await expect(
+        env.signupService.complete({
+          ...baseDto,
+          signup_token: signSignupToken(env.jwtService, userId),
+        }),
+      ).rejects.toThrow(InternalServerErrorException);
+    });
+
+    it('throws ForbiddenException when the user has not verified their email', async () => {
+      const { env } = buildCompleteEnv();
+      env.prismaService.db.user.findFirst = jest.fn().mockResolvedValue({
+        id: userId,
+        email: 'sara@example.com',
+        registration_status: 'PENDING',
+        verified_at: null,
+        onboarding_completed: false,
+        is_active: true,
+      });
+
+      await expect(
+        env.signupService.complete({
+          ...baseDto,
+          signup_token: signSignupToken(env.jwtService, userId),
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('throws UnauthorizedException when the token references no active user', async () => {
+      const { env } = buildCompleteEnv();
+      env.prismaService.db.user.findFirst = jest.fn().mockResolvedValue(null);
+
+      await expect(
+        env.signupService.complete({
+          ...baseDto,
+          signup_token: signSignupToken(env.jwtService, userId),
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+  });
+
+  describe('verify token + user guards', () => {
+    const userId = '11111111-1111-4111-8111-111111111111';
+
+    it('rejects an invalid signup token before touching the database', async () => {
+      const { signupService, mocks } = createAuthTestEnv();
+
+      await expect(
+        signupService.verify({
+          signup_token: 'not-a-real-jwt',
+          code: '123456',
+        }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(mocks.userFindFirst).not.toHaveBeenCalled();
+    });
+
+    it('rejects with UnauthorizedException when the user is missing or soft-deleted', async () => {
+      const { signupService, mocks, jwtService } = createAuthTestEnv();
+      mocks.userFindFirst.mockResolvedValue(null);
+
+      await expect(
+        signupService.verify({
+          signup_token: signSignupToken(jwtService, userId),
+          code: '123456',
+        }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(mocks.verificationFindFirst).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getRegistrationStatus guards', () => {
+    it('throws UnauthorizedException for an invalid bearer token with no email fallback', async () => {
+      const { signupService } = createAuthTestEnv();
+
+      await expect(
+        signupService.getRegistrationStatus({
+          authorization: 'Bearer not-a-real-jwt',
+        }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('throws BadRequestException when neither email nor authorization is supplied', async () => {
+      const { signupService } = createAuthTestEnv();
+
+      await expect(
+        signupService.getRegistrationStatus({}),
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 });

@@ -95,3 +95,63 @@ describe('RegistrationCleanupService.cleanupExpiredPasswordResetTokens', () => {
     ).resolves.toBeUndefined();
   });
 });
+
+describe('RegistrationCleanupService.cleanupStalePendingUsers', () => {
+  it('hard-deletes PENDING users older than the 24h cutoff', async () => {
+    const before = Date.now();
+    const findMany = jest
+      .fn()
+      .mockResolvedValueOnce([{ id: 'u1' }, { id: 'u2' }]);
+    const deleteMany = jest.fn().mockResolvedValue({ count: 2 });
+    const { service } = buildService({ user: { findMany, deleteMany } });
+
+    await service.cleanupStalePendingUsers();
+
+    // Only PENDING users created before the cutoff are scanned.
+    const findArgs = findMany.mock.calls[0][0];
+    expect(findArgs.where.registration_status).toBe('PENDING');
+    const cutoff = (findArgs.where.created_at.lt as Date).getTime();
+    const ttlMs = 24 * 60 * 60 * 1000;
+    expect(before - ttlMs - 5000).toBeLessThanOrEqual(cutoff);
+    expect(cutoff).toBeLessThanOrEqual(Date.now() - ttlMs + 5000);
+
+    expect(deleteMany).toHaveBeenCalledWith({
+      where: { id: { in: ['u1', 'u2'] } },
+    });
+  });
+
+  it('does not delete anything when no stale users are found', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const deleteMany = jest.fn().mockResolvedValue({ count: 0 });
+    const { service } = buildService({ user: { findMany, deleteMany } });
+
+    await service.cleanupStalePendingUsers();
+
+    expect(findMany).toHaveBeenCalledTimes(1);
+    expect(deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('drains in batches: keeps fetching while a full batch (500) comes back', async () => {
+    const fullBatch = Array.from({ length: 500 }, (_, i) => ({ id: `u${i}` }));
+    const findMany = jest
+      .fn()
+      .mockResolvedValueOnce(fullBatch) // full → loop again
+      .mockResolvedValueOnce([{ id: 'tail' }]); // partial → stop
+    const deleteMany = jest.fn().mockResolvedValue({ count: 500 });
+    const { service } = buildService({ user: { findMany, deleteMany } });
+
+    await service.cleanupStalePendingUsers();
+
+    expect(findMany).toHaveBeenCalledTimes(2);
+    expect(deleteMany).toHaveBeenCalledTimes(2);
+  });
+
+  it('swallows errors and resolves so the hourly cron survives a bad run', async () => {
+    const findMany = jest.fn().mockRejectedValue(new Error('db down'));
+    const { service } = buildService({
+      user: { findMany, deleteMany: jest.fn() },
+    });
+
+    await expect(service.cleanupStalePendingUsers()).resolves.toBeUndefined();
+  });
+});

@@ -79,7 +79,7 @@ describe('SessionsService', () => {
     expect(mocks.profileFindMany).not.toHaveBeenCalled();
   });
 
-  it('returns complete onboarding requirement for active users without onboarding', async () => {
+  it('returns complete onboarding requirement with a fresh signup token for active users without onboarding', async () => {
     const { sessionsService, mocks } = createAuthTestEnv();
     mocks.userFindFirst.mockResolvedValue({
       id: '11111111-1111-4111-8111-111111111111',
@@ -90,15 +90,25 @@ describe('SessionsService', () => {
       onboarding_completed: false,
     });
 
-    await expect(
-      sessionsService.login({
-        email: 'sara@example.com',
-        password: 'Password1!',
-      }),
-    ).resolves.toEqual({
+    const result = await sessionsService.login({
+      email: 'sara@example.com',
+      password: 'Password1!',
+    });
+
+    // A verified-but-not-onboarded user must receive a fresh signup token so
+    // they can resume onboarding straight from sign-in (the password was just
+    // verified). Without it the account is stuck once the original token expires.
+    expect(result).toMatchObject({
       type: 'ONBOARDING_REQUIRED',
       step: 'COMPLETE_ONBOARDING',
+      expires_in: expect.any(Number),
     });
+    expect(
+      (result as { signup_token?: string }).signup_token,
+    ).toEqual(expect.any(String));
+    expect(
+      (result as { signup_token?: string }).signup_token?.length,
+    ).toBeGreaterThan(0);
     expect(mocks.profileFindMany).not.toHaveBeenCalled();
   });
 
