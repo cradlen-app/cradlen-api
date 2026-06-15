@@ -53,6 +53,8 @@ async function main() {
 
   // Plan tiers (limits) + their YEARLY price (EGP). Only YEARLY is offered for
   // now; the BillingInterval enum keeps MONTHLY for a later additive change.
+  // All plans cap max_organizations at 1 — a tier is a single org grown by
+  // branch add-ons, not multiple orgs ("network of centers" = many branches).
   const SUBSCRIPTION_PLANS: {
     plan: string;
     max_organizations: number;
@@ -61,10 +63,11 @@ async function main() {
     yearly_price: number;
   }[] = [
     { plan: 'free_trial', max_organizations: 1, max_branches: 1, max_staff: 5, yearly_price: 0 },
-    { plan: 'plus', max_organizations: 3, max_branches: 3, max_staff: 15, yearly_price: 12000 },
-    { plan: 'pro', max_organizations: 5, max_branches: 5, max_staff: 25, yearly_price: 30000 },
-    { plan: 'enterprise', max_organizations: 10, max_branches: 10, max_staff: 100, yearly_price: 100000 },
+    { plan: 'individual', max_organizations: 1, max_branches: 1, max_staff: 2, yearly_price: 8000 },
+    { plan: 'center', max_organizations: 1, max_branches: 1, max_staff: 10, yearly_price: 22000 },
+    { plan: 'network', max_organizations: 1, max_branches: 3, max_staff: 25, yearly_price: 50000 },
   ];
+  const planIdByCode: Record<string, string> = {};
   for (const p of SUBSCRIPTION_PLANS) {
     const planRow = await prisma.subscriptionPlan.upsert({
       where: { plan: p.plan },
@@ -80,6 +83,7 @@ async function main() {
         max_staff: p.max_staff,
       },
     });
+    planIdByCode[p.plan] = planRow.id;
     await prisma.planPrice.upsert({
       where: {
         subscription_plan_id_billing_interval_currency: {
@@ -93,6 +97,63 @@ async function main() {
         subscription_plan_id: planRow.id,
         billing_interval: 'YEARLY',
         price: p.yearly_price,
+        currency: 'EGP',
+        is_active: true,
+      },
+    });
+  }
+
+  // Add-ons: extra capacity that stacks on a base plan. Grant amount AND price
+  // both vary per tier, so each (tier × kind) is its own catalog row. YEARLY.
+  const ADD_ONS: {
+    code: string;
+    name: string;
+    kind: 'BRANCH_BUNDLE' | 'EXTRA_USER';
+    plan: string;
+    delta_branches: number;
+    delta_users: number;
+    yearly_price: number;
+  }[] = [
+    { code: 'individual_extra_branch', name: 'Individual — extra branch (+2 users)', kind: 'BRANCH_BUNDLE', plan: 'individual', delta_branches: 1, delta_users: 2, yearly_price: 5000 },
+    { code: 'center_extra_branch', name: 'Center — extra branch (+5 users)', kind: 'BRANCH_BUNDLE', plan: 'center', delta_branches: 1, delta_users: 5, yearly_price: 8000 },
+    { code: 'network_extra_branch', name: 'Network — extra branch (+25 users)', kind: 'BRANCH_BUNDLE', plan: 'network', delta_branches: 1, delta_users: 25, yearly_price: 12000 },
+    { code: 'individual_extra_user', name: 'Individual — extra user', kind: 'EXTRA_USER', plan: 'individual', delta_branches: 0, delta_users: 1, yearly_price: 2500 },
+    { code: 'center_extra_user', name: 'Center — extra user', kind: 'EXTRA_USER', plan: 'center', delta_branches: 0, delta_users: 1, yearly_price: 2000 },
+    { code: 'network_extra_user', name: 'Network — extra user', kind: 'EXTRA_USER', plan: 'network', delta_branches: 0, delta_users: 1, yearly_price: 1800 },
+  ];
+  for (const a of ADD_ONS) {
+    const addOnRow = await prisma.addOn.upsert({
+      where: { code: a.code },
+      update: {
+        name: a.name,
+        kind: a.kind,
+        subscription_plan_id: planIdByCode[a.plan],
+        delta_branches: a.delta_branches,
+        delta_users: a.delta_users,
+        is_active: true,
+      },
+      create: {
+        code: a.code,
+        name: a.name,
+        kind: a.kind,
+        subscription_plan_id: planIdByCode[a.plan],
+        delta_branches: a.delta_branches,
+        delta_users: a.delta_users,
+      },
+    });
+    await prisma.addOnPrice.upsert({
+      where: {
+        add_on_id_billing_interval_currency: {
+          add_on_id: addOnRow.id,
+          billing_interval: 'YEARLY',
+          currency: 'EGP',
+        },
+      },
+      update: { price: a.yearly_price, is_active: true },
+      create: {
+        add_on_id: addOnRow.id,
+        billing_interval: 'YEARLY',
+        price: a.yearly_price,
         currency: 'EGP',
         is_active: true,
       },
