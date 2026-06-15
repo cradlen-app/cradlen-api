@@ -368,6 +368,7 @@ export class StaffResponseDto {
   @ApiProperty({ nullable: true }) phone_number!: string | null;
   @ApiPropertyOptional({ enum: ExecutiveTitle, nullable: true })
   executive_title!: ExecutiveTitle | null;
+  @ApiPropertyOptional({ nullable: true }) professional_title!: string | null;
   @ApiProperty({ enum: EngagementType }) engagement_type!: EngagementType;
   @ApiProperty({ type: [RoleSummaryDto] }) roles!: RoleSummaryDto[];
   @ApiProperty({ type: [BranchSummaryDto] }) branches!: BranchSummaryDto[];

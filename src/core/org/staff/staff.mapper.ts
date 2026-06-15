@@ -36,6 +36,7 @@ export function toStaffResponse(p: StaffProfileWithRelations) {
     email: p.user.email,
     phone_number: p.user.phone_number,
     executive_title: p.executive_title,
+    professional_title: p.professional_title,
     engagement_type: p.engagement_type,
     roles: p.roles.map((r) => ({ id: r.role.id, name: r.role.name })),
     branches: p.branches.map((b) => ({
