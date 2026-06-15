@@ -215,11 +215,16 @@ async function ensureSubscription(organizationId: string, planId: string) {
     where: { organization_id: organizationId, is_deleted: false },
   });
   if (existing) return existing;
+  // An ACTIVE subscription must always carry a real end date (paid plans are
+  // yearly with a start and end). Give the fixture a full year from now.
+  const endsAt = new Date();
+  endsAt.setFullYear(endsAt.getFullYear() + 1);
   return prisma.subscription.create({
     data: {
       organization_id: organizationId,
       subscription_plan_id: planId,
       status: 'ACTIVE',
+      ends_at: endsAt,
     },
   });
 }
