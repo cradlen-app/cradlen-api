@@ -139,6 +139,7 @@ export class StaffService {
           user_id: user.id,
           organization_id: organizationId,
           executive_title: dto.executive_title ?? null,
+          professional_title: dto.professional_title ?? null,
           engagement_type: dto.engagement_type ?? EngagementType.FULL_TIME,
         },
       });
@@ -610,6 +611,9 @@ export class StaffService {
       const profileUpdate: Prisma.ProfileUpdateInput = {};
       if (dto.executive_title !== undefined) {
         profileUpdate.executive_title = dto.executive_title;
+      }
+      if (dto.professional_title !== undefined) {
+        profileUpdate.professional_title = dto.professional_title;
       }
       if (dto.engagement_type !== undefined) {
         profileUpdate.engagement_type = dto.engagement_type;
