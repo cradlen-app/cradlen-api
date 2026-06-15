@@ -288,6 +288,7 @@ Table profiles {
   user_id String [not null]
   organization_id String [not null]
   executive_title ExecutiveTitle
+  professional_title String
   engagement_type EngagementType [not null, default: 'FULL_TIME']
   profile_image_object_key String
   is_active Boolean [not null, default: true]

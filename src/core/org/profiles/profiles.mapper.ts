@@ -31,6 +31,7 @@ export function toProfileDetail(profile: ProfileDetail) {
     email: profile.user.email,
     phone_number: profile.user.phone_number,
     executive_title: profile.executive_title,
+    professional_title: profile.professional_title,
     engagement_type: profile.engagement_type,
     roles: profile.roles.map((item) => item.role.code),
     organization: {

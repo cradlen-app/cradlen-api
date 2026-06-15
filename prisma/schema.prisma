@@ -711,6 +711,7 @@ model Profile {
   user_id                          String                           @db.Uuid
   organization_id                  String                           @db.Uuid
   executive_title                  ExecutiveTitle?
+  professional_title               String?
   engagement_type                  EngagementType                   @default(FULL_TIME)
   profile_image_object_key         String?
   is_active                        Boolean                          @default(true)

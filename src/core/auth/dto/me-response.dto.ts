@@ -81,6 +81,9 @@ export class StaffProfileDto {
   @ApiPropertyOptional({ enum: ExecutiveTitle, nullable: true })
   executive_title!: ExecutiveTitle | null;
 
+  @ApiPropertyOptional({ nullable: true })
+  professional_title!: string | null;
+
   @ApiProperty({ enum: EngagementType })
   engagement_type!: EngagementType;
 
