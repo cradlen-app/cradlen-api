@@ -3,7 +3,12 @@ import {
   Injectable,
   InternalServerErrorException,
 } from '@nestjs/common';
-import { BillingInterval, Prisma, SubscriptionStatus } from '@prisma/client';
+import {
+  BillingInterval,
+  Prisma,
+  SubscriptionAddOnStatus,
+  SubscriptionStatus,
+} from '@prisma/client';
 import { ERROR_CODES } from '@common/constant/error-codes.js';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 
@@ -75,12 +80,27 @@ export class SubscriptionsService {
     this.statusCache.delete(organizationId);
   }
 
-  /** The org's current subscription with its plan, or throws 500 if missing (invariant). */
+  /**
+   * The org's current subscription with its plan and its ACTIVE, unexpired
+   * add-ons, or throws 500 if missing (invariant). Unlike `getEffectiveLimits`,
+   * this never throws on a lapsed subscription — the UI must render expired state.
+   */
   async getCurrent(organizationId: string) {
     const sub = await this.prismaService.db.subscription.findFirst({
       where: { organization_id: organizationId, is_deleted: false },
       orderBy: { created_at: 'desc' },
-      include: { subscription_plan: true },
+      include: {
+        subscription_plan: true,
+        add_ons: {
+          where: {
+            is_deleted: false,
+            status: 'ACTIVE',
+            OR: [{ ends_at: null }, { ends_at: { gt: new Date() } }],
+          },
+          include: { add_on: true },
+          orderBy: { created_at: 'asc' },
+        },
+      },
     });
     if (!sub) {
       throw new InternalServerErrorException(
@@ -88,6 +108,53 @@ export class SubscriptionsService {
       );
     }
     return sub;
+  }
+
+  /**
+   * The add-ons purchasable on top of the org's current plan (active catalog
+   * rows scoped to the current `subscription_plan_id`), with their full YEARLY
+   * price. The actual charge at purchase time is prorated to the remaining term.
+   */
+  async listAvailableAddOns(organizationId: string) {
+    const sub = await this.prismaService.db.subscription.findFirst({
+      where: { organization_id: organizationId, is_deleted: false },
+      orderBy: { created_at: 'desc' },
+      select: { subscription_plan_id: true },
+    });
+    if (!sub) {
+      throw new InternalServerErrorException(
+        'Organization has no subscription',
+      );
+    }
+
+    const addOns = await this.prismaService.db.addOn.findMany({
+      where: {
+        subscription_plan_id: sub.subscription_plan_id,
+        is_active: true,
+        is_deleted: false,
+      },
+      include: {
+        prices: {
+          where: {
+            billing_interval: BillingInterval.YEARLY,
+            is_active: true,
+            is_deleted: false,
+          },
+        },
+      },
+      orderBy: { created_at: 'asc' },
+    });
+
+    return addOns.map((addOn) => ({
+      id: addOn.id,
+      code: addOn.code,
+      name: addOn.name,
+      kind: addOn.kind,
+      delta_branches: addOn.delta_branches,
+      delta_users: addOn.delta_users,
+      price: (addOn.prices[0]?.price ?? new Prisma.Decimal(0)).toString(),
+      currency: addOn.prices[0]?.currency ?? 'EGP',
+    }));
   }
 
   /**
@@ -126,6 +193,16 @@ export class SubscriptionsService {
         ends_at: endsAt,
       },
     });
+    // Co-terminus add-ons renew with the base plan: extend every active add-on
+    // to the new end date so they stay valid for the renewed term.
+    await client.subscriptionAddOn.updateMany({
+      where: {
+        subscription_id: sub.id,
+        is_deleted: false,
+        status: SubscriptionAddOnStatus.ACTIVE,
+      },
+      data: { ends_at: endsAt },
+    });
     this.bustStatusCache(params.organizationId);
     return updated;
   }
@@ -134,15 +211,15 @@ export class SubscriptionsService {
     organizationId: string,
     client: Prisma.TransactionClient = this.prismaService.db,
   ): Promise<void> {
-    const plan = await this.getActivePlan(organizationId, client);
+    const limits = await this.getEffectiveLimits(organizationId, client);
     const current = await client.branch.count({
       where: { organization_id: organizationId, is_deleted: false },
     });
-    if (current >= plan.max_branches) {
+    if (current >= limits.max_branches) {
       throw new ForbiddenException({
         code: ERROR_CODES.SUBSCRIPTION_LIMIT_REACHED,
-        message: `Branch limit reached (${plan.max_branches}). Upgrade your plan.`,
-        details: { resource: 'branches', limit: plan.max_branches, current },
+        message: `Branch limit reached (${limits.max_branches}). Upgrade your plan or add a branch add-on.`,
+        details: { resource: 'branches', limit: limits.max_branches, current },
       });
     }
   }
@@ -151,7 +228,7 @@ export class SubscriptionsService {
     organizationId: string,
     client: Prisma.TransactionClient = this.prismaService.db,
   ): Promise<void> {
-    const plan = await this.getActivePlan(organizationId, client);
+    const limits = await this.getEffectiveLimits(organizationId, client);
     const [activeStaff, pendingInvitations] = await Promise.all([
       client.profile.count({
         where: {
@@ -169,11 +246,11 @@ export class SubscriptionsService {
       }),
     ]);
     const current = activeStaff + pendingInvitations;
-    if (current >= plan.max_staff) {
+    if (current >= limits.max_staff) {
       throw new ForbiddenException({
         code: ERROR_CODES.SUBSCRIPTION_LIMIT_REACHED,
-        message: `Staff limit reached (${plan.max_staff}). Upgrade your plan.`,
-        details: { resource: 'staff', limit: plan.max_staff, current },
+        message: `Staff limit reached (${limits.max_staff}). Upgrade your plan or add a user add-on.`,
+        details: { resource: 'staff', limit: limits.max_staff, current },
       });
     }
   }
@@ -235,14 +312,34 @@ export class SubscriptionsService {
     }
   }
 
-  private async getActivePlan(
+  /**
+   * The org's effective resource caps = base plan limits + the sum of every
+   * ACTIVE, unexpired add-on's deltas (× quantity). Throws SUBSCRIPTION_EXPIRED
+   * if the subscription is not TRIAL/ACTIVE. The add-on date filter mirrors
+   * `isOrgActive` so an expired add-on stops counting without a cron.
+   */
+  async getEffectiveLimits(
     organizationId: string,
     client: Prisma.TransactionClient = this.prismaService.db,
-  ) {
+  ): Promise<{
+    max_branches: number;
+    max_staff: number;
+    max_organizations: number;
+  }> {
     const sub = await client.subscription.findFirst({
       where: { organization_id: organizationId, is_deleted: false },
-      include: { subscription_plan: true },
       orderBy: { created_at: 'desc' }, // defensive; one sub per org by design
+      include: {
+        subscription_plan: true,
+        add_ons: {
+          where: {
+            is_deleted: false,
+            status: 'ACTIVE',
+            OR: [{ ends_at: null }, { ends_at: { gt: new Date() } }],
+          },
+          include: { add_on: true },
+        },
+      },
     });
     if (!sub) {
       // Invariant: every org gets a free-trial subscription at signup.
@@ -257,6 +354,17 @@ export class SubscriptionsService {
         details: { status: sub.status },
       });
     }
-    return sub.subscription_plan;
+
+    let maxBranches = sub.subscription_plan.max_branches;
+    let maxStaff = sub.subscription_plan.max_staff;
+    for (const owned of sub.add_ons) {
+      maxBranches += owned.add_on.delta_branches * owned.quantity;
+      maxStaff += owned.add_on.delta_users * owned.quantity;
+    }
+    return {
+      max_branches: maxBranches,
+      max_staff: maxStaff,
+      max_organizations: sub.subscription_plan.max_organizations,
+    };
   }
 }

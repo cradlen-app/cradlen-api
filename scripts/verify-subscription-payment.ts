@@ -3,10 +3,13 @@
  *
  * There is no platform-admin HTTP surface yet, so an operator verifies an
  * uploaded proof by running this script, which calls the same transactional
- * service method a future admin endpoint would (payment -> VERIFIED and the
- * subscription -> ACTIVE with ends_at extended, atomically).
+ * service method a future admin endpoint would. For a PLAN payment this sets
+ * payment -> VERIFIED and the subscription -> ACTIVE with ends_at extended; for
+ * an ADD_ON payment it grants/increments the add-on co-terminus with the
+ * subscription. Both run atomically. Verify only via this method — a raw
+ * `UPDATE ... SET status='VERIFIED'` marks the row but never activates/grants.
  *
- *   Verify (activates the subscription):
+ *   Verify (activates the plan or grants the add-on):
  *     npx tsx scripts/verify-subscription-payment.ts <paymentId>
  *
  *   Reject:

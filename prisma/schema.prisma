@@ -54,6 +54,26 @@ enum SubscriptionPaymentStatus {
   CANCELLED
 }
 
+// What a subscription payment buys: a base plan (activates/renews the
+// subscription) or an add-on (grants extra branches/users on top of the plan).
+enum SubscriptionPaymentPurpose {
+  PLAN
+  ADD_ON
+}
+
+// An add-on stacks extra capacity on a base plan. BRANCH_BUNDLE adds a branch
+// (with bundled users); EXTRA_USER adds a single user seat.
+enum AddOnKind {
+  BRANCH_BUNDLE
+  EXTRA_USER
+}
+
+enum SubscriptionAddOnStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
 enum InvitationStatus {
   PENDING
   ACCEPTED
@@ -364,6 +384,7 @@ model SubscriptionPlan {
   subscriptions     Subscription[]
   prices            PlanPrice[]
   payments          SubscriptionPayment[]
+  add_ons           AddOn[]
 
   @@map("subscription_plans")
 }
@@ -388,6 +409,73 @@ model PlanPrice {
   @@map("plan_prices")
 }
 
+// An add-on tier: extra capacity that stacks on a specific base plan. Each row
+// is scoped to one base plan (`subscription_plan_id`) because both the grant
+// amount (bundled users) and the price differ per tier. Seed-managed, like
+// SubscriptionPlan — no admin CRUD.
+model AddOn {
+  id                   String                @id @default(uuid()) @db.Uuid
+  code                 String                @unique
+  name                 String
+  kind                 AddOnKind
+  subscription_plan_id String                @db.Uuid
+  delta_branches       Int                   @default(0)
+  delta_users          Int                   @default(0)
+  is_active            Boolean               @default(true)
+  is_deleted           Boolean               @default(false)
+  deleted_at           DateTime?
+  created_at           DateTime              @default(now())
+  updated_at           DateTime              @updatedAt
+  subscription_plan    SubscriptionPlan      @relation(fields: [subscription_plan_id], references: [id], onDelete: Cascade)
+  prices               AddOnPrice[]
+  subscription_add_ons SubscriptionAddOn[]
+  payments             SubscriptionPayment[]
+
+  @@index([subscription_plan_id, is_active])
+  @@map("add_ons")
+}
+
+// Per-interval price for an add-on. Mirrors PlanPrice (only YEARLY seeded today).
+model AddOnPrice {
+  id               String          @id @default(uuid()) @db.Uuid
+  add_on_id        String          @db.Uuid
+  billing_interval BillingInterval
+  price            Decimal         @db.Decimal(12, 2)
+  currency         String          @default("EGP")
+  is_active        Boolean         @default(true)
+  is_deleted       Boolean         @default(false)
+  deleted_at       DateTime?
+  created_at       DateTime        @default(now())
+  updated_at       DateTime        @updatedAt
+  add_on           AddOn           @relation(fields: [add_on_id], references: [id], onDelete: Cascade)
+
+  @@unique([add_on_id, billing_interval, currency])
+  @@map("add_on_prices")
+}
+
+// An add-on an org owns against its current subscription. Effective limits =
+// base plan + Σ(quantity × delta) over ACTIVE, unexpired rows. `ends_at` tracks
+// the subscription's `ends_at` (co-terminus); add-ons renew with the base plan.
+model SubscriptionAddOn {
+  id              String                  @id @default(uuid()) @db.Uuid
+  subscription_id String                  @db.Uuid
+  add_on_id       String                  @db.Uuid
+  quantity        Int                     @default(1)
+  status          SubscriptionAddOnStatus @default(ACTIVE)
+  starts_at       DateTime                @default(now())
+  ends_at         DateTime?
+  is_deleted      Boolean                 @default(false)
+  deleted_at      DateTime?
+  created_at      DateTime                @default(now())
+  updated_at      DateTime                @updatedAt
+  subscription    Subscription            @relation(fields: [subscription_id], references: [id], onDelete: Cascade)
+  add_on          AddOn                   @relation(fields: [add_on_id], references: [id])
+
+  @@unique([subscription_id, add_on_id])
+  @@index([subscription_id, status])
+  @@map("subscription_add_ons")
+}
+
 // A payment toward an org subscription. For manual-proof providers the owner
 // pays out-of-band, uploads proof, and the payment is verified offline, which
 // activates the org subscription. `amount`/`currency` are snapshotted from the
@@ -400,6 +488,9 @@ model SubscriptionPayment {
   subscription_id      String?                     @db.Uuid
   subscription_plan_id String                      @db.Uuid
   plan_price_id        String?                     @db.Uuid
+  purpose              SubscriptionPaymentPurpose  @default(PLAN)
+  add_on_id            String?                     @db.Uuid
+  quantity             Int                         @default(1)
   provider             SubscriptionPaymentProvider
   provider_ref         String?
   billing_interval     BillingInterval
@@ -418,6 +509,7 @@ model SubscriptionPayment {
   subscription         Subscription?               @relation(fields: [subscription_id], references: [id], onDelete: SetNull)
   subscription_plan    SubscriptionPlan            @relation(fields: [subscription_plan_id], references: [id])
   plan_price           PlanPrice?                  @relation(fields: [plan_price_id], references: [id], onDelete: SetNull)
+  add_on               AddOn?                      @relation(fields: [add_on_id], references: [id], onDelete: SetNull)
   proofs               SubscriptionPaymentProof[]
 
   @@index([organization_id, status])
@@ -743,6 +835,7 @@ model Subscription {
   organization         Organization          @relation(fields: [organization_id], references: [id], onDelete: Cascade)
   subscription_plan    SubscriptionPlan      @relation(fields: [subscription_plan_id], references: [id])
   payments             SubscriptionPayment[]
+  add_ons              SubscriptionAddOn[]
 
   @@index([organization_id, is_deleted])
   @@map("subscriptions")
