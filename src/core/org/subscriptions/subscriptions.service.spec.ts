@@ -10,6 +10,12 @@ const mockDb = {
     findFirst: jest.fn(),
     update: jest.fn(),
   },
+  subscriptionAddOn: {
+    updateMany: jest.fn(),
+  },
+  branch: {
+    count: jest.fn(),
+  },
 };
 const mockPrisma = { db: mockDb } as unknown as PrismaService;
 
@@ -82,6 +88,63 @@ describe('SubscriptionsService', () => {
     });
   });
 
+  describe('getEffectiveLimits', () => {
+    it('sums active add-on deltas (× quantity) onto the base plan', async () => {
+      mockDb.subscription.findFirst.mockResolvedValue({
+        status: SubscriptionStatus.ACTIVE,
+        subscription_plan: {
+          max_branches: 1,
+          max_staff: 10,
+          max_organizations: 1,
+        },
+        add_ons: [
+          // center extra-branch: +1 branch, +5 users
+          { quantity: 1, add_on: { delta_branches: 1, delta_users: 5 } },
+          // 3 extra user seats
+          { quantity: 3, add_on: { delta_branches: 0, delta_users: 1 } },
+        ],
+      });
+
+      await expect(service.getEffectiveLimits('org-1')).resolves.toEqual({
+        max_branches: 2,
+        max_staff: 18,
+        max_organizations: 1,
+      });
+    });
+
+    it('returns the bare plan limits when there are no add-ons', async () => {
+      mockDb.subscription.findFirst.mockResolvedValue({
+        status: SubscriptionStatus.TRIAL,
+        subscription_plan: {
+          max_branches: 1,
+          max_staff: 5,
+          max_organizations: 1,
+        },
+        add_ons: [],
+      });
+
+      await expect(service.getEffectiveLimits('org-1')).resolves.toEqual({
+        max_branches: 1,
+        max_staff: 5,
+        max_organizations: 1,
+      });
+    });
+
+    it('throws SUBSCRIPTION_EXPIRED when the subscription is not active', async () => {
+      mockDb.subscription.findFirst.mockResolvedValue({
+        status: SubscriptionStatus.EXPIRED,
+        subscription_plan: {
+          max_branches: 1,
+          max_staff: 5,
+          max_organizations: 1,
+        },
+        add_ons: [],
+      });
+
+      await expect(service.getEffectiveLimits('org-1')).rejects.toThrow();
+    });
+  });
+
   describe('activate', () => {
     it('extends ends_at from now when no future end date (lapsed)', async () => {
       const now = Date.now();
@@ -125,6 +188,33 @@ describe('SubscriptionsService', () => {
 
       const data = mockDb.subscription.update.mock.calls[0][0].data;
       expect(data.ends_at).toEqual(new Date('2028-01-01T00:00:00Z'));
+    });
+
+    it('cascades the new ends_at to active add-ons (co-terminus renewal)', async () => {
+      const future = new Date('2027-01-01T00:00:00Z');
+      mockDb.subscription.findFirst.mockResolvedValue({
+        id: 'sub-1',
+        ends_at: future,
+      });
+      mockDb.subscription.update.mockImplementation((args) =>
+        Promise.resolve({ id: 'sub-1', ...args.data }),
+      );
+
+      await service.activate({
+        organizationId: 'org-1',
+        subscriptionPlanId: 'plan-1',
+        billingInterval: BillingInterval.YEARLY,
+      });
+
+      expect(mockDb.subscriptionAddOn.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            subscription_id: 'sub-1',
+            status: 'ACTIVE',
+          }),
+          data: { ends_at: new Date('2028-01-01T00:00:00Z') },
+        }),
+      );
     });
   });
 });

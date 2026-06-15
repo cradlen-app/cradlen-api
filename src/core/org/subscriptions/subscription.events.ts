@@ -10,6 +10,9 @@ export const SUBSCRIPTION_EVENTS = {
   },
   activated: 'subscription.activated',
   expired: 'subscription.expired',
+  addon: {
+    granted: 'subscription.addon.granted',
+  },
 } as const;
 
 export interface SubscriptionPaymentSubmittedEvent {
@@ -43,4 +46,13 @@ export interface SubscriptionExpiredEvent {
   subscription_id: string;
   organization_id: string;
   expired_at: string;
+}
+
+export interface SubscriptionAddOnGrantedEvent {
+  payment_id: string;
+  organization_id: string;
+  subscription_id: string;
+  add_on_id: string;
+  quantity: number;
+  verified_by_id: string | null;
 }

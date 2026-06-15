@@ -74,7 +74,7 @@ interface RefData {
   jobFunctions: Record<JobFunctionCode, string>;
   specialties: { OBGYN: string };
   procedures: { CESAREAN_SECTION: string };
-  plans: { free_trial: string; plus: string; pro: string; enterprise: string };
+  plans: { free_trial: string; individual: string; center: string; network: string };
 }
 
 type JobFunctionCode =
@@ -96,9 +96,9 @@ async function loadReferenceData(): Promise<RefData> {
     gynSpecialty,
     cesareanProcedure,
     freeTrialPlan,
-    plusPlan,
-    proPlan,
-    enterprisePlan,
+    individualPlan,
+    centerPlan,
+    networkPlan,
   ] = await Promise.all([
     prisma.role.findUniqueOrThrow({ where: { name: 'OWNER' } }),
     prisma.role.findUniqueOrThrow({ where: { name: 'STAFF' } }),
@@ -107,9 +107,9 @@ async function loadReferenceData(): Promise<RefData> {
     prisma.specialty.findUniqueOrThrow({ where: { code: 'OBGYN' } }),
     prisma.procedure.findUniqueOrThrow({ where: { code: 'CESAREAN_SECTION' } }),
     prisma.subscriptionPlan.findUniqueOrThrow({ where: { plan: 'free_trial' } }),
-    prisma.subscriptionPlan.findUniqueOrThrow({ where: { plan: 'plus' } }),
-    prisma.subscriptionPlan.findUniqueOrThrow({ where: { plan: 'pro' } }),
-    prisma.subscriptionPlan.findUniqueOrThrow({ where: { plan: 'enterprise' } }),
+    prisma.subscriptionPlan.findUniqueOrThrow({ where: { plan: 'individual' } }),
+    prisma.subscriptionPlan.findUniqueOrThrow({ where: { plan: 'center' } }),
+    prisma.subscriptionPlan.findUniqueOrThrow({ where: { plan: 'network' } }),
   ]);
 
   const jobFunctions = Object.fromEntries(
@@ -123,9 +123,9 @@ async function loadReferenceData(): Promise<RefData> {
     procedures: { CESAREAN_SECTION: cesareanProcedure.id },
     plans: {
       free_trial: freeTrialPlan.id,
-      plus: plusPlan.id,
-      pro: proPlan.id,
-      enterprise: enterprisePlan.id,
+      individual: individualPlan.id,
+      center: centerPlan.id,
+      network: networkPlan.id,
     },
   };
 }
@@ -334,7 +334,7 @@ interface OrgContext {
 
 async function buildJasmin(refs: RefData, passwordHash: string): Promise<OrgContext> {
   const org = await ensureOrganization('jasmin');
-  await ensureSubscription(org.id, refs.plans.plus);
+  await ensureSubscription(org.id, refs.plans.center);
   await ensureOrganizationSpecialty(org.id, refs.specialties.OBGYN);
 
   const sohag = await ensureBranch(org.id, {
@@ -386,7 +386,7 @@ async function buildJasmin(refs: RefData, passwordHash: string): Promise<OrgCont
 
 async function buildJanah(refs: RefData, passwordHash: string): Promise<OrgContext> {
   const org = await ensureOrganization('janah');
-  await ensureSubscription(org.id, refs.plans.plus);
+  await ensureSubscription(org.id, refs.plans.center);
   await ensureOrganizationSpecialty(org.id, refs.specialties.OBGYN);
 
   const elmaragha = await ensureBranch(org.id, {
@@ -435,7 +435,7 @@ async function buildJanah(refs: RefData, passwordHash: string): Promise<OrgConte
 
 async function buildAmshag(refs: RefData, passwordHash: string): Promise<OrgContext> {
   const org = await ensureOrganization('amshag');
-  await ensureSubscription(org.id, refs.plans.enterprise);
+  await ensureSubscription(org.id, refs.plans.network);
   await ensureOrganizationSpecialty(org.id, refs.specialties.OBGYN);
 
   const hq = await ensureBranch(org.id, {

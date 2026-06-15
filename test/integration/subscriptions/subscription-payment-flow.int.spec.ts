@@ -59,11 +59,11 @@ describe('Subscriptions — payment flow + write gate (integration)', () => {
 
   it('lists plans with prices (public)', async () => {
     const res = await request(http()).get('/v1/subscription-plans').expect(200);
-    const plus = res.body.data.find(
-      (p: { plan: string }) => p.plan === 'plus',
+    const center = res.body.data.find(
+      (p: { plan: string }) => p.plan === 'center',
     );
-    expect(plus).toBeDefined();
-    const yearly = plus.prices.find(
+    expect(center).toBeDefined();
+    const yearly = center.prices.find(
       (pr: { billing_interval: string }) => pr.billing_interval === 'YEARLY',
     );
     expect(yearly).toBeDefined();
@@ -76,9 +76,9 @@ describe('Subscriptions — payment flow + write gate (integration)', () => {
     const auth = bearer(token);
     const base = `/v1/organizations/${seeded.org.id}/subscription`;
 
-    // 1. Create the payment for the "plus" plan via InstaPay.
+    // 1. Create the payment for the "center" plan via InstaPay.
     const created = await auth(request(http()).post(`${base}/payments`))
-      .send({ plan: 'plus', provider: 'INSTAPAY' })
+      .send({ plan: 'center', provider: 'INSTAPAY' })
       .expect(201);
     const payment = created.body.data.payment;
     expect(payment.status).toBe('PENDING');
@@ -108,9 +108,85 @@ describe('Subscriptions — payment flow + write gate (integration)', () => {
 
     const current = await auth(request(http()).get(base)).expect(200);
     expect(current.body.data.status).toBe('ACTIVE');
-    expect(current.body.data.plan.plan).toBe('plus');
+    expect(current.body.data.plan.plan).toBe('center');
+    expect(current.body.data.effective_limits.max_branches).toBe(1);
     const endsAt = new Date(current.body.data.ends_at).getTime();
     expect(endsAt).toBeGreaterThan(Date.now() + 300 * 24 * 60 * 60 * 1000);
+  });
+
+  it('buys a branch add-on (prorated) and raises the effective branch limit', async () => {
+    const seeded = await seedOrg(prisma, 'AddOnFlow', 'addon-owner@test.com');
+    const token = await loginAs(app, seeded.ownerEmail);
+    const auth = bearer(token);
+    const base = `/v1/organizations/${seeded.org.id}/subscription`;
+
+    // Activate the base "center" plan first (add-ons require an active sub).
+    const planPay = await auth(request(http()).post(`${base}/payments`))
+      .send({ plan: 'center', provider: 'INSTAPAY' })
+      .expect(201);
+    const planProof = await auth(
+      request(http()).post(
+        `${base}/payments/${planPay.body.data.payment.id}/proof/upload-url`,
+      ),
+    )
+      .send({ content_type: 'image/png', size_bytes: 1024 })
+      .expect(201);
+    await auth(
+      request(http()).post(
+        `${base}/payments/${planPay.body.data.payment.id}/proof`,
+      ),
+    )
+      .send({ key: planProof.body.data.key })
+      .expect(201);
+    await app
+      .get(SubscriptionPaymentsService)
+      .verifyPayment(planPay.body.data.payment.id);
+
+    // The add-on catalog should now expose center-tier add-ons.
+    const addOns = await auth(request(http()).get(`${base}/add-ons`)).expect(
+      200,
+    );
+    const branchAddOn = addOns.body.data.find(
+      (a: { code: string }) => a.code === 'center_extra_branch',
+    );
+    expect(branchAddOn).toBeDefined();
+    expect(branchAddOn.delta_branches).toBe(1);
+
+    // Buy it (prorated to the remaining term).
+    const addOnPay = await auth(request(http()).post(`${base}/payments`))
+      .send({
+        plan: 'center',
+        provider: 'INSTAPAY',
+        add_on_code: 'center_extra_branch',
+      })
+      .expect(201);
+    expect(addOnPay.body.data.payment.purpose).toBe('ADD_ON');
+    expect(Number(addOnPay.body.data.payment.amount)).toBeGreaterThan(0);
+
+    const addOnProof = await auth(
+      request(http()).post(
+        `${base}/payments/${addOnPay.body.data.payment.id}/proof/upload-url`,
+      ),
+    )
+      .send({ content_type: 'image/png', size_bytes: 1024 })
+      .expect(201);
+    await auth(
+      request(http()).post(
+        `${base}/payments/${addOnPay.body.data.payment.id}/proof`,
+      ),
+    )
+      .send({ key: addOnProof.body.data.key })
+      .expect(201);
+    await app
+      .get(SubscriptionPaymentsService)
+      .verifyPayment(addOnPay.body.data.payment.id);
+
+    // Effective branch limit rises base(1) + add-on(1) = 2, with the add-on listed.
+    const current = await auth(request(http()).get(base)).expect(200);
+    expect(current.body.data.effective_limits.max_branches).toBe(2);
+    expect(current.body.data.effective_limits.max_staff).toBe(15); // 10 + 5 bundled
+    expect(current.body.data.add_ons).toHaveLength(1);
+    expect(current.body.data.add_ons[0].code).toBe('center_extra_branch');
   });
 
   it('blocks writes for an EXPIRED org but still allows reads', async () => {
@@ -133,6 +209,8 @@ describe('Subscriptions — payment flow + write gate (integration)', () => {
     await auth(request(http()).get(catalog)).expect(200);
 
     // The billing surface stays reachable so the owner can pay to renew.
-    await auth(request(http()).get(`/v1/organizations/${seeded.org.id}/subscription`)).expect(200);
+    await auth(
+      request(http()).get(`/v1/organizations/${seeded.org.id}/subscription`),
+    ).expect(200);
   });
 });
