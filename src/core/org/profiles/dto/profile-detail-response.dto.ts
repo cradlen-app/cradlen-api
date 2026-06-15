@@ -7,6 +7,7 @@ export class ProfileDetailResponseDto {
   email!: string | null;
   phone_number!: string | null;
   executive_title!: ExecutiveTitle | null;
+  professional_title!: string | null;
   engagement_type!: EngagementType;
   roles!: string[];
   organization!: { id: string; name: string };
