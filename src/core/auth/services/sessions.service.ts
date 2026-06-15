@@ -321,6 +321,7 @@ export class SessionsService {
         ({ profile, branches, profile_image_url, organization_logo_url }) => ({
           staff_id: profile.id,
           executive_title: profile.executive_title,
+          professional_title: profile.professional_title,
           engagement_type: profile.engagement_type,
           organization: {
             id: profile.organization.id,

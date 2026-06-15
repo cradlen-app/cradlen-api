@@ -199,9 +199,15 @@ export class SignupService {
     );
     // Silent-skip on unmatched entries: the M2M is the source of truth and
     // onboarding should not hard-fail on a stale specialty label.
-    const specialties = await this.specialtiesService.resolveByCodeOrName(
+    // `specialties` describes what the organization offers; `practitioner_specialties`
+    // are the owner's own clinical specialties, set only when they also practice.
+    const orgSpecialties = await this.specialtiesService.resolveByCodeOrName(
       dto.specialties,
     );
+    const practitionerSpecialties =
+      await this.specialtiesService.resolveByCodeOrName(
+        dto.practitioner_specialties ?? [],
+      );
 
     const [ownerRole, freePlan] = await Promise.all([
       this.findRole('OWNER'),
@@ -219,7 +225,8 @@ export class SignupService {
       userId,
       dto,
       jobFunctions,
-      specialties,
+      orgSpecialties,
+      practitionerSpecialties,
       ownerRoleId: ownerRole.id,
       freePlanId: freePlan.id,
       trialEndsAt,
@@ -332,7 +339,8 @@ export class SignupService {
     userId: string;
     dto: SignupCompleteDto;
     jobFunctions: JobFunction[];
-    specialties: Specialty[];
+    orgSpecialties: Specialty[];
+    practitionerSpecialties: Specialty[];
     ownerRoleId: string;
     freePlanId: string;
     trialEndsAt: Date;
@@ -341,7 +349,8 @@ export class SignupService {
       userId,
       dto,
       jobFunctions,
-      specialties,
+      orgSpecialties,
+      practitionerSpecialties,
       ownerRoleId,
       freePlanId,
       trialEndsAt,
@@ -367,12 +376,12 @@ export class SignupService {
       const organization = await tx.organization.create({
         data: {
           name: dto.organization_name,
-          specialty_links: specialties.length
-            ? { create: specialties.map((s) => ({ specialty_id: s.id })) }
+          specialty_links: orgSpecialties.length
+            ? { create: orgSpecialties.map((s) => ({ specialty_id: s.id })) }
             : undefined,
         },
       });
-      await tx.branch.create({
+      const branch = await tx.branch.create({
         data: {
           organization_id: organization.id,
           name: dto.branch_name,
@@ -388,8 +397,16 @@ export class SignupService {
           user_id: userId,
           organization_id: organization.id,
           executive_title: dto.executive_title ?? null,
+          professional_title: dto.professional_title ?? null,
           engagement_type: dto.engagement_type ?? 'FULL_TIME',
           roles: { create: [{ role_id: ownerRoleId }] },
+          // Link the owner to the main branch so they appear in the branch-scoped
+          // staff list and stats; without this the owner is silently excluded.
+          branches: {
+            create: [
+              { organization_id: organization.id, branch_id: branch.id },
+            ],
+          },
           job_functions: jobFunctions.length
             ? {
                 create: jobFunctions.map((jf) => ({
@@ -397,8 +414,14 @@ export class SignupService {
                 })),
               }
             : undefined,
-          specialty_links: specialties.length
-            ? { create: specialties.map((s) => ({ specialty_id: s.id })) }
+          // The owner's own clinical specialties (only when they practice) —
+          // distinct from the organization's offered specialties above.
+          specialty_links: practitionerSpecialties.length
+            ? {
+                create: practitionerSpecialties.map((s) => ({
+                  specialty_id: s.id,
+                })),
+              }
             : undefined,
         },
       });
