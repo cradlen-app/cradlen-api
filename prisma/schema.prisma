@@ -939,6 +939,7 @@ model Invitation {
   last_name       String
   phone_number    String?
   executive_title ExecutiveTitle?
+  professional_title String?
   engagement_type EngagementType          @default(FULL_TIME)
   token_hash      String                  @unique
   status          InvitationStatus        @default(PENDING)
