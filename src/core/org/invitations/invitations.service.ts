@@ -187,6 +187,7 @@ export class InvitationsService {
       last_name: dto.last_name,
       phone_number: dto.phone_number,
       executive_title: dto.executive_title ?? null,
+      professional_title: dto.professional_title ?? null,
       engagement_type: dto.engagement_type ?? 'FULL_TIME',
       token_hash: prepared.tokenHash,
       expires_at: prepared.expiresAt,
@@ -343,12 +344,14 @@ export class InvitationsService {
         is_deleted: false,
         deleted_at: null,
         executive_title: invitation.executive_title,
+        professional_title: invitation.professional_title,
         engagement_type: invitation.engagement_type,
       },
       create: {
         user_id: user.id,
         organization_id: invitation.organization_id,
         executive_title: invitation.executive_title,
+        professional_title: invitation.professional_title,
         engagement_type: invitation.engagement_type,
       },
     });
