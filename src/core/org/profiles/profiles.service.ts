@@ -112,6 +112,15 @@ export class ProfilesService {
       });
     }
 
+    // PROFILE-LEVEL: free-text display title. Empty string clears it.
+    if (dto.professional_title !== undefined) {
+      const title = dto.professional_title?.trim();
+      await this.prismaService.db.profile.update({
+        where: { id: profileId },
+        data: { professional_title: title ? title : null },
+      });
+    }
+
     const profile = await this.prismaService.db.profile.findUniqueOrThrow({
       where: { id: profileId },
       include: PROFILE_DETAIL_INCLUDE,
