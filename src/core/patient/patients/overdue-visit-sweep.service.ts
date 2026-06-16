@@ -8,8 +8,8 @@ const SYSTEM_AUTH_CONTEXT: AuthContext = {
   userId: 'system',
   profileId: 'system',
   organizationId: 'system',
-  roles: ['SYSTEM'],
-  jobFunctions: [],
+  role: 'SYSTEM',
+  jobFunction: null,
   branchIds: [],
 };
 

@@ -3,7 +3,7 @@ export interface AuthContext {
   profileId: string;
   organizationId: string;
   activeBranchId?: string;
-  roles: string[];
-  jobFunctions: string[];
+  role: string;
+  jobFunction: string | null;
   branchIds: string[];
 }

@@ -103,9 +103,9 @@ describe('SessionsService', () => {
       step: 'COMPLETE_ONBOARDING',
       expires_in: expect.any(Number),
     });
-    expect(
-      (result as { signup_token?: string }).signup_token,
-    ).toEqual(expect.any(String));
+    expect((result as { signup_token?: string }).signup_token).toEqual(
+      expect.any(String),
+    );
     expect(
       (result as { signup_token?: string }).signup_token?.length,
     ).toBeGreaterThan(0);
@@ -130,7 +130,7 @@ describe('SessionsService', () => {
           id: '33333333-3333-4333-8333-333333333333',
           name: 'Clinic',
         },
-        roles: [{ role: { code: 'OWNER', name: 'OWNER' } }],
+        role: { code: 'OWNER', name: 'OWNER' },
       },
     ]);
     mocks.getEffectiveBranchIds.mockResolvedValue([
@@ -158,7 +158,7 @@ describe('SessionsService', () => {
           profile_id: '22222222-2222-4222-8222-222222222222',
           organization_id: '33333333-3333-4333-8333-333333333333',
           organization_name: 'Clinic',
-          roles: ['OWNER'],
+          role: 'OWNER',
           branches: [
             {
               branch_id: '44444444-4444-4444-8444-444444444444',
@@ -266,17 +266,13 @@ describe('SessionsService', () => {
             ],
             status: 'ACTIVE',
           },
-          roles: [{ role: { id: 'role-1', name: 'OWNER' } }],
-          job_functions: [
-            {
-              job_function: {
-                id: 'jf-1',
-                code: 'OBGYN',
-                name: 'OB/GYN',
-                is_clinical: true,
-              },
-            },
-          ],
+          role: { id: 'role-1', name: 'OWNER' },
+          job_function: {
+            id: 'jf-1',
+            code: 'OBGYN',
+            name: 'OB/GYN',
+            is_clinical: true,
+          },
           specialty_links: [
             {
               specialty: {
@@ -320,7 +316,7 @@ describe('SessionsService', () => {
             name: 'Clinic',
             specialties: [{ id: 'spec-1', code: 'OBGYN', name: 'Gynecology' }],
           },
-          roles: [{ id: 'role-1', name: 'OWNER' }],
+          role: { id: 'role-1', name: 'OWNER' },
           branches: [
             {
               id: 'branch-1',
@@ -329,9 +325,12 @@ describe('SessionsService', () => {
               is_main: true,
             },
           ],
-          job_functions: [
-            { id: 'jf-1', code: 'OBGYN', name: 'OB/GYN', is_clinical: true },
-          ],
+          job_function: {
+            id: 'jf-1',
+            code: 'OBGYN',
+            name: 'OB/GYN',
+            is_clinical: true,
+          },
           specialties: [{ id: 'spec-1', code: 'OBGYN', name: 'Gynecology' }],
           profile_image_url: null,
         },
@@ -565,7 +564,7 @@ describe('SessionsService', () => {
       userId: 'user-1',
       profileId: 'profile-1',
       organizationId: 'org-1',
-      roles: ['OWNER'],
+      role: 'OWNER',
       branchIds: ['branch-allowed'],
     };
 
@@ -667,21 +666,21 @@ describe('SessionsService', () => {
           id: 'profile-owner-a',
           organization_id: 'org-A',
           organization: { id: 'org-A', name: 'Clinic A' },
-          roles: [{ role: { code: 'OWNER', name: 'OWNER' } }],
+          role: { code: 'OWNER', name: 'OWNER' },
         },
         // OWNER at clinic B
         {
           id: 'profile-owner-b',
           organization_id: 'org-B',
           organization: { id: 'org-B', name: 'Clinic B' },
-          roles: [{ role: { code: 'OWNER', name: 'OWNER' } }],
+          role: { code: 'OWNER', name: 'OWNER' },
         },
         // EXTERNAL member at clinic C
         {
           id: 'profile-member-c',
           organization_id: 'org-C',
           organization: { id: 'org-C', name: 'Clinic C' },
-          roles: [{ role: { code: 'EXTERNAL', name: 'EXTERNAL' } }],
+          role: { code: 'EXTERNAL', name: 'EXTERNAL' },
         },
       ]);
 
@@ -795,8 +794,8 @@ describe('SessionsService', () => {
               specialty_links: [],
               status: 'ACTIVE',
             },
-            roles: [{ role: { id: 'role-1', name: 'OWNER' } }],
-            job_functions: [],
+            role: { id: 'role-1', name: 'OWNER' },
+            job_function: null,
             specialty_links: [],
           },
         ],

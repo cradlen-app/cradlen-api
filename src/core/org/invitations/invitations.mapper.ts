@@ -25,6 +25,7 @@ export function toInvitationResponse(
     last_name: invitation.last_name,
     phone_number: invitation.phone_number,
     executive_title: invitation.executive_title,
+    professional_title: invitation.professional_title,
     engagement_type: invitation.engagement_type,
     status: invitation.status,
     invited_at: invitation.created_at,
@@ -36,21 +37,20 @@ export function toInvitationResponse(
       last_name: invitation.invited_by.last_name,
       email: invitation.invited_by.email,
     },
-    roles: invitation.roles.map((item) => ({
-      id: item.role.id,
-      name: item.role.name,
-    })),
+    role: { id: invitation.role.id, name: invitation.role.name },
     branches: invitation.branches.map((item) => ({
       id: item.branch.id,
       name: item.branch.name,
       city: item.branch.city,
       governorate: item.branch.governorate,
     })),
-    job_functions: invitation.job_functions.map((item) => ({
-      id: item.job_function.id,
-      code: item.job_function.code,
-      name: item.job_function.name,
-    })),
+    job_function: invitation.job_function
+      ? {
+          id: invitation.job_function.id,
+          code: invitation.job_function.code,
+          name: invitation.job_function.name,
+        }
+      : null,
     specialties: invitation.specialty_links.map((item) =>
       toSpecialtySummary(item.specialty),
     ),
@@ -79,6 +79,7 @@ export function toInvitationPreviewResponse(invitation: InvitationPreview) {
     first_name: invitation.first_name,
     last_name: invitation.last_name,
     executive_title: invitation.executive_title,
+    professional_title: invitation.professional_title,
     engagement_type: invitation.engagement_type,
     organization: {
       id: invitation.organization.id,
@@ -88,21 +89,20 @@ export function toInvitationPreviewResponse(invitation: InvitationPreview) {
       first_name: invitation.invited_by.first_name,
       last_name: invitation.invited_by.last_name,
     },
-    roles: invitation.roles.map((r) => ({
-      id: r.role.id,
-      name: r.role.name,
-    })),
+    role: { id: invitation.role.id, name: invitation.role.name },
     branches: invitation.branches.map((b) => ({
       id: b.branch.id,
       name: b.branch.name,
       city: b.branch.city,
       governorate: b.branch.governorate,
     })),
-    job_functions: invitation.job_functions.map((j) => ({
-      id: j.job_function.id,
-      code: j.job_function.code,
-      name: j.job_function.name,
-    })),
+    job_function: invitation.job_function
+      ? {
+          id: invitation.job_function.id,
+          code: invitation.job_function.code,
+          name: invitation.job_function.name,
+        }
+      : null,
     specialties: invitation.specialty_links.map((s) =>
       toSpecialtySummary(s.specialty),
     ),

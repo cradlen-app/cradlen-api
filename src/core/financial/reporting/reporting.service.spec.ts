@@ -28,8 +28,8 @@ const USER: AuthContext = {
   userId: 'u1',
   profileId: 'p1',
   organizationId: ORG,
-  roles: ['OWNER'],
-  jobFunctions: [],
+  role: 'OWNER',
+  jobFunction: null,
   branchIds: ['br-1'],
 };
 
@@ -38,8 +38,8 @@ const DOCTOR: AuthContext = {
   userId: 'u2',
   profileId: 'doc-self',
   organizationId: ORG,
-  roles: ['STAFF'],
-  jobFunctions: ['OBGYN'],
+  role: 'STAFF',
+  jobFunction: 'OBGYN',
   branchIds: ['br-1'],
 };
 

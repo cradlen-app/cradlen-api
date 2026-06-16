@@ -565,7 +565,7 @@ export class CalendarService {
       return requested;
     }
     if (visibility === CalendarVisibility.ORGANIZATION) {
-      if (user.roles.includes('OWNER')) return null; // org-wide broadcast
+      if (user.role === 'OWNER') return null; // org-wide broadcast
       if (!user.activeBranchId) {
         throw new BadRequestException({
           message: 'branch_id is required',

@@ -94,7 +94,7 @@ describe('Auth — authorization matrix (integration)', () => {
           user_id: user.id,
           organization_id: org.id,
           engagement_type: 'FULL_TIME',
-          roles: { create: [{ role_id: role.id }] },
+          role_id: role.id,
         },
       });
       if (args.assignToBranch) {

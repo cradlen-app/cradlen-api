@@ -119,9 +119,9 @@ describe('ProfilesService', () => {
         phone_number: '+201111111111',
       },
       organization: { id: 'org-1', name: 'Cradlen' },
-      roles: [],
+      role: { code: 'STAFF' },
       branches: [],
-      job_functions: [],
+      job_function: null,
       specialty_links: [],
     };
 
@@ -198,6 +198,44 @@ describe('ProfilesService', () => {
         data: { phone_number: '+202000000000' },
       });
     });
+
+    it('persists a trimmed professional_title on the profile', async () => {
+      db.profile.findFirst.mockResolvedValue(baseProfile);
+      db.profile.findUniqueOrThrow.mockResolvedValue(baseDetail);
+
+      await service.updateProfile('user-1', 'profile-1', {
+        professional_title: '  استشاري النساء والتوليد  ',
+      });
+
+      expect(db.user.update).not.toHaveBeenCalled();
+      expect(db.profile.update).toHaveBeenCalledWith({
+        where: { id: 'profile-1' },
+        data: { professional_title: 'استشاري النساء والتوليد' },
+      });
+    });
+
+    it('clears the professional_title when an empty string is provided', async () => {
+      db.profile.findFirst.mockResolvedValue(baseProfile);
+      db.profile.findUniqueOrThrow.mockResolvedValue(baseDetail);
+
+      await service.updateProfile('user-1', 'profile-1', {
+        professional_title: '',
+      });
+
+      expect(db.profile.update).toHaveBeenCalledWith({
+        where: { id: 'profile-1' },
+        data: { professional_title: null },
+      });
+    });
+
+    it('leaves the professional_title untouched when omitted', async () => {
+      db.profile.findFirst.mockResolvedValue(baseProfile);
+      db.profile.findUniqueOrThrow.mockResolvedValue(baseDetail);
+
+      await service.updateProfile('user-1', 'profile-1', { first_name: 'New' });
+
+      expect(db.profile.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('profile image', () => {
@@ -213,9 +251,9 @@ describe('ProfilesService', () => {
         phone_number: '+201111111111',
       },
       organization: { id: 'org-1', name: 'Cradlen' },
-      roles: [],
+      role: { code: 'STAFF' },
       branches: [],
-      job_functions: [],
+      job_function: null,
       specialty_links: [],
     };
 

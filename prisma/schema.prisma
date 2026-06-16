@@ -669,47 +669,36 @@ model PatientAccount {
 }
 
 model Role {
-  id              String           @id @default(uuid()) @db.Uuid
-  code            String           @unique
-  name            String           @unique
-  created_at      DateTime         @default(now())
-  updated_at      DateTime         @updatedAt
-  profileRoles    ProfileRole[]
-  invitationRoles InvitationRole[]
+  id          String       @id @default(uuid()) @db.Uuid
+  code        String       @unique
+  name        String       @unique
+  created_at  DateTime     @default(now())
+  updated_at  DateTime     @updatedAt
+  profiles    Profile[]
+  invitations Invitation[]
 
   @@map("roles")
 }
 
 model JobFunction {
-  id               String                  @id @default(uuid()) @db.Uuid
-  name             String                  @unique
-  code             String                  @unique
-  is_clinical      Boolean                 @default(false)
-  created_at       DateTime                @default(now())
-  updated_at       DateTime                @updatedAt
-  profile_links    ProfileJobFunction[]
-  invitation_links InvitationJobFunction[]
+  id          String       @id @default(uuid()) @db.Uuid
+  name        String       @unique
+  code        String       @unique
+  is_clinical Boolean      @default(false)
+  created_at  DateTime     @default(now())
+  updated_at  DateTime     @updatedAt
+  profiles    Profile[]
+  invitations Invitation[]
 
   @@map("job_functions")
-}
-
-model ProfileJobFunction {
-  id              String      @id @default(uuid()) @db.Uuid
-  profile_id      String      @db.Uuid
-  job_function_id String      @db.Uuid
-  created_at      DateTime    @default(now())
-  profile         Profile     @relation(fields: [profile_id], references: [id], onDelete: Cascade)
-  job_function    JobFunction @relation(fields: [job_function_id], references: [id], onDelete: Cascade)
-
-  @@unique([profile_id, job_function_id])
-  @@index([job_function_id])
-  @@map("profile_job_functions")
 }
 
 model Profile {
   id                               String                           @id @default(uuid()) @db.Uuid
   user_id                          String                           @db.Uuid
   organization_id                  String                           @db.Uuid
+  role_id                          String                           @db.Uuid
+  job_function_id                  String?                          @db.Uuid
   executive_title                  ExecutiveTitle?
   professional_title               String?
   engagement_type                  EngagementType                   @default(FULL_TIME)
@@ -721,10 +710,10 @@ model Profile {
   updated_at                       DateTime                         @updatedAt
   user                             User                             @relation(fields: [user_id], references: [id], onDelete: Cascade)
   organization                     Organization                     @relation(fields: [organization_id], references: [id], onDelete: Cascade)
-  roles                            ProfileRole[]
+  role                             Role                             @relation(fields: [role_id], references: [id])
+  job_function                     JobFunction?                     @relation(fields: [job_function_id], references: [id])
   branches                         ProfileBranch[]
   workingSchedules                 WorkingSchedule[]
-  job_functions                    ProfileJobFunction[]
   specialty_links                  ProfileSpecialty[]
   created_journeys                 PatientJourney[]
   doctor_visits                    Visit[]                          @relation("DoctorVisits")
@@ -791,20 +780,9 @@ model Profile {
   @@unique([user_id, organization_id])
   @@index([organization_id, is_deleted])
   @@index([user_id, is_deleted])
-  @@map("profiles")
-}
-
-model ProfileRole {
-  id         String   @id @default(uuid()) @db.Uuid
-  profile_id String   @db.Uuid
-  role_id    String   @db.Uuid
-  created_at DateTime @default(now())
-  profile    Profile  @relation(fields: [profile_id], references: [id], onDelete: Cascade)
-  role       Role     @relation(fields: [role_id], references: [id], onDelete: Cascade)
-
-  @@unique([profile_id, role_id])
   @@index([role_id])
-  @@map("profile_roles")
+  @@index([job_function_id])
+  @@map("profiles")
 }
 
 model ProfileBranch {
@@ -931,30 +909,32 @@ model VerificationCode {
 }
 
 model Invitation {
-  id              String                  @id @default(uuid()) @db.Uuid
-  organization_id String                  @db.Uuid
-  invited_by_id   String                  @db.Uuid
-  email           String
-  first_name      String
-  last_name       String
-  phone_number    String?
-  executive_title ExecutiveTitle?
+  id                 String                @id @default(uuid()) @db.Uuid
+  organization_id    String                @db.Uuid
+  invited_by_id      String                @db.Uuid
+  role_id            String                @db.Uuid
+  job_function_id    String?               @db.Uuid
+  email              String
+  first_name         String
+  last_name          String
+  phone_number       String?
+  executive_title    ExecutiveTitle?
   professional_title String?
-  engagement_type EngagementType          @default(FULL_TIME)
-  token_hash      String                  @unique
-  status          InvitationStatus        @default(PENDING)
-  expires_at      DateTime
-  accepted_at     DateTime?
-  is_deleted      Boolean                 @default(false)
-  deleted_at      DateTime?
-  created_at      DateTime                @default(now())
-  updated_at      DateTime                @updatedAt
-  organization    Organization            @relation(fields: [organization_id], references: [id], onDelete: Cascade)
-  invited_by      User                    @relation("InvitedBy", fields: [invited_by_id], references: [id])
-  roles           InvitationRole[]
-  branches        InvitationBranch[]
-  job_functions   InvitationJobFunction[]
-  specialty_links InvitationSpecialty[]
+  engagement_type    EngagementType        @default(FULL_TIME)
+  token_hash         String                @unique
+  status             InvitationStatus      @default(PENDING)
+  expires_at         DateTime
+  accepted_at        DateTime?
+  is_deleted         Boolean               @default(false)
+  deleted_at         DateTime?
+  created_at         DateTime              @default(now())
+  updated_at         DateTime              @updatedAt
+  organization       Organization          @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  invited_by         User                  @relation("InvitedBy", fields: [invited_by_id], references: [id])
+  role               Role                  @relation(fields: [role_id], references: [id])
+  job_function       JobFunction?          @relation(fields: [job_function_id], references: [id])
+  branches           InvitationBranch[]
+  specialty_links    InvitationSpecialty[]
 
   @@index([organization_id, status])
   @@index([email])
@@ -964,18 +944,6 @@ model Invitation {
   // SQL in the `invitations_hardening` migration (Prisma cannot express
   // partial unique indexes natively).
   @@map("invitations")
-}
-
-model InvitationRole {
-  id            String     @id @default(uuid()) @db.Uuid
-  invitation_id String     @db.Uuid
-  role_id       String     @db.Uuid
-  created_at    DateTime   @default(now())
-  invitation    Invitation @relation(fields: [invitation_id], references: [id], onDelete: Cascade)
-  role          Role       @relation(fields: [role_id], references: [id], onDelete: Cascade)
-
-  @@unique([invitation_id, role_id])
-  @@map("invitation_roles")
 }
 
 model InvitationBranch {
@@ -1136,18 +1104,6 @@ model InvitationSpecialty {
 
   @@unique([invitation_id, specialty_id])
   @@map("invitation_specialties")
-}
-
-model InvitationJobFunction {
-  id              String      @id @default(uuid()) @db.Uuid
-  invitation_id   String      @db.Uuid
-  job_function_id String      @db.Uuid
-  created_at      DateTime    @default(now())
-  invitation      Invitation  @relation(fields: [invitation_id], references: [id], onDelete: Cascade)
-  job_function    JobFunction @relation(fields: [job_function_id], references: [id], onDelete: Cascade)
-
-  @@unique([invitation_id, job_function_id])
-  @@map("invitation_job_functions")
 }
 
 model JourneyTemplate {

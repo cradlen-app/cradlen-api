@@ -255,8 +255,8 @@ Table roles {
   name String [unique, not null]
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
-  profileRoles profile_roles [not null]
-  invitationRoles invitation_roles [not null]
+  profiles profiles [not null]
+  invitations invitations [not null]
 }
 
 Table job_functions {
@@ -266,27 +266,16 @@ Table job_functions {
   is_clinical Boolean [not null, default: false]
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
-  profile_links profile_job_functions [not null]
-  invitation_links invitation_job_functions [not null]
-}
-
-Table profile_job_functions {
-  id String [pk]
-  profile_id String [not null]
-  job_function_id String [not null]
-  created_at DateTime [default: `now()`, not null]
-  profile profiles [not null]
-  job_function job_functions [not null]
-
-  indexes {
-    (profile_id, job_function_id) [unique]
-  }
+  profiles profiles [not null]
+  invitations invitations [not null]
 }
 
 Table profiles {
   id String [pk]
   user_id String [not null]
   organization_id String [not null]
+  role_id String [not null]
+  job_function_id String
   executive_title ExecutiveTitle
   professional_title String
   engagement_type EngagementType [not null, default: 'FULL_TIME']
@@ -298,10 +287,10 @@ Table profiles {
   updated_at DateTime [not null]
   user users [not null]
   organization organizations [not null]
-  roles profile_roles [not null]
+  role roles [not null]
+  job_function job_functions
   branches profile_branches [not null]
   workingSchedules working_schedules [not null]
-  job_functions profile_job_functions [not null]
   specialty_links profile_specialties [not null]
   created_journeys patient_journeys [not null]
   doctor_visits visits [not null]
@@ -360,19 +349,6 @@ Table profiles {
 
   indexes {
     (user_id, organization_id) [unique]
-  }
-}
-
-Table profile_roles {
-  id String [pk]
-  profile_id String [not null]
-  role_id String [not null]
-  created_at DateTime [default: `now()`, not null]
-  profile profiles [not null]
-  role roles [not null]
-
-  indexes {
-    (profile_id, role_id) [unique]
   }
 }
 
@@ -468,6 +444,8 @@ Table invitations {
   id String [pk]
   organization_id String [not null]
   invited_by_id String [not null]
+  role_id String [not null]
+  job_function_id String
   email String [not null]
   first_name String [not null]
   last_name String [not null]
@@ -485,23 +463,10 @@ Table invitations {
   updated_at DateTime [not null]
   organization organizations [not null]
   invited_by users [not null]
-  roles invitation_roles [not null]
-  branches invitation_branches [not null]
-  job_functions invitation_job_functions [not null]
-  specialty_links invitation_specialties [not null]
-}
-
-Table invitation_roles {
-  id String [pk]
-  invitation_id String [not null]
-  role_id String [not null]
-  created_at DateTime [default: `now()`, not null]
-  invitation invitations [not null]
   role roles [not null]
-
-  indexes {
-    (invitation_id, role_id) [unique]
-  }
+  job_function job_functions
+  branches invitation_branches [not null]
+  specialty_links invitation_specialties [not null]
 }
 
 Table invitation_branches {
@@ -643,19 +608,6 @@ Table invitation_specialties {
 
   indexes {
     (invitation_id, specialty_id) [unique]
-  }
-}
-
-Table invitation_job_functions {
-  id String [pk]
-  invitation_id String [not null]
-  job_function_id String [not null]
-  created_at DateTime [default: `now()`, not null]
-  invitation invitations [not null]
-  job_function job_functions [not null]
-
-  indexes {
-    (invitation_id, job_function_id) [unique]
   }
 }
 
@@ -2496,17 +2448,13 @@ Ref: patient_accounts.patient_id - patients.id [delete: Set Null]
 
 Ref: patient_accounts.guardian_id - guardians.id [delete: Set Null]
 
-Ref: profile_job_functions.profile_id > profiles.id [delete: Cascade]
-
-Ref: profile_job_functions.job_function_id > job_functions.id [delete: Cascade]
-
 Ref: profiles.user_id > users.id [delete: Cascade]
 
 Ref: profiles.organization_id > organizations.id [delete: Cascade]
 
-Ref: profile_roles.profile_id > profiles.id [delete: Cascade]
+Ref: profiles.role_id > roles.id
 
-Ref: profile_roles.role_id > roles.id [delete: Cascade]
+Ref: profiles.job_function_id > job_functions.id
 
 Ref: profile_branches.profile_id > profiles.id [delete: Cascade]
 
@@ -2530,9 +2478,9 @@ Ref: invitations.organization_id > organizations.id [delete: Cascade]
 
 Ref: invitations.invited_by_id > users.id
 
-Ref: invitation_roles.invitation_id > invitations.id [delete: Cascade]
+Ref: invitations.role_id > roles.id
 
-Ref: invitation_roles.role_id > roles.id [delete: Cascade]
+Ref: invitations.job_function_id > job_functions.id
 
 Ref: invitation_branches.invitation_id > invitations.id [delete: Cascade]
 
@@ -2561,10 +2509,6 @@ Ref: organization_specialties.specialty_id > specialties.id [delete: Cascade]
 Ref: invitation_specialties.invitation_id > invitations.id [delete: Cascade]
 
 Ref: invitation_specialties.specialty_id > specialties.id [delete: Cascade]
-
-Ref: invitation_job_functions.invitation_id > invitations.id [delete: Cascade]
-
-Ref: invitation_job_functions.job_function_id > job_functions.id [delete: Cascade]
 
 Ref: journey_templates.specialty_id > specialties.id [delete: Cascade]
 
