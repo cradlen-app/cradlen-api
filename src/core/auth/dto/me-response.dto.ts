@@ -87,8 +87,8 @@ export class StaffProfileDto {
   @ApiProperty({ enum: EngagementType })
   engagement_type!: EngagementType;
 
-  @ApiProperty({ type: [ProfileRoleDto] })
-  roles!: ProfileRoleDto[];
+  @ApiProperty({ type: ProfileRoleDto })
+  role!: ProfileRoleDto;
 
   @ApiProperty({ type: ProfileOrganizationDto })
   organization!: ProfileOrganizationDto;
@@ -96,8 +96,8 @@ export class StaffProfileDto {
   @ApiProperty({ type: [ProfileBranchDto] })
   branches!: ProfileBranchDto[];
 
-  @ApiProperty({ type: [JobFunctionRefDto] })
-  job_functions!: JobFunctionRefDto[];
+  @ApiPropertyOptional({ type: JobFunctionRefDto, nullable: true })
+  job_function!: JobFunctionRefDto | null;
 
   @ApiProperty({ type: [SpecialtyRefDto] })
   specialties!: SpecialtyRefDto[];

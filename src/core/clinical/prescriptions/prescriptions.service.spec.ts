@@ -38,8 +38,8 @@ const user: AuthContext = {
   userId: 'u1',
   profileId: 'profile-1',
   organizationId: 'org-1',
-  roles: ['OWNER'],
-  jobFunctions: [],
+  role: 'OWNER',
+  jobFunction: null,
   branchIds: ['branch-1'],
 };
 

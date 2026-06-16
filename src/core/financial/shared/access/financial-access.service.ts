@@ -16,25 +16,23 @@ export class FinancialAccessService {
     organizationId: string,
   ): Promise<void> {
     // The OWNER short-circuit must be scoped to the caller's own organization —
-    // `user.roles` are the roles for the token's active org, so an OWNER of one
+    // `user.role` is the role for the token's active org, so an OWNER of one
     // org must not pass this gate for a different org in the route param.
-    if (
-      user.roles.includes('OWNER') &&
-      user.organizationId === organizationId
-    ) {
+    if (user.role === 'OWNER' && user.organizationId === organizationId) {
       return;
     }
 
-    const jobFunction =
-      await this.prismaService.db.profileJobFunction.findFirst({
-        where: {
-          profile_id: user.profileId,
-          job_function: { code: 'RECEPTIONIST' },
-          profile: { organization_id: organizationId, is_deleted: false },
-        },
-      });
+    const receptionist = await this.prismaService.db.profile.findFirst({
+      where: {
+        id: user.profileId,
+        organization_id: organizationId,
+        is_deleted: false,
+        job_function: { code: 'RECEPTIONIST' },
+      },
+      select: { id: true },
+    });
 
-    if (!jobFunction) {
+    if (!receptionist) {
       throw new BadRequestException(
         'Only RECEPTIONISTs or OWNERs can perform this action',
       );

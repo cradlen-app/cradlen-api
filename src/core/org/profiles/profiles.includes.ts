@@ -11,7 +11,7 @@ export const PROFILE_SUMMARY_INCLUDE = {
       },
     },
   },
-  roles: { include: { role: true } },
+  role: true,
   branches: {
     where: { branch: { is_deleted: false } },
     include: { branch: true },
@@ -21,12 +21,12 @@ export const PROFILE_SUMMARY_INCLUDE = {
 export const PROFILE_DETAIL_INCLUDE = {
   user: true,
   organization: true,
-  roles: { include: { role: true } },
+  role: true,
   branches: {
     where: { branch: { is_deleted: false } },
     include: { branch: true },
   },
-  job_functions: { include: { job_function: true } },
+  job_function: true,
   specialty_links: {
     where: { specialty: { is_deleted: false } },
     include: { specialty: true },

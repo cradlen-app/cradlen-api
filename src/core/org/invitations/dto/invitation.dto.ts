@@ -147,6 +147,9 @@ export class InvitationResponseDto {
   @ApiPropertyOptional({ enum: ExecutiveTitle, nullable: true })
   executive_title!: ExecutiveTitle | null;
 
+  @ApiPropertyOptional({ nullable: true })
+  professional_title!: string | null;
+
   @ApiProperty({ enum: EngagementType })
   engagement_type!: EngagementType;
 
@@ -165,14 +168,14 @@ export class InvitationResponseDto {
   @ApiProperty({ type: () => InvitationInvitedByDto })
   invited_by!: InvitationInvitedByDto;
 
-  @ApiProperty({ type: () => [InvitationRoleDto] })
-  roles!: InvitationRoleDto[];
+  @ApiProperty({ type: () => InvitationRoleDto })
+  role!: InvitationRoleDto;
 
   @ApiProperty({ type: () => [InvitationBranchDto] })
   branches!: InvitationBranchDto[];
 
-  @ApiProperty({ type: () => [InvitationJobFunctionDto] })
-  job_functions!: InvitationJobFunctionDto[];
+  @ApiPropertyOptional({ type: () => InvitationJobFunctionDto, nullable: true })
+  job_function!: InvitationJobFunctionDto | null;
 
   @ApiProperty({ type: () => [InvitationSpecialtyDto] })
   specialties!: InvitationSpecialtyDto[];
@@ -226,6 +229,9 @@ export class InvitationPreviewResponseDto {
   @ApiPropertyOptional({ enum: ExecutiveTitle, nullable: true })
   executive_title!: ExecutiveTitle | null;
 
+  @ApiPropertyOptional({ nullable: true })
+  professional_title!: string | null;
+
   @ApiProperty({ enum: EngagementType })
   engagement_type!: EngagementType;
 
@@ -235,14 +241,14 @@ export class InvitationPreviewResponseDto {
   @ApiProperty({ type: () => InvitationPreviewInvitedByDto })
   invited_by!: InvitationPreviewInvitedByDto;
 
-  @ApiProperty({ type: () => [InvitationRoleDto] })
-  roles!: InvitationRoleDto[];
+  @ApiProperty({ type: () => InvitationRoleDto })
+  role!: InvitationRoleDto;
 
   @ApiProperty({ type: () => [InvitationBranchDto] })
   branches!: InvitationBranchDto[];
 
-  @ApiProperty({ type: () => [InvitationJobFunctionDto] })
-  job_functions!: InvitationJobFunctionDto[];
+  @ApiPropertyOptional({ type: () => InvitationJobFunctionDto, nullable: true })
+  job_function!: InvitationJobFunctionDto | null;
 
   @ApiProperty({ type: () => [InvitationSpecialtyDto] })
   specialties!: InvitationSpecialtyDto[];
@@ -282,11 +288,9 @@ export class CreateInvitationDto {
   @IsString()
   phone_number?: string;
 
-  @ApiProperty({ type: [String] })
-  @IsArray()
-  @ArrayMinSize(1)
-  @IsUUID('4', { each: true })
-  role_ids!: string[];
+  @ApiProperty()
+  @IsUUID('4')
+  role_id!: string;
 
   @ApiProperty({ type: [String] })
   @IsArray()
@@ -295,14 +299,12 @@ export class CreateInvitationDto {
   branch_ids!: string[];
 
   @ApiPropertyOptional({
-    type: [String],
     description:
-      'JobFunction codes (e.g. ["NURSE", "OBGYN"]). Codes must exist in the JobFunction table.',
+      'JobFunction code (e.g. "DOCTOR"). Must exist in the JobFunction table.',
   })
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  job_function_codes?: string[];
+  @IsString()
+  job_function_code?: string;
 
   @ApiPropertyOptional({
     type: [String],

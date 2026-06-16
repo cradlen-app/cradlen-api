@@ -28,7 +28,7 @@ export interface SelectableProfile {
   profile_id: string;
   organization_id: string;
   organization_name: string;
-  roles: string[];
+  role: string;
   branches: {
     branch_id: string;
     name: string;
@@ -250,8 +250,8 @@ export class SessionsService {
                 specialty_links: { include: { specialty: true } },
               },
             },
-            roles: { include: { role: true } },
-            job_functions: { include: { job_function: true } },
+            role: true,
+            job_function: true,
             specialty_links: { include: { specialty: true } },
           },
         },
@@ -267,7 +267,7 @@ export class SessionsService {
     // extra hasAnyRole query per profile).
     const profilesWithBranches = await Promise.all(
       user.profiles.map(async (profile) => {
-        const isOwner = profile.roles.some((pr) => pr.role.name === 'OWNER');
+        const isOwner = profile.role.name === 'OWNER';
         const branches = isOwner
           ? await this.prismaService.db.branch.findMany({
               where: {
@@ -334,10 +334,7 @@ export class SessionsService {
             status: profile.organization.status,
             logo_image_url: organization_logo_url,
           },
-          roles: profile.roles.map((pr) => ({
-            id: pr.role.id,
-            name: pr.role.name,
-          })),
+          role: { id: profile.role.id, name: profile.role.name },
           branches: branches.map((b) => ({
             id: b.id,
             name: b.name,
@@ -347,12 +344,14 @@ export class SessionsService {
             country: b.country,
             is_main: b.is_main,
           })),
-          job_functions: profile.job_functions.map((jf) => ({
-            id: jf.job_function.id,
-            code: jf.job_function.code,
-            name: jf.job_function.name,
-            is_clinical: jf.job_function.is_clinical,
-          })),
+          job_function: profile.job_function
+            ? {
+                id: profile.job_function.id,
+                code: profile.job_function.code,
+                name: profile.job_function.name,
+                is_clinical: profile.job_function.is_clinical,
+              }
+            : null,
           specialties: profile.specialty_links.map((sl) => ({
             id: sl.specialty.id,
             code: sl.specialty.code,
@@ -421,7 +420,7 @@ export class SessionsService {
       },
       include: {
         organization: true,
-        roles: { include: { role: true } },
+        role: true,
       },
       orderBy: { created_at: 'asc' },
     });
@@ -432,7 +431,7 @@ export class SessionsService {
     const ownerOrgIds = new Set<string>();
     const memberProfileIds: string[] = [];
     for (const profile of profiles) {
-      const isOwner = profile.roles.some((pr) => pr.role.name === 'OWNER');
+      const isOwner = profile.role.name === 'OWNER';
       if (isOwner) {
         ownerProfileIds.add(profile.id);
         ownerOrgIds.add(profile.organization_id);
@@ -501,7 +500,7 @@ export class SessionsService {
         profile_id: profile.id,
         organization_id: profile.organization.id,
         organization_name: profile.organization.name,
-        roles: profile.roles.map((item) => item.role.code),
+        role: profile.role.code,
         branches: branches.map((b) => ({
           branch_id: b.id,
           name: b.name,

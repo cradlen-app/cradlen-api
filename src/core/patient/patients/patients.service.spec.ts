@@ -11,7 +11,7 @@ const mockUser: AuthContext = {
   userId: 'user-uuid',
   profileId: 'profile-uuid',
   organizationId: 'org-uuid',
-  roles: ['RECEPTIONIST'],
+  role: 'RECEPTIONIST',
   branchIds: ['branch-uuid'],
 };
 
@@ -183,7 +183,7 @@ describe('PatientsService', () => {
     });
 
     it('returns full active_journey with episodes for OWNER role', async () => {
-      const ownerUser: AuthContext = { ...mockUser, roles: ['OWNER'] };
+      const ownerUser: AuthContext = { ...mockUser, role: 'OWNER' };
       db.$transaction.mockResolvedValue([[patientWithJourney], 1]);
       const result = await service.findAll({}, ownerUser);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -111,9 +111,7 @@ export class NotificationsListener {
           organization_id: event.organization_id,
           is_active: true,
           is_deleted: false,
-          job_functions: {
-            some: { job_function: { code: 'RECEPTIONIST' } },
-          },
+          job_function: { code: 'RECEPTIONIST' },
           branches: { some: { branch_id: event.branch_id } },
         },
         select: { id: true },

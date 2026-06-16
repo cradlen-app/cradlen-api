@@ -18,6 +18,7 @@ const baseInvitation: InvitationFull = {
   last_name: 'Ahmed',
   phone_number: '+201111111111',
   executive_title: ExecutiveTitle.CMO,
+  professional_title: 'استشاري النساء والتوليد',
   engagement_type: EngagementType.FULL_TIME,
   status: InvitationStatus.PENDING,
   token_hash: 'hash',
@@ -33,21 +34,8 @@ const baseInvitation: InvitationFull = {
     last_name: 'One',
     email: 'inviter@cradlen.com',
   },
-  roles: [
-    {
-      invitation_id: 'inv-1',
-      role_id: 'role-1',
-      role: {
-        id: 'role-1',
-        name: 'STAFF',
-        description: null,
-        is_deleted: false,
-        deleted_at: null,
-        created_at: new Date(),
-        updated_at: new Date(),
-      },
-    },
-  ],
+  role_id: 'role-1',
+  role: { id: 'role-1', name: 'STAFF', code: 'STAFF' },
   branches: [
     {
       invitation_id: 'inv-1',
@@ -69,22 +57,8 @@ const baseInvitation: InvitationFull = {
       },
     },
   ],
-  job_functions: [
-    {
-      invitation_id: 'inv-1',
-      job_function_id: 'jf-1',
-      job_function: {
-        id: 'jf-1',
-        code: 'NURSE',
-        name: 'Nurse',
-        is_clinical: true,
-        is_deleted: false,
-        deleted_at: null,
-        created_at: new Date(),
-        updated_at: new Date(),
-      },
-    },
-  ],
+  job_function_id: 'jf-1',
+  job_function: { id: 'jf-1', code: 'NURSE', name: 'Nurse', is_clinical: true },
   specialty_links: [
     {
       invitation_id: 'inv-1',
@@ -109,19 +83,18 @@ describe('toInvitationResponse', () => {
   it('maps the full invitation shape and omits working_schedule when not provided', () => {
     const out = toInvitationResponse(baseInvitation);
     expect(out.id).toBe('inv-1');
+    expect(out.professional_title).toBe('استشاري النساء والتوليد');
     expect(out.invited_by).toEqual({
       id: 'user-1',
       first_name: 'Inviter',
       last_name: 'One',
       email: 'inviter@cradlen.com',
     });
-    expect(out.roles).toEqual([{ id: 'role-1', name: 'STAFF' }]);
+    expect(out.role).toEqual({ id: 'role-1', name: 'STAFF' });
     expect(out.branches).toEqual([
       { id: 'branch-1', name: 'Main', city: 'Cairo', governorate: 'Cairo' },
     ]);
-    expect(out.job_functions).toEqual([
-      { id: 'jf-1', code: 'NURSE', name: 'Nurse' },
-    ]);
+    expect(out.job_function).toEqual({ id: 'jf-1', code: 'NURSE', name: 'Nurse' });
     expect(out.specialties).toEqual([
       { id: 'spec-1', code: 'OBGYN', name: 'OB/GYN' },
     ]);
@@ -176,9 +149,7 @@ describe('toInvitationPreviewResponse', () => {
     const out = toInvitationPreviewResponse(preview);
     expect(out.organization).toEqual({ id: 'org-1', name: 'Cradlen' });
     expect(out.invited_by).toEqual({ first_name: 'Inviter', last_name: 'One' });
-    expect(out.roles).toEqual([{ id: 'role-1', name: 'STAFF' }]);
-    expect(out.job_functions).toEqual([
-      { id: 'jf-1', code: 'NURSE', name: 'Nurse' },
-    ]);
+    expect(out.role).toEqual({ id: 'role-1', name: 'STAFF' });
+    expect(out.job_function).toEqual({ id: 'jf-1', code: 'NURSE', name: 'Nurse' });
   });
 });

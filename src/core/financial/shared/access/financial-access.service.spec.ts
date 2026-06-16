@@ -5,7 +5,7 @@ import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 
 const mockDb = {
-  profileJobFunction: { findFirst: jest.fn() },
+  profile: { findFirst: jest.fn() },
   providerService: { findMany: jest.fn() },
   service: { findMany: jest.fn() },
 };
@@ -16,7 +16,7 @@ const ctx = (over: Partial<AuthContext> = {}): AuthContext => ({
   userId: 'u1',
   profileId: 'p1',
   organizationId: ORG,
-  roles: [],
+  role: 'STAFF',
   branchIds: [],
   ...over,
 });
@@ -38,36 +38,36 @@ describe('FinancialAccessService', () => {
   it('passes an OWNER acting within their own organization', async () => {
     await expect(
       service.assertIsReceptionistOrOwner(
-        ctx({ roles: ['OWNER'], organizationId: ORG }),
+        ctx({ role: 'OWNER', organizationId: ORG }),
         ORG,
       ),
     ).resolves.toBeUndefined();
     // The OWNER short-circuit must not need a DB lookup for its own org.
-    expect(mockDb.profileJobFunction.findFirst).not.toHaveBeenCalled();
+    expect(mockDb.profile.findFirst).not.toHaveBeenCalled();
   });
 
   it('rejects an OWNER of a DIFFERENT org acting on this org (cross-tenant)', async () => {
     // Token belongs to org-2; path org is org-1. The OWNER role must not leak.
-    mockDb.profileJobFunction.findFirst.mockResolvedValue(null);
+    mockDb.profile.findFirst.mockResolvedValue(null);
     await expect(
       service.assertIsReceptionistOrOwner(
-        ctx({ roles: ['OWNER'], organizationId: 'org-2' }),
+        ctx({ role: 'OWNER', organizationId: 'org-2' }),
         ORG,
       ),
     ).rejects.toThrow(BadRequestException);
   });
 
   it('passes a RECEPTIONIST scoped to the organization', async () => {
-    mockDb.profileJobFunction.findFirst.mockResolvedValue({ id: 'jf-1' });
+    mockDb.profile.findFirst.mockResolvedValue({ id: 'jf-1' });
     await expect(
-      service.assertIsReceptionistOrOwner(ctx({ roles: ['STAFF'] }), ORG),
+      service.assertIsReceptionistOrOwner(ctx({ role: 'STAFF' }), ORG),
     ).resolves.toBeUndefined();
   });
 
   it('rejects a non-owner non-receptionist', async () => {
-    mockDb.profileJobFunction.findFirst.mockResolvedValue(null);
+    mockDb.profile.findFirst.mockResolvedValue(null);
     await expect(
-      service.assertIsReceptionistOrOwner(ctx({ roles: ['STAFF'] }), ORG),
+      service.assertIsReceptionistOrOwner(ctx({ role: 'STAFF' }), ORG),
     ).rejects.toThrow(BadRequestException);
   });
 

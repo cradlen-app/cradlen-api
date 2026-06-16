@@ -270,7 +270,7 @@ export class SubscriptionsService {
         user_id: userId,
         is_deleted: false,
         is_active: true,
-        roles: { some: { role_id: ownerRole.id } },
+        role_id: ownerRole.id,
         organization: { is_deleted: false, status: 'ACTIVE' },
       },
       select: { organization_id: true },

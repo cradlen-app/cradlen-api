@@ -19,12 +19,7 @@ import {
 import { Transform, Type } from 'class-transformer';
 import { DayOfWeek, EngagementType, ExecutiveTitle } from '@prisma/client';
 
-export const STAFF_ROLE_NAMES = [
-  'OWNER',
-  'BRANCH_MANAGER',
-  'STAFF',
-  'EXTERNAL',
-] as const;
+export const STAFF_ROLE_NAMES = ['OWNER', 'BRANCH_MANAGER', 'STAFF'] as const;
 export const STAFF_LIST_ROLE_FILTERS = STAFF_ROLE_NAMES;
 export type StaffRoleName = (typeof STAFF_ROLE_NAMES)[number];
 
@@ -86,12 +81,10 @@ export class UpdateStaffDto {
   @IsString()
   phone_number?: string;
 
-  @ApiPropertyOptional({ type: [String] })
+  @ApiPropertyOptional()
   @IsOptional()
-  @IsArray()
-  @ArrayMinSize(1)
-  @IsUUID('4', { each: true })
-  role_ids?: string[];
+  @IsUUID('4')
+  role_id?: string;
 
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
@@ -101,14 +94,13 @@ export class UpdateStaffDto {
   branch_ids?: string[];
 
   @ApiPropertyOptional({
-    type: [String],
+    nullable: true,
     description:
-      'JobFunction codes (e.g. ["NURSE", "OBGYN"]). Codes must exist in the JobFunction table. Pass an empty array to clear all assigned job functions.',
+      'JobFunction code (e.g. "DOCTOR"). Must exist in the JobFunction table. Pass null to clear the assigned job function.',
   })
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  job_function_codes?: string[];
+  @IsString()
+  job_function_code?: string | null;
 
   @ApiPropertyOptional({
     type: [String],
@@ -176,11 +168,9 @@ export class CreateStaffDto {
   @MaxLength(72)
   password!: string;
 
-  @ApiProperty({ type: [String] })
-  @IsArray()
-  @ArrayMinSize(1)
-  @IsUUID('4', { each: true })
-  role_ids!: string[];
+  @ApiProperty()
+  @IsUUID('4')
+  role_id!: string;
 
   @ApiProperty({ type: [String] })
   @IsArray()
@@ -189,14 +179,12 @@ export class CreateStaffDto {
   branch_ids!: string[];
 
   @ApiPropertyOptional({
-    type: [String],
     description:
-      'JobFunction codes (e.g. ["NURSE", "OBGYN"]). Codes must exist in the JobFunction table.',
+      'JobFunction code (e.g. "DOCTOR"). Must exist in the JobFunction table.',
   })
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  job_function_codes?: string[];
+  @IsString()
+  job_function_code?: string;
 
   @ApiPropertyOptional({
     type: [String],
@@ -394,10 +382,10 @@ export class StaffResponseDto {
   executive_title!: ExecutiveTitle | null;
   @ApiPropertyOptional({ nullable: true }) professional_title!: string | null;
   @ApiProperty({ enum: EngagementType }) engagement_type!: EngagementType;
-  @ApiProperty({ type: [RoleSummaryDto] }) roles!: RoleSummaryDto[];
+  @ApiProperty({ type: RoleSummaryDto }) role!: RoleSummaryDto;
   @ApiProperty({ type: [BranchSummaryDto] }) branches!: BranchSummaryDto[];
-  @ApiProperty({ type: [JobFunctionSummaryDto] })
-  job_functions!: JobFunctionSummaryDto[];
+  @ApiPropertyOptional({ type: JobFunctionSummaryDto, nullable: true })
+  job_function!: JobFunctionSummaryDto | null;
   @ApiProperty({ type: [SpecialtySummaryDto] })
   specialties!: SpecialtySummaryDto[];
   @ApiProperty({ type: [ScheduleSummaryDto] })

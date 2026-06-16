@@ -190,7 +190,7 @@ describe('Auth — signup edge cases (integration)', () => {
         branch_address: '1 St',
         branch_city: 'Cairo',
         branch_governorate: 'Cairo',
-        job_function_codes: ['OBGYN', 'TOTALLY_BOGUS_FN'],
+        job_function_code: 'TOTALLY_BOGUS_FN',
       })
       .expect(400);
 
