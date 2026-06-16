@@ -170,7 +170,7 @@ export class MedicalRepVisitService {
     // OWNER sees the org-wide overview; an explicit branch_id narrows it.
     // Non-owners are confined to their assigned branches: a supplied branch_id
     // must be one they can reach, otherwise the list is scoped to all of them.
-    const isOwner = user.roles.includes('OWNER');
+    const isOwner = user.role === 'OWNER';
     let branchFilter: Prisma.MedicalRepVisitWhereInput;
     if (isOwner) {
       branchFilter = query.branch_id ? { branch_id: query.branch_id } : {};
@@ -632,7 +632,7 @@ export class MedicalRepVisitService {
    * in-memory check used by `VisitsService` — no extra DB round-trip.
    */
   private assertBranchAccess(branchId: string, user: AuthContext) {
-    if (!user.roles.includes('OWNER') && !user.branchIds.includes(branchId)) {
+    if (user.role !== 'OWNER' && !user.branchIds.includes(branchId)) {
       throw new ForbiddenException('Branch access denied');
     }
   }
@@ -645,9 +645,7 @@ export class MedicalRepVisitService {
   private historyBranchFilter(
     user: AuthContext,
   ): Prisma.MedicalRepVisitWhereInput {
-    return user.roles.includes('OWNER')
-      ? {}
-      : { branch_id: { in: user.branchIds } };
+    return user.role === 'OWNER' ? {} : { branch_id: { in: user.branchIds } };
   }
 
   private async assertBranchInOrg(branchId: string, organizationId: string) {

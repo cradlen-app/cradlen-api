@@ -90,7 +90,7 @@ describe('Auth — cross-tenant authorization (integration)', () => {
         email: `victim-${randomUUID()}@example.com`,
         first_name: 'V',
         last_name: 'X',
-        role_ids: [staffRoleId],
+        role_id: staffRoleId,
         branch_ids: [b.branchId],
       })
       .expect(403);

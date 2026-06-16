@@ -64,7 +64,7 @@ describe('Auth — invitation accept (integration)', () => {
         email,
         first_name: 'New',
         last_name: 'Hire',
-        role_ids: [staffRoleId],
+        role_id: staffRoleId,
         branch_ids: [branchId],
       })
       .expect(201);

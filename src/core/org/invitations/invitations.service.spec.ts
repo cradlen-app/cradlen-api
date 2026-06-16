@@ -51,8 +51,10 @@ describe('InvitationsService.acceptInvitation', () => {
         branch: { id: 'branch-1', name: 'Main' },
       },
     ],
-    roles: [{ role_id: 'role-1', role: { id: 'role-1', name: 'STAFF' } }],
-    job_functions: [],
+    role_id: 'role-1',
+    role: { id: 'role-1', name: 'STAFF' },
+    job_function_id: null,
+    job_function: null,
     specialty_links: [],
     invited_by: {
       id: 'user-inv-1',
@@ -83,11 +85,7 @@ describe('InvitationsService.acceptInvitation', () => {
       subscription: {
         findFirst: jest.fn(),
       },
-      profileRole: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
       profileBranch: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
-      profileJobFunction: {
-        createMany: jest.fn().mockResolvedValue({ count: 0 }),
-      },
       profileSpecialty: {
         createMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
@@ -145,7 +143,7 @@ describe('InvitationsService.acceptInvitation', () => {
       organization_id: 'org-1',
     });
     expect(txClient).toHaveBeenCalledTimes(1);
-    expect(db.profileRole.createMany).toHaveBeenCalledWith(
+    expect(db.profileBranch.createMany).toHaveBeenCalledWith(
       expect.objectContaining({ skipDuplicates: true }),
     );
     expect(eventBus.publish).toHaveBeenCalledWith(

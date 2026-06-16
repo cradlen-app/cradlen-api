@@ -182,7 +182,7 @@ describe('Visits — today stats (integration)', () => {
         user_id: otherUser.id,
         organization_id: a.org.id,
         engagement_type: 'FULL_TIME',
-        roles: { create: [{ role_id: ownerRole.id }] },
+        role_id: ownerRole.id,
       },
     });
 

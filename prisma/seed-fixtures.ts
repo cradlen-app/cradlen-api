@@ -70,28 +70,19 @@ async function main() {
 // ---- Reference data ---------------------------------------------------------
 
 interface RefData {
-  roles: { OWNER: string; STAFF: string; EXTERNAL: string };
+  roles: { OWNER: string; STAFF: string };
   jobFunctions: Record<JobFunctionCode, string>;
   specialties: { OBGYN: string };
   procedures: { CESAREAN_SECTION: string };
   plans: { free_trial: string; individual: string; center: string; network: string };
 }
 
-type JobFunctionCode =
-  | 'OBGYN'
-  | 'ANESTHESIOLOGIST'
-  | 'PEDIATRICIAN'
-  | 'OTHER_DOCTOR'
-  | 'NURSE'
-  | 'ASSISTANT'
-  | 'RECEPTIONIST'
-  | 'ACCOUNTANT';
+type JobFunctionCode = 'DOCTOR' | 'RECEPTIONIST' | 'ACCOUNTANT';
 
 async function loadReferenceData(): Promise<RefData> {
   const [
     ownerRole,
     staffRole,
-    externalRole,
     jobFunctionRows,
     gynSpecialty,
     cesareanProcedure,
@@ -102,7 +93,6 @@ async function loadReferenceData(): Promise<RefData> {
   ] = await Promise.all([
     prisma.role.findUniqueOrThrow({ where: { name: 'OWNER' } }),
     prisma.role.findUniqueOrThrow({ where: { name: 'STAFF' } }),
-    prisma.role.findUniqueOrThrow({ where: { name: 'EXTERNAL' } }),
     prisma.jobFunction.findMany(),
     prisma.specialty.findUniqueOrThrow({ where: { code: 'OBGYN' } }),
     prisma.procedure.findUniqueOrThrow({ where: { code: 'CESAREAN_SECTION' } }),
@@ -117,7 +107,7 @@ async function loadReferenceData(): Promise<RefData> {
   ) as Record<JobFunctionCode, string>;
 
   return {
-    roles: { OWNER: ownerRole.id, STAFF: staffRole.id, EXTERNAL: externalRole.id },
+    roles: { OWNER: ownerRole.id, STAFF: staffRole.id },
     jobFunctions,
     specialties: { OBGYN: gynSpecialty.id },
     procedures: { CESAREAN_SECTION: cesareanProcedure.id },
@@ -232,8 +222,8 @@ async function ensureSubscription(organizationId: string, planId: string) {
 interface ProfileSpec {
   userId: string;
   organizationId: string;
-  roleIds: string[];
-  jobFunctionIds: string[];
+  roleId: string;
+  jobFunctionId?: string | null;
   branchIds: string[];
   specialtyIds?: string[];
   executive_title?: ExecutiveTitle | null;
@@ -251,37 +241,22 @@ async function ensureProfile(spec: ProfileSpec) {
     update: {
       is_active: true,
       is_deleted: false,
+      role_id: spec.roleId,
+      job_function_id: spec.jobFunctionId ?? null,
       executive_title: spec.executive_title ?? null,
       engagement_type: spec.engagement_type ?? 'FULL_TIME',
     },
     create: {
       user_id: spec.userId,
       organization_id: spec.organizationId,
+      role_id: spec.roleId,
+      job_function_id: spec.jobFunctionId ?? null,
       executive_title: spec.executive_title ?? null,
       engagement_type: spec.engagement_type ?? 'FULL_TIME',
     },
   });
 
   await Promise.all([
-    ...spec.roleIds.map((role_id) =>
-      prisma.profileRole.upsert({
-        where: { profile_id_role_id: { profile_id: profile.id, role_id } },
-        update: {},
-        create: { profile_id: profile.id, role_id },
-      }),
-    ),
-    ...spec.jobFunctionIds.map((job_function_id) =>
-      prisma.profileJobFunction.upsert({
-        where: {
-          profile_id_job_function_id: {
-            profile_id: profile.id,
-            job_function_id,
-          },
-        },
-        update: {},
-        create: { profile_id: profile.id, job_function_id },
-      }),
-    ),
     ...spec.branchIds.map((branch_id) =>
       prisma.profileBranch.upsert({
         where: {
@@ -365,8 +340,8 @@ async function buildJasmin(refs: RefData, passwordHash: string): Promise<OrgCont
   const ownerProfile = await ensureProfile({
     userId: ownerUser.id,
     organizationId: org.id,
-    roleIds: [refs.roles.OWNER],
-    jobFunctionIds: [refs.jobFunctions.OBGYN],
+    roleId: refs.roles.OWNER,
+    jobFunctionId: refs.jobFunctions.DOCTOR,
     branchIds,
     specialtyIds: [refs.specialties.OBGYN],
   });
@@ -414,8 +389,8 @@ async function buildJanah(refs: RefData, passwordHash: string): Promise<OrgConte
   const ownerProfile = await ensureProfile({
     userId: ownerUser.id,
     organizationId: org.id,
-    roleIds: [refs.roles.OWNER],
-    jobFunctionIds: [refs.jobFunctions.OBGYN],
+    roleId: refs.roles.OWNER,
+    jobFunctionId: refs.jobFunctions.DOCTOR,
     branchIds,
     specialtyIds: [refs.specialties.OBGYN],
   });
@@ -490,8 +465,8 @@ async function buildAmshag(refs: RefData, passwordHash: string): Promise<OrgCont
     const p = await ensureProfile({
       userId: u.id,
       organizationId: org.id,
-      roleIds: [refs.roles.OWNER],
-      jobFunctionIds: [refs.jobFunctions.OBGYN],
+      roleId: refs.roles.OWNER,
+      jobFunctionId: refs.jobFunctions.DOCTOR,
       branchIds,
       specialtyIds: [refs.specialties.OBGYN],
       executive_title: title,
@@ -556,8 +531,8 @@ async function seedStaff(
       const profile = await ensureProfile({
         userId: user.id,
         organizationId,
-        roleIds: [refs.roles.STAFF],
-        jobFunctionIds: [refs.jobFunctions[code]],
+        roleId: refs.roles.STAFF,
+        jobFunctionId: refs.jobFunctions[code],
         branchIds: [branchId],
         specialtyIds: isClinical ? [refs.specialties.OBGYN] : undefined,
       });
@@ -587,8 +562,8 @@ async function addCrossOrgLinks(
   await ensureProfile({
     userId: mervat.id,
     organizationId: amshag.id,
-    roleIds: [refs.roles.STAFF, refs.roles.EXTERNAL],
-    jobFunctionIds: [refs.jobFunctions.OBGYN],
+    roleId: refs.roles.STAFF,
+    jobFunctionId: refs.jobFunctions.DOCTOR,
     branchIds: amshag.branches.map((b) => b.id),
     specialtyIds: [refs.specialties.OBGYN],
     engagement_type: 'PART_TIME',
@@ -608,8 +583,8 @@ async function addCrossOrgLinks(
     await ensureProfile({
       userId: elsayed.id,
       organizationId: ctx.organizationId,
-      roleIds: [refs.roles.EXTERNAL],
-      jobFunctionIds: [refs.jobFunctions.PEDIATRICIAN],
+      roleIds: [refs.roles.STAFF],
+      jobFunctionIds: [refs.jobFunctions.DOCTOR],
       branchIds: Object.values(ctx.branches),
       specialtyIds: [refs.specialties.OBGYN],
       engagement_type: 'ON_DEMAND',
@@ -646,9 +621,7 @@ async function createSampleCSection(refs: RefData, jasminCtx: OrgContext) {
   const anesthProfile = await prisma.profile.findFirstOrThrow({
     where: {
       organization_id: jasminCtx.organizationId,
-      job_functions: {
-        some: { job_function_id: refs.jobFunctions.ANESTHESIOLOGIST },
-      },
+      job_function_id: refs.jobFunctions.DOCTOR,
     },
   });
   const elsayedProfile = await prisma.profile.findFirstOrThrow({

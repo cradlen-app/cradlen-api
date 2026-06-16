@@ -11,12 +11,12 @@ export const staffInclude = {
       phone_number: true,
     },
   },
-  roles: { include: { role: true } },
+  role: true,
   branches: {
     where: { branch: { is_deleted: false } },
     include: { branch: true },
   },
-  job_functions: { include: { job_function: true } },
+  job_function: true,
   specialty_links: { include: { specialty: true } },
   workingSchedules: {
     include: { days: { include: { shifts: true } } },
@@ -38,19 +38,21 @@ export function toStaffResponse(p: StaffProfileWithRelations) {
     executive_title: p.executive_title,
     professional_title: p.professional_title,
     engagement_type: p.engagement_type,
-    roles: p.roles.map((r) => ({ id: r.role.id, name: r.role.name })),
+    role: { id: p.role.id, name: p.role.name },
     branches: p.branches.map((b) => ({
       id: b.branch.id,
       name: b.branch.name,
       city: b.branch.city,
       governorate: b.branch.governorate,
     })),
-    job_functions: p.job_functions.map((jf) => ({
-      id: jf.job_function.id,
-      code: jf.job_function.code,
-      name: jf.job_function.name,
-      is_clinical: jf.job_function.is_clinical,
-    })),
+    job_function: p.job_function
+      ? {
+          id: p.job_function.id,
+          code: p.job_function.code,
+          name: p.job_function.name,
+          is_clinical: p.job_function.is_clinical,
+        }
+      : null,
     specialties: p.specialty_links.map((sl) => ({
       id: sl.specialty.id,
       code: sl.specialty.code,

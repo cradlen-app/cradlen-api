@@ -58,14 +58,12 @@ export class SignupCompleteDto extends BranchInputFieldsDto {
   practitioner_specialties?: string[];
 
   @ApiPropertyOptional({
-    type: [String],
     description:
-      'JobFunction codes (e.g. ["OBGYN"]). Drives staff filtering and function-aware authorization. Codes must exist in the JobFunction table.',
+      'JobFunction code (e.g. "DOCTOR"). Drives staff filtering and function-aware authorization. Must exist in the JobFunction table.',
   })
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  job_function_codes?: string[];
+  @IsString()
+  job_function_code?: string;
 
   @ApiPropertyOptional({
     description:

@@ -66,7 +66,7 @@ export async function provisionOrganization(
     data: {
       user_id: userId,
       organization_id: organization.id,
-      roles: { create: [{ role_id: ownerRoleId }] },
+      role_id: ownerRoleId,
       branches: {
         create: { branch_id: branch.id, organization_id: organization.id },
       },
