@@ -195,7 +195,7 @@ export class SignupService {
     }
 
     const jobFunctions = await this.resolveJobFunctions(
-      dto.job_function_codes ?? [],
+      dto.job_function_code ? [dto.job_function_code] : [],
     );
     // Silent-skip on unmatched entries: the M2M is the source of truth and
     // onboarding should not hard-fail on a stale specialty label.
@@ -399,7 +399,8 @@ export class SignupService {
           executive_title: dto.executive_title ?? null,
           professional_title: dto.professional_title ?? null,
           engagement_type: dto.engagement_type ?? 'FULL_TIME',
-          roles: { create: [{ role_id: ownerRoleId }] },
+          role_id: ownerRoleId,
+          job_function_id: jobFunctions[0]?.id ?? null,
           // Link the owner to the main branch so they appear in the branch-scoped
           // staff list and stats; without this the owner is silently excluded.
           branches: {
@@ -407,13 +408,6 @@ export class SignupService {
               { organization_id: organization.id, branch_id: branch.id },
             ],
           },
-          job_functions: jobFunctions.length
-            ? {
-                create: jobFunctions.map((jf) => ({
-                  job_function_id: jf.id,
-                })),
-              }
-            : undefined,
           // The owner's own clinical specialties (only when they practice) —
           // distinct from the organization's offered specialties above.
           specialty_links: practitionerSpecialties.length

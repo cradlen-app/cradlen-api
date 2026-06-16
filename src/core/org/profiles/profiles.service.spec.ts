@@ -119,9 +119,9 @@ describe('ProfilesService', () => {
         phone_number: '+201111111111',
       },
       organization: { id: 'org-1', name: 'Cradlen' },
-      roles: [],
+      role: { code: 'STAFF' },
       branches: [],
-      job_functions: [],
+      job_function: null,
       specialty_links: [],
     };
 
@@ -251,9 +251,9 @@ describe('ProfilesService', () => {
         phone_number: '+201111111111',
       },
       organization: { id: 'org-1', name: 'Cradlen' },
-      roles: [],
+      role: { code: 'STAFF' },
       branches: [],
-      job_functions: [],
+      job_function: null,
       specialty_links: [],
     };
 

@@ -335,8 +335,8 @@ Core entities:
 - **User** → many **Profile**, **RefreshToken**, **VerificationCode**
 - **Role** — seeded: `OWNER`, `STAFF`, `EXTERNAL`
 - **JobFunction** — seeded clinical/operational set; `is_clinical` is a column on `JobFunction` (not on `Profile`)
-- **Profile** — `(user_id, organization_id)` unique. Carries `executive_title?` and `engagement_type` (default `FULL_TIME`). Job functions and specialties live in M2M tables (`ProfileJobFunction`, `ProfileSpecialty`). Branches via `ProfileBranch`.
-- **Invitation** — pre-assigns roles, branches, job functions, specialties, executive_title, engagement_type. Accept flow copies these onto the new Profile.
+- **Profile** — `(user_id, organization_id)` unique. Carries `executive_title?` and `engagement_type` (default `FULL_TIME`). **Role and job function are single FK columns** (`role_id` NOT NULL → `Role`; `job_function_id` nullable → `JobFunction`) — one role and at most one job function per profile. Specialties remain M2M (`ProfileSpecialty`, doctors can hold several); branches via `ProfileBranch`.
+- **Invitation** — pre-assigns a single role + job function (mirrors Profile: `role_id`, `job_function_id` columns) plus branches, specialties (M2M), executive_title, engagement_type. Accept flow copies these onto the new Profile.
 - **Specialty** — catalog (`code` unique). Linked to `Procedure`, `JourneyTemplate`, and to `Profile`/`Organization`/`Invitation` via M2M.
 - **Procedure** — surgery catalog (e.g. `CESAREAN_SECTION`).
 - **WorkingSchedule** → **WorkingDay** → **WorkingShift** — per (profile, branch).

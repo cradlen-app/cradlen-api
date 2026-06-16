@@ -877,7 +877,7 @@ export class VisitsService {
     });
     if (!branch) throw new NotFoundException(`Branch ${branchId} not found`);
 
-    const isOwner = user.roles.includes('OWNER');
+    const isOwner = user.role === 'OWNER';
     const isInBranch = user.branchIds.includes(branchId);
     if (!isOwner && !isInBranch) {
       throw new ForbiddenException('Access denied');
@@ -998,7 +998,7 @@ export class VisitsService {
     });
     if (!branch) throw new NotFoundException(`Branch ${branchId} not found`);
 
-    const isOwner = user.roles.includes('OWNER');
+    const isOwner = user.role === 'OWNER';
     const isInBranch = user.branchIds.includes(branchId);
     if (!isOwner && !isInBranch) {
       throw new ForbiddenException('Access denied');

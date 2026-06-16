@@ -49,18 +49,8 @@ describe('AuthorizationService.assertCanViewStaff', () => {
       expect.objectContaining({
         where: expect.objectContaining({
           OR: [
-            {
-              roles: {
-                some: {
-                  role: { name: { in: ['OWNER', 'BRANCH_MANAGER'] } },
-                },
-              },
-            },
-            {
-              job_functions: {
-                some: { job_function: { code: { in: ['RECEPTIONIST'] } } },
-              },
-            },
+            { role: { name: { in: ['OWNER', 'BRANCH_MANAGER'] } } },
+            { job_function: { code: { in: ['RECEPTIONIST'] } } },
           ],
         }),
       }),
@@ -77,25 +67,25 @@ describe('AuthorizationService.assertCanViewStaff', () => {
 
 describe('AuthorizationService — per-branch staff management', () => {
   let service: AuthorizationService;
-  let profileRole: { findFirst: jest.Mock };
+  let profile: { findFirst: jest.Mock };
   let profileBranch: { findMany: jest.Mock; findFirst: jest.Mock };
   let branch: { findMany: jest.Mock; findFirst: jest.Mock };
-  let role: { findMany: jest.Mock };
+  let role: { findFirst: jest.Mock };
 
-  const stubOwner = () => profileRole.findFirst.mockResolvedValue({ id: 'pr' });
+  const stubOwner = () => profile.findFirst.mockResolvedValue({ id: 'pr' });
   const stubBranchManager = () => {
     // First call: canManageStaff (returns OWNER or BRANCH_MANAGER row).
     // Second call: isOwner check (returns null — caller is not OWNER).
-    profileRole.findFirst.mockResolvedValueOnce({ id: 'pr-mgr' });
-    profileRole.findFirst.mockResolvedValueOnce(null);
+    profile.findFirst.mockResolvedValueOnce({ id: 'pr-mgr' });
+    profile.findFirst.mockResolvedValueOnce(null);
   };
-  const stubNoRole = () => profileRole.findFirst.mockResolvedValue(null);
+  const stubNoRole = () => profile.findFirst.mockResolvedValue(null);
 
   beforeEach(async () => {
-    profileRole = { findFirst: jest.fn() };
+    profile = { findFirst: jest.fn() };
     profileBranch = { findMany: jest.fn(), findFirst: jest.fn() };
     branch = { findMany: jest.fn(), findFirst: jest.fn() };
-    role = { findMany: jest.fn() };
+    role = { findFirst: jest.fn() };
 
     const module = await Test.createTestingModule({
       providers: [
@@ -103,7 +93,7 @@ describe('AuthorizationService — per-branch staff management', () => {
         {
           provide: PrismaService,
           useValue: {
-            db: { profileRole, profileBranch, branch, role },
+            db: { profile, profileBranch, branch, role },
           },
         },
       ],
@@ -195,33 +185,27 @@ describe('AuthorizationService — per-branch staff management', () => {
   });
 
   describe('assertNoPrivilegedRoleAssignment', () => {
-    it('is a no-op for empty roleIds', async () => {
-      await expect(
-        service.assertNoPrivilegedRoleAssignment('p', 'o', []),
-      ).resolves.toBeUndefined();
-    });
-
-    it('allows any roles when caller is OWNER', async () => {
+    it('allows any role when caller is OWNER', async () => {
       stubOwner();
       await expect(
-        service.assertNoPrivilegedRoleAssignment('p', 'o', ['r1', 'r2']),
+        service.assertNoPrivilegedRoleAssignment('p', 'o', 'r1'),
       ).resolves.toBeUndefined();
-      expect(role.findMany).not.toHaveBeenCalled();
+      expect(role.findFirst).not.toHaveBeenCalled();
     });
 
     it('throws when non-OWNER tries to assign OWNER or BRANCH_MANAGER', async () => {
       stubNoRole();
-      role.findMany.mockResolvedValue([{ name: 'BRANCH_MANAGER' }]);
+      role.findFirst.mockResolvedValue({ code: 'BRANCH_MANAGER' });
       await expect(
-        service.assertNoPrivilegedRoleAssignment('p', 'o', ['r1']),
+        service.assertNoPrivilegedRoleAssignment('p', 'o', 'r1'),
       ).rejects.toThrow(ForbiddenException);
     });
 
-    it('allows non-OWNER to assign non-privileged roles', async () => {
+    it('allows non-OWNER to assign a non-privileged role', async () => {
       stubNoRole();
-      role.findMany.mockResolvedValue([]);
+      role.findFirst.mockResolvedValue(null);
       await expect(
-        service.assertNoPrivilegedRoleAssignment('p', 'o', ['r1', 'r2']),
+        service.assertNoPrivilegedRoleAssignment('p', 'o', 'r1'),
       ).resolves.toBeUndefined();
     });
   });
@@ -265,8 +249,8 @@ describe('AuthorizationService.getProfileContext', () => {
 
   it('resolves OWNER context in exactly 2 queries (profile + org branches)', async () => {
     profile.findFirst.mockResolvedValue({
-      roles: [{ role: { code: 'OWNER', name: 'OWNER' } }],
-      job_functions: [],
+      role: { code: 'OWNER', name: 'OWNER' },
+      job_function: null,
     });
     branch.findMany.mockResolvedValue([{ id: 'b1' }, { id: 'b2' }]);
 
@@ -277,8 +261,8 @@ describe('AuthorizationService.getProfileContext', () => {
       profileId: 'p',
       organizationId: 'org',
       activeBranchId: 'b1',
-      roles: ['OWNER'],
-      jobFunctions: [],
+      role: 'OWNER',
+      jobFunction: null,
       branchIds: ['b1', 'b2'],
     });
     expect(profile.findFirst).toHaveBeenCalledTimes(1);
@@ -288,8 +272,8 @@ describe('AuthorizationService.getProfileContext', () => {
 
   it('resolves member context in exactly 2 queries (profile + profileBranch)', async () => {
     profile.findFirst.mockResolvedValue({
-      roles: [{ role: { code: 'STAFF', name: 'STAFF' } }],
-      job_functions: [{ job_function: { code: 'RECEPTIONIST' } }],
+      role: { code: 'STAFF', name: 'STAFF' },
+      job_function: { code: 'RECEPTIONIST' },
     });
     profileBranch.findMany.mockResolvedValue([
       { branch_id: 'b1' },
@@ -298,8 +282,8 @@ describe('AuthorizationService.getProfileContext', () => {
 
     const ctx = await service.getProfileContext('u', 'p', 'org');
 
-    expect(ctx.roles).toEqual(['STAFF']);
-    expect(ctx.jobFunctions).toEqual(['RECEPTIONIST']);
+    expect(ctx.role).toEqual('STAFF');
+    expect(ctx.jobFunction).toEqual('RECEPTIONIST');
     expect(ctx.branchIds).toEqual(['b1', 'b2']);
     expect(profile.findFirst).toHaveBeenCalledTimes(1);
     expect(profileBranch.findMany).toHaveBeenCalledTimes(1);
@@ -308,8 +292,8 @@ describe('AuthorizationService.getProfileContext', () => {
 
   it('filters on user.is_active and organization.status in the single profile query', async () => {
     profile.findFirst.mockResolvedValue({
-      roles: [{ role: { code: 'OWNER', name: 'OWNER' } }],
-      job_functions: [],
+      role: { code: 'OWNER', name: 'OWNER' },
+      job_function: null,
     });
     branch.findMany.mockResolvedValue([]);
 
@@ -343,16 +327,16 @@ describe('AuthorizationService.getProfileContext', () => {
 
 describe('AuthorizationService.isClinical', () => {
   let service: AuthorizationService;
-  let profileJobFunction: { findFirst: jest.Mock };
+  let profile: { findFirst: jest.Mock };
 
   beforeEach(async () => {
-    profileJobFunction = { findFirst: jest.fn() };
+    profile = { findFirst: jest.fn() };
     const module = await Test.createTestingModule({
       providers: [
         AuthorizationService,
         {
           provide: PrismaService,
-          useValue: { db: { profileJobFunction } },
+          useValue: { db: { profile } },
         },
       ],
     }).compile();
@@ -360,12 +344,12 @@ describe('AuthorizationService.isClinical', () => {
   });
 
   it('returns true when a clinical job function exists', async () => {
-    profileJobFunction.findFirst.mockResolvedValue({ id: 'pjf-1' });
+    profile.findFirst.mockResolvedValue({ id: 'pjf-1' });
     await expect(service.isClinical('prof-1')).resolves.toBe(true);
-    expect(profileJobFunction.findFirst).toHaveBeenCalledWith(
+    expect(profile.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          profile_id: 'prof-1',
+          id: 'prof-1',
           job_function: { is_clinical: true },
         },
       }),
@@ -373,25 +357,23 @@ describe('AuthorizationService.isClinical', () => {
   });
 
   it('returns false when the profile has no clinical job function', async () => {
-    profileJobFunction.findFirst.mockResolvedValue(null);
+    profile.findFirst.mockResolvedValue(null);
     await expect(service.isClinical('prof-1')).resolves.toBe(false);
   });
 });
 
 describe('AuthorizationService.isRestrictedToOwnData', () => {
   let service: AuthorizationService;
-  let profileRole: { findFirst: jest.Mock };
-  let profileJobFunction: { findFirst: jest.Mock };
+  let profile: { findFirst: jest.Mock };
 
   beforeEach(async () => {
-    profileRole = { findFirst: jest.fn() };
-    profileJobFunction = { findFirst: jest.fn() };
+    profile = { findFirst: jest.fn() };
     const module = await Test.createTestingModule({
       providers: [
         AuthorizationService,
         {
           provide: PrismaService,
-          useValue: { db: { profileRole, profileJobFunction } },
+          useValue: { db: { profile } },
         },
       ],
     }).compile();
@@ -399,20 +381,21 @@ describe('AuthorizationService.isRestrictedToOwnData', () => {
   });
 
   it('returns false for a manager (owner/branch manager) without checking clinical', async () => {
-    profileRole.findFirst.mockResolvedValue({ id: 'pr-mgr' }); // isManager → true
+    profile.findFirst.mockResolvedValue({ id: 'pr-mgr' }); // isManager → true
     await expect(service.isRestrictedToOwnData('p', 'o')).resolves.toBe(false);
-    expect(profileJobFunction.findFirst).not.toHaveBeenCalled();
+    // isManager short-circuits before the clinical check (one query only).
+    expect(profile.findFirst).toHaveBeenCalledTimes(1);
   });
 
   it('returns true for a non-manager clinician (doctor)', async () => {
-    profileRole.findFirst.mockResolvedValue(null); // not a manager
-    profileJobFunction.findFirst.mockResolvedValue({ id: 'pjf' }); // clinical
+    profile.findFirst
+      .mockResolvedValueOnce(null) // isManager → false
+      .mockResolvedValueOnce({ id: 'pjf' }); // isClinical → true
     await expect(service.isRestrictedToOwnData('p', 'o')).resolves.toBe(true);
   });
 
   it('returns false for a non-manager, non-clinical caller (reception)', async () => {
-    profileRole.findFirst.mockResolvedValue(null);
-    profileJobFunction.findFirst.mockResolvedValue(null);
+    profile.findFirst.mockResolvedValue(null);
     await expect(service.isRestrictedToOwnData('p', 'o')).resolves.toBe(false);
   });
 });

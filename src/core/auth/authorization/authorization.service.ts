@@ -38,8 +38,8 @@ export class AuthorizationService {
         organization: { status: 'ACTIVE', is_deleted: false },
       },
       include: {
-        roles: { include: { role: true } },
-        job_functions: { include: { job_function: true } },
+        role: true,
+        job_function: true,
       },
     });
 
@@ -51,7 +51,7 @@ export class AuthorizationService {
       throw new UnauthorizedException('Invalid auth context');
     }
 
-    const isOwner = profile.roles.some((pr) => pr.role.name === 'OWNER');
+    const isOwner = profile.role.name === 'OWNER';
     const branchIds = isOwner
       ? (
           await this.prismaService.db.branch.findMany({
@@ -75,8 +75,8 @@ export class AuthorizationService {
       profileId,
       organizationId,
       activeBranchId,
-      roles: profile.roles.map((item) => item.role.code),
-      jobFunctions: profile.job_functions.map((link) => link.job_function.code),
+      role: profile.role.code,
+      jobFunction: profile.job_function?.code ?? null,
       branchIds,
     };
   }
@@ -297,18 +297,8 @@ export class AuthorizationService {
         is_deleted: false,
         is_active: true,
         OR: [
-          {
-            roles: {
-              some: { role: { name: { in: STAFF_VIEWER_ROLES } } },
-            },
-          },
-          {
-            job_functions: {
-              some: {
-                job_function: { code: { in: STAFF_VIEWER_JOB_FUNCTIONS } },
-              },
-            },
-          },
+          { role: { name: { in: STAFF_VIEWER_ROLES } } },
+          { job_function: { code: { in: STAFF_VIEWER_JOB_FUNCTIONS } } },
         ],
       },
       select: { id: true },
@@ -335,8 +325,8 @@ export class AuthorizationService {
    * clinician-gated surfaces (e.g. catalog contribution, clinical viewers).
    */
   async isClinical(profileId: string): Promise<boolean> {
-    const row = await this.prismaService.db.profileJobFunction.findFirst({
-      where: { profile_id: profileId, job_function: { is_clinical: true } },
+    const row = await this.prismaService.db.profile.findFirst({
+      where: { id: profileId, job_function: { is_clinical: true } },
       select: { id: true },
     });
     return row !== null;
@@ -416,19 +406,16 @@ export class AuthorizationService {
   async assertNoPrivilegedRoleAssignment(
     callerProfileId: string,
     organizationId: string,
-    roleIds: string[],
+    roleId: string,
   ): Promise<void> {
-    if (!roleIds.length) return;
     if (await this.isOwner(callerProfileId, organizationId)) return;
-    const privileged = await this.prismaService.db.role.findMany({
-      where: { id: { in: roleIds }, code: { in: ['OWNER', 'BRANCH_MANAGER'] } },
+    const privileged = await this.prismaService.db.role.findFirst({
+      where: { id: roleId, code: { in: ['OWNER', 'BRANCH_MANAGER'] } },
       select: { code: true },
     });
-    if (privileged.length) {
+    if (privileged) {
       throw new ForbiddenException(
-        `Only OWNER can assign privileged roles: ${privileged
-          .map((r) => r.code)
-          .join(', ')}`,
+        `Only OWNER can assign privileged roles: ${privileged.code}`,
       );
     }
   }
@@ -454,14 +441,12 @@ export class AuthorizationService {
     organizationId: string,
     roles: string[],
   ): Promise<boolean> {
-    const match = await this.prismaService.db.profileRole.findFirst({
+    const match = await this.prismaService.db.profile.findFirst({
       where: {
-        profile_id: profileId,
-        profile: {
-          organization_id: organizationId,
-          is_deleted: false,
-          is_active: true,
-        },
+        id: profileId,
+        organization_id: organizationId,
+        is_deleted: false,
+        is_active: true,
         role: { name: { in: roles } },
       },
       select: { id: true },

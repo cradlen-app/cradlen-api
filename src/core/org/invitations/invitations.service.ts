@@ -78,7 +78,7 @@ export class InvitationsService {
     dto: CreateInvitationDto,
   ) {
     const uniqueBranchIds = [...new Set(dto.branch_ids)];
-    const uniqueRoleIds = [...new Set(dto.role_ids)];
+    const roleId = dto.role_id;
 
     if (!uniqueBranchIds.includes(branchId)) {
       throw new BadRequestException(
@@ -94,7 +94,7 @@ export class InvitationsService {
     await this.authorizationService.assertNoPrivilegedRoleAssignment(
       profileId,
       organizationId,
-      uniqueRoleIds,
+      roleId,
     );
     await this.subscriptionsService.assertStaffLimit(organizationId);
     await assertNotSelfInvite(this.prismaService, currentUserId, [dto.email]);
@@ -137,9 +137,11 @@ export class InvitationsService {
     organizationId: string,
     dto: CreateInvitationDto,
   ) {
-    const uniqueRoleIds = [...new Set(dto.role_ids)];
+    const roleId = dto.role_id;
     const uniqueBranchIds = [...new Set(dto.branch_ids)];
-    const jobFunctionCodes = [...new Set(dto.job_function_codes ?? [])];
+    const jobFunctionCodes = dto.job_function_code
+      ? [dto.job_function_code]
+      : [];
     const specialtyCodes = [...new Set(dto.specialty_codes ?? [])];
 
     await Promise.all([
@@ -148,7 +150,7 @@ export class InvitationsService {
         organizationId,
         uniqueBranchIds,
       ),
-      assertRolesExist(this.prismaService, uniqueRoleIds),
+      assertRolesExist(this.prismaService, [roleId]),
     ]);
 
     const { jobFunctions, specialties } =
@@ -163,7 +165,7 @@ export class InvitationsService {
     );
 
     return {
-      uniqueRoleIds,
+      roleId,
       uniqueBranchIds,
       jobFunctions,
       specialties,
@@ -191,21 +193,15 @@ export class InvitationsService {
       engagement_type: dto.engagement_type ?? 'FULL_TIME',
       token_hash: prepared.tokenHash,
       expires_at: prepared.expiresAt,
-      roles: {
-        create: prepared.uniqueRoleIds.map((role_id) => ({ role_id })),
-      },
+      role: { connect: { id: prepared.roleId } },
       branches: {
         create: prepared.uniqueBranchIds.map((branch_id) => ({
           branch_id,
           organization_id: organizationId,
         })),
       },
-      job_functions: prepared.jobFunctions.length
-        ? {
-            create: prepared.jobFunctions.map((jf) => ({
-              job_function_id: jf.id,
-            })),
-          }
+      job_function: prepared.jobFunctions[0]
+        ? { connect: { id: prepared.jobFunctions[0].id } }
         : undefined,
       specialty_links: prepared.specialties.length
         ? {
@@ -343,6 +339,8 @@ export class InvitationsService {
         is_active: true,
         is_deleted: false,
         deleted_at: null,
+        role_id: invitation.role_id,
+        job_function_id: invitation.job_function_id,
         executive_title: invitation.executive_title,
         professional_title: invitation.professional_title,
         engagement_type: invitation.engagement_type,
@@ -350,6 +348,8 @@ export class InvitationsService {
       create: {
         user_id: user.id,
         organization_id: invitation.organization_id,
+        role_id: invitation.role_id,
+        job_function_id: invitation.job_function_id,
         executive_title: invitation.executive_title,
         professional_title: invitation.professional_title,
         engagement_type: invitation.engagement_type,
@@ -540,13 +540,6 @@ export class InvitationsService {
     invitation: InvitationFull,
   ) {
     await Promise.all([
-      tx.profileRole.createMany({
-        data: invitation.roles.map((item) => ({
-          profile_id: profileId,
-          role_id: item.role_id,
-        })),
-        skipDuplicates: true,
-      }),
       tx.profileBranch.createMany({
         data: invitation.branches.map((item) => ({
           profile_id: profileId,
@@ -555,15 +548,6 @@ export class InvitationsService {
         })),
         skipDuplicates: true,
       }),
-      invitation.job_functions.length
-        ? tx.profileJobFunction.createMany({
-            data: invitation.job_functions.map((item) => ({
-              profile_id: profileId,
-              job_function_id: item.job_function_id,
-            })),
-            skipDuplicates: true,
-          })
-        : Promise.resolve(),
       invitation.specialty_links.length
         ? tx.profileSpecialty.createMany({
             data: invitation.specialty_links.map((item) => ({

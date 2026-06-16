@@ -14,7 +14,7 @@ const summary: ProfileSummary = {
       },
     ],
   },
-  roles: [{ role: { code: 'OWNER' } }],
+  role: { code: 'OWNER' },
   branches: [
     {
       branch: {
@@ -40,7 +40,7 @@ const detail: ProfileDetail = {
     phone_number: '+201111111111',
   },
   organization: { id: 'org-1', name: 'Cradlen Clinic' },
-  roles: [{ role: { code: 'OWNER' } }, { role: { code: 'STAFF' } }],
+  role: { code: 'OWNER' },
   branches: [
     {
       branch: {
@@ -52,16 +52,12 @@ const detail: ProfileDetail = {
       },
     },
   ],
-  job_functions: [
-    {
-      job_function: {
-        id: 'jf-1',
-        code: 'OBGYN',
-        name: 'OB/GYN',
-        is_clinical: true,
-      },
-    },
-  ],
+  job_function: {
+    id: 'jf-1',
+    code: 'OBGYN',
+    name: 'OB/GYN',
+    is_clinical: true,
+  },
   specialty_links: [
     { specialty: { id: 'spec-1', code: 'OBGYN', name: 'OB/GYN' } },
   ],
@@ -78,7 +74,7 @@ describe('toProfileSummary', () => {
         status: 'ACTIVE',
         specialties: [{ id: 'spec-1', code: 'OBGYN', name: 'OB/GYN' }],
       },
-      roles: ['OWNER'],
+      role: 'OWNER',
       branches: [
         {
           id: 'branch-1',
@@ -94,13 +90,12 @@ describe('toProfileSummary', () => {
   it('emits empty arrays when join tables are empty', () => {
     const empty = {
       ...summary,
-      roles: [],
       branches: [],
       organization: { ...summary.organization, specialty_links: [] },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any;
     const out = toProfileSummary(empty);
-    expect(out.roles).toEqual([]);
+    expect(out.role).toEqual('OWNER');
     expect(out.branches).toEqual([]);
     expect(out.organization.specialties).toEqual([]);
   });
@@ -117,7 +112,7 @@ describe('toProfileDetail', () => {
       phone_number: '+201111111111',
       executive_title: ExecutiveTitle.CMO,
       engagement_type: EngagementType.FULL_TIME,
-      roles: ['OWNER', 'STAFF'],
+      role: 'OWNER',
       organization: { id: 'org-1', name: 'Cradlen Clinic' },
       branches: [
         {
@@ -128,9 +123,7 @@ describe('toProfileDetail', () => {
           is_main: true,
         },
       ],
-      job_functions: [
-        { id: 'jf-1', code: 'OBGYN', name: 'OB/GYN', is_clinical: true },
-      ],
+      job_function: { id: 'jf-1', code: 'OBGYN', name: 'OB/GYN', is_clinical: true },
       specialties: [{ id: 'spec-1', code: 'OBGYN', name: 'OB/GYN' }],
     });
   });

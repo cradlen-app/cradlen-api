@@ -198,7 +198,7 @@ export async function seedMember(
       user_id: user.id,
       organization_id: args.orgId,
       engagement_type: 'FULL_TIME',
-      roles: { create: [{ role_id: role.id }] },
+      role_id: role.id,
     },
   });
   if (args.assignToBranch) {

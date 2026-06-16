@@ -22,7 +22,7 @@ const prisma = new PrismaClient({ adapter });
 
 async function main() {
   // Roles — authority tiers only. Job-level distinctions live on JobFunction below.
-  const roles = ['OWNER', 'BRANCH_MANAGER', 'STAFF', 'EXTERNAL'];
+  const roles = ['OWNER', 'BRANCH_MANAGER', 'STAFF'];
   for (const code of roles) {
     await prisma.role.upsert({
       where: { code },
@@ -33,13 +33,10 @@ async function main() {
 
   // Job functions — what a profile actually does. Drives staff filtering and
   // function-aware authorization checks (e.g., financial endpoints require ACCOUNTANT).
+  // Coarse roles only — DOCTOR (clinical) + the two non-clinical functions. The
+  // clinical specialization lives in Specialty (which drives templates).
   const jobFunctions = [
-    { code: 'OBGYN', name: 'OB/GYN', is_clinical: true },
-    { code: 'ANESTHESIOLOGIST', name: 'Anesthesiologist', is_clinical: true },
-    { code: 'PEDIATRICIAN', name: 'Pediatrician', is_clinical: true },
-    { code: 'OTHER_DOCTOR', name: 'Other Doctor', is_clinical: true },
-    { code: 'NURSE', name: 'Nurse', is_clinical: true },
-    { code: 'ASSISTANT', name: 'Assistant', is_clinical: true },
+    { code: 'DOCTOR', name: 'Doctor', is_clinical: true },
     { code: 'RECEPTIONIST', name: 'Receptionist', is_clinical: false },
     { code: 'ACCOUNTANT', name: 'Accountant', is_clinical: false },
   ];
@@ -62,10 +59,34 @@ async function main() {
     max_staff: number;
     yearly_price: number;
   }[] = [
-    { plan: 'free_trial', max_organizations: 1, max_branches: 1, max_staff: 5, yearly_price: 0 },
-    { plan: 'individual', max_organizations: 1, max_branches: 1, max_staff: 2, yearly_price: 8000 },
-    { plan: 'center', max_organizations: 1, max_branches: 1, max_staff: 10, yearly_price: 22000 },
-    { plan: 'network', max_organizations: 1, max_branches: 3, max_staff: 25, yearly_price: 50000 },
+    {
+      plan: 'free_trial',
+      max_organizations: 1,
+      max_branches: 1,
+      max_staff: 5,
+      yearly_price: 0,
+    },
+    {
+      plan: 'individual',
+      max_organizations: 1,
+      max_branches: 1,
+      max_staff: 2,
+      yearly_price: 8000,
+    },
+    {
+      plan: 'center',
+      max_organizations: 1,
+      max_branches: 1,
+      max_staff: 10,
+      yearly_price: 22000,
+    },
+    {
+      plan: 'network',
+      max_organizations: 1,
+      max_branches: 3,
+      max_staff: 25,
+      yearly_price: 50000,
+    },
   ];
   const planIdByCode: Record<string, string> = {};
   for (const p of SUBSCRIPTION_PLANS) {
@@ -114,12 +135,60 @@ async function main() {
     delta_users: number;
     yearly_price: number;
   }[] = [
-    { code: 'individual_extra_branch', name: 'Individual — extra branch (+2 users)', kind: 'BRANCH_BUNDLE', plan: 'individual', delta_branches: 1, delta_users: 2, yearly_price: 5000 },
-    { code: 'center_extra_branch', name: 'Center — extra branch (+5 users)', kind: 'BRANCH_BUNDLE', plan: 'center', delta_branches: 1, delta_users: 5, yearly_price: 8000 },
-    { code: 'network_extra_branch', name: 'Network — extra branch (+25 users)', kind: 'BRANCH_BUNDLE', plan: 'network', delta_branches: 1, delta_users: 25, yearly_price: 12000 },
-    { code: 'individual_extra_user', name: 'Individual — extra user', kind: 'EXTRA_USER', plan: 'individual', delta_branches: 0, delta_users: 1, yearly_price: 2500 },
-    { code: 'center_extra_user', name: 'Center — extra user', kind: 'EXTRA_USER', plan: 'center', delta_branches: 0, delta_users: 1, yearly_price: 2000 },
-    { code: 'network_extra_user', name: 'Network — extra user', kind: 'EXTRA_USER', plan: 'network', delta_branches: 0, delta_users: 1, yearly_price: 1800 },
+    {
+      code: 'individual_extra_branch',
+      name: 'Individual — extra branch (+2 users)',
+      kind: 'BRANCH_BUNDLE',
+      plan: 'individual',
+      delta_branches: 1,
+      delta_users: 2,
+      yearly_price: 5000,
+    },
+    {
+      code: 'center_extra_branch',
+      name: 'Center — extra branch (+5 users)',
+      kind: 'BRANCH_BUNDLE',
+      plan: 'center',
+      delta_branches: 1,
+      delta_users: 5,
+      yearly_price: 8000,
+    },
+    {
+      code: 'network_extra_branch',
+      name: 'Network — extra branch (+25 users)',
+      kind: 'BRANCH_BUNDLE',
+      plan: 'network',
+      delta_branches: 1,
+      delta_users: 25,
+      yearly_price: 12000,
+    },
+    {
+      code: 'individual_extra_user',
+      name: 'Individual — extra user',
+      kind: 'EXTRA_USER',
+      plan: 'individual',
+      delta_branches: 0,
+      delta_users: 1,
+      yearly_price: 2500,
+    },
+    {
+      code: 'center_extra_user',
+      name: 'Center — extra user',
+      kind: 'EXTRA_USER',
+      plan: 'center',
+      delta_branches: 0,
+      delta_users: 1,
+      yearly_price: 2000,
+    },
+    {
+      code: 'network_extra_user',
+      name: 'Network — extra user',
+      kind: 'EXTRA_USER',
+      plan: 'network',
+      delta_branches: 0,
+      delta_users: 1,
+      yearly_price: 1800,
+    },
   ];
   for (const a of ADD_ONS) {
     const addOnRow = await prisma.addOn.upsert({
@@ -164,7 +233,11 @@ async function main() {
   const gynSpecialty = await prisma.specialty.upsert({
     where: { code: 'OBGYN' },
     update: { name: 'Obstetrics & Gynecology' },
-    create: { name: 'Obstetrics & Gynecology', code: 'OBGYN', description: 'Obstetrics and Gynecology' },
+    create: {
+      name: 'Obstetrics & Gynecology',
+      code: 'OBGYN',
+      description: 'Obstetrics and Gynecology',
+    },
   });
 
   // Procedures — structured catalog of surgical procedures.
@@ -179,7 +252,11 @@ async function main() {
     await prisma.procedure.upsert({
       where: { code: proc.code },
       update: { name: proc.name, specialty_id: gynSpecialty.id },
-      create: { code: proc.code, name: proc.name, specialty_id: gynSpecialty.id },
+      create: {
+        code: proc.code,
+        name: proc.name,
+        specialty_id: gynSpecialty.id,
+      },
     });
   }
 
@@ -318,7 +395,13 @@ async function main() {
       description: 'General gynecology consultations and follow-ups',
       order: 1,
       journey_template_id: generalGynTemplate.id,
-      episodes: [{ code: 'GENERAL_CONSULTATION', name: 'General Consultation', order: 1 }],
+      episodes: [
+        {
+          code: 'GENERAL_CONSULTATION',
+          name: 'General Consultation',
+          order: 1,
+        },
+      ],
     },
     {
       code: 'OBGYN_PREGNANCY',
@@ -337,7 +420,8 @@ async function main() {
     {
       code: 'OBGYN_SURGICAL',
       name: 'Surgical',
-      description: 'Pre-operative, surgical, and post-operative gynecologic care',
+      description:
+        'Pre-operative, surgical, and post-operative gynecologic care',
       order: 3,
       journey_template_id: surgicalTemplate.id,
       episodes: [
@@ -364,7 +448,11 @@ async function main() {
     // findFirst + create/update because organization_id is nullable in the composite unique index
     // and Postgres treats NULLs as distinct, so .upsert() can't safely match system rows.
     let carePath = await prisma.carePath.findFirst({
-      where: { specialty_id: gynSpecialty.id, organization_id: null, code: cp.code },
+      where: {
+        specialty_id: gynSpecialty.id,
+        organization_id: null,
+        code: cp.code,
+      },
     });
     if (!carePath) {
       carePath = await prisma.carePath.create({
@@ -393,7 +481,11 @@ async function main() {
     }
     for (const ep of cp.episodes) {
       const existing = await prisma.carePathEpisode.findFirst({
-        where: { care_path_id: carePath.id, organization_id: null, code: ep.code },
+        where: {
+          care_path_id: carePath.id,
+          organization_id: null,
+          code: ep.code,
+        },
       });
       if (!existing) {
         await prisma.carePathEpisode.create({
@@ -415,48 +507,47 @@ async function main() {
     }
   }
 
-  // Medications — global catalog (organization_id = null). OB/GYN-relevant set.
-  const medications = [
-    { code: 'FOLIC_ACID_5MG', name: 'Folic Acid 5mg', generic_name: 'folic acid', form: 'tablet', strength: '5mg' },
-    { code: 'PARACETAMOL_500', name: 'Paracetamol 500mg', generic_name: 'paracetamol', form: 'tablet', strength: '500mg' },
-    { code: 'METHYLDOPA_250', name: 'Methyldopa 250mg', generic_name: 'methyldopa', form: 'tablet', strength: '250mg' },
-    { code: 'LABETALOL_100', name: 'Labetalol 100mg', generic_name: 'labetalol', form: 'tablet', strength: '100mg' },
-    { code: 'NIFEDIPINE_20', name: 'Nifedipine 20mg', generic_name: 'nifedipine', form: 'tablet', strength: '20mg' },
-    { code: 'IRON_SULFATE_325', name: 'Ferrous Sulfate 325mg', generic_name: 'ferrous sulfate', form: 'tablet', strength: '325mg' },
-    { code: 'CALCIUM_CARBONATE_500', name: 'Calcium Carbonate 500mg', generic_name: 'calcium carbonate', form: 'tablet', strength: '500mg' },
-    { code: 'VITAMIN_D3_1000IU', name: 'Vitamin D3 1000 IU', generic_name: 'cholecalciferol', form: 'tablet', strength: '1000IU' },
-    { code: 'MAGNESIUM_SULFATE', name: 'Magnesium Sulfate 4g/20ml', generic_name: 'magnesium sulfate', form: 'injection', strength: '4g/20ml' },
-    { code: 'PROGESTERONE_200', name: 'Progesterone 200mg', generic_name: 'progesterone', form: 'capsule', strength: '200mg' },
-    { code: 'OXYTOCIN_10IU', name: 'Oxytocin 10 IU/ml', generic_name: 'oxytocin', form: 'injection', strength: '10IU/ml' },
-    { code: 'DEXAMETHASONE_6', name: 'Dexamethasone 6mg', generic_name: 'dexamethasone', form: 'injection', strength: '6mg' },
-    { code: 'CLOTRIMAZOLE_PESSARY', name: 'Clotrimazole Pessary 500mg', generic_name: 'clotrimazole', form: 'pessary', strength: '500mg' },
-    { code: 'METRONIDAZOLE_500', name: 'Metronidazole 500mg', generic_name: 'metronidazole', form: 'tablet', strength: '500mg' },
-    { code: 'ONDANSETRON_8', name: 'Ondansetron 8mg', generic_name: 'ondansetron', form: 'tablet', strength: '8mg' },
-  ];
-  for (const med of medications) {
-    const existing = await prisma.medication.findFirst({
-      where: { organization_id: null, code: med.code },
-    });
-    if (!existing) {
-      await prisma.medication.create({ data: { ...med } });
-    } else {
-      await prisma.medication.update({ where: { id: existing.id }, data: { ...med } });
-    }
-  }
-
   // Lab tests — global catalog. Categorized as LAB | IMAGING | OTHER.
   const labTests = [
     { code: 'CBC', name: 'Complete Blood Count', category: 'LAB' as const },
     { code: 'URINALYSIS', name: 'Urinalysis', category: 'LAB' as const },
-    { code: 'BLOOD_GROUP_RH', name: 'Blood Group & Rh Factor', category: 'LAB' as const },
+    {
+      code: 'BLOOD_GROUP_RH',
+      name: 'Blood Group & Rh Factor',
+      category: 'LAB' as const,
+    },
     { code: 'HBA1C', name: 'HbA1c', category: 'LAB' as const },
-    { code: 'OGTT', name: 'Oral Glucose Tolerance Test', category: 'LAB' as const },
+    {
+      code: 'OGTT',
+      name: 'Oral Glucose Tolerance Test',
+      category: 'LAB' as const,
+    },
     { code: 'TSH', name: 'TSH', category: 'LAB' as const },
-    { code: 'BETA_HCG_QUANT', name: 'Beta hCG Quantitative', category: 'LAB' as const },
-    { code: 'GBS_SWAB', name: 'Group B Streptococcus Swab', category: 'LAB' as const },
-    { code: 'OB_ULTRASOUND', name: 'Obstetric Ultrasound', category: 'IMAGING' as const },
-    { code: 'ANOMALY_SCAN', name: 'Anomaly Scan', category: 'IMAGING' as const },
-    { code: 'DOPPLER_STUDY', name: 'Doppler Study', category: 'IMAGING' as const },
+    {
+      code: 'BETA_HCG_QUANT',
+      name: 'Beta hCG Quantitative',
+      category: 'LAB' as const,
+    },
+    {
+      code: 'GBS_SWAB',
+      name: 'Group B Streptococcus Swab',
+      category: 'LAB' as const,
+    },
+    {
+      code: 'OB_ULTRASOUND',
+      name: 'Obstetric Ultrasound',
+      category: 'IMAGING' as const,
+    },
+    {
+      code: 'ANOMALY_SCAN',
+      name: 'Anomaly Scan',
+      category: 'IMAGING' as const,
+    },
+    {
+      code: 'DOPPLER_STUDY',
+      name: 'Doppler Study',
+      category: 'IMAGING' as const,
+    },
     { code: 'NST', name: 'Non-Stress Test', category: 'OTHER' as const },
   ];
   for (const test of labTests) {
@@ -474,7 +565,6 @@ async function main() {
       });
     }
   }
-
 
   await seedCarePathHistorySections(prisma);
   await seedCarePathClinicalSurfaces(prisma);

@@ -117,7 +117,7 @@ export class AmendmentsService {
     }
     // Authority: assigned doctor or org OWNER may amend.
     const isAssigned = visit.assigned_doctor_id === user.profileId;
-    const isOwner = user.roles.includes('OWNER');
+    const isOwner = user.role === 'OWNER';
     if (!isAssigned && !isOwner) {
       throw new ForbiddenException({
         code: ERROR_CODES.FORBIDDEN,

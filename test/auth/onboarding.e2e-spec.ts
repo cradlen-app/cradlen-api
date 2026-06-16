@@ -64,7 +64,7 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
         branch_city: 'Cairo',
         branch_governorate: 'Cairo',
         branch_country: 'Egypt',
-        job_function_codes: ['OBGYN'],
+        job_function_code: 'OBGYN',
         executive_title: 'CMO',
       })
       .expect(201);
@@ -143,7 +143,9 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
 
     expect(await getTestPrisma().organization.count()).toBe(1);
     expect(await getTestPrisma().profile.count()).toBe(1);
-    expect(await getTestPrisma().profileRole.count()).toBe(1);
+    expect(
+      await getTestPrisma().profile.count({ where: { role: { code: 'OWNER' } } }),
+    ).toBe(1);
     // Founder gets all org branches via OWNER role, not via ProfileBranch
     // assignment — so no profile_branch row is written at signup.
   });
@@ -166,19 +168,17 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
 
     const profile = await getTestPrisma().profile.findFirstOrThrow({
       include: {
-        roles: { include: { role: true } },
-        job_functions: { include: { job_function: true } },
+        role: true,
+        job_function: true,
         specialty_links: { include: { specialty: true } },
       },
     });
 
     // Founder is always OWNER.
-    expect(profile.roles.map((r) => r.role.code)).toEqual(['OWNER']);
-    // job_function_codes: ['OBGYN'] flowed through.
-    expect(profile.job_functions.map((j) => j.job_function.code)).toEqual([
-      'OBGYN',
-    ]);
-    expect(profile.job_functions[0].job_function.is_clinical).toBe(true);
+    expect(profile.role.code).toBe('OWNER');
+    // job_function_code: 'OBGYN' flowed through.
+    expect(profile.job_function?.code).toBe('OBGYN');
+    expect(profile.job_function?.is_clinical).toBe(true);
     // specialties: ['OBGYN'] flowed through.
     expect(profile.specialty_links.map((s) => s.specialty.code)).toEqual([
       'OBGYN',

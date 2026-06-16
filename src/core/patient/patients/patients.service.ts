@@ -60,7 +60,7 @@ export class PatientsService {
    */
   private async isClinicalViewer(user: AuthContext): Promise<boolean> {
     return (
-      user.roles.includes('OWNER') ||
+      user.role === 'OWNER' ||
       this.authorizationService.isClinical(user.profileId)
     );
   }

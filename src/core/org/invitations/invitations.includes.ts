@@ -1,9 +1,9 @@
 import { Prisma } from '@prisma/client';
 
 export const INVITATION_FULL_INCLUDE = {
-  roles: { include: { role: true } },
+  role: true,
   branches: { include: { branch: true } },
-  job_functions: { include: { job_function: true } },
+  job_function: true,
   specialty_links: { include: { specialty: true } },
   invited_by: {
     select: { id: true, first_name: true, last_name: true, email: true },
@@ -11,9 +11,9 @@ export const INVITATION_FULL_INCLUDE = {
 } satisfies Prisma.InvitationInclude;
 
 export const INVITATION_PREVIEW_INCLUDE = {
-  roles: { include: { role: true } },
+  role: true,
   branches: { include: { branch: true } },
-  job_functions: { include: { job_function: true } },
+  job_function: true,
   specialty_links: { include: { specialty: true } },
   invited_by: {
     select: { first_name: true, last_name: true },

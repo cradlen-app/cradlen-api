@@ -599,7 +599,7 @@ describe('SignupService', () => {
       const { signupService, jwtService } = createAuthTestEnv({
         ...baseOverrides(),
         jobFunction: {
-          findMany: jest.fn().mockResolvedValue([{ code: 'OBGYN' }]),
+          findMany: jest.fn().mockResolvedValue([]),
         },
         specialty: { findMany: jest.fn().mockResolvedValue([]) },
       });
@@ -608,7 +608,7 @@ describe('SignupService', () => {
         signupService.complete({
           ...baseDto,
           signup_token: signSignupToken(jwtService, userId),
-          job_function_codes: ['OBGYN', 'BOGUS_FN'],
+          job_function_code: 'BOGUS_FN',
         }),
       ).rejects.toMatchObject({
         message: expect.stringContaining('BOGUS_FN'),
@@ -721,7 +721,7 @@ describe('SignupService', () => {
         ...baseDto,
         signup_token: signSignupToken(jwtService, userId),
         specialties: ['OBGYN'],
-        job_function_codes: ['OBGYN'],
+        job_function_code: 'OBGYN',
       });
 
       expect(txMock.organization.create).toHaveBeenCalledWith(
@@ -743,7 +743,7 @@ describe('SignupService', () => {
             user_id: userId,
             organization_id: 'org-id',
             engagement_type: 'FULL_TIME',
-            roles: { create: [{ role_id: 'role-id' }] },
+            role_id: 'role-id',
           }),
         }),
       );
@@ -777,7 +777,7 @@ describe('SignupService', () => {
         signup_token: signSignupToken(jwtService, userId),
         specialties: ['OBGYN'],
         practitioner_specialties: ['OBGYN'],
-        job_function_codes: ['OBGYN'],
+        job_function_code: 'OBGYN',
         executive_title: 'CEO' as never,
         professional_title: 'استشاري النساء والتوليد',
       });
@@ -817,7 +817,7 @@ describe('SignupService', () => {
       const profileData = txMock.profile.create.mock.calls[0][0].data;
       // No practitioner specialties / job functions → undefined on the profile.
       expect(profileData.specialty_links).toBeUndefined();
-      expect(profileData.job_functions).toBeUndefined();
+      expect(profileData.job_function_id).toBeNull();
       expect(profileData.professional_title).toBeNull();
       // Org still records its offered specialties.
       expect(txMock.organization.create).toHaveBeenCalledWith(

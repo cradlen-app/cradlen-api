@@ -48,7 +48,7 @@ describe('Auth — privilege escalation via invitations (integration)', () => {
     email: `invitee-${randomUUID()}@example.com`,
     first_name: 'New',
     last_name: 'Hire',
-    role_ids: roleIds,
+    role_id: roleIds[0],
     branch_ids: [branchId],
   });
 
