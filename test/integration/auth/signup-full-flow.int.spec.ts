@@ -84,7 +84,7 @@ describe('Auth — full signup → login → refresh → me (integration)', () =
     expect(complete.body.data.profiles).toHaveLength(1);
     const profile = complete.body.data.profiles[0];
     expect(profile.organization_name).toBe('Cradlen Clinic');
-    expect(profile.roles).toEqual(['OWNER']);
+    expect(profile.role).toBe('OWNER');
     expect(profile.branches).toHaveLength(1);
 
     // Tenant rows materialized.
@@ -138,6 +138,6 @@ describe('Auth — full signup → login → refresh → me (integration)', () =
       .expect(200);
     expect(me.body.data.email).toBe('sara@example.com');
     expect(me.body.data.profiles).toHaveLength(1);
-    expect(me.body.data.profiles[0].roles[0].name).toBe('OWNER');
+    expect(me.body.data.profiles[0].role.name).toBe('OWNER');
   });
 });

@@ -6,7 +6,7 @@ export class StaffStatMetricDto {
 
 /**
  * Active-staff count for one role, keyed by the role **code** (`OWNER`,
- * `BRANCH_MANAGER`, `STAFF`, `EXTERNAL`). The breakdown is discovered from the
+ * `BRANCH_MANAGER`, `STAFF`). The breakdown is discovered from the
  * data — a role with no staff at this branch simply doesn't appear, so new role
  * codes surface here without code changes. `role_name` is the DB display name;
  * the client prefers its own localized role label and falls back to this.

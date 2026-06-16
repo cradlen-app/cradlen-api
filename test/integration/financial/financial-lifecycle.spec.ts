@@ -84,7 +84,7 @@ describe('Financial RCM — lifecycle + cross-tenant (integration)', () => {
         user_id: user.id,
         organization_id: org.id,
         engagement_type: 'FULL_TIME',
-        roles: { create: [{ role_id: ownerRole.id }] },
+        role_id: ownerRole.id,
       },
     });
     return { org, branch, ownerProfileId: profile.id, ownerEmail };
@@ -140,8 +140,8 @@ describe('Financial RCM — lifecycle + cross-tenant (integration)', () => {
         user_id: user.id,
         organization_id: organizationId,
         engagement_type: 'FULL_TIME',
-        roles: { create: [{ role_id: staffRole.id }] },
-        job_functions: { create: [{ job_function_id: receptionist.id }] },
+        role_id: staffRole.id,
+        job_function_id: receptionist.id,
         branches: {
           create: [{ branch_id: branchId, organization_id: organizationId }],
         },

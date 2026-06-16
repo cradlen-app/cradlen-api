@@ -9,7 +9,7 @@ export class ProfileDetailResponseDto {
   executive_title!: ExecutiveTitle | null;
   professional_title!: string | null;
   engagement_type!: EngagementType;
-  roles!: string[];
+  role!: string;
   organization!: { id: string; name: string };
   branches!: {
     id: string;
@@ -18,12 +18,12 @@ export class ProfileDetailResponseDto {
     governorate: string;
     is_main: boolean;
   }[];
-  job_functions!: {
+  job_function!: {
     id: string;
     code: string;
     name: string;
     is_clinical: boolean;
-  }[];
+  } | null;
   specialties!: { id: string; code: string; name: string }[];
   /** Short-lived presigned GET URL for the avatar, or null when none. */
   profile_image_url!: string | null;

@@ -21,8 +21,8 @@ class SelectableProfileDto {
   @ApiProperty()
   organization_name!: string;
 
-  @ApiProperty({ type: [String] })
-  roles!: string[];
+  @ApiProperty()
+  role!: string;
 
   @ApiProperty({ type: [SelectableBranchDto] })
   branches!: SelectableBranchDto[];

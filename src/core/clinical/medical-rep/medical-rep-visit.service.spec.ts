@@ -12,12 +12,12 @@ const mockUser: AuthContext = {
   profileId: 'profile-uuid',
   organizationId: 'org-uuid',
   activeBranchId: 'branch-uuid',
-  roles: ['OBGYN'],
+  role: 'OBGYN',
   branchIds: ['branch-uuid'],
 };
 
 // Same identity, but an OWNER — reaches every branch in the org.
-const ownerUser: AuthContext = { ...mockUser, roles: ['OWNER'] };
+const ownerUser: AuthContext = { ...mockUser, role: 'OWNER' };
 
 describe('MedicalRepVisitService', () => {
   let service: MedicalRepVisitService;

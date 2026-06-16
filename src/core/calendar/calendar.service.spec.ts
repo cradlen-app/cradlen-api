@@ -18,7 +18,7 @@ const mockUser: AuthContext = {
   profileId: 'profile-uuid',
   organizationId: 'org-uuid',
   activeBranchId: 'branch-1',
-  roles: ['OWNER'],
+  role: 'OWNER',
   branchIds: ['branch-1', 'branch-2'],
 };
 
@@ -368,7 +368,7 @@ describe('CalendarService', () => {
     });
 
     it('non-owner ORGANIZATION event with no branch defaults to the active branch', async () => {
-      await service.create({ ...mockUser, roles: ['STAFF'] }, {
+      await service.create({ ...mockUser, role: 'STAFF' }, {
         ...baseDto,
       } as never);
       expect(db.calendarEvent.create).toHaveBeenCalledWith(
@@ -379,7 +379,7 @@ describe('CalendarService', () => {
     });
 
     it('BRANCH_MANAGER cannot create org-wide; defaults to active branch', async () => {
-      await service.create({ ...mockUser, roles: ['BRANCH_MANAGER'] }, {
+      await service.create({ ...mockUser, role: 'BRANCH_MANAGER' }, {
         ...baseDto,
       } as never);
       expect(db.calendarEvent.create).toHaveBeenCalledWith(
@@ -399,7 +399,7 @@ describe('CalendarService', () => {
     });
 
     it('explicit branch is access-checked and stamped', async () => {
-      await service.create({ ...mockUser, roles: ['STAFF'] }, {
+      await service.create({ ...mockUser, role: 'STAFF' }, {
         ...baseDto,
         branch_id: 'branch-2',
       } as never);
@@ -416,7 +416,7 @@ describe('CalendarService', () => {
     });
 
     it('PRIVATE event with no branch is personal/untagged (null)', async () => {
-      await service.create({ ...mockUser, roles: ['STAFF'] }, {
+      await service.create({ ...mockUser, role: 'STAFF' }, {
         ...baseDto,
         event_type: CalendarEventType.MEETING,
         visibility: CalendarVisibility.PRIVATE,
@@ -431,7 +431,7 @@ describe('CalendarService', () => {
     it('non-owner with no active branch and no branch_id is rejected', async () => {
       await expect(
         service.create(
-          { ...mockUser, roles: ['STAFF'], activeBranchId: undefined },
+          { ...mockUser, role: 'STAFF', activeBranchId: undefined },
           { ...baseDto } as never,
         ),
       ).rejects.toThrow(BadRequestException);
@@ -458,7 +458,7 @@ describe('CalendarService', () => {
     });
 
     it('non-owner editing their own event cannot go org-wide (stays on active branch)', async () => {
-      await service.update({ ...mockUser, roles: ['STAFF'] }, 'event-uuid', {
+      await service.update({ ...mockUser, role: 'STAFF' }, 'event-uuid', {
         branch_id: '',
         visibility: CalendarVisibility.ORGANIZATION,
       });
@@ -468,7 +468,7 @@ describe('CalendarService', () => {
     });
 
     it('moving an event to an explicit branch is access-checked', async () => {
-      await service.update({ ...mockUser, roles: ['STAFF'] }, 'event-uuid', {
+      await service.update({ ...mockUser, role: 'STAFF' }, 'event-uuid', {
         branch_id: 'branch-2',
       });
       expect(authorizationService.assertCanAccessBranch).toHaveBeenCalledWith(

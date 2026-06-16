@@ -6,9 +6,9 @@ const RECEPTIONIST_JOB_FUNCTION = 'RECEPTIONIST';
 /** OWNER / BRANCH_MANAGER / SYSTEM may drive any visit action. */
 export function isPrivileged(user: AuthContext): boolean {
   return (
-    user.roles.includes('OWNER') ||
-    user.roles.includes('BRANCH_MANAGER') ||
-    user.roles.includes('SYSTEM')
+    user.role === 'OWNER' ||
+    user.role === 'BRANCH_MANAGER' ||
+    user.role === 'SYSTEM'
   );
 }
 
@@ -22,7 +22,7 @@ export function assertReceptionAction(
   message: string,
 ): void {
   if (isPrivileged(user)) return;
-  if (user.jobFunctions.includes(RECEPTIONIST_JOB_FUNCTION)) return;
+  if (user.jobFunction === RECEPTIONIST_JOB_FUNCTION) return;
   throw new ForbiddenException(message);
 }
 

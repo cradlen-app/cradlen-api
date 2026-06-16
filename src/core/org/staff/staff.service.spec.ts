@@ -25,7 +25,7 @@ const mockStaffProfile = {
     email: 'ahmed@cradlen.com',
     phone_number: '+201234567890',
   },
-  roles: [{ role: { id: 'role-uuid', name: 'STAFF' } }],
+  role: { id: 'role-uuid', name: 'STAFF' },
   branches: [
     {
       branch: {
@@ -36,16 +36,12 @@ const mockStaffProfile = {
       },
     },
   ],
-  job_functions: [
-    {
-      job_function: {
-        id: 'jf-uuid',
-        code: 'OBGYN',
-        name: 'OB/GYN',
-        is_clinical: true,
-      },
-    },
-  ],
+  job_function: {
+    id: 'jf-uuid',
+    code: 'OBGYN',
+    name: 'OB/GYN',
+    is_clinical: true,
+  },
   specialty_links: [
     { specialty: { id: 'spec-uuid', code: 'OBGYN', name: 'Gynecology' } },
   ],
@@ -112,7 +108,7 @@ describe('StaffService.listStaff', () => {
     const result = await service.listStaff('caller-uuid', ORG, BRANCH);
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.not.objectContaining({ roles: expect.anything() }),
+        where: expect.not.objectContaining({ role: expect.anything() }),
       }),
     );
     expect(result.items).toHaveLength(1);
@@ -129,7 +125,7 @@ describe('StaffService.listStaff', () => {
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          roles: { some: { role: { code: 'STAFF' } } },
+          role: { code: 'STAFF' },
         }),
       }),
     );
@@ -140,7 +136,7 @@ describe('StaffService.listStaff', () => {
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          roles: { some: { role: { code: 'STAFF' } } },
+          role: { code: 'STAFF' },
         }),
       }),
     );
@@ -167,12 +163,14 @@ describe('StaffService.listStaff', () => {
     ).rejects.toThrow(BadRequestException);
   });
 
-  it('adds EXTERNAL role filter to where clause', async () => {
-    await service.listStaff('caller-uuid', ORG, BRANCH, { role: 'EXTERNAL' });
+  it('adds BRANCH_MANAGER role filter to where clause', async () => {
+    await service.listStaff('caller-uuid', ORG, BRANCH, {
+      role: 'BRANCH_MANAGER',
+    });
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          roles: { some: { role: { code: 'EXTERNAL' } } },
+          role: { code: 'BRANCH_MANAGER' },
         }),
       }),
     );
@@ -183,7 +181,7 @@ describe('StaffService.listStaff', () => {
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          job_functions: { some: { job_function: { is_clinical: true } } },
+          job_function: { is_clinical: true },
         }),
       }),
     );
@@ -194,7 +192,7 @@ describe('StaffService.listStaff', () => {
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.not.objectContaining({
-          job_functions: expect.anything(),
+          job_function: expect.anything(),
         }),
       }),
     );
@@ -225,9 +223,7 @@ describe('StaffService.listStaff', () => {
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          job_functions: {
-            some: { job_function: { code: { in: ['NURSE', 'RECEPTIONIST'] } } },
-          },
+          job_function: { code: { in: ['NURSE', 'RECEPTIONIST'] } },
         }),
       }),
     );
@@ -241,18 +237,9 @@ describe('StaffService.listStaff', () => {
     expect(db.profile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          AND: [
-            {
-              job_functions: {
-                some: { job_function: { is_clinical: true } },
-              },
-            },
-            {
-              job_functions: {
-                some: { job_function: { code: { in: ['NURSE'] } } },
-              },
-            },
-          ],
+          job_function: {
+            AND: [{ is_clinical: true }, { code: { in: ['NURSE'] } }],
+          },
         }),
       }),
     );
@@ -432,7 +419,7 @@ describe('StaffService.resetStaffPassword', () => {
       profile: {
         findFirst: jest.fn().mockResolvedValue({
           user_id: 'user-uuid',
-          roles: [{ role: { name: 'STAFF' } }],
+          role: { name: 'STAFF' },
         }),
       },
       user: { update: jest.fn().mockResolvedValue({}) },
@@ -524,7 +511,7 @@ describe('StaffService.resetStaffPassword', () => {
   it('requires OWNER to reset a privileged (BRANCH_MANAGER) target', async () => {
     db.profile.findFirst.mockResolvedValue({
       user_id: 'user-uuid',
-      roles: [{ role: { name: 'BRANCH_MANAGER' } }],
+      role: { name: 'BRANCH_MANAGER' },
     });
     authMock.assertOwnerOnly.mockRejectedValue(new ForbiddenException());
     await expect(
@@ -537,8 +524,7 @@ describe('StaffService.resetStaffPassword', () => {
 describe('StaffService.getBranchStats', () => {
   let service: StaffService;
   let db: {
-    profile: { count: jest.Mock };
-    profileRole: { groupBy: jest.Mock };
+    profile: { count: jest.Mock; groupBy: jest.Mock };
     role: { findMany: jest.Mock };
     $transaction: jest.Mock;
   };
@@ -555,8 +541,8 @@ describe('StaffService.getBranchStats', () => {
 
   beforeEach(async () => {
     db = {
-      profile: { count: jest.fn() },
-      profileRole: {
+      profile: {
+        count: jest.fn(),
         groupBy: jest
           .fn()
           .mockResolvedValue([
@@ -596,7 +582,7 @@ describe('StaffService.getBranchStats', () => {
     await expect(
       service.getBranchStats('caller-uuid', ORG, BRANCH),
     ).rejects.toThrow(ForbiddenException);
-    expect(db.profileRole.groupBy).not.toHaveBeenCalled();
+    expect(db.profile.groupBy).not.toHaveBeenCalled();
   });
 
   it('returns total + clinical + a data-driven per-role breakdown, sorted desc', async () => {
@@ -615,7 +601,7 @@ describe('StaffService.getBranchStats', () => {
 
   it('scopes the previous snapshot to staff who joined the branch before the cutoff', async () => {
     db.$transaction.mockResolvedValue([1, 1, 0, 0, 1, 1]);
-    db.profileRole.groupBy.mockResolvedValue([{ role_id: 'role-staff' }]);
+    db.profile.groupBy.mockResolvedValue([{ role_id: 'role-staff' }]);
     db.role.findMany.mockResolvedValue([roles[0]]);
 
     await service.getBranchStats('caller-uuid', ORG, BRANCH);
@@ -638,7 +624,7 @@ describe('StaffService.getBranchStats', () => {
   });
 
   it('returns an empty breakdown when no roles are present', async () => {
-    db.profileRole.groupBy.mockResolvedValue([]);
+    db.profile.groupBy.mockResolvedValue([]);
     db.$transaction.mockResolvedValue([0, 0, 0, 0]);
     const result = await service.getBranchStats('caller-uuid', ORG, BRANCH);
     expect(result.by_role).toEqual([]);

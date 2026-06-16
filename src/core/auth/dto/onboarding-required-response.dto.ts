@@ -15,7 +15,8 @@ export class OnboardingRequiredResponseDto {
 
   @ApiProperty({
     required: false,
-    description: 'Present only for COMPLETE_ONBOARDING — resume onboarding token',
+    description:
+      'Present only for COMPLETE_ONBOARDING — resume onboarding token',
   })
   signup_token?: string;
 

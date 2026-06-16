@@ -32,27 +32,18 @@ import { staffInclude, toStaffResponse } from './staff.mapper.js';
 import {
   diffIds,
   replaceProfileBranches,
-  replaceProfileJobFunctions,
-  replaceProfileRoles,
   replaceProfileSpecialties,
   syncProfileBranches,
-  syncProfileJobFunctions,
-  syncProfileRoles,
   syncProfileSpecialties,
 } from './staff-m2m.helper.js';
 
 /**
  * JobFunction codes that count as "doctors" for the `doctors_only=true`
- * staff filter — used by the book-visit `assigned_doctor` picker. Nurses
- * and assistants are clinical (`is_clinical=true`) but NOT doctors, so we
- * filter by these explicit codes rather than the `is_clinical` flag.
+ * staff filter — used by the book-visit `assigned_doctor` picker. The job
+ * function is the coarse role (DOCTOR); the clinical specialization lives in
+ * Specialty, so a single code suffices.
  */
-const DOCTOR_JOB_FUNCTION_CODES: string[] = [
-  'OBGYN',
-  'ANESTHESIOLOGIST',
-  'PEDIATRICIAN',
-  'OTHER_DOCTOR',
-];
+const DOCTOR_JOB_FUNCTION_CODES: string[] = ['DOCTOR'];
 
 @Injectable()
 export class StaffService {
@@ -69,9 +60,11 @@ export class StaffService {
     branchId: string,
     dto: CreateStaffDto,
   ) {
-    const uniqueRoleIds = [...new Set(dto.role_ids)];
+    const roleId = dto.role_id;
     const uniqueBranchIds = [...new Set(dto.branch_ids)];
-    const jobFunctionCodes = [...new Set(dto.job_function_codes ?? [])];
+    const jobFunctionCodes = dto.job_function_code
+      ? [dto.job_function_code]
+      : [];
     const specialtyCodes = [...new Set(dto.specialty_codes ?? [])];
 
     // The staff must be assigned to the branch in the path (mirrors invitations).
@@ -89,7 +82,7 @@ export class StaffService {
     await this.authorizationService.assertNoPrivilegedRoleAssignment(
       profileId,
       organizationId,
-      uniqueRoleIds,
+      roleId,
     );
     await this.subscriptionsService.assertStaffLimit(organizationId);
 
@@ -98,7 +91,7 @@ export class StaffService {
       organizationId,
       uniqueBranchIds,
     );
-    await assertRolesExist(this.prismaService, uniqueRoleIds);
+    await assertRolesExist(this.prismaService, [roleId]);
 
     const resolved = await resolveJobFunctionsAndSpecialties(
       this.prismaService,
@@ -138,23 +131,19 @@ export class StaffService {
         data: {
           user_id: user.id,
           organization_id: organizationId,
+          role_id: roleId,
+          job_function_id: resolved.jobFunctions[0]?.id ?? null,
           executive_title: dto.executive_title ?? null,
           professional_title: dto.professional_title ?? null,
           engagement_type: dto.engagement_type ?? EngagementType.FULL_TIME,
         },
       });
 
-      await replaceProfileRoles(tx, profile.id, uniqueRoleIds);
       await replaceProfileBranches(
         tx,
         profile.id,
         organizationId,
         uniqueBranchIds,
-      );
-      await replaceProfileJobFunctions(
-        tx,
-        profile.id,
-        resolved.jobFunctions.map((jf) => jf.id),
       );
       await replaceProfileSpecialties(
         tx,
@@ -211,17 +200,16 @@ export class StaffService {
       },
       select: {
         user_id: true,
-        roles: { select: { role: { select: { name: true } } } },
+        role: { select: { name: true } },
       },
     });
     if (!profile) throw new NotFoundException('Staff member not found');
 
     // Privileged-target guard: resetting an OWNER or BRANCH_MANAGER's password
     // could hijack a privileged account, so restrict that to OWNERs. A
-    // BRANCH_MANAGER may only reset plain STAFF/EXTERNAL members.
-    const targetIsPrivileged = profile.roles.some(
-      (r) => r.role.name === 'OWNER' || r.role.name === 'BRANCH_MANAGER',
-    );
+    // BRANCH_MANAGER may only reset plain STAFF members.
+    const targetIsPrivileged =
+      profile.role.name === 'OWNER' || profile.role.name === 'BRANCH_MANAGER';
     if (targetIsPrivileged) {
       await this.authorizationService.assertOwnerOnly(
         callerProfileId,
@@ -295,29 +283,22 @@ export class StaffService {
       branches: { some: { branch_id: branchId } },
     };
     if (role) {
-      where.roles = { some: { role: { code: role.toUpperCase() } } };
+      where.role = { code: role.toUpperCase() };
     }
 
-    const jobFunctionFilters: Prisma.ProfileJobFunctionListRelationFilter[] =
-      [];
+    const jobFunctionConditions: Prisma.JobFunctionWhereInput[] = [];
     if (doctorsOnly === true) {
-      jobFunctionFilters.push({
-        some: { job_function: { code: { in: DOCTOR_JOB_FUNCTION_CODES } } },
-      });
+      jobFunctionConditions.push({ code: { in: DOCTOR_JOB_FUNCTION_CODES } });
     } else if (clinical === true) {
-      jobFunctionFilters.push({
-        some: { job_function: { is_clinical: true } },
-      });
+      jobFunctionConditions.push({ is_clinical: true });
     }
     if (jobFunctionCodes?.length) {
-      jobFunctionFilters.push({
-        some: { job_function: { code: { in: jobFunctionCodes } } },
-      });
+      jobFunctionConditions.push({ code: { in: jobFunctionCodes } });
     }
-    if (jobFunctionFilters.length === 1) {
-      where.job_functions = jobFunctionFilters[0];
-    } else if (jobFunctionFilters.length > 1) {
-      where.AND = jobFunctionFilters.map((f) => ({ job_functions: f }));
+    if (jobFunctionConditions.length === 1) {
+      where.job_function = jobFunctionConditions[0];
+    } else if (jobFunctionConditions.length > 1) {
+      where.job_function = { AND: jobFunctionConditions };
     }
 
     if (specialtyCode) {
@@ -439,18 +420,14 @@ export class StaffService {
           ...(opts.cutoff ? { created_at: { lte: opts.cutoff } } : {}),
         },
       },
-      ...(opts.roleCode
-        ? { roles: { some: { role: { code: opts.roleCode } } } }
-        : {}),
-      ...(opts.clinical
-        ? { job_functions: { some: { job_function: { is_clinical: true } } } }
-        : {}),
+      ...(opts.roleCode ? { role: { code: opts.roleCode } } : {}),
+      ...(opts.clinical ? { job_function: { is_clinical: true } } : {}),
     });
 
     // 1. Which roles are actually held by active staff at this branch.
-    const groups = await db.profileRole.groupBy({
+    const groups = await db.profile.groupBy({
       by: ['role_id'],
-      where: { profile: profileWhere({}) },
+      where: profileWhere({}),
     });
     const roleIds = groups.map((g) => g.role_id);
 
@@ -551,19 +528,19 @@ export class StaffService {
       }
     }
 
-    let uniqueRoleIds: string[] | undefined;
+    let roleId: string | undefined;
     let uniqueBranchIds: string[] | undefined;
 
-    if (dto.role_ids) {
-      uniqueRoleIds = [...new Set(dto.role_ids)];
+    if (dto.role_id !== undefined) {
+      roleId = dto.role_id;
       // Role assignment is OWNER-only (per spec). Non-OWNERs cannot edit
-      // role_ids at all — even adding a STAFF role is blocked, since a
+      // the role at all — even setting STAFF is blocked, since a
       // BRANCH_MANAGER could otherwise grant access they don't possess.
       await this.authorizationService.assertOwnerOnly(
         callerProfileId,
         organizationId,
       );
-      await assertRolesExist(this.prismaService, uniqueRoleIds);
+      await assertRolesExist(this.prismaService, [roleId]);
     }
 
     if (dto.branch_ids) {
@@ -590,7 +567,9 @@ export class StaffService {
 
     const resolved = await resolveJobFunctionsAndSpecialties(
       this.prismaService,
-      dto.job_function_codes ? [...new Set(dto.job_function_codes)] : undefined,
+      typeof dto.job_function_code === 'string'
+        ? [dto.job_function_code]
+        : undefined,
       dto.specialty_codes ? [...new Set(dto.specialty_codes)] : undefined,
     );
 
@@ -618,6 +597,15 @@ export class StaffService {
       if (dto.engagement_type !== undefined) {
         profileUpdate.engagement_type = dto.engagement_type;
       }
+      if (roleId !== undefined) {
+        profileUpdate.role = { connect: { id: roleId } };
+      }
+      if (dto.job_function_code !== undefined) {
+        const jf = resolved.jobFunctions[0];
+        profileUpdate.job_function = jf
+          ? { connect: { id: jf.id } }
+          : { disconnect: true };
+      }
       if (Object.keys(profileUpdate).length > 0) {
         await tx.profile.update({
           where: { id: staffProfileId },
@@ -642,24 +630,12 @@ export class StaffService {
         });
       }
 
-      if (uniqueRoleIds) {
-        await syncProfileRoles(tx, staffProfileId, uniqueRoleIds);
-      }
-
       if (uniqueBranchIds) {
         await syncProfileBranches(
           tx,
           staffProfileId,
           organizationId,
           uniqueBranchIds,
-        );
-      }
-
-      if (dto.job_function_codes !== undefined) {
-        await syncProfileJobFunctions(
-          tx,
-          staffProfileId,
-          resolved.jobFunctions.map((jf) => jf.id),
         );
       }
 

@@ -22,8 +22,8 @@ const mockUser: AuthContext = {
   profileId: 'profile-uuid',
   organizationId: 'org-uuid',
   activeBranchId: 'branch-uuid',
-  roles: ['RECEPTIONIST'],
-  jobFunctions: ['RECEPTIONIST'],
+  role: 'RECEPTIONIST',
+  jobFunction: 'RECEPTIONIST',
   branchIds: ['branch-uuid'],
 };
 
@@ -34,8 +34,8 @@ const mockDoctorUser: AuthContext = {
   profileId: 'doctor-uuid',
   organizationId: 'org-uuid',
   activeBranchId: 'branch-uuid',
-  roles: ['STAFF'],
-  jobFunctions: ['OTHER_DOCTOR'],
+  role: 'STAFF',
+  jobFunction: 'OTHER_DOCTOR',
   branchIds: ['branch-uuid'],
 };
 
@@ -679,8 +679,8 @@ describe('VisitsService', () => {
       profileId: 'owner-uuid',
       organizationId: 'org-uuid',
       activeBranchId: 'branch-uuid',
-      roles: ['OWNER'],
-      jobFunctions: [],
+      role: 'OWNER',
+      jobFunction: null,
       branchIds: ['branch-uuid'],
     };
 
@@ -691,7 +691,7 @@ describe('VisitsService', () => {
       organizationId: 'org-uuid',
       activeBranchId: 'branch-uuid',
       roles: ['STAFF'],
-      jobFunctions: ['OTHER_DOCTOR'],
+      jobFunction: 'OTHER_DOCTOR',
       branchIds: ['branch-uuid'],
     };
 
@@ -1389,8 +1389,8 @@ describe('VisitsService', () => {
       profileId: 'profile-uuid',
       organizationId: 'org-uuid',
       activeBranchId: 'branch-uuid',
-      roles: ['OWNER'],
-      jobFunctions: [],
+      role: 'OWNER',
+      jobFunction: null,
       branchIds: ['branch-uuid'],
     };
 
@@ -1399,8 +1399,8 @@ describe('VisitsService', () => {
       profileId: 'profile-uuid-2',
       organizationId: 'org-uuid',
       activeBranchId: 'branch-uuid',
-      roles: ['DOCTOR'],
-      jobFunctions: ['OTHER_DOCTOR'],
+      role: 'DOCTOR',
+      jobFunction: 'OTHER_DOCTOR',
       branchIds: ['branch-uuid'],
     };
 
@@ -1409,8 +1409,8 @@ describe('VisitsService', () => {
       profileId: 'profile-uuid-3',
       organizationId: 'org-uuid',
       activeBranchId: 'other-branch',
-      roles: ['DOCTOR'],
-      jobFunctions: ['OTHER_DOCTOR'],
+      role: 'DOCTOR',
+      jobFunction: 'OTHER_DOCTOR',
       branchIds: ['other-branch'],
     };
 
