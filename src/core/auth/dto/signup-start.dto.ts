@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
+  IsDateString,
   IsEmail,
   IsOptional,
   IsPhoneNumber,
@@ -42,6 +43,11 @@ export class SignupStartDto {
   @IsOptional()
   @IsPhoneNumber()
   phone_number?: string;
+
+  @ApiPropertyOptional({ example: '1990-05-20', description: 'Date of birth (ISO)' })
+  @IsOptional()
+  @IsDateString()
+  date_of_birth?: string;
 
   @ApiProperty({ example: 'Password1!' })
   @IsStrongPassword()
