@@ -1,6 +1,12 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsOptional, IsString, Length, MaxLength } from 'class-validator';
+import {
+  IsDateString,
+  IsOptional,
+  IsString,
+  Length,
+  MaxLength,
+} from 'class-validator';
 
 export class UpdateProfileDto {
   @ApiPropertyOptional()
@@ -19,6 +25,15 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsString()
   phone_number?: string;
+
+  /**
+   * USER-LEVEL — shared across the user's profiles. ISO date string; pass
+   * null to clear.
+   */
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsDateString()
+  date_of_birth?: string | null;
 
   /**
    * PROFILE-LEVEL — free-text title shown on the profile (e.g.

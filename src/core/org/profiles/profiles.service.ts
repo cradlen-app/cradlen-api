@@ -75,12 +75,13 @@ export class ProfilesService {
     });
     if (!existing) throw new NotFoundException('Profile not found');
 
-    const { first_name, last_name, phone_number } = dto;
+    const { first_name, last_name, phone_number, date_of_birth } = dto;
 
     const hasUserFields =
       first_name !== undefined ||
       last_name !== undefined ||
-      phone_number !== undefined;
+      phone_number !== undefined ||
+      date_of_birth !== undefined;
 
     if (
       phone_number !== undefined &&
@@ -108,6 +109,9 @@ export class ProfilesService {
           ...(first_name !== undefined && { first_name }),
           ...(last_name !== undefined && { last_name }),
           ...(phone_number !== undefined && { phone_number }),
+          ...(date_of_birth !== undefined && {
+            date_of_birth: date_of_birth ? new Date(date_of_birth) : null,
+          }),
         },
       });
     }
