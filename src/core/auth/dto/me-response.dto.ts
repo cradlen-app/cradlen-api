@@ -122,6 +122,9 @@ export class MeResponseDto {
   @ApiPropertyOptional({ nullable: true })
   phone_number!: string | null;
 
+  @ApiPropertyOptional({ nullable: true })
+  date_of_birth!: Date | null;
+
   @ApiProperty()
   is_active!: boolean;
 
