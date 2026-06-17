@@ -24,7 +24,7 @@ const PRESCRIPTION_PRINT_INCLUDE = {
   prescribed_by: {
     include: {
       user: true,
-      specialty_links: { include: { specialty: true } },
+      specialty: true,
     },
   },
   visit: {
@@ -149,9 +149,7 @@ export class PrescriptionsService {
       ? `Dr. ${user.first_name} ${user.last_name}`.trim()
       : 'Doctor';
     const specialty =
-      prescriber.specialty_links[0]?.specialty?.name ??
-      visit.specialty_code ??
-      null;
+      prescriber.specialty?.name ?? visit.specialty_code ?? null;
 
     return {
       prescribed_at: prescription.prescribed_at,

@@ -77,6 +77,20 @@ export class InvitationSpecialtyDto {
   name!: string;
 }
 
+export class InvitationSubspecialtyDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  code!: string;
+
+  @ApiProperty()
+  name!: string;
+
+  @ApiProperty({ description: 'Parent specialty code.' })
+  specialty_code!: string;
+}
+
 export class InvitationInvitedByDto {
   @ApiProperty()
   id!: string;
@@ -177,8 +191,11 @@ export class InvitationResponseDto {
   @ApiPropertyOptional({ type: () => InvitationJobFunctionDto, nullable: true })
   job_function!: InvitationJobFunctionDto | null;
 
-  @ApiProperty({ type: () => [InvitationSpecialtyDto] })
-  specialties!: InvitationSpecialtyDto[];
+  @ApiPropertyOptional({ type: () => InvitationSpecialtyDto, nullable: true })
+  specialty!: InvitationSpecialtyDto | null;
+
+  @ApiProperty({ type: () => [InvitationSubspecialtyDto] })
+  subspecialties!: InvitationSubspecialtyDto[];
 
   @ApiPropertyOptional({
     type: () => [InvitationWorkingScheduleDto],
@@ -250,8 +267,11 @@ export class InvitationPreviewResponseDto {
   @ApiPropertyOptional({ type: () => InvitationJobFunctionDto, nullable: true })
   job_function!: InvitationJobFunctionDto | null;
 
-  @ApiProperty({ type: () => [InvitationSpecialtyDto] })
-  specialties!: InvitationSpecialtyDto[];
+  @ApiPropertyOptional({ type: () => InvitationSpecialtyDto, nullable: true })
+  specialty!: InvitationSpecialtyDto | null;
+
+  @ApiProperty({ type: () => [InvitationSubspecialtyDto] })
+  subspecialties!: InvitationSubspecialtyDto[];
 }
 
 // ---------- Decline / Accept request DTOs (in-bound) ----------
@@ -307,13 +327,21 @@ export class CreateInvitationDto {
   job_function_code?: string;
 
   @ApiPropertyOptional({
+    description: 'Primary specialty code from the Specialty table.',
+  })
+  @IsOptional()
+  @IsString()
+  specialty_code?: string;
+
+  @ApiPropertyOptional({
     type: [String],
-    description: 'Specialty codes from the Specialty table.',
+    description:
+      'Subspecialty codes (Subspecialty table); each must belong to `specialty_code`.',
   })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  specialty_codes?: string[];
+  subspecialty_codes?: string[];
 
   @ApiPropertyOptional({ enum: ExecutiveTitle })
   @IsOptional()

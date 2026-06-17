@@ -252,7 +252,8 @@ export class SessionsService {
             },
             role: true,
             job_function: true,
-            specialty_links: { include: { specialty: true } },
+            specialty: true,
+            subspecialty_links: { include: { subspecialty: true } },
           },
         },
       },
@@ -353,10 +354,18 @@ export class SessionsService {
                 is_clinical: profile.job_function.is_clinical,
               }
             : null,
-          specialties: profile.specialty_links.map((sl) => ({
-            id: sl.specialty.id,
-            code: sl.specialty.code,
-            name: sl.specialty.name,
+          specialty: profile.specialty
+            ? {
+                id: profile.specialty.id,
+                code: profile.specialty.code,
+                name: profile.specialty.name,
+              }
+            : null,
+          subspecialties: profile.subspecialty_links.map((sl) => ({
+            id: sl.subspecialty.id,
+            code: sl.subspecialty.code,
+            name: sl.subspecialty.name,
+            specialty_code: profile.specialty?.code ?? '',
           })),
           profile_image_url,
         }),

@@ -10,15 +10,14 @@ const TABLES = [
   'password_reset_tokens',
   'verification_codes',
   'refresh_tokens',
-  'profile_roles',
   'profile_branches',
-  'profile_job_functions',
-  'profile_specialties',
+  // role/job_function/specialty are now single FK columns on profiles/invitations
+  // (no join tables); subspecialty remains a join. `subspecialties` is seed
+  // catalog and is NOT truncated (like `specialties`).
+  'profile_subspecialties',
   'organization_specialties',
-  'invitation_roles',
   'invitation_branches',
-  'invitation_job_functions',
-  'invitation_specialties',
+  'invitation_subspecialties',
   'invitations',
   'working_shifts',
   'working_days',

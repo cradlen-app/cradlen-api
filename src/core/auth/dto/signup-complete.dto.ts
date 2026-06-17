@@ -40,9 +40,21 @@ export class SignupCompleteDto extends BranchInputFieldsDto {
   specialties!: string[];
 
   @ApiPropertyOptional({
+    description:
+      "The owner's own primary clinical specialty (code or name), set only when the owner also practices as a doctor. Distinct from `specialties`, which describes what the organization offers.",
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @MinLength(1)
+  practitioner_specialty_code?: string;
+
+  @ApiPropertyOptional({
     type: [String],
     description:
-      "The owner's own clinical specialties, set only when the owner also practices as a doctor. Distinct from `specialties`, which describes what the organization offers.",
+      "The owner's own subspecialties (codes), each of which must belong to `practitioner_specialty_code`.",
   })
   @IsOptional()
   @Transform(({ value }: { value: unknown }) =>
@@ -55,7 +67,7 @@ export class SignupCompleteDto extends BranchInputFieldsDto {
   @IsArray()
   @IsString({ each: true })
   @MinLength(1, { each: true })
-  practitioner_specialties?: string[];
+  practitioner_subspecialty_codes?: string[];
 
   @ApiPropertyOptional({
     description:

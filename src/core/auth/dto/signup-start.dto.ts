@@ -44,7 +44,10 @@ export class SignupStartDto {
   @IsPhoneNumber()
   phone_number?: string;
 
-  @ApiPropertyOptional({ example: '1990-05-20', description: 'Date of birth (ISO)' })
+  @ApiPropertyOptional({
+    example: '1990-05-20',
+    description: 'Date of birth (ISO)',
+  })
   @IsOptional()
   @IsDateString()
   date_of_birth?: string;

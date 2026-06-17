@@ -20,6 +20,20 @@ export class SpecialtyRefDto {
   name!: string;
 }
 
+export class SubspecialtyRefDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  code!: string;
+
+  @ApiProperty()
+  name!: string;
+
+  @ApiProperty({ description: 'Parent specialty code.' })
+  specialty_code!: string;
+}
+
 export class JobFunctionRefDto {
   @ApiProperty()
   id!: string;
@@ -99,8 +113,11 @@ export class StaffProfileDto {
   @ApiPropertyOptional({ type: JobFunctionRefDto, nullable: true })
   job_function!: JobFunctionRefDto | null;
 
-  @ApiProperty({ type: [SpecialtyRefDto] })
-  specialties!: SpecialtyRefDto[];
+  @ApiPropertyOptional({ type: SpecialtyRefDto, nullable: true })
+  specialty!: SpecialtyRefDto | null;
+
+  @ApiProperty({ type: [SubspecialtyRefDto] })
+  subspecialties!: SubspecialtyRefDto[];
 
   @ApiPropertyOptional({ nullable: true })
   profile_image_url!: string | null;

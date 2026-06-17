@@ -1123,7 +1123,10 @@ describe('VisitsService', () => {
 
       expect(db.carePath.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
-          orderBy: { organization_id: { sort: 'desc', nulls: 'last' } },
+          orderBy: [
+            { subspecialty_id: { sort: 'desc', nulls: 'last' } },
+            { organization_id: { sort: 'desc', nulls: 'last' } },
+          ],
         }),
       );
     });

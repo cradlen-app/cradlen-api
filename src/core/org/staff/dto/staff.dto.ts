@@ -103,14 +103,23 @@ export class UpdateStaffDto {
   job_function_code?: string | null;
 
   @ApiPropertyOptional({
+    description:
+      'Primary specialty code from the Specialty table. Pass null to clear the specialty (also clears any subspecialties).',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsString()
+  specialty_code?: string | null;
+
+  @ApiPropertyOptional({
     type: [String],
     description:
-      'Specialty codes from the Specialty table. Pass an empty array to clear all assigned specialties.',
+      'Subspecialty codes (Subspecialty table); each must belong to `specialty_code`. Pass an empty array to clear all subspecialties.',
   })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  specialty_codes?: string[];
+  subspecialty_codes?: string[];
 
   @ApiPropertyOptional({ enum: ExecutiveTitle, nullable: true })
   @IsOptional()
@@ -187,13 +196,21 @@ export class CreateStaffDto {
   job_function_code?: string;
 
   @ApiPropertyOptional({
+    description: 'Primary specialty code from the Specialty table.',
+  })
+  @IsOptional()
+  @IsString()
+  specialty_code?: string;
+
+  @ApiPropertyOptional({
     type: [String],
-    description: 'Specialty codes from the Specialty table.',
+    description:
+      'Subspecialty codes (Subspecialty table); each must belong to `specialty_code`.',
   })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  specialty_codes?: string[];
+  subspecialty_codes?: string[];
 
   @ApiPropertyOptional({ enum: ExecutiveTitle })
   @IsOptional()
@@ -273,7 +290,7 @@ export class ListStaffQueryDto {
 
   @ApiPropertyOptional({
     description:
-      'Filters to staff whose ProfileSpecialty includes the given specialty code (e.g. "OBGYN"). Composes with `doctors_only` to narrow the book-visit doctor picker.',
+      'Filters to staff whose primary specialty matches the given specialty code (e.g. "OBGYN"). Subspecialists match too, since their specialty is the parent. Composes with `doctors_only` to narrow the book-visit doctor picker.',
   })
   @IsOptional()
   @IsString()
@@ -354,6 +371,14 @@ class SpecialtySummaryDto {
   @ApiProperty() name!: string;
 }
 
+class SubspecialtySummaryDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() code!: string;
+  @ApiProperty() name!: string;
+  @ApiProperty({ description: 'Parent specialty code.' })
+  specialty_code!: string;
+}
+
 class ScheduleShiftSummaryDto {
   @ApiProperty() start_time!: string;
   @ApiProperty() end_time!: string;
@@ -386,8 +411,10 @@ export class StaffResponseDto {
   @ApiProperty({ type: [BranchSummaryDto] }) branches!: BranchSummaryDto[];
   @ApiPropertyOptional({ type: JobFunctionSummaryDto, nullable: true })
   job_function!: JobFunctionSummaryDto | null;
-  @ApiProperty({ type: [SpecialtySummaryDto] })
-  specialties!: SpecialtySummaryDto[];
+  @ApiPropertyOptional({ type: SpecialtySummaryDto, nullable: true })
+  specialty!: SpecialtySummaryDto | null;
+  @ApiProperty({ type: [SubspecialtySummaryDto] })
+  subspecialties!: SubspecialtySummaryDto[];
   @ApiProperty({ type: [ScheduleSummaryDto] })
   schedule!: ScheduleSummaryDto[];
   @ApiPropertyOptional({ nullable: true })

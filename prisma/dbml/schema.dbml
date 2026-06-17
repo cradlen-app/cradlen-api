@@ -277,6 +277,7 @@ Table profiles {
   organization_id String [not null]
   role_id String [not null]
   job_function_id String
+  specialty_id String
   executive_title ExecutiveTitle
   professional_title String
   engagement_type EngagementType [not null, default: 'FULL_TIME']
@@ -290,9 +291,10 @@ Table profiles {
   organization organizations [not null]
   role roles [not null]
   job_function job_functions
+  specialty specialties
   branches profile_branches [not null]
   workingSchedules working_schedules [not null]
-  specialty_links profile_specialties [not null]
+  subspecialty_links profile_subspecialties [not null]
   created_journeys patient_journeys [not null]
   doctor_visits visits [not null]
   created_visits visits [not null]
@@ -447,6 +449,7 @@ Table invitations {
   invited_by_id String [not null]
   role_id String [not null]
   job_function_id String
+  specialty_id String
   email String [not null]
   first_name String [not null]
   last_name String [not null]
@@ -466,8 +469,9 @@ Table invitations {
   invited_by users [not null]
   role roles [not null]
   job_function job_functions
+  specialty specialties
   branches invitation_branches [not null]
-  specialty_links invitation_specialties [not null]
+  subspecialty_links invitation_subspecialties [not null]
 }
 
 Table invitation_branches {
@@ -547,9 +551,10 @@ Table specialties {
   templates journey_templates [not null]
   care_paths care_paths [not null]
   procedures procedures [not null]
-  profile_links profile_specialties [not null]
+  subspecialties subspecialties [not null]
+  profiles profiles [not null]
+  invitations invitations [not null]
   org_links organization_specialties [not null]
-  inv_links invitation_specialties [not null]
   lab_tests lab_tests [not null]
   form_templates form_templates [not null]
   service_specialties service_specialties [not null]
@@ -573,16 +578,32 @@ Table procedures {
   calendar_events calendar_events [not null]
 }
 
-Table profile_specialties {
+Table subspecialties {
+  id String [pk]
+  specialty_id String [not null]
+  specialty specialties [not null]
+  name String [not null]
+  code String [unique, not null]
+  description String
+  profile_links profile_subspecialties [not null]
+  inv_links invitation_subspecialties [not null]
+  care_paths care_paths [not null]
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+}
+
+Table profile_subspecialties {
   id String [pk]
   profile_id String [not null]
-  specialty_id String [not null]
+  subspecialty_id String [not null]
   created_at DateTime [default: `now()`, not null]
   profile profiles [not null]
-  specialty specialties [not null]
+  subspecialty subspecialties [not null]
 
   indexes {
-    (profile_id, specialty_id) [unique]
+    (profile_id, subspecialty_id) [unique]
   }
 }
 
@@ -599,16 +620,16 @@ Table organization_specialties {
   }
 }
 
-Table invitation_specialties {
+Table invitation_subspecialties {
   id String [pk]
   invitation_id String [not null]
-  specialty_id String [not null]
+  subspecialty_id String [not null]
   created_at DateTime [default: `now()`, not null]
   invitation invitations [not null]
-  specialty specialties [not null]
+  subspecialty subspecialties [not null]
 
   indexes {
-    (invitation_id, specialty_id) [unique]
+    (invitation_id, subspecialty_id) [unique]
   }
 }
 
@@ -766,6 +787,7 @@ Table visits {
   follow_up_notes String
   examination_version Int [not null, default: 1]
   specialty_code String
+  subspecialty_code String
   form_template_id String
   form_template form_templates
   vitals visit_vitals
@@ -1101,6 +1123,8 @@ Table care_paths {
   id String [pk]
   specialty_id String [not null]
   specialty specialties [not null]
+  subspecialty_id String
+  subspecialty subspecialties
   organization_id String
   organization organizations
   is_system Boolean [not null, default: true]
@@ -1121,7 +1145,7 @@ Table care_paths {
   deleted_at DateTime
 
   indexes {
-    (specialty_id, organization_id, code) [unique]
+    (specialty_id, subspecialty_id, organization_id, code) [unique]
   }
 }
 
@@ -2457,6 +2481,8 @@ Ref: profiles.role_id > roles.id
 
 Ref: profiles.job_function_id > job_functions.id
 
+Ref: profiles.specialty_id > specialties.id
+
 Ref: profile_branches.profile_id > profiles.id [delete: Cascade]
 
 Ref: profile_branches.(branch_id, organization_id) > branches.(id, organization_id) [delete: Cascade]
@@ -2483,6 +2509,8 @@ Ref: invitations.role_id > roles.id
 
 Ref: invitations.job_function_id > job_functions.id
 
+Ref: invitations.specialty_id > specialties.id
+
 Ref: invitation_branches.invitation_id > invitations.id [delete: Cascade]
 
 Ref: invitation_branches.(branch_id, organization_id) > branches.(id, organization_id) [delete: Cascade]
@@ -2499,17 +2527,19 @@ Ref: working_shifts.day_id > working_days.id [delete: Cascade]
 
 Ref: procedures.specialty_id > specialties.id [delete: Cascade]
 
-Ref: profile_specialties.profile_id > profiles.id [delete: Cascade]
+Ref: subspecialties.specialty_id > specialties.id [delete: Cascade]
 
-Ref: profile_specialties.specialty_id > specialties.id [delete: Cascade]
+Ref: profile_subspecialties.profile_id > profiles.id [delete: Cascade]
+
+Ref: profile_subspecialties.subspecialty_id > subspecialties.id [delete: Cascade]
 
 Ref: organization_specialties.organization_id > organizations.id [delete: Cascade]
 
 Ref: organization_specialties.specialty_id > specialties.id [delete: Cascade]
 
-Ref: invitation_specialties.invitation_id > invitations.id [delete: Cascade]
+Ref: invitation_subspecialties.invitation_id > invitations.id [delete: Cascade]
 
-Ref: invitation_specialties.specialty_id > specialties.id [delete: Cascade]
+Ref: invitation_subspecialties.subspecialty_id > subspecialties.id [delete: Cascade]
 
 Ref: journey_templates.specialty_id > specialties.id [delete: Cascade]
 
@@ -2608,6 +2638,8 @@ Ref: patient_guardians.patient_id > patients.id [delete: Cascade]
 Ref: patient_guardians.guardian_id > guardians.id [delete: Cascade]
 
 Ref: care_paths.specialty_id > specialties.id [delete: Cascade]
+
+Ref: care_paths.subspecialty_id > subspecialties.id [delete: Set Null]
 
 Ref: care_paths.organization_id > organizations.id [delete: Cascade]
 

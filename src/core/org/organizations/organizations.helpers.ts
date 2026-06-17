@@ -24,9 +24,10 @@ export interface ProvisionOrganizationResult {
 
 /**
  * Creates the four rows that bootstrap a tenant: Organization (+ specialty
- * links), main Branch, OWNER Profile (+ specialty links), and a free-trial
- * Subscription. Must run inside a caller-owned `$transaction` so the bootstrap
- * is atomic.
+ * links), main Branch, OWNER Profile, and a free-trial Subscription. Must run
+ * inside a caller-owned `$transaction` so the bootstrap is atomic. The owner's
+ * own primary specialty is not set here (this flow has no practitioner field) —
+ * it is assigned later via the staff/profile edit surfaces.
  *
  * NOTE: `SignupService.runOnboardingTransaction` inlines the same four inserts
  * plus an atomic onboarding-claim. Consolidating the two onto this helper is the
@@ -70,7 +71,6 @@ export async function provisionOrganization(
       branches: {
         create: { branch_id: branch.id, organization_id: organization.id },
       },
-      specialty_links: specialtyCreate,
     },
   });
 

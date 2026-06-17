@@ -4,7 +4,8 @@ export const INVITATION_FULL_INCLUDE = {
   role: true,
   branches: { include: { branch: true } },
   job_function: true,
-  specialty_links: { include: { specialty: true } },
+  specialty: true,
+  subspecialty_links: { include: { subspecialty: true } },
   invited_by: {
     select: { id: true, first_name: true, last_name: true, email: true },
   },
@@ -14,7 +15,8 @@ export const INVITATION_PREVIEW_INCLUDE = {
   role: true,
   branches: { include: { branch: true } },
   job_function: true,
-  specialty_links: { include: { specialty: true } },
+  specialty: true,
+  subspecialty_links: { include: { subspecialty: true } },
   invited_by: {
     select: { first_name: true, last_name: true },
   },

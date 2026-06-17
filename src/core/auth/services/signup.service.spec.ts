@@ -776,7 +776,7 @@ describe('SignupService', () => {
         ...baseDto,
         signup_token: signSignupToken(jwtService, userId),
         specialties: ['OBGYN'],
-        practitioner_specialties: ['OBGYN'],
+        practitioner_specialty_code: 'OBGYN',
         job_function_code: 'OBGYN',
         executive_title: 'CEO' as never,
         professional_title: 'استشاري النساء والتوليد',
@@ -795,10 +795,8 @@ describe('SignupService', () => {
       expect(profileData.branches).toEqual({
         create: [{ organization_id: 'org-id', branch_id: 'branch-id' }],
       });
-      // Practitioner specialties land on the profile; titles persist.
-      expect(profileData.specialty_links).toEqual({
-        create: [{ specialty_id: 'spec-id' }],
-      });
+      // Practitioner specialty lands on the profile; titles persist.
+      expect(profileData.specialty_id).toBe('spec-id');
       expect(profileData.executive_title).toBe('CEO');
       expect(profileData.professional_title).toBe('استشاري النساء والتوليد');
     });
@@ -815,8 +813,9 @@ describe('SignupService', () => {
       });
 
       const profileData = txMock.profile.create.mock.calls[0][0].data;
-      // No practitioner specialties / job functions → undefined on the profile.
-      expect(profileData.specialty_links).toBeUndefined();
+      // No practitioner specialty / job function → null/undefined on the profile.
+      expect(profileData.specialty_id).toBeNull();
+      expect(profileData.subspecialty_links).toBeUndefined();
       expect(profileData.job_function_id).toBeNull();
       expect(profileData.professional_title).toBeNull();
       // Org still records its offered specialties.

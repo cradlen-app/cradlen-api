@@ -700,6 +700,7 @@ model Profile {
   organization_id                  String                           @db.Uuid
   role_id                          String                           @db.Uuid
   job_function_id                  String?                          @db.Uuid
+  specialty_id                     String?                          @db.Uuid
   executive_title                  ExecutiveTitle?
   professional_title               String?
   engagement_type                  EngagementType                   @default(FULL_TIME)
@@ -713,9 +714,10 @@ model Profile {
   organization                     Organization                     @relation(fields: [organization_id], references: [id], onDelete: Cascade)
   role                             Role                             @relation(fields: [role_id], references: [id])
   job_function                     JobFunction?                     @relation(fields: [job_function_id], references: [id])
+  specialty                        Specialty?                       @relation(fields: [specialty_id], references: [id])
   branches                         ProfileBranch[]
   workingSchedules                 WorkingSchedule[]
-  specialty_links                  ProfileSpecialty[]
+  subspecialty_links               ProfileSubspecialty[]
   created_journeys                 PatientJourney[]
   doctor_visits                    Visit[]                          @relation("DoctorVisits")
   created_visits                   Visit[]                          @relation("CreatedVisits")
@@ -783,6 +785,7 @@ model Profile {
   @@index([user_id, is_deleted])
   @@index([role_id])
   @@index([job_function_id])
+  @@index([specialty_id])
   @@map("profiles")
 }
 
@@ -910,37 +913,40 @@ model VerificationCode {
 }
 
 model Invitation {
-  id                 String                @id @default(uuid()) @db.Uuid
-  organization_id    String                @db.Uuid
-  invited_by_id      String                @db.Uuid
-  role_id            String                @db.Uuid
-  job_function_id    String?               @db.Uuid
+  id                 String                   @id @default(uuid()) @db.Uuid
+  organization_id    String                   @db.Uuid
+  invited_by_id      String                   @db.Uuid
+  role_id            String                   @db.Uuid
+  job_function_id    String?                  @db.Uuid
+  specialty_id       String?                  @db.Uuid
   email              String
   first_name         String
   last_name          String
   phone_number       String?
   executive_title    ExecutiveTitle?
   professional_title String?
-  engagement_type    EngagementType        @default(FULL_TIME)
-  token_hash         String                @unique
-  status             InvitationStatus      @default(PENDING)
+  engagement_type    EngagementType           @default(FULL_TIME)
+  token_hash         String                   @unique
+  status             InvitationStatus         @default(PENDING)
   expires_at         DateTime
   accepted_at        DateTime?
-  is_deleted         Boolean               @default(false)
+  is_deleted         Boolean                  @default(false)
   deleted_at         DateTime?
-  created_at         DateTime              @default(now())
-  updated_at         DateTime              @updatedAt
-  organization       Organization          @relation(fields: [organization_id], references: [id], onDelete: Cascade)
-  invited_by         User                  @relation("InvitedBy", fields: [invited_by_id], references: [id])
-  role               Role                  @relation(fields: [role_id], references: [id])
-  job_function       JobFunction?          @relation(fields: [job_function_id], references: [id])
+  created_at         DateTime                 @default(now())
+  updated_at         DateTime                 @updatedAt
+  organization       Organization             @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  invited_by         User                     @relation("InvitedBy", fields: [invited_by_id], references: [id])
+  role               Role                     @relation(fields: [role_id], references: [id])
+  job_function       JobFunction?             @relation(fields: [job_function_id], references: [id])
+  specialty          Specialty?               @relation(fields: [specialty_id], references: [id])
   branches           InvitationBranch[]
-  specialty_links    InvitationSpecialty[]
+  subspecialty_links InvitationSubspecialty[]
 
   @@index([organization_id, status])
   @@index([email])
   @@index([expires_at])
   @@index([status, expires_at])
+  @@index([specialty_id])
   // Partial unique index `invitations_org_email_pending_unique` added via raw
   // SQL in the `invitations_hardening` migration (Prisma cannot express
   // partial unique indexes natively).
@@ -1037,9 +1043,10 @@ model Specialty {
   templates           JourneyTemplate[]
   care_paths          CarePath[]
   procedures          Procedure[]
-  profile_links       ProfileSpecialty[]
+  subspecialties      Subspecialty[]
+  profiles            Profile[]
+  invitations         Invitation[]
   org_links           OrganizationSpecialty[]
-  inv_links           InvitationSpecialty[]
   lab_tests           LabTest[]
   form_templates      FormTemplate[]
   service_specialties ServiceSpecialty[]      @relation("SpecialtyServices")
@@ -1069,17 +1076,40 @@ model Procedure {
   @@map("procedures")
 }
 
-model ProfileSpecialty {
-  id           String    @id @default(uuid()) @db.Uuid
-  profile_id   String    @db.Uuid
-  specialty_id String    @db.Uuid
-  created_at   DateTime  @default(now())
-  profile      Profile   @relation(fields: [profile_id], references: [id], onDelete: Cascade)
-  specialty    Specialty @relation(fields: [specialty_id], references: [id], onDelete: Cascade)
+// A subspecialty (fellowship) nested under a parent Specialty — e.g. REI
+// (Reproductive Endocrinology & Infertility) under OBGYN. A doctor holds one
+// primary specialty (Profile.specialty_id) and optionally several subspecialties
+// (ProfileSubspecialty). Catalog rows are seed-managed (upserted by `code`).
+model Subspecialty {
+  id            String                   @id @default(uuid()) @db.Uuid
+  specialty_id  String                   @db.Uuid
+  specialty     Specialty                @relation(fields: [specialty_id], references: [id], onDelete: Cascade)
+  name          String
+  code          String                   @unique
+  description   String?
+  profile_links ProfileSubspecialty[]
+  inv_links     InvitationSubspecialty[]
+  care_paths    CarePath[]
+  created_at    DateTime                 @default(now())
+  updated_at    DateTime                 @updatedAt
+  is_deleted    Boolean                  @default(false)
+  deleted_at    DateTime?
 
-  @@unique([profile_id, specialty_id])
   @@index([specialty_id])
-  @@map("profile_specialties")
+  @@map("subspecialties")
+}
+
+model ProfileSubspecialty {
+  id              String       @id @default(uuid()) @db.Uuid
+  profile_id      String       @db.Uuid
+  subspecialty_id String       @db.Uuid
+  created_at      DateTime     @default(now())
+  profile         Profile      @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+  subspecialty    Subspecialty @relation(fields: [subspecialty_id], references: [id], onDelete: Cascade)
+
+  @@unique([profile_id, subspecialty_id])
+  @@index([subspecialty_id])
+  @@map("profile_subspecialties")
 }
 
 model OrganizationSpecialty {
@@ -1095,16 +1125,17 @@ model OrganizationSpecialty {
   @@map("organization_specialties")
 }
 
-model InvitationSpecialty {
-  id            String     @id @default(uuid()) @db.Uuid
-  invitation_id String     @db.Uuid
-  specialty_id  String     @db.Uuid
-  created_at    DateTime   @default(now())
-  invitation    Invitation @relation(fields: [invitation_id], references: [id], onDelete: Cascade)
-  specialty     Specialty  @relation(fields: [specialty_id], references: [id], onDelete: Cascade)
+model InvitationSubspecialty {
+  id              String       @id @default(uuid()) @db.Uuid
+  invitation_id   String       @db.Uuid
+  subspecialty_id String       @db.Uuid
+  created_at      DateTime     @default(now())
+  invitation      Invitation   @relation(fields: [invitation_id], references: [id], onDelete: Cascade)
+  subspecialty    Subspecialty @relation(fields: [subspecialty_id], references: [id], onDelete: Cascade)
 
-  @@unique([invitation_id, specialty_id])
-  @@map("invitation_specialties")
+  @@unique([invitation_id, subspecialty_id])
+  @@index([subspecialty_id])
+  @@map("invitation_subspecialties")
 }
 
 model JourneyTemplate {
@@ -1299,6 +1330,9 @@ model Visit {
   // resolver on the frontend (e.g. "OBGYN" → obgyn_patient_history). Nullable
   // for pre-existing rows; new bookings always populate it.
   specialty_code          String?
+  // Subspecialty captured at booking (e.g. "REI"). Optional; when set it scopes
+  // the resolved care path and is re-validated against the doctor on PATCH.
+  subspecialty_code       String?
   // Audit anchor: which form-template version this visit was booked from.
   // Never mutated on update — the original booking's contract is the legal
   // record. SetNull so deleting a template (rare) doesn't cascade visits.
@@ -1746,6 +1780,11 @@ model CarePath {
   id                  String            @id @default(uuid()) @db.Uuid
   specialty_id        String            @db.Uuid
   specialty           Specialty         @relation(fields: [specialty_id], references: [id], onDelete: Cascade)
+  // Optional subspecialty scope. When set, the booking resolver prefers this
+  // care path over the specialty-level (subspecialty_id null) one for the same
+  // code — realizing the specialty → subspecialty → care path → template chain.
+  subspecialty_id     String?           @db.Uuid
+  subspecialty        Subspecialty?     @relation(fields: [subspecialty_id], references: [id], onDelete: SetNull)
   organization_id     String?           @db.Uuid
   organization        Organization?     @relation(fields: [organization_id], references: [id], onDelete: Cascade)
   is_system           Boolean           @default(true)
@@ -1768,9 +1807,10 @@ model CarePath {
   is_deleted          Boolean           @default(false)
   deleted_at          DateTime?
 
-  @@unique([specialty_id, organization_id, code])
+  @@unique([specialty_id, subspecialty_id, organization_id, code], map: "care_paths_scope_code_key")
   @@index([organization_id, specialty_id])
   @@index([journey_template_id])
+  @@index([subspecialty_id])
   @@map("care_paths")
 }
 
