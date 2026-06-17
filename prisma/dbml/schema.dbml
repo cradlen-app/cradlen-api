@@ -215,6 +215,7 @@ Table users {
   last_name String [not null]
   email String [unique]
   phone_number String
+  date_of_birth DateTime
   password_hashed String
   is_active Boolean [not null, default: true]
   is_deleted Boolean [not null, default: false]

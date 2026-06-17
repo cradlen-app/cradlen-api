@@ -88,6 +88,9 @@ export class SignupService {
               last_name: dto.last_name,
               password_hashed,
               phone_number: dto.phone_number ?? null,
+              date_of_birth: dto.date_of_birth
+                ? new Date(dto.date_of_birth)
+                : null,
             },
           });
           await this.verificationCodesService.send(
@@ -134,6 +137,7 @@ export class SignupService {
         last_name: dto.last_name,
         email: dto.email,
         phone_number: dto.phone_number,
+        date_of_birth: dto.date_of_birth ? new Date(dto.date_of_birth) : null,
         password_hashed,
         registration_status: 'PENDING',
         onboarding_completed: false,
