@@ -47,29 +47,29 @@ export async function syncProfileBranches(
   }
 }
 
-export async function syncProfileSpecialties(
+export async function syncProfileSubspecialties(
   tx: Prisma.TransactionClient,
   profileId: string,
-  nextSpecialtyIds: string[],
+  nextSubspecialtyIds: string[],
 ): Promise<void> {
-  const current = await tx.profileSpecialty.findMany({
+  const current = await tx.profileSubspecialty.findMany({
     where: { profile_id: profileId },
-    select: { specialty_id: true },
+    select: { subspecialty_id: true },
   });
   const { toAdd, toRemove } = diffIds(
-    current.map((r) => r.specialty_id),
-    nextSpecialtyIds,
+    current.map((r) => r.subspecialty_id),
+    nextSubspecialtyIds,
   );
   if (toRemove.length) {
-    await tx.profileSpecialty.deleteMany({
-      where: { profile_id: profileId, specialty_id: { in: toRemove } },
+    await tx.profileSubspecialty.deleteMany({
+      where: { profile_id: profileId, subspecialty_id: { in: toRemove } },
     });
   }
   if (toAdd.length) {
-    await tx.profileSpecialty.createMany({
-      data: toAdd.map((specialty_id) => ({
+    await tx.profileSubspecialty.createMany({
+      data: toAdd.map((subspecialty_id) => ({
         profile_id: profileId,
-        specialty_id,
+        subspecialty_id,
       })),
     });
   }
@@ -92,17 +92,17 @@ export async function replaceProfileBranches(
   });
 }
 
-export async function replaceProfileSpecialties(
+export async function replaceProfileSubspecialties(
   tx: Prisma.TransactionClient,
   profileId: string,
-  specialtyIds: string[],
+  subspecialtyIds: string[],
 ): Promise<void> {
-  await tx.profileSpecialty.deleteMany({ where: { profile_id: profileId } });
-  if (!specialtyIds.length) return;
-  await tx.profileSpecialty.createMany({
-    data: specialtyIds.map((specialty_id) => ({
+  await tx.profileSubspecialty.deleteMany({ where: { profile_id: profileId } });
+  if (!subspecialtyIds.length) return;
+  await tx.profileSubspecialty.createMany({
+    data: subspecialtyIds.map((subspecialty_id) => ({
       profile_id: profileId,
-      specialty_id,
+      subspecialty_id,
     })),
   });
 }

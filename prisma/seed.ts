@@ -240,6 +240,24 @@ async function main() {
     },
   });
 
+  // Subspecialties (fellowships) under OB/GYN. A doctor holds one primary
+  // specialty (Profile.specialty_id) and optionally several of these.
+  const obgynSubspecialties = [
+    { code: 'REI', name: 'Reproductive Endocrinology & Infertility' },
+    { code: 'MFM', name: 'Maternal-Fetal Medicine' },
+    { code: 'GYN_ONCOLOGY', name: 'Gynecologic Oncology' },
+    { code: 'UROGYNECOLOGY', name: 'Urogynecology' },
+  ];
+  const subspecialtyByCode = new Map<string, string>();
+  for (const sub of obgynSubspecialties) {
+    const row = await prisma.subspecialty.upsert({
+      where: { code: sub.code },
+      update: { name: sub.name, specialty_id: gynSpecialty.id },
+      create: { code: sub.code, name: sub.name, specialty_id: gynSpecialty.id },
+    });
+    subspecialtyByCode.set(sub.code, row.id);
+  }
+
   // Procedures — structured catalog of surgical procedures.
   const procedures = [
     { code: 'CESAREAN_SECTION', name: 'Cesarean Section' },
@@ -505,6 +523,20 @@ async function main() {
         });
       }
     }
+  }
+
+  // Scope the infertility care path to the REI subspecialty, so a booking that
+  // pins subspecialty_code=REI resolves it over the specialty-level fallback.
+  const reiId = subspecialtyByCode.get('REI');
+  if (reiId) {
+    await prisma.carePath.updateMany({
+      where: {
+        specialty_id: gynSpecialty.id,
+        organization_id: null,
+        code: 'OBGYN_INFERTILITY',
+      },
+      data: { subspecialty_id: reiId },
+    });
   }
 
   // Lab tests — global catalog. Categorized as LAB | IMAGING | OTHER.
