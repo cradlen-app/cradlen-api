@@ -1,4 +1,7 @@
-import { toSpecialtySummary } from '../specialty-catalog/specialty-catalog.public.js';
+import {
+  toSpecialtySummary,
+  toSubspecialtySummary,
+} from '../specialty-catalog/specialty-catalog.public.js';
 import type { ProfileDetail, ProfileSummary } from './profiles.includes.js';
 
 export function toProfileSummary(profile: ProfileSummary) {
@@ -53,8 +56,9 @@ export function toProfileDetail(profile: ProfileDetail) {
           is_clinical: profile.job_function.is_clinical,
         }
       : null,
-    specialties: profile.specialty_links.map((sl) =>
-      toSpecialtySummary(sl.specialty),
+    specialty: profile.specialty ? toSpecialtySummary(profile.specialty) : null,
+    subspecialties: profile.subspecialty_links.map((sl) =>
+      toSubspecialtySummary(sl.subspecialty, profile.specialty?.code ?? ''),
     ),
   };
 }

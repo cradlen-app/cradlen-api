@@ -79,7 +79,7 @@ function makePrescription() {
     prescribed_by: {
       id: 'doctor-1',
       user: { first_name: 'Sara', last_name: 'Hassan' },
-      specialty_links: [{ specialty: { name: 'Obstetrics & Gynecology' } }],
+      specialty: { name: 'Obstetrics & Gynecology' },
     },
     visit: {
       branch_id: 'branch-1',

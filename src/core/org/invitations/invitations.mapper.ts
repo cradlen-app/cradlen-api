@@ -1,5 +1,8 @@
 import type { Prisma } from '@prisma/client';
-import { toSpecialtySummary } from '../specialty-catalog/specialty-catalog.public.js';
+import {
+  toSpecialtySummary,
+  toSubspecialtySummary,
+} from '../specialty-catalog/specialty-catalog.public.js';
 import { minutesToHhmm } from '../staff/shift-time.helpers.js';
 import type {
   InvitationFull,
@@ -51,8 +54,14 @@ export function toInvitationResponse(
           name: invitation.job_function.name,
         }
       : null,
-    specialties: invitation.specialty_links.map((item) =>
-      toSpecialtySummary(item.specialty),
+    specialty: invitation.specialty
+      ? toSpecialtySummary(invitation.specialty)
+      : null,
+    subspecialties: invitation.subspecialty_links.map((item) =>
+      toSubspecialtySummary(
+        item.subspecialty,
+        invitation.specialty?.code ?? '',
+      ),
     ),
     ...(workingSchedule !== undefined && {
       working_schedule:
@@ -103,8 +112,11 @@ export function toInvitationPreviewResponse(invitation: InvitationPreview) {
           name: invitation.job_function.name,
         }
       : null,
-    specialties: invitation.specialty_links.map((s) =>
-      toSpecialtySummary(s.specialty),
+    specialty: invitation.specialty
+      ? toSpecialtySummary(invitation.specialty)
+      : null,
+    subspecialties: invitation.subspecialty_links.map((s) =>
+      toSubspecialtySummary(s.subspecialty, invitation.specialty?.code ?? ''),
     ),
   };
 }

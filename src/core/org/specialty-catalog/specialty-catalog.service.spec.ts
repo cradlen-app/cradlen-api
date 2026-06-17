@@ -43,7 +43,15 @@ describe('SpecialtyCatalogService', () => {
       expect(result).toEqual([mockLookup]);
       expect(db.specialty.findMany).toHaveBeenCalledWith({
         where: { is_deleted: false },
-        select: { code: true, name: true },
+        select: {
+          code: true,
+          name: true,
+          subspecialties: {
+            where: { is_deleted: false },
+            select: { code: true, name: true },
+            orderBy: { name: 'asc' },
+          },
+        },
         orderBy: { name: 'asc' },
       });
     });
@@ -131,6 +139,11 @@ describe('SpecialtyCatalogService', () => {
                 select: { id: true, name: true, order: true },
               },
             },
+          },
+          subspecialties: {
+            where: { is_deleted: false },
+            select: { id: true, code: true, name: true },
+            orderBy: { name: 'asc' },
           },
         },
       });

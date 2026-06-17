@@ -28,6 +28,9 @@ export class UpdateVisitDto extends VisitIntakeFieldsDto {
    */
   @IsString() @IsOptional() @MaxLength(50) specialty_code?: string;
 
+  /** Optional subspecialty; re-validated against the (final) assigned doctor. */
+  @IsString() @IsOptional() @MaxLength(50) subspecialty_code?: string;
+
   @IsUUID() @IsOptional() assigned_doctor_id?: string;
   @IsUUID() @IsOptional() branch_id?: string;
 

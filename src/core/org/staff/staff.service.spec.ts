@@ -42,8 +42,9 @@ const mockStaffProfile = {
     name: 'OB/GYN',
     is_clinical: true,
   },
-  specialty_links: [
-    { specialty: { id: 'spec-uuid', code: 'OBGYN', name: 'Gynecology' } },
+  specialty: { id: 'spec-uuid', code: 'OBGYN', name: 'Gynecology' },
+  subspecialty_links: [
+    { subspecialty: { id: 'sub-uuid', code: 'REI', name: 'Infertility' } },
   ],
   workingSchedules: [],
 };
