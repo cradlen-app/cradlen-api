@@ -28,6 +28,14 @@ export class BookVisitDto extends VisitIntakeFieldsDto {
   @IsString() @MaxLength(50) specialty_code!: string;
 
   /**
+   * Optional subspecialty code (e.g. `REI`). When provided it must belong to
+   * `specialty_code`; the booking resolver prefers a care path scoped to this
+   * subspecialty over the specialty-level one, and the assigned doctor is
+   * verified to hold the subspecialty.
+   */
+  @IsString() @MaxLength(50) @IsOptional() subspecialty_code?: string;
+
+  /**
    * Optional CarePath code (e.g. `OBGYN_PREGNANCY`). When provided, the
    * resulting PatientJourney is anchored to that care path so downstream
    * specialty flows (pregnancy records, etc.) can gate on it.

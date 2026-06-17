@@ -26,15 +26,16 @@ import {
   assertRolesExist,
   assertScheduleBranches,
   assertShiftTimes,
-  resolveJobFunctionsAndSpecialties,
+  resolveJobFunctionAndSpecialty,
+  resolveSubspecialties,
 } from './staff.assertions.js';
 import { staffInclude, toStaffResponse } from './staff.mapper.js';
 import {
   diffIds,
   replaceProfileBranches,
-  replaceProfileSpecialties,
+  replaceProfileSubspecialties,
   syncProfileBranches,
-  syncProfileSpecialties,
+  syncProfileSubspecialties,
 } from './staff-m2m.helper.js';
 
 /**
@@ -62,10 +63,6 @@ export class StaffService {
   ) {
     const roleId = dto.role_id;
     const uniqueBranchIds = [...new Set(dto.branch_ids)];
-    const jobFunctionCodes = dto.job_function_code
-      ? [dto.job_function_code]
-      : [];
-    const specialtyCodes = [...new Set(dto.specialty_codes ?? [])];
 
     // The staff must be assigned to the branch in the path (mirrors invitations).
     if (!uniqueBranchIds.includes(branchId)) {
@@ -93,10 +90,15 @@ export class StaffService {
     );
     await assertRolesExist(this.prismaService, [roleId]);
 
-    const resolved = await resolveJobFunctionsAndSpecialties(
+    const resolved = await resolveJobFunctionAndSpecialty(
       this.prismaService,
-      jobFunctionCodes,
-      specialtyCodes,
+      dto.job_function_code,
+      dto.specialty_code,
+    );
+    const subspecialties = await resolveSubspecialties(
+      this.prismaService,
+      dto.subspecialty_codes,
+      resolved.specialty?.id ?? null,
     );
 
     if (dto.schedule?.length) {
@@ -132,7 +134,8 @@ export class StaffService {
           user_id: user.id,
           organization_id: organizationId,
           role_id: roleId,
-          job_function_id: resolved.jobFunctions[0]?.id ?? null,
+          job_function_id: resolved.jobFunction?.id ?? null,
+          specialty_id: resolved.specialty?.id ?? null,
           executive_title: dto.executive_title ?? null,
           professional_title: dto.professional_title ?? null,
           engagement_type: dto.engagement_type ?? EngagementType.FULL_TIME,
@@ -145,10 +148,10 @@ export class StaffService {
         organizationId,
         uniqueBranchIds,
       );
-      await replaceProfileSpecialties(
+      await replaceProfileSubspecialties(
         tx,
         profile.id,
-        resolved.specialties.map((s) => s.id),
+        subspecialties.map((s) => s.id),
       );
 
       if (dto.schedule?.length) {
@@ -302,9 +305,8 @@ export class StaffService {
     }
 
     if (specialtyCode) {
-      where.specialty_links = {
-        some: { specialty: { code: specialtyCode, is_deleted: false } },
-      };
+      // Subspecialists match too: their profile's specialty IS the parent.
+      where.specialty = { code: specialtyCode, is_deleted: false };
     }
     // Narrow to providers authorized (active ProviderService) for a service —
     // at this branch or org-wide. Powers the service-scoped book-visit doctor
@@ -565,13 +567,36 @@ export class StaffService {
       }
     }
 
-    const resolved = await resolveJobFunctionsAndSpecialties(
+    const resolved = await resolveJobFunctionAndSpecialty(
       this.prismaService,
-      typeof dto.job_function_code === 'string'
-        ? [dto.job_function_code]
-        : undefined,
-      dto.specialty_codes ? [...new Set(dto.specialty_codes)] : undefined,
+      dto.job_function_code,
+      dto.specialty_code,
     );
+
+    // The specialty a subspecialty must belong to: the one being set (or the
+    // existing one when this PATCH doesn't touch specialty).
+    const effectiveSpecialtyId =
+      dto.specialty_code !== undefined
+        ? (resolved.specialty?.id ?? null)
+        : profile.specialty_id;
+
+    // Resolve the subspecialty set to sync (undefined = leave untouched).
+    let subspecialtyIdsToSync: string[] | undefined;
+    if (dto.subspecialty_codes !== undefined) {
+      const subs = await resolveSubspecialties(
+        this.prismaService,
+        dto.subspecialty_codes,
+        effectiveSpecialtyId,
+      );
+      subspecialtyIdsToSync = subs.map((s) => s.id);
+    } else if (
+      dto.specialty_code !== undefined &&
+      (resolved.specialty?.id ?? null) !== profile.specialty_id
+    ) {
+      // Specialty changed but subspecialties weren't sent — the old ones can't
+      // survive a parent change, so clear them to avoid orphaned/mismatched links.
+      subspecialtyIdsToSync = [];
+    }
 
     if (dto.schedule?.length) {
       const effectiveBranchIds =
@@ -601,9 +626,14 @@ export class StaffService {
         profileUpdate.role = { connect: { id: roleId } };
       }
       if (dto.job_function_code !== undefined) {
-        const jf = resolved.jobFunctions[0];
+        const jf = resolved.jobFunction;
         profileUpdate.job_function = jf
           ? { connect: { id: jf.id } }
+          : { disconnect: true };
+      }
+      if (dto.specialty_code !== undefined) {
+        profileUpdate.specialty = resolved.specialty
+          ? { connect: { id: resolved.specialty.id } }
           : { disconnect: true };
       }
       if (Object.keys(profileUpdate).length > 0) {
@@ -639,11 +669,11 @@ export class StaffService {
         );
       }
 
-      if (dto.specialty_codes !== undefined) {
-        await syncProfileSpecialties(
+      if (subspecialtyIdsToSync !== undefined) {
+        await syncProfileSubspecialties(
           tx,
           staffProfileId,
-          resolved.specialties.map((s) => s.id),
+          subspecialtyIdsToSync,
         );
       }
 

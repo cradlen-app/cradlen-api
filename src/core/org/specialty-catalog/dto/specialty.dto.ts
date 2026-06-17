@@ -12,9 +12,17 @@ export class JourneyTemplateInSpecialtyDto {
   episodes!: EpisodeTemplateDto[];
 }
 
+export class SubspecialtyLookupDto {
+  code!: string;
+  name!: string;
+  /** Parent specialty code. */
+  specialty_code!: string;
+}
+
 export class SpecialtyLookupDto {
   code!: string;
   name!: string;
+  subspecialties!: { code: string; name: string }[];
 }
 
 export class SpecialtyDto {
@@ -23,4 +31,5 @@ export class SpecialtyDto {
   code!: string;
   description!: string | null;
   templates!: JourneyTemplateInSpecialtyDto[];
+  subspecialties!: { id: string; code: string; name: string }[];
 }

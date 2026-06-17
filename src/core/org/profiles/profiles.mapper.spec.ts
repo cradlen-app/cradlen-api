@@ -58,8 +58,9 @@ const detail: ProfileDetail = {
     name: 'OB/GYN',
     is_clinical: true,
   },
-  specialty_links: [
-    { specialty: { id: 'spec-1', code: 'OBGYN', name: 'OB/GYN' } },
+  specialty: { id: 'spec-1', code: 'OBGYN', name: 'OB/GYN' },
+  subspecialty_links: [
+    { subspecialty: { id: 'sub-1', code: 'REI', name: 'Infertility' } },
   ],
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 } as any;
@@ -123,8 +124,21 @@ describe('toProfileDetail', () => {
           is_main: true,
         },
       ],
-      job_function: { id: 'jf-1', code: 'OBGYN', name: 'OB/GYN', is_clinical: true },
-      specialties: [{ id: 'spec-1', code: 'OBGYN', name: 'OB/GYN' }],
+      job_function: {
+        id: 'jf-1',
+        code: 'OBGYN',
+        name: 'OB/GYN',
+        is_clinical: true,
+      },
+      specialty: { id: 'spec-1', code: 'OBGYN', name: 'OB/GYN' },
+      subspecialties: [
+        {
+          id: 'sub-1',
+          code: 'REI',
+          name: 'Infertility',
+          specialty_code: 'OBGYN',
+        },
+      ],
     });
   });
 

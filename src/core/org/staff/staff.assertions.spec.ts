@@ -6,6 +6,8 @@ import {
   assertRolesExist,
   assertScheduleBranches,
   assertShiftTimes,
+  resolveJobFunctionAndSpecialty,
+  resolveSubspecialties,
 } from './staff.assertions';
 
 const branchId = '11111111-1111-1111-1111-111111111111';
@@ -119,6 +121,92 @@ describe('assertRolesExist', () => {
     await expect(
       assertRolesExist(prisma, ['owner-role-id']),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('resolveJobFunctionAndSpecialty', () => {
+  function prisma(opts: {
+    jobFunction?: unknown;
+    specialty?: unknown;
+  }): PrismaService {
+    return {
+      db: {
+        jobFunction: {
+          findFirst: jest.fn().mockResolvedValue(opts.jobFunction ?? null),
+        },
+        specialty: {
+          findFirst: jest.fn().mockResolvedValue(opts.specialty ?? null),
+        },
+      },
+    } as unknown as PrismaService;
+  }
+
+  it('returns nulls when no codes are supplied', async () => {
+    const result = await resolveJobFunctionAndSpecialty(prisma({}));
+    expect(result).toEqual({ jobFunction: null, specialty: null });
+  });
+
+  it('throws when the specialty code is unknown', async () => {
+    await expect(
+      resolveJobFunctionAndSpecialty(prisma({}), undefined, 'BOGUS'),
+    ).rejects.toThrow(/Unknown specialty_code/);
+  });
+
+  it('resolves a known specialty', async () => {
+    const specialty = { id: 'spec-1', code: 'OBGYN' };
+    const result = await resolveJobFunctionAndSpecialty(
+      prisma({ specialty }),
+      undefined,
+      'OBGYN',
+    );
+    expect(result.specialty).toBe(specialty);
+  });
+});
+
+describe('resolveSubspecialties', () => {
+  function prismaWithSubs(rows: { code: string; specialty_id: string }[]) {
+    return {
+      db: {
+        subspecialty: { findMany: jest.fn().mockResolvedValue(rows) },
+      },
+    } as unknown as PrismaService;
+  }
+
+  it('returns [] without querying when no codes are supplied', async () => {
+    const db = prismaWithSubs([]);
+    await expect(resolveSubspecialties(db, undefined, 'spec-1')).resolves.toEqual(
+      [],
+    );
+    expect(
+      (db as unknown as { db: { subspecialty: { findMany: jest.Mock } } }).db
+        .subspecialty.findMany,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('throws when subspecialties are given without a specialty', async () => {
+    await expect(
+      resolveSubspecialties(prismaWithSubs([]), ['REI'], null),
+    ).rejects.toThrow(/require a specialty/);
+  });
+
+  it('throws when a subspecialty code is unknown', async () => {
+    await expect(
+      resolveSubspecialties(prismaWithSubs([]), ['REI'], 'spec-1'),
+    ).rejects.toThrow(/Unknown subspecialty_codes/);
+  });
+
+  it('throws when a subspecialty belongs to a different specialty (parent invariant)', async () => {
+    const db = prismaWithSubs([{ code: 'REI', specialty_id: 'other-spec' }]);
+    await expect(
+      resolveSubspecialties(db, ['REI'], 'spec-1'),
+    ).rejects.toThrow(/do not belong to the selected specialty/);
+  });
+
+  it('resolves subspecialties that belong to the specialty', async () => {
+    const rows = [{ code: 'REI', specialty_id: 'spec-1' }];
+    await expect(
+      resolveSubspecialties(prismaWithSubs(rows), ['REI'], 'spec-1'),
+    ).resolves.toEqual(rows);
   });
 });
 

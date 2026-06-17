@@ -9,9 +9,15 @@ import {
 } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
-import type { JobFunction, Specialty, User } from '@prisma/client';
+import type {
+  JobFunction,
+  Specialty,
+  Subspecialty,
+  User,
+} from '@prisma/client';
 import { ERROR_CODES } from '@common/constant/error-codes.js';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
+import { resolveSubspecialties } from '@core/org/staff/staff.assertions.js';
 import authConfig, { type AuthConfig } from '@config/auth.config.js';
 import type { RegistrationStep } from '../dto/registration-status-response.dto.js';
 import type { ResendOtpDto } from '../dto/resend-otp.dto.js';
@@ -201,17 +207,27 @@ export class SignupService {
     const jobFunctions = await this.resolveJobFunctions(
       dto.job_function_code ? [dto.job_function_code] : [],
     );
-    // Silent-skip on unmatched entries: the M2M is the source of truth and
-    // onboarding should not hard-fail on a stale specialty label.
-    // `specialties` describes what the organization offers; `practitioner_specialties`
-    // are the owner's own clinical specialties, set only when they also practice.
+    // Silent-skip on unmatched org entries: the offering list should not
+    // hard-fail onboarding on a stale specialty label. `specialties` describes
+    // what the organization offers; `practitioner_specialty_code` is the owner's
+    // own single primary specialty, set only when they also practice.
     const orgSpecialties = await this.specialtiesService.resolveByCodeOrName(
       dto.specialties,
     );
-    const practitionerSpecialties =
-      await this.specialtiesService.resolveByCodeOrName(
-        dto.practitioner_specialties ?? [],
-      );
+    const practitionerSpecialty = dto.practitioner_specialty_code
+      ? ((
+          await this.specialtiesService.resolveByCodeOrName([
+            dto.practitioner_specialty_code,
+          ])
+        )[0] ?? null)
+      : null;
+    // Subspecialties are validated strictly (must exist and belong to the
+    // owner's specialty) — they are new and fully FE-controlled.
+    const practitionerSubspecialties = await resolveSubspecialties(
+      this.prismaService,
+      dto.practitioner_subspecialty_codes,
+      practitionerSpecialty?.id ?? null,
+    );
 
     const [ownerRole, freePlan] = await Promise.all([
       this.findRole('OWNER'),
@@ -230,7 +246,8 @@ export class SignupService {
       dto,
       jobFunctions,
       orgSpecialties,
-      practitionerSpecialties,
+      practitionerSpecialty,
+      practitionerSubspecialties,
       ownerRoleId: ownerRole.id,
       freePlanId: freePlan.id,
       trialEndsAt,
@@ -344,7 +361,8 @@ export class SignupService {
     dto: SignupCompleteDto;
     jobFunctions: JobFunction[];
     orgSpecialties: Specialty[];
-    practitionerSpecialties: Specialty[];
+    practitionerSpecialty: Specialty | null;
+    practitionerSubspecialties: Subspecialty[];
     ownerRoleId: string;
     freePlanId: string;
     trialEndsAt: Date;
@@ -354,7 +372,8 @@ export class SignupService {
       dto,
       jobFunctions,
       orgSpecialties,
-      practitionerSpecialties,
+      practitionerSpecialty,
+      practitionerSubspecialties,
       ownerRoleId,
       freePlanId,
       trialEndsAt,
@@ -405,6 +424,9 @@ export class SignupService {
           engagement_type: dto.engagement_type ?? 'FULL_TIME',
           role_id: ownerRoleId,
           job_function_id: jobFunctions[0]?.id ?? null,
+          // The owner's own primary specialty (only when they practice) —
+          // distinct from the organization's offered specialties above.
+          specialty_id: practitionerSpecialty?.id ?? null,
           // Link the owner to the main branch so they appear in the branch-scoped
           // staff list and stats; without this the owner is silently excluded.
           branches: {
@@ -412,12 +434,10 @@ export class SignupService {
               { organization_id: organization.id, branch_id: branch.id },
             ],
           },
-          // The owner's own clinical specialties (only when they practice) —
-          // distinct from the organization's offered specialties above.
-          specialty_links: practitionerSpecialties.length
+          subspecialty_links: practitionerSubspecialties.length
             ? {
-                create: practitionerSpecialties.map((s) => ({
-                  specialty_id: s.id,
+                create: practitionerSubspecialties.map((s) => ({
+                  subspecialty_id: s.id,
                 })),
               }
             : undefined,

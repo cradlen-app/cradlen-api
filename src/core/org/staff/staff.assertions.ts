@@ -1,12 +1,12 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { JobFunction, Specialty } from '@prisma/client';
+import { JobFunction, Specialty, Subspecialty } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import type { BranchScheduleDto } from './dto/staff.dto.js';
 import { hhmmToMinutes } from './shift-time.helpers.js';
 
 export interface ResolvedAccess {
-  jobFunctions: JobFunction[];
-  specialties: Specialty[];
+  jobFunction: JobFunction | null;
+  specialty: Specialty | null;
 }
 
 export async function assertBranchesInOrganization(
@@ -87,38 +87,76 @@ export function assertShiftTimes(schedule: BranchScheduleDto[]): void {
   }
 }
 
-export async function resolveJobFunctionsAndSpecialties(
+/**
+ * Resolve a profile's single job function + single primary specialty by code.
+ * Both are optional (non-clinical staff may have neither). Throws on an unknown
+ * code. Subspecialties resolve separately via {@link resolveSubspecialties}.
+ */
+export async function resolveJobFunctionAndSpecialty(
   prisma: PrismaService,
-  jobFunctionCodes?: string[],
-  specialtyCodes?: string[],
+  jobFunctionCode?: string | null,
+  specialtyCode?: string | null,
 ): Promise<ResolvedAccess> {
-  const [jobFunctions, specialties] = await Promise.all([
-    jobFunctionCodes && jobFunctionCodes.length
-      ? prisma.db.jobFunction.findMany({
-          where: { code: { in: jobFunctionCodes } },
+  const [jobFunction, specialty] = await Promise.all([
+    jobFunctionCode
+      ? prisma.db.jobFunction.findFirst({ where: { code: jobFunctionCode } })
+      : Promise.resolve(null),
+    specialtyCode
+      ? prisma.db.specialty.findFirst({
+          where: { code: specialtyCode, is_deleted: false },
         })
-      : Promise.resolve([] as JobFunction[]),
-    specialtyCodes && specialtyCodes.length
-      ? prisma.db.specialty.findMany({
-          where: { code: { in: specialtyCodes }, is_deleted: false },
-        })
-      : Promise.resolve([] as Specialty[]),
+      : Promise.resolve(null),
   ]);
 
-  if (jobFunctionCodes && jobFunctions.length !== jobFunctionCodes.length) {
-    const found = new Set(jobFunctions.map((jf) => jf.code));
-    const missing = jobFunctionCodes.filter((c) => !found.has(c));
+  if (jobFunctionCode && !jobFunction) {
     throw new BadRequestException(
-      `Unknown job_function_codes: ${missing.join(', ')}`,
+      `Unknown job_function_code: ${jobFunctionCode}`,
     );
   }
-  if (specialtyCodes && specialties.length !== specialtyCodes.length) {
-    const found = new Set(specialties.map((s) => s.code));
-    const missing = specialtyCodes.filter((c) => !found.has(c));
-    throw new BadRequestException(
-      `Unknown specialty_codes: ${missing.join(', ')}`,
-    );
+  if (specialtyCode && !specialty) {
+    throw new BadRequestException(`Unknown specialty_code: ${specialtyCode}`);
   }
 
-  return { jobFunctions, specialties };
+  return { jobFunction, specialty };
+}
+
+/**
+ * Resolve subspecialty codes to their catalog rows, enforcing the parent
+ * invariant: a subspecialty can only be assigned when a specialty is set, and
+ * every resolved subspecialty must belong to that specialty.
+ *
+ * @param specialtyId the profile's effective specialty id (the one being set,
+ *   or the existing one on an update that doesn't touch specialty).
+ */
+export async function resolveSubspecialties(
+  prisma: PrismaService,
+  subspecialtyCodes: string[] | undefined,
+  specialtyId: string | null | undefined,
+): Promise<Subspecialty[]> {
+  const codes = [...new Set(subspecialtyCodes ?? [])];
+  if (codes.length === 0) return [];
+  if (!specialtyId) {
+    throw new BadRequestException(
+      'subspecialty_codes require a specialty to be set',
+    );
+  }
+  const rows = await prisma.db.subspecialty.findMany({
+    where: { code: { in: codes }, is_deleted: false },
+  });
+  const found = new Set(rows.map((r) => r.code));
+  const missing = codes.filter((c) => !found.has(c));
+  if (missing.length) {
+    throw new BadRequestException(
+      `Unknown subspecialty_codes: ${missing.join(', ')}`,
+    );
+  }
+  const mismatched = rows.filter((r) => r.specialty_id !== specialtyId);
+  if (mismatched.length) {
+    throw new BadRequestException(
+      `Subspecialties do not belong to the selected specialty: ${mismatched
+        .map((r) => r.code)
+        .join(', ')}`,
+    );
+  }
+  return rows;
 }

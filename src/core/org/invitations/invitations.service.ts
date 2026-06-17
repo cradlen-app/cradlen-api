@@ -22,7 +22,8 @@ import {
   assertRolesExist,
   assertScheduleBranches,
   assertShiftTimes,
-  resolveJobFunctionsAndSpecialties,
+  resolveJobFunctionAndSpecialty,
+  resolveSubspecialties,
 } from '../staff/staff.assertions.js';
 import type {
   AcceptInvitationDto,
@@ -139,10 +140,6 @@ export class InvitationsService {
   ) {
     const roleId = dto.role_id;
     const uniqueBranchIds = [...new Set(dto.branch_ids)];
-    const jobFunctionCodes = dto.job_function_code
-      ? [dto.job_function_code]
-      : [];
-    const specialtyCodes = [...new Set(dto.specialty_codes ?? [])];
 
     await Promise.all([
       assertBranchesInOrganization(
@@ -153,12 +150,16 @@ export class InvitationsService {
       assertRolesExist(this.prismaService, [roleId]),
     ]);
 
-    const { jobFunctions, specialties } =
-      await resolveJobFunctionsAndSpecialties(
-        this.prismaService,
-        jobFunctionCodes,
-        specialtyCodes,
-      );
+    const { jobFunction, specialty } = await resolveJobFunctionAndSpecialty(
+      this.prismaService,
+      dto.job_function_code,
+      dto.specialty_code,
+    );
+    const subspecialties = await resolveSubspecialties(
+      this.prismaService,
+      dto.subspecialty_codes,
+      specialty?.id ?? null,
+    );
 
     const { rawToken, tokenHash, expiresAt } = generateInvitationToken(
       this.authConfig,
@@ -167,8 +168,9 @@ export class InvitationsService {
     return {
       roleId,
       uniqueBranchIds,
-      jobFunctions,
-      specialties,
+      jobFunction,
+      specialty,
+      subspecialties,
       rawToken,
       tokenHash,
       expiresAt,
@@ -200,12 +202,17 @@ export class InvitationsService {
           organization_id: organizationId,
         })),
       },
-      job_function: prepared.jobFunctions[0]
-        ? { connect: { id: prepared.jobFunctions[0].id } }
+      job_function: prepared.jobFunction
+        ? { connect: { id: prepared.jobFunction.id } }
         : undefined,
-      specialty_links: prepared.specialties.length
+      specialty: prepared.specialty
+        ? { connect: { id: prepared.specialty.id } }
+        : undefined,
+      subspecialty_links: prepared.subspecialties.length
         ? {
-            create: prepared.specialties.map((s) => ({ specialty_id: s.id })),
+            create: prepared.subspecialties.map((s) => ({
+              subspecialty_id: s.id,
+            })),
           }
         : undefined,
     };
@@ -341,6 +348,7 @@ export class InvitationsService {
         deleted_at: null,
         role_id: invitation.role_id,
         job_function_id: invitation.job_function_id,
+        specialty_id: invitation.specialty_id,
         executive_title: invitation.executive_title,
         professional_title: invitation.professional_title,
         engagement_type: invitation.engagement_type,
@@ -350,6 +358,7 @@ export class InvitationsService {
         organization_id: invitation.organization_id,
         role_id: invitation.role_id,
         job_function_id: invitation.job_function_id,
+        specialty_id: invitation.specialty_id,
         executive_title: invitation.executive_title,
         professional_title: invitation.professional_title,
         engagement_type: invitation.engagement_type,
@@ -548,11 +557,11 @@ export class InvitationsService {
         })),
         skipDuplicates: true,
       }),
-      invitation.specialty_links.length
-        ? tx.profileSpecialty.createMany({
-            data: invitation.specialty_links.map((item) => ({
+      invitation.subspecialty_links.length
+        ? tx.profileSubspecialty.createMany({
+            data: invitation.subspecialty_links.map((item) => ({
               profile_id: profileId,
-              specialty_id: item.specialty_id,
+              subspecialty_id: item.subspecialty_id,
             })),
             skipDuplicates: true,
           })

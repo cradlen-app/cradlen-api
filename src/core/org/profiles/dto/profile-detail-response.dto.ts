@@ -24,7 +24,13 @@ export class ProfileDetailResponseDto {
     name: string;
     is_clinical: boolean;
   } | null;
-  specialties!: { id: string; code: string; name: string }[];
+  specialty!: { id: string; code: string; name: string } | null;
+  subspecialties!: {
+    id: string;
+    code: string;
+    name: string;
+    specialty_code: string;
+  }[];
   /** Short-lived presigned GET URL for the avatar, or null when none. */
   profile_image_url!: string | null;
 }

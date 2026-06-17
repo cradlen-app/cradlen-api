@@ -59,18 +59,25 @@ const baseInvitation: InvitationFull = {
   ],
   job_function_id: 'jf-1',
   job_function: { id: 'jf-1', code: 'NURSE', name: 'Nurse', is_clinical: true },
-  specialty_links: [
+  specialty_id: 'spec-1',
+  specialty: {
+    id: 'spec-1',
+    code: 'OBGYN',
+    name: 'OB/GYN',
+    is_deleted: false,
+    deleted_at: null,
+    created_at: new Date(),
+    updated_at: new Date(),
+  },
+  subspecialty_links: [
     {
       invitation_id: 'inv-1',
-      specialty_id: 'spec-1',
-      specialty: {
-        id: 'spec-1',
-        code: 'OBGYN',
-        name: 'OB/GYN',
-        is_deleted: false,
-        deleted_at: null,
-        created_at: new Date(),
-        updated_at: new Date(),
+      subspecialty_id: 'sub-1',
+      subspecialty: {
+        id: 'sub-1',
+        code: 'REI',
+        name: 'Infertility',
+        specialty_id: 'spec-1',
       },
     },
   ],
@@ -94,9 +101,14 @@ describe('toInvitationResponse', () => {
     expect(out.branches).toEqual([
       { id: 'branch-1', name: 'Main', city: 'Cairo', governorate: 'Cairo' },
     ]);
-    expect(out.job_function).toEqual({ id: 'jf-1', code: 'NURSE', name: 'Nurse' });
-    expect(out.specialties).toEqual([
-      { id: 'spec-1', code: 'OBGYN', name: 'OB/GYN' },
+    expect(out.job_function).toEqual({
+      id: 'jf-1',
+      code: 'NURSE',
+      name: 'Nurse',
+    });
+    expect(out.specialty).toEqual({ id: 'spec-1', code: 'OBGYN', name: 'OB/GYN' });
+    expect(out.subspecialties).toEqual([
+      { id: 'sub-1', code: 'REI', name: 'Infertility', specialty_code: 'OBGYN' },
     ]);
     expect('working_schedule' in out).toBe(false);
   });
@@ -150,6 +162,10 @@ describe('toInvitationPreviewResponse', () => {
     expect(out.organization).toEqual({ id: 'org-1', name: 'Cradlen' });
     expect(out.invited_by).toEqual({ first_name: 'Inviter', last_name: 'One' });
     expect(out.role).toEqual({ id: 'role-1', name: 'STAFF' });
-    expect(out.job_function).toEqual({ id: 'jf-1', code: 'NURSE', name: 'Nurse' });
+    expect(out.job_function).toEqual({
+      id: 'jf-1',
+      code: 'NURSE',
+      name: 'Nurse',
+    });
   });
 });

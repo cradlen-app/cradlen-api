@@ -4,4 +4,6 @@ export { SpecialtyDto, SpecialtyLookupDto } from './dto/specialty.dto.js';
 export {
   toSpecialtySummary,
   type SpecialtySummary,
+  toSubspecialtySummary,
+  type SubspecialtySummary,
 } from './specialty-catalog.mapper.js';

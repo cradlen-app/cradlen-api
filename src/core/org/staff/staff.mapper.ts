@@ -17,7 +17,8 @@ export const staffInclude = {
     include: { branch: true },
   },
   job_function: true,
-  specialty_links: { include: { specialty: true } },
+  specialty: true,
+  subspecialty_links: { include: { subspecialty: true } },
   workingSchedules: {
     include: { days: { include: { shifts: true } } },
   },
@@ -53,10 +54,14 @@ export function toStaffResponse(p: StaffProfileWithRelations) {
           is_clinical: p.job_function.is_clinical,
         }
       : null,
-    specialties: p.specialty_links.map((sl) => ({
-      id: sl.specialty.id,
-      code: sl.specialty.code,
-      name: sl.specialty.name,
+    specialty: p.specialty
+      ? { id: p.specialty.id, code: p.specialty.code, name: p.specialty.name }
+      : null,
+    subspecialties: p.subspecialty_links.map((sl) => ({
+      id: sl.subspecialty.id,
+      code: sl.subspecialty.code,
+      name: sl.subspecialty.name,
+      specialty_code: p.specialty?.code ?? '',
     })),
     schedule: p.workingSchedules.map((ws) => ({
       branch_id: ws.branch_id,
