@@ -122,7 +122,8 @@ describe('ProfilesService', () => {
       role: { code: 'STAFF' },
       branches: [],
       job_function: null,
-      specialty_links: [],
+      specialty: null,
+      subspecialty_links: [],
     };
 
     it('rejects when the profile is not owned by the caller', async () => {
@@ -254,7 +255,8 @@ describe('ProfilesService', () => {
       role: { code: 'STAFF' },
       branches: [],
       job_function: null,
-      specialty_links: [],
+      specialty: null,
+      subspecialty_links: [],
     };
 
     it('createImageUploadUrl rejects a profile not owned by the caller', async () => {

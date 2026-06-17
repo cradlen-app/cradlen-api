@@ -273,12 +273,17 @@ describe('SessionsService', () => {
             name: 'OB/GYN',
             is_clinical: true,
           },
-          specialty_links: [
+          specialty: {
+            id: 'spec-1',
+            code: 'OBGYN',
+            name: 'Gynecology',
+          },
+          subspecialty_links: [
             {
-              specialty: {
-                id: 'spec-1',
-                code: 'OBGYN',
-                name: 'Gynecology',
+              subspecialty: {
+                id: 'sub-1',
+                code: 'REI',
+                name: 'Infertility',
               },
             },
           ],
@@ -331,7 +336,15 @@ describe('SessionsService', () => {
             name: 'OB/GYN',
             is_clinical: true,
           },
-          specialties: [{ id: 'spec-1', code: 'OBGYN', name: 'Gynecology' }],
+          specialty: { id: 'spec-1', code: 'OBGYN', name: 'Gynecology' },
+          subspecialties: [
+            {
+              id: 'sub-1',
+              code: 'REI',
+              name: 'Infertility',
+              specialty_code: 'OBGYN',
+            },
+          ],
           profile_image_url: null,
         },
       ],
@@ -796,7 +809,8 @@ describe('SessionsService', () => {
             },
             role: { id: 'role-1', name: 'OWNER' },
             job_function: null,
-            specialty_links: [],
+            specialty: null,
+            subspecialty_links: [],
           },
         ],
       });

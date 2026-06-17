@@ -53,7 +53,31 @@ export class SpecialtyCatalogService {
   findLookup() {
     return this.prismaService.db.specialty.findMany({
       where: { is_deleted: false },
-      select: { code: true, name: true },
+      select: {
+        code: true,
+        name: true,
+        subspecialties: {
+          where: { is_deleted: false },
+          select: { code: true, name: true },
+          orderBy: { name: 'asc' },
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  /**
+   * Subspecialties for dropdowns, optionally filtered to a parent specialty.
+   */
+  subspecialtyLookup(parentCode?: string) {
+    return this.prismaService.db.subspecialty.findMany({
+      where: {
+        is_deleted: false,
+        ...(parentCode
+          ? { specialty: { code: parentCode, is_deleted: false } }
+          : {}),
+      },
+      select: { code: true, name: true, specialty: { select: { code: true } } },
       orderBy: { name: 'asc' },
     });
   }
@@ -83,6 +107,11 @@ export class SpecialtyCatalogService {
               select: { id: true, name: true, order: true },
             },
           },
+        },
+        subspecialties: {
+          where: { is_deleted: false },
+          select: { id: true, code: true, name: true },
+          orderBy: { name: 'asc' },
         },
       },
     });

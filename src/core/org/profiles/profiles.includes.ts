@@ -27,9 +27,10 @@ export const PROFILE_DETAIL_INCLUDE = {
     include: { branch: true },
   },
   job_function: true,
-  specialty_links: {
-    where: { specialty: { is_deleted: false } },
-    include: { specialty: true },
+  specialty: true,
+  subspecialty_links: {
+    where: { subspecialty: { is_deleted: false } },
+    include: { subspecialty: true },
   },
 } satisfies Prisma.ProfileInclude;
 

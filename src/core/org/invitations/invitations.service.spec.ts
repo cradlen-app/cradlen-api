@@ -55,7 +55,9 @@ describe('InvitationsService.acceptInvitation', () => {
     role: { id: 'role-1', name: 'STAFF' },
     job_function_id: null,
     job_function: null,
-    specialty_links: [],
+    specialty_id: null,
+    specialty: null,
+    subspecialty_links: [],
     invited_by: {
       id: 'user-inv-1',
       first_name: 'Inviter',
@@ -86,7 +88,7 @@ describe('InvitationsService.acceptInvitation', () => {
         findFirst: jest.fn(),
       },
       profileBranch: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
-      profileSpecialty: {
+      profileSubspecialty: {
         createMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       // $transaction: forward to the callback with the same db handle
