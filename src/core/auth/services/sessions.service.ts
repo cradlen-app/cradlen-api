@@ -314,6 +314,7 @@ export class SessionsService {
       last_name: user.last_name,
       email: user.email,
       phone_number: user.phone_number,
+      date_of_birth: user.date_of_birth,
       is_active: user.is_active,
       verified_at: user.verified_at,
       created_at: user.created_at,
