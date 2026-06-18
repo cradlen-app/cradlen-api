@@ -11,6 +11,7 @@ import { ConfigType } from '@nestjs/config';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { StorageService } from '@infrastructure/storage/storage.service.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
+import { resolveSubspecialties } from '@core/org/staff/staff.assertions.js';
 import {
   SpecialtyCatalogService,
   toSpecialtySummary,
@@ -292,12 +293,42 @@ export class OrganizationsService {
     }
   }
 
+  /** Resolves a JobFunction by code, 400ing on an unknown code. */
+  private async resolveJobFunction(code: string) {
+    const jobFunction = await this.prismaService.db.jobFunction.findUnique({
+      where: { code },
+    });
+    if (!jobFunction) {
+      throw new BadRequestException(`Unknown job_function_code: ${code}`);
+    }
+    return jobFunction;
+  }
+
   async createOrganization(userId: string, dto: CreateOrganizationDto) {
     await this.subscriptionsService.assertOrganizationLimit(userId);
 
     const specialtyRows = await this.specialtiesService.resolveByCodeOrName(
       dto.specialties ?? [],
       { validate: true },
+    );
+
+    // The owner's own job function / specialty / subspecialties — set only when
+    // they also practice as a doctor. Mirrors the signup-complete flow so the
+    // standalone "create organization" page can offer the same owner fields.
+    const jobFunction = dto.job_function_code
+      ? await this.resolveJobFunction(dto.job_function_code)
+      : null;
+    const practitionerSpecialty = dto.practitioner_specialty_code
+      ? ((
+          await this.specialtiesService.resolveByCodeOrName([
+            dto.practitioner_specialty_code,
+          ])
+        )[0] ?? null)
+      : null;
+    const practitionerSubspecialties = await resolveSubspecialties(
+      this.prismaService,
+      dto.practitioner_subspecialty_codes,
+      practitionerSpecialty?.id ?? null,
     );
 
     const [ownerRole, freePlan] = await Promise.all([
@@ -327,6 +358,14 @@ export class OrganizationsService {
           freePlanId: freePlan.id,
           trialEndsAt,
           specialties: specialtyRows,
+          owner: {
+            executiveTitle: dto.executive_title ?? null,
+            professionalTitle: dto.professional_title ?? null,
+            engagementType: dto.engagement_type ?? 'FULL_TIME',
+            jobFunctionId: jobFunction?.id ?? null,
+            practitionerSpecialtyId: practitionerSpecialty?.id ?? null,
+            practitionerSubspecialties,
+          },
         }),
       );
 
