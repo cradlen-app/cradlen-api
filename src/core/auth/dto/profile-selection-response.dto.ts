@@ -11,6 +11,20 @@ class SelectableBranchDto {
   is_main!: boolean;
 }
 
+class SelectableJobFunctionDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  code!: string;
+
+  @ApiProperty()
+  name!: string;
+
+  @ApiProperty()
+  is_clinical!: boolean;
+}
+
 class SelectableProfileDto {
   @ApiProperty()
   profile_id!: string;
@@ -23,6 +37,13 @@ class SelectableProfileDto {
 
   @ApiProperty()
   role!: string;
+
+  @ApiProperty({
+    type: SelectableJobFunctionDto,
+    required: false,
+    nullable: true,
+  })
+  job_function!: SelectableJobFunctionDto | null;
 
   @ApiProperty({ type: [SelectableBranchDto] })
   branches!: SelectableBranchDto[];
