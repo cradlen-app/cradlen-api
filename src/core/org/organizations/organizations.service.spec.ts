@@ -56,6 +56,8 @@ describe('OrganizationsService', () => {
         createMany: jest.fn(),
       },
       role: { findUnique: jest.fn() },
+      jobFunction: { findUnique: jest.fn() },
+      subspecialty: { findMany: jest.fn() },
       subscriptionPlan: { findUnique: jest.fn() },
       profile: { findMany: jest.fn(), count: jest.fn() },
       branch: { updateMany: jest.fn() },
@@ -227,6 +229,70 @@ describe('OrganizationsService', () => {
           },
         },
       });
+    });
+
+    it('persists owner-profile fields when the owner also practices as a doctor', async () => {
+      const tx = wireHappyPath();
+      db.jobFunction.findUnique.mockResolvedValue({
+        id: 'jf-id',
+        code: 'DOCTOR',
+      });
+      db.subspecialty.findMany.mockResolvedValue([
+        { id: 'sub-id', code: 'REI', specialty_id: 'spec-uuid', is_deleted: false },
+      ]);
+
+      await service.createOrganization(USER_ID, {
+        organization_name: 'Clinic',
+        specialties: ['OBGYN'],
+        branch_name: 'Main',
+        branch_address: '1 St',
+        branch_city: 'Cairo',
+        branch_governorate: 'Cairo',
+        executive_title: 'CEO',
+        job_function_code: 'DOCTOR',
+        practitioner_specialty_code: 'OBGYN',
+        practitioner_subspecialty_codes: ['REI'],
+        professional_title: 'Consultant',
+      });
+
+      expect(db.jobFunction.findUnique).toHaveBeenCalledWith({
+        where: { code: 'DOCTOR' },
+      });
+      const profileData = tx.profile.create.mock.calls[0][0].data;
+      expect(profileData).toMatchObject({
+        executive_title: 'CEO',
+        professional_title: 'Consultant',
+        engagement_type: 'FULL_TIME',
+        job_function_id: 'jf-id',
+        specialty_id: 'spec-uuid',
+      });
+      expect(profileData.subspecialty_links).toEqual({
+        create: [{ subspecialty_id: 'sub-id' }],
+      });
+    });
+
+    it('leaves owner-profile fields unset for a purely administrative owner', async () => {
+      const tx = wireHappyPath();
+
+      await service.createOrganization(USER_ID, {
+        organization_name: 'Clinic',
+        specialties: ['OBGYN'],
+        branch_name: 'Main',
+        branch_address: '1 St',
+        branch_city: 'Cairo',
+        branch_governorate: 'Cairo',
+      });
+
+      expect(db.jobFunction.findUnique).not.toHaveBeenCalled();
+      const profileData = tx.profile.create.mock.calls[0][0].data;
+      expect(profileData).toMatchObject({
+        executive_title: null,
+        professional_title: null,
+        engagement_type: 'FULL_TIME',
+        job_function_id: null,
+        specialty_id: null,
+      });
+      expect(profileData.subspecialty_links).toBeUndefined();
     });
 
     it('throws 500 when the OWNER role is not seeded', async () => {

@@ -1,5 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsOptional, IsString, MinLength } from 'class-validator';
+import { EngagementType, ExecutiveTitle } from '@prisma/client';
+import { Transform } from 'class-transformer';
+import {
+  IsArray,
+  IsEnum,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 import { BranchInputFieldsDto } from '@core/org/branches/dto/branch-input-fields.dto.js';
 
 export class CreateOrganizationDto extends BranchInputFieldsDto {
@@ -17,4 +26,71 @@ export class CreateOrganizationDto extends BranchInputFieldsDto {
   @IsArray()
   @IsString({ each: true })
   specialties?: string[];
+
+  @ApiPropertyOptional({
+    description:
+      "The owner's own primary clinical specialty (code or name), set only when the owner also practices as a doctor. Distinct from `specialties`, which describes what the organization offers.",
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @MinLength(1)
+  practitioner_specialty_code?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      "The owner's own subspecialties (codes), each of which must belong to `practitioner_specialty_code`.",
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    Array.isArray(value)
+      ? value.map((item: unknown) =>
+          typeof item === 'string' ? item.trim() : item,
+        )
+      : value,
+  )
+  @IsArray()
+  @IsString({ each: true })
+  @MinLength(1, { each: true })
+  practitioner_subspecialty_codes?: string[];
+
+  @ApiPropertyOptional({
+    description:
+      'JobFunction code (e.g. "DOCTOR"). Drives staff filtering and function-aware authorization. Must exist in the JobFunction table.',
+  })
+  @IsOptional()
+  @IsString()
+  job_function_code?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Free-text professional title shown on the profile (e.g. "استشاري النساء والتوليد"). Display/governance only — does not drive authorization or filtering.',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @MaxLength(120)
+  professional_title?: string;
+
+  @ApiPropertyOptional({
+    enum: ExecutiveTitle,
+    description:
+      'C-suite title at this organization. Display/governance only — does not grant permissions.',
+  })
+  @IsOptional()
+  @IsEnum(ExecutiveTitle)
+  executive_title?: ExecutiveTitle;
+
+  @ApiPropertyOptional({
+    enum: EngagementType,
+    description: 'Engagement model. Defaults to FULL_TIME if omitted.',
+  })
+  @IsOptional()
+  @IsEnum(EngagementType)
+  engagement_type?: EngagementType;
 }
