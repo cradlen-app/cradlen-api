@@ -247,6 +247,7 @@ export class StaffService {
       clinical,
       doctors_only: doctorsOnly,
       specialty_code: specialtyCode,
+      subspecialty_code: subspecialtyCode,
       authorized_for_service: authorizedForService,
       search,
       job_function_codes: jobFunctionCodes,
@@ -307,6 +308,14 @@ export class StaffService {
     if (specialtyCode) {
       // Subspecialists match too: their profile's specialty IS the parent.
       where.specialty = { code: specialtyCode, is_deleted: false };
+    }
+    // Narrow to doctors who hold a given subspecialty (via the
+    // ProfileSubspecialty join). Powers the book-visit subspecialty filter; an
+    // empty value leaves the list at the specialty level.
+    if (subspecialtyCode) {
+      where.subspecialty_links = {
+        some: { subspecialty: { code: subspecialtyCode } },
+      };
     }
     // Narrow to providers authorized (active ProviderService) for a service —
     // at this branch or org-wide. Powers the service-scoped book-visit doctor
