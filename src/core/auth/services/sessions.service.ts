@@ -29,6 +29,12 @@ export interface SelectableProfile {
   organization_id: string;
   organization_name: string;
   role: string;
+  job_function: {
+    id: string;
+    code: string;
+    name: string;
+    is_clinical: boolean;
+  } | null;
   branches: {
     branch_id: string;
     name: string;
@@ -431,6 +437,7 @@ export class SessionsService {
       include: {
         organization: true,
         role: true,
+        job_function: true,
       },
       orderBy: { created_at: 'asc' },
     });
@@ -511,6 +518,14 @@ export class SessionsService {
         organization_id: profile.organization.id,
         organization_name: profile.organization.name,
         role: profile.role.code,
+        job_function: profile.job_function
+          ? {
+              id: profile.job_function.id,
+              code: profile.job_function.code,
+              name: profile.job_function.name,
+              is_clinical: profile.job_function.is_clinical,
+            }
+          : null,
         branches: branches.map((b) => ({
           branch_id: b.id,
           name: b.name,
