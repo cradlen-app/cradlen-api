@@ -131,6 +131,12 @@ describe('SessionsService', () => {
           name: 'Clinic',
         },
         role: { code: 'OWNER', name: 'OWNER' },
+        job_function: {
+          id: '66666666-6666-4666-8666-666666666666',
+          code: 'DOCTOR',
+          name: 'Doctor',
+          is_clinical: true,
+        },
       },
     ]);
     mocks.getEffectiveBranchIds.mockResolvedValue([
@@ -159,6 +165,12 @@ describe('SessionsService', () => {
           organization_id: '33333333-3333-4333-8333-333333333333',
           organization_name: 'Clinic',
           role: 'OWNER',
+          job_function: {
+            id: '66666666-6666-4666-8666-666666666666',
+            code: 'DOCTOR',
+            name: 'Doctor',
+            is_clinical: true,
+          },
           branches: [
             {
               branch_id: '44444444-4444-4444-8444-444444444444',
