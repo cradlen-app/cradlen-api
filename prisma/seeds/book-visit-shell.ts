@@ -16,7 +16,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import type { Predicate } from '../../src/builder/rules/predicates.js';
 
 const TEMPLATE_CODE = 'book_visit';
-const TEMPLATE_VERSION = 17;
+const TEMPLATE_VERSION = 18;
 
 interface FieldSpec {
   code: string;
@@ -87,21 +87,31 @@ const SECTIONS: SectionSpec[] = [
         },
       },
       {
-        code: 'care_path_code',
-        label: 'Care path',
+        // Subspecialty is the receptionist's "visit reason" within the
+        // specialty (e.g. Obstetrics vs Gynecology). It is the primary
+        // examination-template discriminator (the doctor side resolves the exam
+        // template from visit.subspecialty_code, falling back to specialty_code)
+        // and narrows the doctor picker below. Bound to VISIT (NOT a SYSTEM
+        // discriminator) so the discriminator-reset clears it when specialty
+        // changes — a stale systemValue would otherwise corrupt the filter.
+        // Care path is no longer chosen here: the doctor sets it at examination.
+        code: 'subspecialty_code',
+        label: 'Subspecialty',
         type: 'SELECT',
-        binding: { namespace: 'VISIT', path: 'care_path_code' },
+        binding: { namespace: 'VISIT', path: 'subspecialty_code' },
         config: {
-          i18n: { ar: { label: 'المسار العلاجي' } },
+          i18n: { ar: { label: 'التخصص الدقيق' } },
           ui: {
-            optionsSource: '/v1/care-paths?specialtyCode={specialty_code}',
-            default: { kind: 'first_option' },
+            optionsSource:
+              '/v1/specialties/subspecialties/lookup?parent_code={specialty_code}',
+            // Self-hides when the chosen specialty has no subspecialties, so a
+            // general/single-specialty org never sees an empty dropdown.
+            hideWhenNoOptions: true,
           },
           logic: {
-            // Not flagged is_discriminator: the discriminator-reset hook only
-            // watches systemValues. A VISIT-bound discriminator would be wiped
-            // by its own reset and loop. When a downstream section needs to
-            // gate on care_path_code, use a regular `when` predicate.
+            // Optional (not required): only relevant when the specialty has
+            // subspecialties; the exam template falls back to specialty_code
+            // when it's absent.
             predicates: [
               { effect: 'visible', when: { eq: { visitor_type: 'PATIENT' } } },
             ] satisfies Predicate[],
@@ -208,11 +218,12 @@ const SECTIONS: SectionSpec[] = [
         config: {
           i18n: { ar: { label: 'الطبيب المعالج' } },
           ui: {
-            // `{service_id?}` is optional: when no billable service is chosen the
-            // param is empty and the endpoint returns all specialty doctors; once
-            // a service is picked the list narrows to providers authorized for it.
+            // `{subspecialty_code?}` and `{service_id?}` are optional: an empty
+            // subspecialty returns all specialty doctors; once a subspecialty is
+            // chosen the list narrows to doctors who hold it. Likewise picking a
+            // service narrows to providers authorized for it.
             optionsSource:
-              '/v1/organizations/{org_id}/branches/{branch_id}/staff?doctors_only=true&specialty_code={specialty_code}&authorized_for_service={service_id?}',
+              '/v1/organizations/{org_id}/branches/{branch_id}/staff?doctors_only=true&specialty_code={specialty_code}&subspecialty_code={subspecialty_code?}&authorized_for_service={service_id?}',
             default: { kind: 'first_option' },
             prefillFrom: 'assigned_doctor_id',
           },
@@ -324,7 +335,6 @@ const SECTIONS: SectionSpec[] = [
                 date_of_birth: 'date_of_birth',
                 address: 'address',
                 marital_status: 'marital_status',
-                care_path_code: 'active_care_path_code',
               },
             },
           },
