@@ -71,6 +71,19 @@ export class AuthController {
     return this.sessionsService.getMe(user.userId, user.profileId);
   }
 
+  @Get('profiles')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      "List the authenticated user's selectable profiles with a fresh selection token",
+    description:
+      'Returns the same profile_selection payload as login, scoped to the current user. Used to refresh the workspace switcher after creating or joining an organization.',
+  })
+  @ApiStandardResponse(ProfileSelectionResponseDto)
+  listSelectableProfiles(@CurrentUser() user: AuthContext) {
+    return this.sessionsService.buildProfileSelectionResponse(user.userId);
+  }
+
   @Post('ws-ticket')
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
