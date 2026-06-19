@@ -1,8 +1,18 @@
-import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@common/decorators/current-user.decorator.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import { ApiStandardResponse } from '@common/swagger/index.js';
+import { PermissionGuard } from '@common/guards/permission.guard.js';
+import { RequirePermission } from '@common/decorators/require-permission.decorator.js';
+import { PERMISSIONS } from '@common/authorization/permission-matrix.js';
 import { ReportingService } from './reporting.service.js';
 import { ReportQueryDto } from './dto/report-query.dto.js';
 import { DailyRevenueReportDto } from './dto/daily-revenue.dto.js';
@@ -16,6 +26,11 @@ import { InvoiceStatsReportDto } from './dto/invoice-stats.dto.js';
 @ApiTags('Financial — Reports')
 @ApiBearerAuth()
 @Controller('organizations/:orgId/financial/reports')
+// Coarse reports-surface gate (owner / branch-manager / accountant, plus a
+// clinician viewing their own revenue). The org-wide-vs-branch-vs-own scoping
+// is resolved per-request by `resolveDoctorScope` in the service layer.
+@UseGuards(PermissionGuard)
+@RequirePermission(PERMISSIONS.financialViewReportsNav)
 export class ReportingController {
   constructor(private readonly reportingService: ReportingService) {}
 

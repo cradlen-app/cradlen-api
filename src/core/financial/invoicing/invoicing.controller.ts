@@ -10,6 +10,7 @@ import {
   Patch,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@common/decorators/current-user.decorator.js';
@@ -19,6 +20,9 @@ import {
   ApiStandardResponse,
   ApiVoidResponse,
 } from '@common/swagger/index.js';
+import { PermissionGuard } from '@common/guards/permission.guard.js';
+import { RequirePermission } from '@common/decorators/require-permission.decorator.js';
+import { PERMISSIONS } from '@common/authorization/permission-matrix.js';
 import { InvoicingService } from './invoicing.service.js';
 import {
   CreateInvoiceDto,
@@ -33,6 +37,11 @@ import { InvoiceResponseDto } from './dto/invoice-response.dto.js';
 @ApiTags('Financial — Invoices')
 @ApiBearerAuth()
 @Controller('organizations/:orgId/invoices')
+// Coarse billing-surface gate matching the frontend Financial nav (owner /
+// branch-manager / receptionist / accountant). Branch scoping and the
+// per-action `assertCanRunBillingAction` checks stay in the service layer.
+@UseGuards(PermissionGuard)
+@RequirePermission(PERMISSIONS.financialRead)
 export class InvoicingController {
   constructor(private readonly invoicingService: InvoicingService) {}
 

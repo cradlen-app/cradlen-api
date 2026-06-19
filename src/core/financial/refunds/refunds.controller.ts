@@ -8,11 +8,15 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@common/decorators/current-user.decorator.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import { ApiStandardResponse } from '@common/swagger/index.js';
+import { PermissionGuard } from '@common/guards/permission.guard.js';
+import { RequirePermission } from '@common/decorators/require-permission.decorator.js';
+import { PERMISSIONS } from '@common/authorization/permission-matrix.js';
 import { RefundsService } from './refunds.service.js';
 import { CreateRefundDto } from './dto/create-refund.dto.js';
 import { ListRefundsQueryDto } from './dto/list-refunds-query.dto.js';
@@ -21,6 +25,10 @@ import { RefundResponseDto } from './dto/refund-response.dto.js';
 @ApiTags('Financial — Refunds')
 @ApiBearerAuth()
 @Controller('organizations/:orgId/refunds')
+// Coarse billing-surface gate (owner / branch-manager / receptionist /
+// accountant). Branch scoping stays in the service layer.
+@UseGuards(PermissionGuard)
+@RequirePermission(PERMISSIONS.financialRefund)
 export class RefundsController {
   constructor(private readonly refundsService: RefundsService) {}
 

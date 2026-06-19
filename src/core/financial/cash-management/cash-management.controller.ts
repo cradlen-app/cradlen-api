@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@common/decorators/current-user.decorator.js';
@@ -16,6 +17,9 @@ import {
   ApiPaginatedResponse,
   ApiStandardResponse,
 } from '@common/swagger/index.js';
+import { PermissionGuard } from '@common/guards/permission.guard.js';
+import { RequirePermission } from '@common/decorators/require-permission.decorator.js';
+import { PERMISSIONS } from '@common/authorization/permission-matrix.js';
 import { CashManagementService } from './cash-management.service.js';
 import { OpenCashSessionDto } from './dto/open-cash-session.dto.js';
 import { CloseCashSessionDto } from './dto/close-cash-session.dto.js';
@@ -26,6 +30,11 @@ import { CashSessionResponseDto } from './dto/cash-session-response.dto.js';
 @ApiTags('Financial — Cash Management')
 @ApiBearerAuth()
 @Controller('organizations/:orgId/financial/cash-sessions')
+// Coarse cash-surface gate (owner / branch-manager / receptionist /
+// accountant). The finer rules — branch scoping, and accountant/manager-only
+// reconcile (segregation of duties) — stay in the service layer.
+@UseGuards(PermissionGuard)
+@RequirePermission(PERMISSIONS.financialManageCash)
 export class CashManagementController {
   constructor(private readonly cashManagementService: CashManagementService) {}
 

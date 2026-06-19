@@ -10,6 +10,7 @@ import {
   Patch,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@common/decorators/current-user.decorator.js';
@@ -19,6 +20,9 @@ import {
   ApiStandardResponse,
   ApiVoidResponse,
 } from '@common/swagger/index.js';
+import { PermissionGuard } from '@common/guards/permission.guard.js';
+import { RequirePermission } from '@common/decorators/require-permission.decorator.js';
+import { PERMISSIONS } from '@common/authorization/permission-matrix.js';
 import { CatalogCategoryService } from './category.service.js';
 import { CreateServiceCategoryDto } from './dto/create-service-category.dto.js';
 import { UpdateServiceCategoryDto } from './dto/update-service-category.dto.js';
@@ -28,6 +32,9 @@ import { ListServiceCategoriesQueryDto } from './dto/list-service-categories-que
 @ApiTags('Financial — Catalog')
 @ApiBearerAuth()
 @Controller('organizations/:orgId/financial/catalog/categories')
+// Owner-only catalog administration (matches `financial.manageCatalog`). Only
+// mutations are gated; the GET read stays open for billing staff.
+@UseGuards(PermissionGuard)
 export class CategoryController {
   constructor(private readonly categoryService: CatalogCategoryService) {}
 
@@ -50,6 +57,7 @@ export class CategoryController {
   }
 
   @Post()
+  @RequirePermission(PERMISSIONS.financialManageCatalog)
   @ApiStandardResponse(ServiceCategoryResponseDto)
   create(
     @Param('orgId', ParseUUIDPipe) orgId: string,
@@ -60,6 +68,7 @@ export class CategoryController {
   }
 
   @Patch(':id')
+  @RequirePermission(PERMISSIONS.financialManageCatalog)
   @ApiStandardResponse(ServiceCategoryResponseDto)
   update(
     @Param('orgId', ParseUUIDPipe) orgId: string,
@@ -71,6 +80,7 @@ export class CategoryController {
   }
 
   @Delete(':id')
+  @RequirePermission(PERMISSIONS.financialManageCatalog)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiVoidResponse()
   remove(

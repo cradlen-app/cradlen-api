@@ -7,11 +7,15 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@common/decorators/current-user.decorator.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import { ApiStandardResponse } from '@common/swagger/index.js';
+import { PermissionGuard } from '@common/guards/permission.guard.js';
+import { RequirePermission } from '@common/decorators/require-permission.decorator.js';
+import { PERMISSIONS } from '@common/authorization/permission-matrix.js';
 import { PaymentsService } from './payments.service.js';
 import { RecordPaymentDto } from './dto/record-payment.dto.js';
 import { PaymentResponseDto } from './dto/payment-response.dto.js';
@@ -20,6 +24,10 @@ import { PaymentResultDto } from './dto/payment-result.dto.js';
 @ApiTags('Financial — Payments')
 @ApiBearerAuth()
 @Controller('organizations/:orgId/invoices/:invoiceId/payments')
+// Coarse billing-surface gate (owner / branch-manager / receptionist /
+// accountant). Branch scoping stays in the service layer.
+@UseGuards(PermissionGuard)
+@RequirePermission(PERMISSIONS.financialRead)
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
