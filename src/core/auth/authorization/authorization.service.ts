@@ -6,7 +6,10 @@ import {
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 
 const ORGANIZATION_MANAGER_ROLES = ['OWNER'];
-const BRANCH_MANAGER_ROLES = ['OWNER'];
+// Owners manage any branch; branch managers manage the branches they belong to.
+// `canManageBranch` additionally requires a matching `ProfileBranch` row for
+// non-owners, so this stays scoped to a manager's own branch(es).
+const BRANCH_MANAGER_ROLES = ['OWNER', 'BRANCH_MANAGER'];
 const STAFF_MANAGER_ROLES = ['OWNER', 'BRANCH_MANAGER'];
 const STAFF_VIEWER_ROLES = ['OWNER', 'BRANCH_MANAGER'];
 const STAFF_VIEWER_JOB_FUNCTIONS = ['RECEPTIONIST'];

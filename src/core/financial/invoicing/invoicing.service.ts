@@ -194,7 +194,7 @@ export class InvoicingService {
     dto: CreateInvoiceDto,
     user: AuthContext,
   ) {
-    await this.access.assertIsReceptionistOrOwner(user, organizationId);
+    await this.access.assertCanRunBillingAction(user, organizationId);
     await this.authorizationService.assertCanAccessBranch(
       user.profileId,
       organizationId,
@@ -288,7 +288,7 @@ export class InvoicingService {
     dto: UpdateInvoiceDto,
     user: AuthContext,
   ) {
-    await this.access.assertIsReceptionistOrOwner(user, organizationId);
+    await this.access.assertCanRunBillingAction(user, organizationId);
     const invoice = await this.composition.findOneOrThrow(
       organizationId,
       invoiceId,

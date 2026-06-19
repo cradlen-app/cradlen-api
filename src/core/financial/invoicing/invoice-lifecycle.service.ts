@@ -28,7 +28,7 @@ export class InvoiceLifecycleService {
   ) {}
 
   async issue(organizationId: string, invoiceId: string, user: AuthContext) {
-    await this.access.assertIsReceptionistOrOwner(user, organizationId);
+    await this.access.assertCanRunBillingAction(user, organizationId);
     return this.issueSystem(organizationId, invoiceId, user.profileId);
   }
 

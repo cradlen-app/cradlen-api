@@ -38,7 +38,7 @@ export class PaymentsService {
     dto: RecordPaymentDto,
     user: AuthContext,
   ) {
-    await this.access.assertIsReceptionistOrOwner(user, organizationId);
+    await this.access.assertCanRunBillingAction(user, organizationId);
     const invoice = await this.findInvoiceOrThrow(organizationId, invoiceId);
 
     if (invoice.status === InvoiceStatus.VOID) {
