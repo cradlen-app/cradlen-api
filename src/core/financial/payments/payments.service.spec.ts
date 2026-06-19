@@ -25,7 +25,7 @@ const mockAuth = {
   assertCanAccessBranch: jest.fn(),
   assertCanManageBranch: jest.fn(),
 };
-const mockAccess = { assertIsReceptionistOrOwner: jest.fn() };
+const mockAccess = { assertCanRunBillingAction: jest.fn() };
 const mockBalance = { recompute: jest.fn() };
 const mockEventBus = { publish: jest.fn() };
 
@@ -92,7 +92,7 @@ describe('PaymentsService', () => {
         USER,
       );
 
-      expect(mockAccess.assertIsReceptionistOrOwner).toHaveBeenCalledWith(
+      expect(mockAccess.assertCanRunBillingAction).toHaveBeenCalledWith(
         USER,
         ORG,
       );

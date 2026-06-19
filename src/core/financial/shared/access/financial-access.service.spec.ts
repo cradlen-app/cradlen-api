@@ -37,7 +37,7 @@ describe('FinancialAccessService', () => {
 
   it('passes an OWNER acting within their own organization', async () => {
     await expect(
-      service.assertIsReceptionistOrOwner(
+      service.assertCanRunBillingAction(
         ctx({ role: 'OWNER', organizationId: ORG }),
         ORG,
       ),
@@ -50,24 +50,25 @@ describe('FinancialAccessService', () => {
     // Token belongs to org-2; path org is org-1. The OWNER role must not leak.
     mockDb.profile.findFirst.mockResolvedValue(null);
     await expect(
-      service.assertIsReceptionistOrOwner(
+      service.assertCanRunBillingAction(
         ctx({ role: 'OWNER', organizationId: 'org-2' }),
         ORG,
       ),
     ).rejects.toThrow(BadRequestException);
   });
 
-  it('passes a RECEPTIONIST scoped to the organization', async () => {
+  it('passes a RECEPTIONIST or ACCOUNTANT scoped to the organization', async () => {
+    // The job_function `{ code: { in: [...] } }` filter covers both billing roles.
     mockDb.profile.findFirst.mockResolvedValue({ id: 'jf-1' });
     await expect(
-      service.assertIsReceptionistOrOwner(ctx({ role: 'STAFF' }), ORG),
+      service.assertCanRunBillingAction(ctx({ role: 'STAFF' }), ORG),
     ).resolves.toBeUndefined();
   });
 
-  it('rejects a non-owner non-receptionist', async () => {
+  it('rejects a non-owner without a billing job function', async () => {
     mockDb.profile.findFirst.mockResolvedValue(null);
     await expect(
-      service.assertIsReceptionistOrOwner(ctx({ role: 'STAFF' }), ORG),
+      service.assertCanRunBillingAction(ctx({ role: 'STAFF' }), ORG),
     ).rejects.toThrow(BadRequestException);
   });
 

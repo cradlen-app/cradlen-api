@@ -193,11 +193,7 @@ export class CashManagementService {
     user: AuthContext,
   ) {
     const session = await this.findSessionOrThrow(organizationId, sessionId);
-    await this.authorizationService.assertCanManageBranch(
-      user.profileId,
-      organizationId,
-      session.branch_id,
-    );
+    await this.assertCanReconcile(user, organizationId, session.branch_id);
     if (session.status !== CashSessionStatus.CLOSED) {
       throw new BadRequestException('Only CLOSED sessions can be reconciled');
     }
@@ -299,6 +295,33 @@ export class CashManagementService {
       payment_count: count,
       expected_so_far: Money.add(session.opening_float, collected),
     };
+  }
+
+  /**
+   * Who may reconcile a closed drawer: a back-office ACCOUNTANT scoped to a
+   * branch they belong to (reconciliation is core accounting work), or anyone
+   * with branch-management authority (owner / branch manager). The cashier role
+   * (receptionist) is intentionally excluded — they operate the drawer; someone
+   * else verifies it (segregation of duties).
+   */
+  private async assertCanReconcile(
+    user: AuthContext,
+    organizationId: string,
+    branchId: string,
+  ): Promise<void> {
+    if (user.jobFunction === 'ACCOUNTANT') {
+      await this.authorizationService.assertCanAccessBranch(
+        user.profileId,
+        organizationId,
+        branchId,
+      );
+      return;
+    }
+    await this.authorizationService.assertCanManageBranch(
+      user.profileId,
+      organizationId,
+      branchId,
+    );
   }
 
   private async findSessionOrThrow(organizationId: string, sessionId: string) {
