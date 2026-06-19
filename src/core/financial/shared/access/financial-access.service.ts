@@ -2,16 +2,20 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 
+/** Job functions that may run cashier-style billing actions (besides OWNER). */
+const BILLING_JOB_FUNCTIONS = ['RECEPTIONIST', 'ACCOUNTANT'];
+
 /**
  * Front-desk billing gate shared across the invoicing / payments / refunds
- * sub-modules: an OWNER, or a RECEPTIONIST within the organization, may run
- * cashier-style actions (create invoices, record payments, …).
+ * sub-modules: an OWNER, or a RECEPTIONIST / ACCOUNTANT within the organization,
+ * may run cashier-style actions (create invoices, record payments, …). Mirrors
+ * the web client's `canAccessBilling` predicate.
  */
 @Injectable()
 export class FinancialAccessService {
   constructor(private readonly prismaService: PrismaService) {}
 
-  async assertIsReceptionistOrOwner(
+  async assertCanRunBillingAction(
     user: AuthContext,
     organizationId: string,
   ): Promise<void> {
@@ -22,19 +26,19 @@ export class FinancialAccessService {
       return;
     }
 
-    const receptionist = await this.prismaService.db.profile.findFirst({
+    const billingStaff = await this.prismaService.db.profile.findFirst({
       where: {
         id: user.profileId,
         organization_id: organizationId,
         is_deleted: false,
-        job_function: { code: 'RECEPTIONIST' },
+        job_function: { code: { in: BILLING_JOB_FUNCTIONS } },
       },
       select: { id: true },
     });
 
-    if (!receptionist) {
+    if (!billingStaff) {
       throw new BadRequestException(
-        'Only RECEPTIONISTs or OWNERs can perform this action',
+        'Only RECEPTIONISTs, ACCOUNTANTs, or OWNERs can perform this action',
       );
     }
   }

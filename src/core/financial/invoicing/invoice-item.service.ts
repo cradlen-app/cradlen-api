@@ -26,7 +26,7 @@ export class InvoiceItemService {
     dto: InvoiceItemInputDto,
     user: AuthContext,
   ) {
-    await this.access.assertIsReceptionistOrOwner(user, organizationId);
+    await this.access.assertCanRunBillingAction(user, organizationId);
     const invoice = await this.composition.findOneOrThrow(
       organizationId,
       invoiceId,
@@ -81,7 +81,7 @@ export class InvoiceItemService {
     itemId: string,
     user: AuthContext,
   ) {
-    await this.access.assertIsReceptionistOrOwner(user, organizationId);
+    await this.access.assertCanRunBillingAction(user, organizationId);
     const invoice = await this.composition.findOneOrThrow(
       organizationId,
       invoiceId,
