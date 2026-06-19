@@ -1123,20 +1123,17 @@ describe('VisitsService', () => {
 
       expect(db.carePath.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
-          orderBy: [
-            { subspecialty_id: { sort: 'desc', nulls: 'last' } },
-            { organization_id: { sort: 'desc', nulls: 'last' } },
-          ],
+          orderBy: [{ organization_id: { sort: 'desc', nulls: 'last' } }],
         }),
       );
     });
 
-    it('reuses the active journey by template, not care_path_id, to avoid duplicates', async () => {
+    it('reuses ANY active journey (single-active invariant), ignoring template/care_path', async () => {
       db.carePath.findFirst.mockResolvedValue(mockCarePath);
       db.patient.findUnique.mockResolvedValue(null);
       db.patient.create.mockResolvedValue(mockPatient);
-      // An active journey exists for this template — even if its care_path_id
-      // differs from the one this booking resolved, it must be reused.
+      // An active journey exists — regardless of its template or care_path_id,
+      // the visit joins it; booking never opens a second journey alongside it.
       db.patientJourney.findFirst.mockResolvedValue(mockJourney);
       db.patientEpisode.findFirst.mockResolvedValue(mockEpisode);
       db.visit.create.mockResolvedValue(mockVisit);
@@ -1144,18 +1141,30 @@ describe('VisitsService', () => {
       await service.bookVisit(baseDto, mockUser);
 
       expect(db.patientJourney.create).not.toHaveBeenCalled();
+      // The active-journey lookup keys ONLY on patient/org/status — not on
+      // journey_template_id or care_path_id (which would let a divergent path
+      // spawn a duplicate active journey).
       expect(db.patientJourney.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.not.objectContaining({
-            care_path_id: expect.anything(),
+          where: expect.objectContaining({
+            patient_id: 'patient-uuid',
+            organization_id: 'org-uuid',
+            status: 'ACTIVE',
+            is_deleted: false,
           }),
         }),
       );
       expect(db.patientJourney.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({
+          where: expect.not.objectContaining({
             journey_template_id: expect.anything(),
-            status: 'ACTIVE',
+          }),
+        }),
+      );
+      expect(db.patientJourney.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.not.objectContaining({
+            care_path_id: expect.anything(),
           }),
         }),
       );

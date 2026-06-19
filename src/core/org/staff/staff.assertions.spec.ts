@@ -174,9 +174,9 @@ describe('resolveSubspecialties', () => {
 
   it('returns [] without querying when no codes are supplied', async () => {
     const db = prismaWithSubs([]);
-    await expect(resolveSubspecialties(db, undefined, 'spec-1')).resolves.toEqual(
-      [],
-    );
+    await expect(
+      resolveSubspecialties(db, undefined, 'spec-1'),
+    ).resolves.toEqual([]);
     expect(
       (db as unknown as { db: { subspecialty: { findMany: jest.Mock } } }).db
         .subspecialty.findMany,
@@ -197,9 +197,9 @@ describe('resolveSubspecialties', () => {
 
   it('throws when a subspecialty belongs to a different specialty (parent invariant)', async () => {
     const db = prismaWithSubs([{ code: 'REI', specialty_id: 'other-spec' }]);
-    await expect(
-      resolveSubspecialties(db, ['REI'], 'spec-1'),
-    ).rejects.toThrow(/do not belong to the selected specialty/);
+    await expect(resolveSubspecialties(db, ['REI'], 'spec-1')).rejects.toThrow(
+      /do not belong to the selected specialty/,
+    );
   });
 
   it('resolves subspecialties that belong to the specialty', async () => {

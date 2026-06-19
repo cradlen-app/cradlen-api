@@ -261,36 +261,6 @@ export class VisitsService {
     }
   }
 
-  /**
-   * Verifies that the assigned doctor holds the submitted subspecialty (via
-   * `subspecialty_links`). Mirrors {@link assertDoctorSpecialty} — closes the
-   * scripted-client gap when a booking pins a subspecialty.
-   */
-  private async assertDoctorSubspecialty(
-    doctorId: string,
-    subspecialtyCode: string,
-    organizationId: string,
-  ) {
-    const profile = await this.prismaService.db.profile.findFirst({
-      where: {
-        id: doctorId,
-        organization_id: organizationId,
-        is_deleted: false,
-        subspecialty_links: {
-          some: { subspecialty: { code: subspecialtyCode, is_deleted: false } },
-        },
-      },
-      select: { id: true },
-    });
-    if (!profile) {
-      throw new BadRequestException({
-        message: [
-          `assigned_doctor_id does not have subspecialty "${subspecialtyCode}"`,
-        ],
-      });
-    }
-  }
-
   private async assertEpisodeInOrg(episodeId: string, organizationId: string) {
     const episode = await this.prismaService.db.patientEpisode.findUnique({
       where: { id: episodeId, is_deleted: false },
@@ -351,13 +321,6 @@ export class VisitsService {
       dto.specialty_code,
       user.organizationId,
     );
-    if (dto.subspecialty_code) {
-      await this.assertDoctorSubspecialty(
-        dto.assigned_doctor_id,
-        dto.subspecialty_code,
-        user.organizationId,
-      );
-    }
     // Stamp the audit anchor: which shell-template version this visit was
     // booked from. Resolve outside the transaction so a missing template
     // 404s before any writes.
@@ -421,7 +384,6 @@ export class VisitsService {
         dto.specialty_code,
         dto.care_path_code ?? DEFAULT_CARE_PATH_CODE,
         user.organizationId,
-        dto.subspecialty_code,
       );
 
     const result = await this.prismaService.db.$transaction(async (tx) => {
@@ -464,7 +426,6 @@ export class VisitsService {
           created_by_id: user.profileId,
           form_template_id: bookVisitTemplate.id,
           specialty_code: dto.specialty_code,
-          subspecialty_code: dto.subspecialty_code ?? null,
           queue_number: queueNumber,
         },
       });
@@ -576,42 +537,19 @@ export class VisitsService {
     specialtyCode: string,
     carePathCode: string,
     organizationId: string,
-    subspecialtyCode?: string,
   ) {
     const resolvedCarePath = await this.prismaService.db.carePath.findFirst({
       where: {
         code: carePathCode,
         is_deleted: false,
         specialty: { code: specialtyCode, is_deleted: false },
-        AND: [
-          {
-            OR: [
-              { organization_id: null },
-              { organization_id: organizationId },
-            ],
-          },
-          // When a subspecialty is supplied, accept either a care path scoped to
-          // it OR the specialty-level (subspecialty_id null) fallback. Without a
-          // subspecialty, only the specialty-level care path applies.
-          subspecialtyCode
-            ? {
-                OR: [
-                  { subspecialty: { code: subspecialtyCode } },
-                  { subspecialty_id: null },
-                ],
-              }
-            : { subspecialty_id: null },
-        ],
+        OR: [{ organization_id: null }, { organization_id: organizationId }],
       },
-      // Prefer the most specific match deterministically: a subspecialty-scoped
-      // care path wins over the specialty-level one, and an org-specific override
-      // over the global fallback (non-null sorts before null with NULLS LAST).
-      // Without this the same booking could resolve to different care_path_ids,
-      // spawning duplicate active journeys for one journey template.
-      orderBy: [
-        { subspecialty_id: { sort: 'desc', nulls: 'last' } },
-        { organization_id: { sort: 'desc', nulls: 'last' } },
-      ],
+      // Prefer an org-specific override over the global fallback (non-null sorts
+      // before null with NULLS LAST). Without this the same booking could resolve
+      // to different care_path_ids, spawning duplicate active journeys for one
+      // journey template.
+      orderBy: [{ organization_id: { sort: 'desc', nulls: 'last' } }],
       include: {
         journey_template: {
           include: {
@@ -722,42 +660,69 @@ export class VisitsService {
       createdById,
     } = params;
 
-    // Match on the journey template, NOT care_path_id: a patient has at most one
-    // active journey per template (enforced by a partial unique index). Keying on
-    // care_path_id here would let a divergent care path spawn a duplicate active
-    // journey of the same template — the bug this guards against.
-    let journey = await tx.patientJourney.findFirst({
+    // A patient has exactly ONE active journey at a time (sequential, never
+    // concurrent). If one is already open — whatever template/care path it
+    // follows — this visit joins it and inherits its care path. The care path
+    // is a clinical decision the doctor (re)makes in the visit, not a
+    // booking-time pick, so booking never opens a second journey alongside an
+    // active one. (Single-specialty domain: an open journey is always for the
+    // specialty being booked.)
+    const activeJourney = await tx.patientJourney.findFirst({
       where: {
         patient_id: patientId,
         organization_id: organizationId,
-        journey_template_id: template.id,
         status: 'ACTIVE',
         is_deleted: false,
       },
+      orderBy: { started_at: 'desc' },
     });
 
-    if (!journey) {
-      journey = await tx.patientJourney.create({
-        data: {
-          patient_id: patientId,
-          organization_id: organizationId,
-          journey_template_id: template.id,
-          care_path_id: carePathId,
-          created_by_id: createdById,
-          status: 'ACTIVE',
-        },
-      });
-      await tx.patientEpisode.createMany({
-        data: template.episodes.map((ep, index) => ({
-          journey_id: journey!.id,
-          episode_template_id: ep.id,
-          name: ep.name,
-          order: ep.order,
-          status: index === 0 ? ('ACTIVE' as const) : ('PENDING' as const),
-          started_at: index === 0 ? new Date() : null,
-        })),
-      });
+    if (activeJourney) {
+      // Attach to the journey's live surveillance step (its ACTIVE episode);
+      // fall back to the latest episode if none is flagged ACTIVE.
+      const episode =
+        (await tx.patientEpisode.findFirst({
+          where: {
+            journey_id: activeJourney.id,
+            status: 'ACTIVE',
+            is_deleted: false,
+          },
+          orderBy: { order: 'desc' },
+        })) ??
+        (await tx.patientEpisode.findFirst({
+          where: { journey_id: activeJourney.id, is_deleted: false },
+          orderBy: { order: 'desc' },
+        }));
+      if (!episode) {
+        throw new NotFoundException(
+          'Active journey has no episode to attach the visit to',
+        );
+      }
+      return { journey: activeJourney, episode };
     }
+
+    // No active journey → open the provisional default journey (OBGYN_GENERAL)
+    // resolved by the caller; the doctor classifies the real care path in-visit.
+    const journey = await tx.patientJourney.create({
+      data: {
+        patient_id: patientId,
+        organization_id: organizationId,
+        journey_template_id: template.id,
+        care_path_id: carePathId,
+        created_by_id: createdById,
+        status: 'ACTIVE',
+      },
+    });
+    await tx.patientEpisode.createMany({
+      data: template.episodes.map((ep, index) => ({
+        journey_id: journey.id,
+        episode_template_id: ep.id,
+        name: ep.name,
+        order: ep.order,
+        status: index === 0 ? ('ACTIVE' as const) : ('PENDING' as const),
+        started_at: index === 0 ? new Date() : null,
+      })),
+    });
 
     const episode = await tx.patientEpisode.findFirst({
       where: {
@@ -1228,14 +1193,6 @@ export class VisitsService {
       await this.assertDoctorSpecialty(
         finalDoctorId,
         dto.specialty_code,
-        user.organizationId,
-      );
-    }
-    if (dto.subspecialty_code) {
-      const finalDoctorId = dto.assigned_doctor_id ?? visit.assigned_doctor_id;
-      await this.assertDoctorSubspecialty(
-        finalDoctorId,
-        dto.subspecialty_code,
         user.organizationId,
       );
     }

@@ -1089,7 +1089,6 @@ model Subspecialty {
   description   String?
   profile_links ProfileSubspecialty[]
   inv_links     InvitationSubspecialty[]
-  care_paths    CarePath[]
   created_at    DateTime                 @default(now())
   updated_at    DateTime                 @updatedAt
   is_deleted    Boolean                  @default(false)
@@ -1330,9 +1329,6 @@ model Visit {
   // resolver on the frontend (e.g. "OBGYN" → obgyn_patient_history). Nullable
   // for pre-existing rows; new bookings always populate it.
   specialty_code          String?
-  // Subspecialty captured at booking (e.g. "REI"). Optional; when set it scopes
-  // the resolved care path and is re-validated against the doctor on PATCH.
-  subspecialty_code       String?
   // Audit anchor: which form-template version this visit was booked from.
   // Never mutated on update — the original booking's contract is the legal
   // record. SetNull so deleting a template (rare) doesn't cascade visits.
@@ -1780,11 +1776,6 @@ model CarePath {
   id                  String            @id @default(uuid()) @db.Uuid
   specialty_id        String            @db.Uuid
   specialty           Specialty         @relation(fields: [specialty_id], references: [id], onDelete: Cascade)
-  // Optional subspecialty scope. When set, the booking resolver prefers this
-  // care path over the specialty-level (subspecialty_id null) one for the same
-  // code — realizing the specialty → subspecialty → care path → template chain.
-  subspecialty_id     String?           @db.Uuid
-  subspecialty        Subspecialty?     @relation(fields: [subspecialty_id], references: [id], onDelete: SetNull)
   organization_id     String?           @db.Uuid
   organization        Organization?     @relation(fields: [organization_id], references: [id], onDelete: Cascade)
   is_system           Boolean           @default(true)
@@ -1807,10 +1798,9 @@ model CarePath {
   is_deleted          Boolean           @default(false)
   deleted_at          DateTime?
 
-  @@unique([specialty_id, subspecialty_id, organization_id, code], map: "care_paths_scope_code_key")
+  @@unique([specialty_id, organization_id, code], map: "care_paths_scope_code_key")
   @@index([organization_id, specialty_id])
   @@index([journey_template_id])
-  @@index([subspecialty_id])
   @@map("care_paths")
 }
 

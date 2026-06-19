@@ -587,7 +587,6 @@ Table subspecialties {
   description String
   profile_links profile_subspecialties [not null]
   inv_links invitation_subspecialties [not null]
-  care_paths care_paths [not null]
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   is_deleted Boolean [not null, default: false]
@@ -787,7 +786,6 @@ Table visits {
   follow_up_notes String
   examination_version Int [not null, default: 1]
   specialty_code String
-  subspecialty_code String
   form_template_id String
   form_template form_templates
   vitals visit_vitals
@@ -1123,8 +1121,6 @@ Table care_paths {
   id String [pk]
   specialty_id String [not null]
   specialty specialties [not null]
-  subspecialty_id String
-  subspecialty subspecialties
   organization_id String
   organization organizations
   is_system Boolean [not null, default: true]
@@ -1145,7 +1141,7 @@ Table care_paths {
   deleted_at DateTime
 
   indexes {
-    (specialty_id, subspecialty_id, organization_id, code) [unique]
+    (specialty_id, organization_id, code) [unique]
   }
 }
 
@@ -2638,8 +2634,6 @@ Ref: patient_guardians.patient_id > patients.id [delete: Cascade]
 Ref: patient_guardians.guardian_id > guardians.id [delete: Cascade]
 
 Ref: care_paths.specialty_id > specialties.id [delete: Cascade]
-
-Ref: care_paths.subspecialty_id > subspecialties.id [delete: Set Null]
 
 Ref: care_paths.organization_id > organizations.id [delete: Cascade]
 
