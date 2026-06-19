@@ -35,6 +35,14 @@ export const CLINICAL_EVENTS = {
      * ad-hoc string.
      */
     clinicalUpdated: 'journey.clinical.updated',
+    /**
+     * Emitted when the assigned doctor sets/changes the active journey's care
+     * path during a visit (Examination tab `case_path`). The care path is a
+     * clinical decision made in the visit, not at booking — this reclassifies
+     * the journey (`PatientJourney.care_path_id`) and re-drives which
+     * care-path-relevant history sections surface. One event per change.
+     */
+    carePathSet: 'journey.care_path.set',
   },
   episode: {
     opened: 'episode.opened',
@@ -141,11 +149,24 @@ export interface JourneyClinicalUpdatedEvent {
   version: number;
 }
 
+/**
+ * Payload for `journey.care_path.set`. Emitted when the doctor sets/changes the
+ * active journey's care path from the Examination tab.
+ */
+export interface JourneyCarePathSetEvent {
+  journey_id: string;
+  visit_id: string;
+  patient_id: string;
+  previous_care_path_code: string | null;
+  new_care_path_code: string;
+  updated_by_id: string;
+}
+
 export interface VisitExaminationUpdatedEvent {
   visit_id: string;
   /** Aggregates touched in this save. Subset of:
-   * 'encounter' | 'vitals' | 'obgyn_encounter' | 'investigations' |
-   * 'prescription' | 'follow_up_date'.
+   * 'encounter' | 'care_path' | 'vitals' | 'obgyn_encounter' |
+   * 'investigations' | 'prescription' | 'follow_up_date'.
    */
   aggregates: string[];
   updated_by_id: string;
