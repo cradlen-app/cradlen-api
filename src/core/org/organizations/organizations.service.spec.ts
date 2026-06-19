@@ -238,7 +238,12 @@ describe('OrganizationsService', () => {
         code: 'DOCTOR',
       });
       db.subspecialty.findMany.mockResolvedValue([
-        { id: 'sub-id', code: 'REI', specialty_id: 'spec-uuid', is_deleted: false },
+        {
+          id: 'sub-id',
+          code: 'REI',
+          specialty_id: 'spec-uuid',
+          is_deleted: false,
+        },
       ]);
 
       await service.createOrganization(USER_ID, {

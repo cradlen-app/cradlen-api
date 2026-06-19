@@ -32,7 +32,6 @@ export const ALLOWED_PATHS = {
     'branch_id',
     'notes',
     'care_path_code',
-    'subspecialty_code',
     'follow_up_date',
     // Consumed at booking to capture the charge; not persisted on the visit row.
     'service_id',
