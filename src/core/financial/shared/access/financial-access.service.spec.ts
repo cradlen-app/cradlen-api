@@ -46,6 +46,18 @@ describe('FinancialAccessService', () => {
     expect(mockDb.profile.findFirst).not.toHaveBeenCalled();
   });
 
+  it('passes a BRANCH_MANAGER within their own organization (branch-scoped per action)', async () => {
+    await expect(
+      service.assertCanRunBillingAction(
+        ctx({ role: 'BRANCH_MANAGER', organizationId: ORG }),
+        ORG,
+      ),
+    ).resolves.toBeUndefined();
+    // Like OWNER, the manager passes the role gate without a DB lookup; the
+    // per-action assertCanAccessBranch limits them to their branch.
+    expect(mockDb.profile.findFirst).not.toHaveBeenCalled();
+  });
+
   it('rejects an OWNER of a DIFFERENT org acting on this org (cross-tenant)', async () => {
     // Token belongs to org-2; path org is org-1. The OWNER role must not leak.
     mockDb.profile.findFirst.mockResolvedValue(null);
