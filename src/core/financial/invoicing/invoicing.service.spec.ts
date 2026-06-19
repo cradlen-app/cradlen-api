@@ -59,7 +59,7 @@ const mockAuth = {
   assertCanManageOrganization: jest.fn(),
 };
 const mockAccess = {
-  assertIsReceptionistOrOwner: jest.fn(),
+  assertCanRunBillingAction: jest.fn(),
   assertProviderAuthorizedForItems: jest.fn(),
 };
 const mockResolver = { resolvePrice: jest.fn() };
@@ -104,7 +104,7 @@ describe('InvoicingService', () => {
     accrual = module.get(ChargeAccrualService);
     lifecycle = module.get(InvoiceLifecycleService);
     jest.clearAllMocks();
-    mockAccess.assertIsReceptionistOrOwner.mockResolvedValue(undefined);
+    mockAccess.assertCanRunBillingAction.mockResolvedValue(undefined);
     mockAccess.assertProviderAuthorizedForItems.mockResolvedValue(undefined);
     mockAuth.assertCanAccessBranch.mockResolvedValue(undefined);
     mockAuth.assertCanManageOrganization.mockResolvedValue(undefined);
