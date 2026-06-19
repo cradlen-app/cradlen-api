@@ -5,6 +5,7 @@ export {
   type PregnancyBookedEvent,
   type PregnancyRiskLevelChangedEvent,
   type VisitPregnancyRecordUpdatedEvent,
+  type JourneyCarePathSetEvent,
   type VisitExaminationUpdatedEvent,
   type InvestigationResultUploadedEvent,
   type InvestigationReviewedEvent,

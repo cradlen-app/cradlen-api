@@ -106,9 +106,18 @@ describe('toInvitationResponse', () => {
       code: 'NURSE',
       name: 'Nurse',
     });
-    expect(out.specialty).toEqual({ id: 'spec-1', code: 'OBGYN', name: 'OB/GYN' });
+    expect(out.specialty).toEqual({
+      id: 'spec-1',
+      code: 'OBGYN',
+      name: 'OB/GYN',
+    });
     expect(out.subspecialties).toEqual([
-      { id: 'sub-1', code: 'REI', name: 'Infertility', specialty_code: 'OBGYN' },
+      {
+        id: 'sub-1',
+        code: 'REI',
+        name: 'Infertility',
+        specialty_code: 'OBGYN',
+      },
     ]);
     expect('working_schedule' in out).toBe(false);
   });
