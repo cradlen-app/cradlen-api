@@ -223,6 +223,33 @@ describe('CashManagementService', () => {
       );
     });
 
+    it('lets a back-office ACCOUNTANT reconcile within a branch they belong to', async () => {
+      mockDb.cashSession.findFirst.mockResolvedValue({
+        id: 'cs-1',
+        status: CashSessionStatus.CLOSED,
+        branch_id: BRANCH,
+      });
+      mockDb.cashSession.update.mockResolvedValue({
+        id: 'cs-1',
+        branch_id: BRANCH,
+        status: CashSessionStatus.RECONCILED,
+      });
+
+      const accountant: AuthContext = {
+        ...USER,
+        roles: ['STAFF'],
+        jobFunction: 'ACCOUNTANT',
+      };
+      await service.reconcile(ORG, 'cs-1', accountant);
+
+      // Accountants are gated by branch *access*, not branch *management*.
+      expect(mockAuth.assertCanAccessBranch).toHaveBeenCalledWith('p1', ORG, BRANCH);
+      expect(mockAuth.assertCanManageBranch).not.toHaveBeenCalled();
+      expect(mockDb.cashSession.update.mock.calls[0][0].data.status).toBe(
+        CashSessionStatus.RECONCILED,
+      );
+    });
+
     it('rejects reconciling an OPEN session', async () => {
       mockDb.cashSession.findFirst.mockResolvedValue({
         id: 'cs-1',

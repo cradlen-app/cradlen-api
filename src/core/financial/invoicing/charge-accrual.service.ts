@@ -58,7 +58,7 @@ export class ChargeAccrualService {
     dto: BuildInvoiceFromChargesDto,
     user: AuthContext,
   ) {
-    await this.access.assertIsReceptionistOrOwner(user, organizationId);
+    await this.access.assertCanRunBillingAction(user, organizationId);
     await this.authorizationService.assertCanAccessBranch(
       user.profileId,
       organizationId,
@@ -171,7 +171,7 @@ export class ChargeAccrualService {
     dto: AppendChargesDto,
     user: AuthContext,
   ) {
-    await this.access.assertIsReceptionistOrOwner(user, organizationId);
+    await this.access.assertCanRunBillingAction(user, organizationId);
     return this.appendChargesSystem(organizationId, invoiceId, dto.charge_ids);
   }
 
