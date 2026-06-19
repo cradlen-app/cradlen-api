@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
@@ -6,6 +10,7 @@ import { splitDiff } from '@common/utils/id-keyed-diff';
 import { EventBus } from '@infrastructure/messaging/event-bus';
 import {
   CLINICAL_EVENTS,
+  type JourneyCarePathSetEvent,
   type VisitExaminationUpdatedEvent,
 } from '@core/clinical/events/events.public';
 import { PatientAccessService } from '@core/patient/patient-access/patient-access.public';
@@ -108,6 +113,80 @@ export class ObgynExaminationService {
       throw new NotFoundException(`Patient for visit ${visitId} not found`);
     }
     return patientId;
+  }
+
+  /**
+   * Apply the doctor's in-visit care-path choice to the visit's active journey.
+   * The care path is a clinical decision, so the journey (not just the visit's
+   * encounter snapshot) is the source of truth: updating `care_path_id`
+   * re-drives the care-path-relevant history sections and the journey
+   * descriptor. Returns the event payload to publish, or `null` when the journey
+   * already follows this care path (no change). Throws 400 on an unknown code.
+   */
+  private async applyCarePathToJourney(
+    tx: Prisma.TransactionClient,
+    visitId: string,
+    carePathCode: string,
+    organizationId: string,
+    profileId: string,
+  ): Promise<JourneyCarePathSetEvent | null> {
+    const visit = await tx.visit.findUnique({
+      where: { id: visitId },
+      select: {
+        specialty_code: true,
+        episode: {
+          select: {
+            journey: {
+              select: {
+                id: true,
+                patient_id: true,
+                care_path: { select: { code: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    const journey = visit?.episode?.journey;
+    if (!journey) {
+      throw new NotFoundException(`Journey for visit ${visitId} not found`);
+    }
+    const previousCode = journey.care_path?.code ?? null;
+    if (previousCode === carePathCode) return null;
+
+    // Resolve the target care path for the visit's specialty (org ∪ system),
+    // preferring an org-specific override over the global fallback.
+    const carePath = await tx.carePath.findFirst({
+      where: {
+        code: carePathCode,
+        is_deleted: false,
+        ...(visit.specialty_code
+          ? { specialty: { code: visit.specialty_code, is_deleted: false } }
+          : {}),
+        OR: [{ organization_id: null }, { organization_id: organizationId }],
+      },
+      orderBy: [{ organization_id: { sort: 'desc', nulls: 'last' } }],
+      select: { id: true },
+    });
+    if (!carePath) {
+      throw new BadRequestException(
+        `Care path "${carePathCode}" not found for this visit's specialty`,
+      );
+    }
+
+    await tx.patientJourney.update({
+      where: { id: journey.id },
+      data: { care_path_id: carePath.id },
+    });
+
+    return {
+      journey_id: journey.id,
+      visit_id: visitId,
+      patient_id: journey.patient_id,
+      previous_care_path_code: previousCode,
+      new_care_path_code: carePathCode,
+      updated_by_id: profileId,
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -281,6 +360,28 @@ export class ObgynExaminationService {
         if (this.touchesEncounter(dto)) {
           await this.upsertEncounter(tx, visitId, dto, user.profileId);
           aggregates.push('encounter');
+        }
+
+        // ---- (1b) Active journey care path (doctor's in-visit decision) ----
+        // `case_path` is written onto the encounter above for the per-visit
+        // record; here we make the JOURNEY the single source of truth so the
+        // care-path-relevant history sections + journey descriptor follow the
+        // doctor's choice. No-op when unchanged or unset.
+        if (dto.case_path) {
+          const evt = await this.applyCarePathToJourney(
+            tx,
+            visitId,
+            dto.case_path,
+            user.organizationId,
+            user.profileId,
+          );
+          if (evt) {
+            this.eventBus.publish<JourneyCarePathSetEvent>(
+              CLINICAL_EVENTS.journey.carePathSet,
+              evt,
+            );
+            aggregates.push('care_path');
+          }
         }
 
         // ---- (2) VisitVitals (BMI server-recomputed) ----
