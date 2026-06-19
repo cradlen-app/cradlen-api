@@ -80,6 +80,7 @@ export class AuthorizationService {
       activeBranchId,
       role: profile.role.code,
       jobFunction: profile.job_function?.code ?? null,
+      isClinical: profile.job_function?.is_clinical ?? false,
       branchIds,
     };
   }
