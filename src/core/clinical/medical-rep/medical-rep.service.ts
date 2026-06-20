@@ -20,6 +20,22 @@ export type MedicalRepSummary = {
 export class MedicalRepService {
   constructor(private readonly prismaService: PrismaService) {}
 
+  /** Owners and branch managers see every rep in the org. */
+  private isManagerRole(user: AuthContext): boolean {
+    return user.role === 'OWNER' || user.role === 'BRANCH_MANAGER';
+  }
+
+  /**
+   * Rep visibility scope. Managers see all org reps; everyone else (a clinical
+   * doctor) sees only reps they have a visit assigned to them with — a non-doctor
+   * matches nothing, which is the safe default.
+   */
+  private repScopeFilter(user: AuthContext): Prisma.MedicalRepWhereInput {
+    return this.isManagerRole(user)
+      ? {}
+      : { visits: { some: { assigned_doctor_id: user.profileId } } };
+  }
+
   async searchReps(
     user: AuthContext,
     query: { search?: string; page?: number; limit?: number },
@@ -29,6 +45,7 @@ export class MedicalRepService {
     const where: Prisma.MedicalRepWhereInput = {
       organization_id: user.organizationId,
       is_deleted: false,
+      ...this.repScopeFilter(user),
       ...(query.search
         ? {
             OR: [
@@ -67,7 +84,14 @@ export class MedicalRepService {
     const visitStats = repIds.length
       ? await this.prismaService.db.medicalRepVisit.groupBy({
           by: ['medical_rep_id'],
-          where: { medical_rep_id: { in: repIds }, is_deleted: false },
+          where: {
+            medical_rep_id: { in: repIds },
+            is_deleted: false,
+            // A doctor's count/last-visit reflect their OWN visits with the rep.
+            ...(this.isManagerRole(user)
+              ? {}
+              : { assigned_doctor_id: user.profileId }),
+          },
           _count: { _all: true },
           _max: { scheduled_at: true },
         })
@@ -112,7 +136,12 @@ export class MedicalRepService {
 
   async findOne(id: string, user: AuthContext) {
     const rep = await this.prismaService.db.medicalRep.findFirst({
-      where: { id, organization_id: user.organizationId, is_deleted: false },
+      where: {
+        id,
+        organization_id: user.organizationId,
+        is_deleted: false,
+        ...this.repScopeFilter(user),
+      },
     });
     if (!rep) throw new NotFoundException(`Medical rep ${id} not found`);
     return rep;

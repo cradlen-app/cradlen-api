@@ -232,7 +232,7 @@ export class MedicalRepVisitService {
         id: { not: visitId },
         status: 'COMPLETED',
         is_deleted: false,
-        ...this.historyBranchFilter(user),
+        ...this.historyScopeFilter(user),
       },
       query,
     );
@@ -254,7 +254,7 @@ export class MedicalRepVisitService {
         medical_rep_id: repId,
         status: 'COMPLETED',
         is_deleted: false,
-        ...this.historyBranchFilter(user),
+        ...this.historyScopeFilter(user),
       },
       query,
     );
@@ -638,14 +638,18 @@ export class MedicalRepVisitService {
   }
 
   /**
-   * Branch constraint for the rep visit-history timelines. OWNER sees the rep's
-   * visits across every branch; non-owners only the rep's visits at branches
-   * they're assigned to. The rep profile/products stay org-wide either way.
+   * Scope constraint for the rep visit-history timelines:
+   * - OWNER sees the rep's visits across every branch;
+   * - BRANCH_MANAGER sees the rep's visits at branches they're assigned to;
+   * - everyone else (a clinical doctor) sees only the visits assigned to them.
+   * The rep profile/products stay org-wide either way.
    */
-  private historyBranchFilter(
+  private historyScopeFilter(
     user: AuthContext,
   ): Prisma.MedicalRepVisitWhereInput {
-    return user.role === 'OWNER' ? {} : { branch_id: { in: user.branchIds } };
+    if (user.role === 'OWNER') return {};
+    if (user.role === 'BRANCH_MANAGER') return { branch_id: { in: user.branchIds } };
+    return { assigned_doctor_id: user.profileId };
   }
 
   private async assertBranchInOrg(branchId: string, organizationId: string) {

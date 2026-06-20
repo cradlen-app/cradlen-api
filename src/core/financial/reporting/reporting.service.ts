@@ -684,9 +684,11 @@ export class ReportingService {
    * Authorize the request and return the provider id that every query must be
    * filtered by (or `undefined` for an unrestricted, all-providers view).
    *
-   * - Managers (owner / branch manager) get the full picture: a branch request is
-   *   gated by branch access; an org-wide (no branch) request is owner-only. Their
-   *   optional `doctorId` is honored as a drill-down filter.
+   * - Full-report viewers (owner / branch manager / back-office accountant) get
+   *   the full picture: a branch request is gated by branch access; an org-wide
+   *   (no branch) request is owner-only — so a branch manager or accountant is
+   *   effectively limited to their assigned branch(es). Their optional `doctorId`
+   *   is honored as a drill-down filter.
    * - Everyone else is a single provider: the request must name an accessible
    *   branch, the caller must be clinical, and the filter is forced to their own
    *   profile id — any client-supplied `doctorId` is ignored. This is what keeps a
@@ -697,10 +699,14 @@ export class ReportingService {
     scope: ReportScope,
     user: AuthContext,
   ): Promise<string | undefined> {
-    const isManager = await this.authorizationService.canViewAllFinancials(
-      user.profileId,
-      organizationId,
-    );
+    // Owners / branch managers (role) plus back-office accountants (job function)
+    // see all providers within their scope. The org-wide (no-branch) branch below
+    // stays owner-only, so accountants/managers can't pull org-wide totals.
+    const isManager =
+      (await this.authorizationService.canViewAllFinancials(
+        user.profileId,
+        organizationId,
+      )) || user.jobFunction === 'ACCOUNTANT';
 
     if (isManager) {
       if (scope.branchId) {

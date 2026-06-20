@@ -293,6 +293,12 @@ export class InvoicingService {
       organizationId,
       invoiceId,
     );
+    // Branch-scope the mutation to the invoice's branch (owners pass org-wide).
+    await this.authorizationService.assertCanAccessBranch(
+      user.profileId,
+      organizationId,
+      invoice.branch_id,
+    );
     this.composition.assertDraft(invoice);
 
     // Re-validate doctor↔service authorization when items change — the effective

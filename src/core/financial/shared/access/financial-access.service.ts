@@ -7,9 +7,11 @@ const BILLING_JOB_FUNCTIONS = ['RECEPTIONIST', 'ACCOUNTANT'];
 
 /**
  * Front-desk billing gate shared across the invoicing / payments / refunds
- * sub-modules: an OWNER, or a RECEPTIONIST / ACCOUNTANT within the organization,
- * may run cashier-style actions (create invoices, record payments, …). Mirrors
- * the web client's `canAccessBilling` predicate.
+ * sub-modules: an OWNER or BRANCH_MANAGER, or a RECEPTIONIST / ACCOUNTANT within
+ * the organization, may run cashier-style actions (create invoices, record
+ * payments, …). Branch managers are further limited to their own branch(es) by
+ * the per-action `assertCanAccessBranch` guard at each mutation site. Mirrors the
+ * web client's `canAccessBilling` predicate.
  */
 @Injectable()
 export class FinancialAccessService {
@@ -19,10 +21,15 @@ export class FinancialAccessService {
     user: AuthContext,
     organizationId: string,
   ): Promise<void> {
-    // The OWNER short-circuit must be scoped to the caller's own organization —
-    // `user.role` is the role for the token's active org, so an OWNER of one
-    // org must not pass this gate for a different org in the route param.
-    if (user.role === 'OWNER' && user.organizationId === organizationId) {
+    // The OWNER / BRANCH_MANAGER short-circuit must be scoped to the caller's own
+    // organization — `user.role` is the role for the token's active org, so a
+    // manager of one org must not pass this gate for a different org in the route
+    // param. Branch managers are limited to their own branch(es) by the
+    // per-action `assertCanAccessBranch` call at each mutation site, not here.
+    if (
+      (user.role === 'OWNER' || user.role === 'BRANCH_MANAGER') &&
+      user.organizationId === organizationId
+    ) {
       return;
     }
 

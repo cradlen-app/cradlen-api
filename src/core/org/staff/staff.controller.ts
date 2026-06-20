@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@common/decorators/current-user.decorator.js';
@@ -18,6 +19,9 @@ import {
   ApiStandardResponse,
   ApiVoidResponse,
 } from '@common/swagger/index.js';
+import { PermissionGuard } from '@common/guards/permission.guard.js';
+import { RequirePermission } from '@common/decorators/require-permission.decorator.js';
+import { PERMISSIONS } from '@common/authorization/permission-matrix.js';
 import {
   CreateStaffDto,
   CreateStaffResponseDto,
@@ -32,10 +36,14 @@ import { StaffService } from './staff.service.js';
 @ApiTags('Staff')
 @ApiBearerAuth()
 @Controller('organizations/:organizationId/branches/:branchId/staff')
+// Coarse capability gate matching the frontend `staff.*` nav/route. Per-branch
+// scoping + owner-only privileged-role rules stay in the service layer.
+@UseGuards(PermissionGuard)
 export class StaffController {
   constructor(private readonly staffService: StaffService) {}
 
   @Post()
+  @RequirePermission(PERMISSIONS.staffManage)
   @ApiOperation({
     summary: 'Directly create a staff member in a branch',
     description:
@@ -57,6 +65,7 @@ export class StaffController {
   }
 
   @Get()
+  @RequirePermission(PERMISSIONS.staffRead)
   @ApiOperation({ summary: 'List active staff assigned to a branch' })
   @ApiPaginatedResponse(StaffResponseDto)
   listStaff(
@@ -74,6 +83,7 @@ export class StaffController {
   }
 
   @Get('stats')
+  @RequirePermission(PERMISSIONS.staffRead)
   @ApiOperation({
     summary: 'Branch staff analytics (total + per-role + clinical, with trend)',
     description:
@@ -93,6 +103,7 @@ export class StaffController {
   }
 
   @Patch(':staffProfileId')
+  @RequirePermission(PERMISSIONS.staffManage)
   @ApiOperation({ summary: 'Update a staff member within a branch' })
   @ApiStandardResponse(StaffResponseDto)
   updateStaff(
@@ -112,6 +123,7 @@ export class StaffController {
   }
 
   @Post(':staffProfileId/reset-password')
+  @RequirePermission(PERMISSIONS.staffManage)
   @HttpCode(204)
   @ApiOperation({
     summary: "Reset a staff member's password",
@@ -136,6 +148,7 @@ export class StaffController {
   }
 
   @Delete(':staffProfileId')
+  @RequirePermission(PERMISSIONS.staffManage)
   @HttpCode(204)
   @ApiOperation({
     summary: 'Remove a staff member from a branch',

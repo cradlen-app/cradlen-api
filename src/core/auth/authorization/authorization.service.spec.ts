@@ -263,6 +263,7 @@ describe('AuthorizationService.getProfileContext', () => {
       activeBranchId: 'b1',
       role: 'OWNER',
       jobFunction: null,
+      isClinical: false,
       branchIds: ['b1', 'b2'],
     });
     expect(profile.findFirst).toHaveBeenCalledTimes(1);
