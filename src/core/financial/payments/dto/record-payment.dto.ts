@@ -4,13 +4,16 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Max,
   Min,
 } from 'class-validator';
 import { PaymentMethod } from '@prisma/client';
+import { MAX_MONETARY_AMOUNT } from '../../shared/money/money.js';
 
 export class RecordPaymentDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0.01)
+  @Max(MAX_MONETARY_AMOUNT)
   amount!: number;
 
   @IsString()

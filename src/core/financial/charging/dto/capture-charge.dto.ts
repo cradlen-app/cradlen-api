@@ -8,8 +8,10 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   Min,
 } from 'class-validator';
+import { MAX_MONETARY_AMOUNT } from '../../shared/money/money.js';
 
 export class CaptureChargeDto {
   @ApiProperty({ description: 'Branch where the service was rendered.' })
@@ -58,6 +60,7 @@ export class CaptureChargeDto {
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
+  @Max(MAX_MONETARY_AMOUNT)
   @IsOptional()
   unit_price?: number;
 

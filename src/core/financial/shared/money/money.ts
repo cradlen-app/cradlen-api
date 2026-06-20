@@ -18,6 +18,16 @@ export type DecimalInput = Prisma.Decimal | string | number;
 /** Currency scale (minor units) — 2 dp for the currencies we support. */
 const SCALE = 2;
 
+/**
+ * Upper bound for any single monetary input accepted over the API
+ * (unit prices, payment amounts, …). Monetary columns are `Decimal(10,2)`
+ * — i.e. a hard DB ceiling of 99,999,999.99 — so an unbounded amount at or
+ * above 1e8 overflows the column and surfaces as an unhandled 500. Capping a
+ * digit below that keeps every accepted value storable and turns absurd /
+ * overflowing inputs into a clean 400 at the validation boundary instead.
+ */
+export const MAX_MONETARY_AMOUNT = 9_999_999.99;
+
 export const Money = {
   /** Construct a Decimal from a string/number/Decimal. */
   of(value: DecimalInput): Prisma.Decimal {
