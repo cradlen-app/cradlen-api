@@ -26,7 +26,7 @@ Both are now fixed with regression tests.
 | F4 | P2002 errors return unique-constraint field names | Low | ✅ Fixed (allowlist) |
 | F5 | Presigned GET TTL 300s + client-asserted content-type | Low | ✅ Fixed (TTL 120s) |
 | F6 | `CORS_ORIGINS` empty in prod silently rejects all browser clients | Low (availability) | ✅ Fixed (boot fail-fast) |
-| F7 | `GET /patients/search` cross-tenant PII enumeration (fuzzy + full PII) | **High** | ✅ Fixed (exact-match + minimal projection) |
+| F7 | `GET /patients/search` is a global cross-org patient registry (full PII) | Accepted | ⚖️ Risk accepted (product decision) |
 | — | Cross-tenant IDOR / CORS reflect-any / upload overwrite / SQLi | — | ❌ Disproven (see below) |
 
 ---
@@ -108,27 +108,25 @@ passing** (over-ceiling charge → 400, ceiling → 201, ceiling+0.01 → 400, o
 payment → 400, over-ceiling invoice item → 400). Pre-fix, `10,000,000` fits `Decimal(10,2)`
 and was accepted (201); the `@Max` is the sole reason it now 400s.
 
-### F7 — `GET /patients/search` cross-tenant PII enumeration *(High)*
-**Evidence.** The global patient lookup (book-visit autocomplete) is authenticated but
-takes no org context and ran a `contains` (fuzzy) match on `full_name` / `national_id` /
-`phone_number` across **all** patients in **all** organizations, returning full PII
-(national id, DOB, address, phone). With the DTO's 2-char minimum, any authenticated user
-of any org could enumerate the entire multi-tenant patient population and harvest PII —
-e.g. `?search=a`. (Flagged by the background security review; confirmed exploitable.)
+### F7 — `GET /patients/search` is a global cross-org patient registry *(Risk accepted)*
+**What it does.** The book-visit autocomplete fuzzy-matches by name / national id / phone
+across **all** organizations and returns full identity (national id, DOB, address, phone)
+so the booking form can prefill — the caller's own enrolled patients rank first.
 
-**Root cause.** The endpoint is *intentionally* cross-org (find a patient first registered
-at another clinic), but it conflated "confirm a known identity" with "search everything"
-and over-projected.
+**Posture.** The automated review flagged this as cross-tenant PII disclosure, and it is:
+any authenticated staff member can look up patients registered at other clinics and see
+their PII. **This is a deliberate product decision** — `Patient` is a global master index
+by design (org-scoping lives on `Journey`, not `Patient`), and the network shares one
+patient registry so a person isn't re-registered at every clinic. The owner accepted this
+tradeoff after it was surfaced.
 
-**Fix.** Restrict to an **exact** `national_id` or `phone_number` match (no fuzzy, no name
-key — org-scoped fuzzy search already lives in `GET /patients`/`findAll`), reduce the
-projection to `{ id, full_name }` (no PII before an org enrollment exists), and raise the
-query minimum to 6 chars. Pinned by `patient/patient-global-search-security.int.spec.ts`
-(5/5): exact id/phone resolve minimally; partial id, name query, and short query do not.
-
-*Caller-contract note:* the book-visit autocomplete must now query by a full national
-id/phone and receives only `{ id, full_name }` (then enroll to see detail) — a deliberate
-change from partial-name autocomplete.
+**Controls in place / recommended.** Access requires authentication (not public); queries
+are length-guarded (min 2) and page-capped (≤20) so it can't dump the table in one call.
+Behavior pinned by `patient/patient-global-search-security.int.spec.ts` (4/4): name and
+national-id search resolve cross-org with full info, own-org ranks first, single-char
+rejected. *Recommended compensating controls (not yet implemented):* audit-log cross-org
+lookups (who searched whom) and add a per-user rate limit on this endpoint, so the shared
+registry stays accountable without changing the UX.
 
 ---
 

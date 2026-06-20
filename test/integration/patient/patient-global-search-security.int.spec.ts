@@ -12,22 +12,18 @@ import { bearer } from '../../helpers/auth-helpers';
 import { seedOrg } from '../../helpers/financial-helpers';
 
 /**
- * GET /v1/patients/search is a deliberate CROSS-ORG identity lookup (book-visit
- * autocomplete — find a patient first registered at another clinic). Because it
- * crosses tenants it must NOT become a scraper: it matches an EXACT national id
- * or phone only (no fuzzy / name search) and returns a minimal {id, full_name}
- * projection, so an authenticated user of any org cannot enumerate or harvest
- * the multi-tenant patient population's PII (national id / DOB / address).
+ * GET /v1/patients/search — the GLOBAL book-visit autocomplete. By product design
+ * `Patient` is a global master index, so a clinic can find a patient first
+ * registered anywhere by name OR national id and prefill the booking form with
+ * full identity. The caller's own enrolled patients rank first. (Cross-org
+ * exposure of the shared registry is an accepted product decision — see
+ * SECURITY-ASSESSMENT.md F7.)
  */
-describe('Patients — global search hardening (integration security)', () => {
+describe('Patients — global lookup for booking autocomplete (integration)', () => {
   let app: INestApplication;
   let mailMock: jest.Mock;
   let prisma: PrismaClient;
   const jwt = new JwtService({});
-
-  const NID = 'NID-9988776655';
-  const PHONE = '+201234567890';
-  const NAME = 'Salma Ibrahim';
 
   beforeAll(async () => {
     mailMock = jest.fn().mockResolvedValue(undefined);
@@ -41,6 +37,7 @@ describe('Patients — global search hardening (integration security)', () => {
   });
 
   let auth: (r: request.Test) => request.Test;
+  let callerOrgId: string;
 
   beforeEach(async () => {
     await cleanDatabase(prisma);
@@ -51,39 +48,57 @@ describe('Patients — global search hardening (integration security)', () => {
     ).$executeRawUnsafe('TRUNCATE TABLE "patients" CASCADE');
     mailMock.mockClear();
 
-    // Caller belongs to org A; the target patient is NOT enrolled in org A —
-    // proving the lookup is intentionally cross-org while staying minimal.
     const org = await seedOrg(
       prisma,
       'Caller Org',
       `caller-${Date.now()}@ex.com`,
     );
-    const token = jwt.sign(
-      {
-        userId: (
-          await prisma.profile.findUniqueOrThrow({
-            where: { id: org.ownerProfileId },
-            select: { user_id: true },
-          })
-        ).user_id,
-        profileId: org.ownerProfileId,
-        organizationId: org.org.id,
-        type: 'access',
-      },
-      { secret: process.env.JWT_ACCESS_SECRET!, expiresIn: '15m' },
+    callerOrgId = org.org.id;
+    const userId = (
+      await prisma.profile.findUniqueOrThrow({
+        where: { id: org.ownerProfileId },
+        select: { user_id: true },
+      })
+    ).user_id;
+    auth = bearer(
+      jwt.sign(
+        {
+          userId,
+          profileId: org.ownerProfileId,
+          organizationId: org.org.id,
+          type: 'access',
+        },
+        { secret: process.env.JWT_ACCESS_SECRET!, expiresIn: '15m' },
+      ),
     );
-    auth = bearer(token);
+  });
 
-    await prisma.patient.create({
+  async function createPatient(
+    fullName: string,
+    nationalId: string,
+    phone: string,
+    enrollInCallerOrg = false,
+  ): Promise<string> {
+    const p = await prisma.patient.create({
       data: {
-        national_id: NID,
-        full_name: NAME,
+        national_id: nationalId,
+        full_name: fullName,
         date_of_birth: new Date('1990-01-01'),
-        phone_number: PHONE,
-        address: '12 Secret St',
+        phone_number: phone,
+        address: '10 Nile St',
       },
     });
-  });
+    if (enrollInCallerOrg) {
+      await prisma.patientOrgEnrollment.create({
+        data: {
+          patient_id: p.id,
+          organization_id: callerOrgId,
+          status: 'ACTIVE',
+        },
+      });
+    }
+    return p.id;
+  }
 
   const search = (q: string) =>
     auth(
@@ -92,34 +107,35 @@ describe('Patients — global search hardening (integration security)', () => {
       ),
     );
 
-  it('exact national_id returns the patient with ONLY id + full_name (no PII)', async () => {
-    const res = await search(NID).expect(200);
+  it('finds a cross-org patient by partial name with full info (prefill)', async () => {
+    await createPatient('Mariam Adel', 'NID-111222333', '+201000000001');
+    const res = await search('Mariam').expect(200);
     expect(res.body.data).toHaveLength(1);
     const row = res.body.data[0];
-    expect(row.full_name).toBe(NAME);
-    expect(row).not.toHaveProperty('national_id');
-    expect(row).not.toHaveProperty('date_of_birth');
-    expect(row).not.toHaveProperty('address');
-    expect(row).not.toHaveProperty('phone_number');
+    expect(row.full_name).toBe('Mariam Adel');
+    // Full identity is returned so the booking form can prefill.
+    expect(row.national_id).toBe('NID-111222333');
+    expect(row.phone_number).toBe('+201000000001');
+    expect(row).toHaveProperty('date_of_birth');
+    expect(row).toHaveProperty('address');
   });
 
-  it('exact phone number resolves the patient (minimal projection)', async () => {
-    const res = await search(PHONE).expect(200);
+  it('finds a cross-org patient by partial national id', async () => {
+    await createPatient('Omar Khaled', 'NID-555444333', '+201000000002');
+    const res = await search('NID-555').expect(200);
     expect(res.body.data).toHaveLength(1);
-    expect(res.body.data[0].full_name).toBe(NAME);
+    expect(res.body.data[0].full_name).toBe('Omar Khaled');
   });
 
-  it('a partial national_id does NOT match (no substring enumeration)', async () => {
-    const res = await search('NID-99').expect(200);
-    expect(res.body.data).toHaveLength(0);
+  it("ranks the caller's own enrolled patient first", async () => {
+    await createPatient('Sara Other', 'NID-900000001', '+201000000003', false);
+    await createPatient('Sara Own', 'NID-900000002', '+201000000004', true);
+    const res = await search('Sara').expect(200);
+    expect(res.body.data.length).toBeGreaterThanOrEqual(2);
+    expect(res.body.data[0].full_name).toBe('Sara Own');
   });
 
-  it('a name query does NOT match (name is not a cross-org search key)', async () => {
-    const res = await search(NAME).expect(200);
-    expect(res.body.data).toHaveLength(0);
-  });
-
-  it('rejects a too-short query (min length guards against probing)', async () => {
-    await search('abc').expect(400);
+  it('rejects a single-character query (min length)', async () => {
+    await search('a').expect(400);
   });
 });

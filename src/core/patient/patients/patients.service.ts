@@ -79,45 +79,67 @@ export class PatientsService {
   }
 
   /**
-   * GLOBAL identity lookup for the book-visit autocomplete. Unlike
-   * {@link findAll} (the org roster, scoped to enrolled patients), this searches
-   * every patient across organizations so a clinic can find — and book against —
-   * a patient first registered elsewhere. Patients are a unified, cross-org
-   * identity (`national_id` is globally unique); booking then creates this org's
-   * `PatientOrgEnrollment`. Returns identity fields only (no journeys/clinical
-   * data). `search` is required and pre-validated to ≥2 chars by the DTO.
+   * Global patient lookup for the book-visit autocomplete. By product design the
+   * `Patient` record is a GLOBAL master index (org-scoping lives on Journey, not
+   * Patient), so a clinic can find and prefill from a patient first registered at
+   * any other clinic. The lookup fuzzy-matches by name / national id / phone
+   * across all organizations and returns the full identity needed to prefill the
+   * booking form.
+   *
+   * The caller's own enrolled patients rank first (the common case), then matches
+   * from other orgs. Authentication is required and results are capped per page;
+   * the cross-org exposure of the shared registry is an accepted product decision
+   * (see SECURITY-ASSESSMENT.md F7). `search` is pre-validated by the DTO.
    */
-  async searchGlobal(query: SearchPatientsQueryDto) {
+  async searchGlobal(query: SearchPatientsQueryDto, user: AuthContext) {
     const limit = Math.min(query.limit ?? 20, 20);
     const search = query.search.trim();
 
-    const where = {
-      is_deleted: false,
-      // EXACT identifier match only. This endpoint is a cross-org lookup, so a
-      // `contains`/name search would let any authenticated user enumerate and
-      // harvest the entire multi-tenant patient population. The caller must
-      // already know the person's national id or phone to confirm identity for
-      // booking; fuzzy name search stays org-scoped in `findAll`.
-      OR: [{ national_id: search }, { phone_number: search }],
+    const fuzzy = [
+      { full_name: { contains: search, mode: 'insensitive' as const } },
+      { national_id: { contains: search } },
+      { phone_number: { contains: search } },
+    ];
+    const select = {
+      id: true,
+      full_name: true,
+      national_id: true,
+      phone_number: true,
+      date_of_birth: true,
+      address: true,
+      marital_status: true,
+      created_at: true,
     };
 
-    const [patients, total] = await this.prismaService.db.$transaction([
+    const [own, all] = await this.prismaService.db.$transaction([
       this.prismaService.db.patient.findMany({
-        where,
+        where: {
+          is_deleted: false,
+          enrollments: {
+            some: { organization_id: user.organizationId, is_deleted: false },
+          },
+          OR: fuzzy,
+        },
         take: limit,
         orderBy: { created_at: 'desc' },
-        // Minimal identity-confirmation projection — never expose another org's
-        // patient PII (DOB / address / national id) before an enrollment exists.
-        // Full detail is served by the org-scoped roster/read endpoints.
-        select: {
-          id: true,
-          full_name: true,
-        },
+        select,
       }),
-      this.prismaService.db.patient.count({ where }),
+      this.prismaService.db.patient.findMany({
+        where: { is_deleted: false, OR: fuzzy },
+        take: limit,
+        orderBy: { created_at: 'desc' },
+        select,
+      }),
     ]);
 
-    return paginated(patients, { page: 1, limit, total });
+    // Caller's own patients first; then any other-org matches, deduped + capped.
+    const ownIds = new Set(own.map((p) => p.id));
+    const items = [...own, ...all.filter((p) => !ownIds.has(p.id))].slice(
+      0,
+      limit,
+    );
+
+    return paginated(items, { page: 1, limit, total: items.length });
   }
 
   async findAll(query: ListPatientsQueryDto, user: AuthContext) {
