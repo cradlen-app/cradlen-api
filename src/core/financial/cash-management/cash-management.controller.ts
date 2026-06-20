@@ -30,15 +30,16 @@ import { CashSessionResponseDto } from './dto/cash-session-response.dto.js';
 @ApiTags('Financial — Cash Management')
 @ApiBearerAuth()
 @Controller('organizations/:orgId/financial/cash-sessions')
-// Coarse cash-surface gate (owner / branch-manager / receptionist /
-// accountant). The finer rules — branch scoping, and accountant/manager-only
-// reconcile (segregation of duties) — stay in the service layer.
+// Coarse cash gate on mutations only (owner / branch-manager / receptionist /
+// accountant); GET reads stay open. The finer rules — branch scoping, and
+// accountant/manager-only reconcile (segregation of duties) — stay in the
+// service layer.
 @UseGuards(PermissionGuard)
-@RequirePermission(PERMISSIONS.financialManageCash)
 export class CashManagementController {
   constructor(private readonly cashManagementService: CashManagementService) {}
 
   @Post()
+  @RequirePermission(PERMISSIONS.financialManageCash)
   @HttpCode(HttpStatus.CREATED)
   @ApiStandardResponse(CashSessionResponseDto)
   open(
@@ -86,6 +87,7 @@ export class CashManagementController {
   }
 
   @Post(':id/close')
+  @RequirePermission(PERMISSIONS.financialManageCash)
   @ApiStandardResponse(CashSessionResponseDto)
   close(
     @Param('orgId', ParseUUIDPipe) orgId: string,
@@ -97,6 +99,7 @@ export class CashManagementController {
   }
 
   @Post(':id/reconcile')
+  @RequirePermission(PERMISSIONS.financialManageCash)
   @ApiStandardResponse(CashSessionResponseDto)
   reconcile(
     @Param('orgId', ParseUUIDPipe) orgId: string,

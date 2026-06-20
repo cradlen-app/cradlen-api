@@ -25,14 +25,14 @@ import { RefundResponseDto } from './dto/refund-response.dto.js';
 @ApiTags('Financial — Refunds')
 @ApiBearerAuth()
 @Controller('organizations/:orgId/refunds')
-// Coarse billing-surface gate (owner / branch-manager / receptionist /
-// accountant). Branch scoping stays in the service layer.
+// Coarse billing gate on mutations only (owner / branch-manager / receptionist
+// / accountant); GET reads stay open. Branch scoping stays in the service layer.
 @UseGuards(PermissionGuard)
-@RequirePermission(PERMISSIONS.financialRefund)
 export class RefundsController {
   constructor(private readonly refundsService: RefundsService) {}
 
   @Post()
+  @RequirePermission(PERMISSIONS.financialRefund)
   @HttpCode(HttpStatus.CREATED)
   @ApiStandardResponse(RefundResponseDto)
   create(
@@ -64,6 +64,7 @@ export class RefundsController {
   }
 
   @Post(':id/void')
+  @RequirePermission(PERMISSIONS.financialRefund)
   @ApiStandardResponse(RefundResponseDto)
   voidRefund(
     @Param('orgId', ParseUUIDPipe) orgId: string,

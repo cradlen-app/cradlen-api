@@ -37,11 +37,12 @@ import { InvoiceResponseDto } from './dto/invoice-response.dto.js';
 @ApiTags('Financial — Invoices')
 @ApiBearerAuth()
 @Controller('organizations/:orgId/invoices')
-// Coarse billing-surface gate matching the frontend Financial nav (owner /
-// branch-manager / receptionist / accountant). Branch scoping and the
-// per-action `assertCanRunBillingAction` checks stay in the service layer.
+// Coarse billing-surface gate on mutations only (owner / branch-manager /
+// receptionist / accountant), matching the frontend Financial nav. GET reads
+// stay open to any branch staff (e.g. a clinician viewing a patient's balance).
+// Branch scoping and the per-action `assertCanRunBillingAction` checks stay in
+// the service layer.
 @UseGuards(PermissionGuard)
-@RequirePermission(PERMISSIONS.financialRead)
 export class InvoicingController {
   constructor(private readonly invoicingService: InvoicingService) {}
 
@@ -71,6 +72,7 @@ export class InvoicingController {
   }
 
   @Post()
+  @RequirePermission(PERMISSIONS.financialRead)
   @HttpCode(HttpStatus.CREATED)
   @ApiStandardResponse(InvoiceResponseDto)
   create(
@@ -82,6 +84,7 @@ export class InvoicingController {
   }
 
   @Post('from-charges')
+  @RequirePermission(PERMISSIONS.financialRead)
   @HttpCode(HttpStatus.CREATED)
   @ApiStandardResponse(InvoiceResponseDto)
   buildFromCharges(
@@ -93,6 +96,7 @@ export class InvoicingController {
   }
 
   @Post(':id/append-charges')
+  @RequirePermission(PERMISSIONS.financialRead)
   @HttpCode(HttpStatus.CREATED)
   @ApiStandardResponse(InvoiceResponseDto)
   appendCharges(
@@ -115,6 +119,7 @@ export class InvoicingController {
   }
 
   @Patch(':id')
+  @RequirePermission(PERMISSIONS.financialRead)
   @ApiStandardResponse(InvoiceResponseDto)
   update(
     @Param('orgId', ParseUUIDPipe) orgId: string,
@@ -126,6 +131,7 @@ export class InvoicingController {
   }
 
   @Post(':id/items')
+  @RequirePermission(PERMISSIONS.financialRead)
   @HttpCode(HttpStatus.CREATED)
   @ApiStandardResponse(InvoiceResponseDto)
   addItem(
@@ -138,6 +144,7 @@ export class InvoicingController {
   }
 
   @Delete(':id/items/:itemId')
+  @RequirePermission(PERMISSIONS.financialRead)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiVoidResponse()
   removeItem(
@@ -150,6 +157,7 @@ export class InvoicingController {
   }
 
   @Post(':id/issue')
+  @RequirePermission(PERMISSIONS.financialRead)
   @ApiStandardResponse(InvoiceResponseDto)
   issue(
     @Param('orgId', ParseUUIDPipe) orgId: string,
@@ -160,6 +168,7 @@ export class InvoicingController {
   }
 
   @Post(':id/void')
+  @RequirePermission(PERMISSIONS.financialRead)
   @ApiStandardResponse(InvoiceResponseDto)
   void(
     @Param('orgId', ParseUUIDPipe) orgId: string,

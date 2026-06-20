@@ -1,18 +1,8 @@
-import {
-  Controller,
-  Get,
-  Param,
-  ParseUUIDPipe,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@common/decorators/current-user.decorator.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import { ApiStandardResponse } from '@common/swagger/index.js';
-import { PermissionGuard } from '@common/guards/permission.guard.js';
-import { RequirePermission } from '@common/decorators/require-permission.decorator.js';
-import { PERMISSIONS } from '@common/authorization/permission-matrix.js';
 import { ReceiptsService } from './receipts.service.js';
 import { ReceiptResponseDto } from './dto/receipt-response.dto.js';
 import { ReceiptPrintDto } from './dto/receipt-print.dto.js';
@@ -21,10 +11,6 @@ import { ListReceiptsQueryDto } from './dto/list-receipts-query.dto.js';
 @ApiTags('Financial — Receipts')
 @ApiBearerAuth()
 @Controller('organizations/:orgId/receipts')
-// Coarse billing-surface gate (owner / branch-manager / receptionist /
-// accountant). Branch scoping stays in the service layer.
-@UseGuards(PermissionGuard)
-@RequirePermission(PERMISSIONS.financialRead)
 export class ReceiptsController {
   constructor(private readonly receiptsService: ReceiptsService) {}
 

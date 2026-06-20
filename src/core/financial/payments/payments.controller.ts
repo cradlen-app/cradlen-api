@@ -24,14 +24,14 @@ import { PaymentResultDto } from './dto/payment-result.dto.js';
 @ApiTags('Financial — Payments')
 @ApiBearerAuth()
 @Controller('organizations/:orgId/invoices/:invoiceId/payments')
-// Coarse billing-surface gate (owner / branch-manager / receptionist /
-// accountant). Branch scoping stays in the service layer.
+// Coarse billing gate on mutations only (owner / branch-manager / receptionist
+// / accountant); GET reads stay open. Branch scoping stays in the service layer.
 @UseGuards(PermissionGuard)
-@RequirePermission(PERMISSIONS.financialRead)
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
   @Post()
+  @RequirePermission(PERMISSIONS.financialCollectPayment)
   @HttpCode(HttpStatus.CREATED)
   @ApiStandardResponse(PaymentResultDto)
   recordPayment(
@@ -65,6 +65,7 @@ export class PaymentsController {
   }
 
   @Post(':paymentId/void')
+  @RequirePermission(PERMISSIONS.financialCollectPayment)
   @ApiStandardResponse(PaymentResultDto)
   voidPayment(
     @Param('orgId', ParseUUIDPipe) orgId: string,
