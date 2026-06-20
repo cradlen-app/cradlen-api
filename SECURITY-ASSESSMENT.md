@@ -50,11 +50,14 @@ tests, all green** this run).
   *Pinned by `auth/token-security.int.spec.ts` (9/9).*
 - **Privilege escalation.** STAFF cannot invite; a BRANCH_MANAGER cannot grant
   OWNER/BRANCH_MANAGER. *Pinned by `auth/privilege-escalation.int.spec.ts`.*
-- **Patient-portal IDOR + upload abuse.** Investigation result endpoints scope to the
-  caller's own journeys; presigned PUT keys are **server-derived UUIDs** (non-guessable),
+- **Patient-portal IDOR + upload abuse.** A portal session is scoped to
+  `accessiblePatientIds`; passing another patient's `patient_id`/investigation id is
+  rejected with 404. Presigned PUT keys are **server-derived UUIDs** (non-guessable),
   `confirmResult` re-validates the key prefix and re-reads the object's content-type/size
   from R2, and only `source=PATIENT` attachments are removable.
-  (`patient-investigation-results.service.ts`).
+  *Now pinned by `patient-portal/patient-portal-idor.int.spec.ts` (4/4) — this surface
+  previously had no integration coverage; the new spec mints a real `patient_access` token
+  and proves patient A cannot read/write patient B's visits or investigations.*
 - **SQL injection.** Every raw query is a parameterized `Prisma.sql` / tagged template or
   an input-free `SELECT 1`. No `*Unsafe` call interpolates user input.
 - **Auth brute force.** login (per-identifier guard + 10/10min), signup, OTP, and
