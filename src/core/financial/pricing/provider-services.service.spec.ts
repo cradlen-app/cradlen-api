@@ -25,6 +25,7 @@ const mockDb = {
   },
   profile: { findFirst: jest.fn() },
   service: { findFirst: jest.fn() },
+  $transaction: jest.fn(),
 };
 
 const mockPrisma = { db: mockDb };
@@ -62,6 +63,10 @@ describe('ProviderServicesService', () => {
     // Default: provider in org + service exists.
     mockDb.profile.findFirst.mockResolvedValue({ id: PROFILE });
     mockDb.service.findFirst.mockResolvedValue({ id: 'svc-1' });
+    // Run the $transaction callback against the same mock db.
+    mockDb.$transaction.mockImplementation((cb: (tx: typeof mockDb) => unknown) =>
+      cb(mockDb),
+    );
   });
 
   describe('authorizeService', () => {
@@ -100,6 +105,68 @@ describe('ProviderServicesService', () => {
       await expect(
         service.authorizeService(ORG, PROFILE, { service_id: 'svc-1' }, USER),
       ).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe('authorizeServices', () => {
+    it('authorizes multiple services with shared branch and duration', async () => {
+      mockDb.providerService.findFirst.mockResolvedValue(null);
+      mockDb.providerService.create
+        .mockResolvedValueOnce({ id: 'ps-1', service: { id: 'svc-1' } })
+        .mockResolvedValueOnce({ id: 'ps-2', service: { id: 'svc-2' } });
+
+      const result = await service.authorizeServices(
+        ORG,
+        PROFILE,
+        { service_ids: ['svc-1', 'svc-2'], branch_id: 'br-1', duration_minutes: 30 },
+        USER,
+      );
+
+      expect(result).toHaveLength(2);
+      expect(mockDb.providerService.create).toHaveBeenCalledTimes(2);
+      expect(mockDb.providerService.create.mock.calls[0][0].data).toEqual(
+        expect.objectContaining({
+          service_id: 'svc-1',
+          branch_id: 'br-1',
+          duration_minutes: 30,
+        }),
+      );
+    });
+
+    it('skips services the provider is already authorized for', async () => {
+      mockDb.providerService.findFirst
+        .mockResolvedValueOnce({ id: 'existing' }) // svc-1 already authorized
+        .mockResolvedValueOnce(null); // svc-2 is new
+      mockDb.providerService.create.mockResolvedValue({
+        id: 'ps-2',
+        service: { id: 'svc-2' },
+      });
+
+      const result = await service.authorizeServices(
+        ORG,
+        PROFILE,
+        { service_ids: ['svc-1', 'svc-2'] },
+        USER,
+      );
+
+      expect(result).toHaveLength(1);
+      expect(mockDb.providerService.create).toHaveBeenCalledTimes(1);
+      expect(mockDb.providerService.create.mock.calls[0][0].data).toEqual(
+        expect.objectContaining({ service_id: 'svc-2' }),
+      );
+    });
+
+    it('rejects when one of the services is unknown', async () => {
+      mockDb.service.findFirst.mockResolvedValue(null);
+      await expect(
+        service.authorizeServices(
+          ORG,
+          PROFILE,
+          { service_ids: ['bad'] },
+          USER,
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockDb.providerService.create).not.toHaveBeenCalled();
     });
   });
 

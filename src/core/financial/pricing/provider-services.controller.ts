@@ -16,6 +16,7 @@ import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import { ApiStandardResponse, ApiVoidResponse } from '@common/swagger/index.js';
 import { ProviderServicesService } from './provider-services.service.js';
 import { CreateProviderServiceDto } from './dto/create-provider-service.dto.js';
+import { CreateProviderServicesDto } from './dto/create-provider-services.dto.js';
 import { CreateProviderPriceOverrideDto } from './dto/create-provider-price-override.dto.js';
 import { UpdateProviderPriceOverrideDto } from './dto/update-provider-price-override.dto.js';
 
@@ -100,6 +101,22 @@ export class ProviderServicesController {
     @CurrentUser() user: AuthContext,
   ) {
     return this.providerServicesService.authorizeService(
+      orgId,
+      profileId,
+      dto,
+      user,
+    );
+  }
+
+  @Post('services/batch')
+  @ApiStandardResponse(Object)
+  authorizeServices(
+    @Param('orgId', ParseUUIDPipe) orgId: string,
+    @Param('profileId', ParseUUIDPipe) profileId: string,
+    @Body() dto: CreateProviderServicesDto,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.providerServicesService.authorizeServices(
       orgId,
       profileId,
       dto,

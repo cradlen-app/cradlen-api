@@ -9,6 +9,7 @@ import { AuthorizationService } from '@core/auth/authorization/authorization.ser
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import { DEFAULT_CURRENCY } from '../shared/currency.js';
 import type { CreateProviderServiceDto } from './dto/create-provider-service.dto.js';
+import type { CreateProviderServicesDto } from './dto/create-provider-services.dto.js';
 import type { CreateProviderPriceOverrideDto } from './dto/create-provider-price-override.dto.js';
 import type { UpdateProviderPriceOverrideDto } from './dto/update-provider-price-override.dto.js';
 
@@ -84,6 +85,63 @@ export class ProviderServicesService {
           select: { id: true, name: true, code: true, service_type: true },
         },
       },
+    });
+  }
+
+  /**
+   * Authorize a provider for multiple services in one request, sharing the
+   * same branch and duration. Services the provider is already authorized for
+   * (at this branch scope) are skipped rather than failing the whole batch.
+   */
+  async authorizeServices(
+    organizationId: string,
+    profileId: string,
+    dto: CreateProviderServicesDto,
+    user: AuthContext,
+  ) {
+    await this.authorizationService.assertCanManageStaff(
+      user.profileId,
+      organizationId,
+    );
+    await this.assertProfileInOrg(organizationId, profileId);
+    const serviceIds = [...new Set(dto.service_ids)];
+    await Promise.all(
+      serviceIds.map((id) => this.assertServiceExists(organizationId, id)),
+    );
+    const branchId = dto.branch_id ?? null;
+
+    return this.prismaService.db.$transaction(async (tx) => {
+      const created = [];
+      for (const serviceId of serviceIds) {
+        const existing = await tx.providerService.findFirst({
+          where: {
+            organization_id: organizationId,
+            profile_id: profileId,
+            service_id: serviceId,
+            branch_id: branchId,
+            is_deleted: false,
+          },
+        });
+        if (existing) continue;
+
+        const record = await tx.providerService.create({
+          data: {
+            organization_id: organizationId,
+            profile_id: profileId,
+            service_id: serviceId,
+            branch_id: branchId,
+            duration_minutes: dto.duration_minutes ?? null,
+            created_by_id: user.profileId,
+          },
+          include: {
+            service: {
+              select: { id: true, name: true, code: true, service_type: true },
+            },
+          },
+        });
+        created.push(record);
+      }
+      return created;
     });
   }
 
