@@ -8,6 +8,7 @@ import type { PatientAuthContext } from '@common/interfaces/patient-auth-context
 import { PatientVisitsService } from './patient-visits.service.js';
 import { PatientVisitItemDto } from './dto/patient-visit.dto.js';
 import { PatientUpcomingVisitItemDto } from './dto/patient-upcoming-visit.dto.js';
+import { PatientJourneyTimelineDto } from './dto/patient-journey-timeline.dto.js';
 import { ListPatientVisitsQueryDto } from './dto/list-patient-visits.query.dto.js';
 
 @ApiTags('Patient Portal')
@@ -43,5 +44,21 @@ export class PatientVisitsController {
     @Query() query: ListPatientVisitsQueryDto,
   ) {
     return this.visitsService.listUpcoming(patient, query);
+  }
+
+  @Get('journeys/timeline')
+  @Public()
+  @UseGuards(PatientJwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Patient journey timeline: journeys → episodes → completed visits (paginated by journey)',
+  })
+  @ApiPaginatedResponse(PatientJourneyTimelineDto)
+  journeyTimeline(
+    @CurrentPatient() patient: PatientAuthContext,
+    @Query() query: ListPatientVisitsQueryDto,
+  ) {
+    return this.visitsService.listJourneyTimeline(patient, query);
   }
 }
