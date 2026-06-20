@@ -11,6 +11,7 @@ import {
   Post,
   Put,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import {
@@ -21,6 +22,9 @@ import {
 } from '@common/swagger';
 import { CurrentUser } from '@common/decorators/current-user.decorator';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
+import { PermissionGuard } from '@common/guards/permission.guard';
+import { RequirePermission } from '@common/decorators/require-permission.decorator';
+import { PERMISSIONS } from '@common/authorization/permission-matrix';
 import { MedicalRepService } from './medical-rep.service';
 import { MedicalRepVisitService } from './medical-rep-visit.service';
 import { BookMedicalRepVisitDto } from './dto/book-medical-rep-visit.dto';
@@ -37,6 +41,11 @@ import { MedicalRepVisitHistoryItemDto } from './dto/medical-rep-visit-history.d
 
 @ApiTags('medical-reps')
 @Controller({ version: '1' })
+// Coarse capability gate: the guard is a no-op on routes without
+// `@RequirePermission`, so finer-scoped endpoints keep their service-layer
+// authorization unchanged. The read surface below is annotated to match the
+// frontend `medicalRep.view` nav gate (managers + doctors).
+@UseGuards(PermissionGuard)
 export class MedicalRepController {
   constructor(
     private readonly repService: MedicalRepService,
@@ -44,6 +53,7 @@ export class MedicalRepController {
   ) {}
 
   @Get('medical-reps')
+  @RequirePermission(PERMISSIONS.medicalRepView)
   @ApiPaginatedResponse(MedicalRepListItemDto)
   async search(
     @Query() query: ListMedicalRepsQueryDto,
@@ -62,6 +72,7 @@ export class MedicalRepController {
   }
 
   @Get('medical-reps/:id')
+  @RequirePermission(PERMISSIONS.medicalRepView)
   @ApiStandardResponse(MedicalRepDto)
   async getRep(
     @Param('id', ParseUUIDPipe) id: string,

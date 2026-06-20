@@ -29,6 +29,16 @@ export class InvoiceLifecycleService {
 
   async issue(organizationId: string, invoiceId: string, user: AuthContext) {
     await this.access.assertCanRunBillingAction(user, organizationId);
+    // Branch-scope the transition to the invoice's branch (owners pass org-wide).
+    const invoice = await this.composition.findOneOrThrow(
+      organizationId,
+      invoiceId,
+    );
+    await this.authorizationService.assertCanAccessBranch(
+      user.profileId,
+      organizationId,
+      invoice.branch_id,
+    );
     return this.issueSystem(organizationId, invoiceId, user.profileId);
   }
 

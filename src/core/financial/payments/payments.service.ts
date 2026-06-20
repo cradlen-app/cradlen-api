@@ -40,6 +40,13 @@ export class PaymentsService {
   ) {
     await this.access.assertCanRunBillingAction(user, organizationId);
     const invoice = await this.findInvoiceOrThrow(organizationId, invoiceId);
+    // Branch-scope the action: owners pass org-wide, everyone else (managers,
+    // front-desk, accountants) must belong to the invoice's branch.
+    await this.authorizationService.assertCanAccessBranch(
+      user.profileId,
+      organizationId,
+      invoice.branch_id,
+    );
 
     if (invoice.status === InvoiceStatus.VOID) {
       throw new BadRequestException(

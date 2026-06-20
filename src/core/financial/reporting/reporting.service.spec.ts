@@ -1,3 +1,4 @@
+import { ForbiddenException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 import { ReportingService } from './reporting.service.js';
@@ -40,6 +41,16 @@ const DOCTOR: AuthContext = {
   organizationId: ORG,
   role: 'STAFF',
   jobFunction: 'OBGYN',
+  branchIds: ['br-1'],
+};
+
+/** A back-office accountant (job function): full report layout, branch-scoped. */
+const ACCOUNTANT: AuthContext = {
+  userId: 'u3',
+  profileId: 'acc-1',
+  organizationId: ORG,
+  role: 'STAFF',
+  jobFunction: 'ACCOUNTANT',
   branchIds: ['br-1'],
 };
 
@@ -456,6 +467,36 @@ describe('ReportingService', () => {
       await expect(
         service.revenueSummary(ORG, { branchId: 'br-1' }, DOCTOR),
       ).rejects.toThrow('Financial reports access denied');
+    });
+
+    it('treats an accountant (job function) as a branch-scoped, all-providers viewer', async () => {
+      // Not a manager by role, but the accountant job function is a financial viewer.
+      mockAuth.canViewAllFinancials.mockResolvedValue(false);
+      mockDb.invoice.aggregate.mockResolvedValue(emptyAggregate);
+
+      await service.revenueSummary(ORG, { branchId: 'br-1' }, ACCOUNTANT);
+
+      expect(mockAuth.assertCanAccessBranch).toHaveBeenCalledWith(
+        'acc-1',
+        ORG,
+        'br-1',
+      );
+      const where = mockDb.invoice.aggregate.mock.calls[0][0].where;
+      // All providers within the branch — not forced to the accountant's own id.
+      expect(where.assigned_doctor_id).toBeUndefined();
+      // The own-revenue (clinical) path is never reached for an accountant.
+      expect(mockAuth.isClinical).not.toHaveBeenCalled();
+    });
+
+    it('denies an accountant an org-wide (no branch) request via org management', async () => {
+      mockAuth.canViewAllFinancials.mockResolvedValue(false);
+      mockAuth.assertCanManageOrganization.mockRejectedValue(
+        new ForbiddenException('org-wide denied'),
+      );
+
+      await expect(service.revenueSummary(ORG, {}, ACCOUNTANT)).rejects.toThrow(
+        ForbiddenException,
+      );
     });
 
     it('honors a manager-supplied doctor_id as a drill-down filter', async () => {

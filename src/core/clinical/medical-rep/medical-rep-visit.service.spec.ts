@@ -102,6 +102,21 @@ describe('MedicalRepVisitService', () => {
     });
   });
 
+  describe('listRepVisitHistory — doctor scope', () => {
+    it('scopes a doctor to their own assigned visits with the rep', async () => {
+      db.$transaction.mockResolvedValue([[], 0]);
+      await service.listRepVisitHistory('rep-1', {}, mockUser); // role OBGYN
+      const where = db.medicalRepVisit.findMany.mock.calls[0][0].where;
+      expect(where).toMatchObject({
+        organization_id: mockUser.organizationId,
+        medical_rep_id: 'rep-1',
+        status: 'COMPLETED',
+        assigned_doctor_id: mockUser.profileId,
+      });
+      expect(where.branch_id).toBeUndefined();
+    });
+  });
+
   describe('listVisits — branch gating', () => {
     it('confines a non-owner to their assigned branches', async () => {
       db.$transaction.mockResolvedValue([[], 0]);
@@ -151,18 +166,13 @@ describe('MedicalRepVisitService', () => {
   });
 
   describe('rep visit history — branch gating', () => {
-    it('confines a non-owner to their assigned branches', async () => {
+    it('confines a BRANCH_MANAGER to their assigned branches', async () => {
+      const branchManager: AuthContext = { ...mockUser, role: 'BRANCH_MANAGER' };
       db.$transaction.mockResolvedValue([[], 0]);
-      await service.listRepVisitHistory('rep-1', {}, mockUser);
-      expect(db.medicalRepVisit.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            medical_rep_id: 'rep-1',
-            status: 'COMPLETED',
-            branch_id: { in: mockUser.branchIds },
-          }),
-        }),
-      );
+      await service.listRepVisitHistory('rep-1', {}, branchManager);
+      const where = db.medicalRepVisit.findMany.mock.calls[0][0].where;
+      expect(where.branch_id).toEqual({ in: branchManager.branchIds });
+      expect(where.assigned_doctor_id).toBeUndefined();
     });
 
     it('lets an OWNER see the rep history across all branches', async () => {

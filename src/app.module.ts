@@ -45,6 +45,7 @@ import { TemplatesModule } from '@builder/templates/templates.module.js';
 import { FinancialModule } from '@core/financial/financial.module.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { SubscriptionGuard } from '@core/org/subscriptions/subscription.guard.js';
+import { PermissionsModule } from '@common/authorization/permissions.module.js';
 
 @Module({
   imports: [
@@ -71,6 +72,7 @@ import { SubscriptionGuard } from '@core/org/subscriptions/subscription.guard.js
       },
     }),
     DatabaseModule,
+    PermissionsModule,
     HealthModule,
     AuthModule,
     PatientAuthModule,

@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
+import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import { Money } from '../shared/money/money.js';
 import { FinancialAccessService } from '../shared/access/financial-access.service.js';
@@ -16,6 +17,7 @@ import { InvoiceCompositionService } from './invoice-composition.service.js';
 export class InvoiceItemService {
   constructor(
     private readonly prismaService: PrismaService,
+    private readonly authorizationService: AuthorizationService,
     private readonly access: FinancialAccessService,
     private readonly composition: InvoiceCompositionService,
   ) {}
@@ -30,6 +32,11 @@ export class InvoiceItemService {
     const invoice = await this.composition.findOneOrThrow(
       organizationId,
       invoiceId,
+    );
+    await this.authorizationService.assertCanAccessBranch(
+      user.profileId,
+      organizationId,
+      invoice.branch_id,
     );
     this.composition.assertDraft(invoice);
 
@@ -85,6 +92,11 @@ export class InvoiceItemService {
     const invoice = await this.composition.findOneOrThrow(
       organizationId,
       invoiceId,
+    );
+    await this.authorizationService.assertCanAccessBranch(
+      user.profileId,
+      organizationId,
+      invoice.branch_id,
     );
     this.composition.assertDraft(invoice);
 

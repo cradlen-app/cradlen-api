@@ -172,6 +172,16 @@ export class ChargeAccrualService {
     user: AuthContext,
   ) {
     await this.access.assertCanRunBillingAction(user, organizationId);
+    // Branch-scope the append to the invoice's branch (owners pass org-wide).
+    const invoice = await this.composition.findOneOrThrow(
+      organizationId,
+      invoiceId,
+    );
+    await this.authorizationService.assertCanAccessBranch(
+      user.profileId,
+      organizationId,
+      invoice.branch_id,
+    );
     return this.appendChargesSystem(organizationId, invoiceId, dto.charge_ids);
   }
 
