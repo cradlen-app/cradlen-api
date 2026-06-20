@@ -13,6 +13,7 @@ import { PatientsService } from './patients.service.js';
 import { CreatePatientDto } from './dto/create-patient.dto.js';
 import { UpdatePatientDto } from './dto/update-patient.dto.js';
 import { ListPatientsQueryDto } from './dto/list-patients-query.dto.js';
+import { SearchPatientsQueryDto } from './dto/search-patients-query.dto.js';
 import { ListBranchPatientsQueryDto } from './dto/list-branch-patients-query.dto.js';
 import { BranchPatientStatsQueryDto } from './dto/branch-patient-stats-query.dto.js';
 import {
@@ -52,6 +53,19 @@ export class PatientsController {
     @CurrentUser() user: AuthContext,
   ) {
     return this.patientsService.findAllForOrg(query, user);
+  }
+
+  // Declared before `/patients/:id` so "search" isn't parsed as a patient id.
+  // GLOBAL (cross-org) identity lookup for the book-visit autocomplete — lets a
+  // clinic find a patient first registered elsewhere. The org roster stays
+  // scoped via `findAll` above.
+  @Get('/patients/search')
+  @ApiPaginatedResponse(PatientDto)
+  searchGlobal(
+    @Query() query: SearchPatientsQueryDto,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.patientsService.searchGlobal(query, user);
   }
 
   // Declared before `/patients/:id` so "stats" isn't parsed as a patient id.

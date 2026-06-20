@@ -295,6 +295,10 @@ const SECTIONS: SectionSpec[] = [
               kind: 'patient',
               idTarget: 'patient_id',
               allowCreate: true,
+              // Patients are a shared cross-org identity — once an existing
+              // patient is picked, lock the prefilled identity fields so the
+              // booking clinic books against that identity without editing it.
+              lockFilled: true,
               fillFields: {
                 national_id: 'national_id',
                 phone_number: 'phone_number',

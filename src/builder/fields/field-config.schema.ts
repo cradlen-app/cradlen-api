@@ -31,6 +31,12 @@ export interface ConfigShape {
       fillFields?: Record<string, string>;
       allowCreate?: boolean;
       /**
+       * When true, the sibling fields named in `fillFields` are rendered
+       * read-only once an entity is resolved. Opt-in: pickers whose filled
+       * values are meant to be edited (e.g. medication default dose) omit it.
+       */
+      lockFilled?: boolean;
+      /**
        * Resolves a sibling ENTITY_SEARCH field from the same raw payload. Keyed
        * by the target search field's `code`. Used to pre-resolve a dependent
        * entity-search picker when a parent entity is selected.
