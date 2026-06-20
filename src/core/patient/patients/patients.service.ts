@@ -7,6 +7,7 @@ import { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import { CreatePatientDto } from './dto/create-patient.dto.js';
 import { UpdatePatientDto } from './dto/update-patient.dto.js';
 import { ListPatientsQueryDto } from './dto/list-patients-query.dto.js';
+import { SearchPatientsQueryDto } from './dto/search-patients-query.dto.js';
 import { ListBranchPatientsQueryDto } from './dto/list-branch-patients-query.dto.js';
 import { paginated } from '@common/utils/pagination.utils.js';
 import { PatientOrgEnrollmentStatus } from '@prisma/client';
@@ -75,6 +76,48 @@ export class PatientsService {
         address: dto.address,
       },
     });
+  }
+
+  /**
+   * GLOBAL identity lookup for the book-visit autocomplete. Unlike
+   * {@link findAll} (the org roster, scoped to enrolled patients), this searches
+   * every patient across organizations so a clinic can find — and book against —
+   * a patient first registered elsewhere. Patients are a unified, cross-org
+   * identity (`national_id` is globally unique); booking then creates this org's
+   * `PatientOrgEnrollment`. Returns identity fields only (no journeys/clinical
+   * data). `search` is required and pre-validated to ≥2 chars by the DTO.
+   */
+  async searchGlobal(query: SearchPatientsQueryDto) {
+    const limit = Math.min(query.limit ?? 20, 20);
+    const search = query.search.trim();
+
+    const where = {
+      is_deleted: false,
+      // EXACT identifier match only. This endpoint is a cross-org lookup, so a
+      // `contains`/name search would let any authenticated user enumerate and
+      // harvest the entire multi-tenant patient population. The caller must
+      // already know the person's national id or phone to confirm identity for
+      // booking; fuzzy name search stays org-scoped in `findAll`.
+      OR: [{ national_id: search }, { phone_number: search }],
+    };
+
+    const [patients, total] = await this.prismaService.db.$transaction([
+      this.prismaService.db.patient.findMany({
+        where,
+        take: limit,
+        orderBy: { created_at: 'desc' },
+        // Minimal identity-confirmation projection — never expose another org's
+        // patient PII (DOB / address / national id) before an enrollment exists.
+        // Full detail is served by the org-scoped roster/read endpoints.
+        select: {
+          id: true,
+          full_name: true,
+        },
+      }),
+      this.prismaService.db.patient.count({ where }),
+    ]);
+
+    return paginated(patients, { page: 1, limit, total });
   }
 
   async findAll(query: ListPatientsQueryDto, user: AuthContext) {

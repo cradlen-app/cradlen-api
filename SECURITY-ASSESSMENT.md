@@ -26,6 +26,7 @@ Both are now fixed with regression tests.
 | F4 | P2002 errors return unique-constraint field names | Low | ✅ Fixed (allowlist) |
 | F5 | Presigned GET TTL 300s + client-asserted content-type | Low | ✅ Fixed (TTL 120s) |
 | F6 | `CORS_ORIGINS` empty in prod silently rejects all browser clients | Low (availability) | ✅ Fixed (boot fail-fast) |
+| F7 | `GET /patients/search` cross-tenant PII enumeration (fuzzy + full PII) | **High** | ✅ Fixed (exact-match + minimal projection) |
 | — | Cross-tenant IDOR / CORS reflect-any / upload overwrite / SQLi | — | ❌ Disproven (see below) |
 
 ---
@@ -106,6 +107,28 @@ at the validation boundary; ordinary amounts and the exact ceiling still pass.
 passing** (over-ceiling charge → 400, ceiling → 201, ceiling+0.01 → 400, over-ceiling
 payment → 400, over-ceiling invoice item → 400). Pre-fix, `10,000,000` fits `Decimal(10,2)`
 and was accepted (201); the `@Max` is the sole reason it now 400s.
+
+### F7 — `GET /patients/search` cross-tenant PII enumeration *(High)*
+**Evidence.** The global patient lookup (book-visit autocomplete) is authenticated but
+takes no org context and ran a `contains` (fuzzy) match on `full_name` / `national_id` /
+`phone_number` across **all** patients in **all** organizations, returning full PII
+(national id, DOB, address, phone). With the DTO's 2-char minimum, any authenticated user
+of any org could enumerate the entire multi-tenant patient population and harvest PII —
+e.g. `?search=a`. (Flagged by the background security review; confirmed exploitable.)
+
+**Root cause.** The endpoint is *intentionally* cross-org (find a patient first registered
+at another clinic), but it conflated "confirm a known identity" with "search everything"
+and over-projected.
+
+**Fix.** Restrict to an **exact** `national_id` or `phone_number` match (no fuzzy, no name
+key — org-scoped fuzzy search already lives in `GET /patients`/`findAll`), reduce the
+projection to `{ id, full_name }` (no PII before an org enrollment exists), and raise the
+query minimum to 6 chars. Pinned by `patient/patient-global-search-security.int.spec.ts`
+(5/5): exact id/phone resolve minimally; partial id, name query, and short query do not.
+
+*Caller-contract note:* the book-visit autocomplete must now query by a full national
+id/phone and receives only `{ id, full_name }` (then enroll to see detail) — a deliberate
+change from partial-name autocomplete.
 
 ---
 
