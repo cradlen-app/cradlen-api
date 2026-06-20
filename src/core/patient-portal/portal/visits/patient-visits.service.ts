@@ -8,6 +8,7 @@ import { resolveAccessiblePatientIds } from '../accessible-patients.util.js';
 import { ListPatientVisitsQueryDto } from './dto/list-patient-visits.query.dto.js';
 import { PatientVisitItemDto } from './dto/patient-visit.dto.js';
 import { PatientUpcomingVisitItemDto } from './dto/patient-upcoming-visit.dto.js';
+import { PatientJourneyTimelineDto } from './dto/patient-journey-timeline.dto.js';
 
 /** Prisma `include` for a patient-portal visit-history row. */
 const patientVisitInclude = {
@@ -60,6 +61,30 @@ const upcomingVisitInclude = {
 
 type UpcomingVisitRow = Prisma.VisitGetPayload<{
   include: typeof upcomingVisitInclude;
+}>;
+
+/**
+ * Prisma `include` for a patient journey tree: episodes (ordered) → completed
+ * visits (newest first), each visit carrying the same rich relations as the
+ * flat history (so `toDto` produces identical items).
+ */
+const journeyTimelineInclude = {
+  journey_template: { select: { name: true, type: true } },
+  episodes: {
+    where: { is_deleted: false },
+    orderBy: { order: 'asc' },
+    include: {
+      visits: {
+        where: { is_deleted: false, status: 'COMPLETED' as const },
+        orderBy: { completed_at: 'desc' },
+        include: patientVisitInclude,
+      },
+    },
+  },
+} satisfies Prisma.PatientJourneyInclude;
+
+type JourneyTimelineRow = Prisma.PatientJourneyGetPayload<{
+  include: typeof journeyTimelineInclude;
 }>;
 
 @Injectable()
@@ -152,6 +177,69 @@ export class PatientVisitsService {
 
     const items = visits.map((v) => this.toUpcomingDto(v));
     return paginated(items, { page, limit, total });
+  }
+
+  /**
+   * Lists the caller's care as a Journey → Episode → Visit tree (journeys newest
+   * first), each episode carrying its COMPLETED visits (newest first). Paginated
+   * **by journey** so a group never splits across pages. Cross-org (a patient's
+   * journeys span organizations) and scoped to the patients the caller may
+   * access. Each nested visit is the same rich item as the flat history.
+   */
+  async listJourneyTimeline(
+    ctx: PatientAuthContext,
+    query: ListPatientVisitsQueryDto,
+  ): Promise<PaginatedPayload<PatientJourneyTimelineDto>> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 5;
+
+    const targetIds = resolveAccessiblePatientIds(ctx, query.patient_id);
+    if (targetIds.length === 0) {
+      return paginated<PatientJourneyTimelineDto>([], {
+        page,
+        limit,
+        total: 0,
+      });
+    }
+
+    const where: Prisma.PatientJourneyWhereInput = {
+      is_deleted: false,
+      patient_id: { in: targetIds },
+    };
+
+    const [journeys, total] = await this.prismaService.db.$transaction([
+      this.prismaService.db.patientJourney.findMany({
+        where,
+        orderBy: { started_at: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: journeyTimelineInclude,
+      }),
+      this.prismaService.db.patientJourney.count({ where }),
+    ]);
+
+    const items = journeys.map((j) => this.toTimelineDto(j));
+    return paginated(items, { page, limit, total });
+  }
+
+  private toTimelineDto(j: JourneyTimelineRow): PatientJourneyTimelineDto {
+    return {
+      id: j.id,
+      name: j.journey_template?.name ?? '',
+      type: j.journey_template?.type ?? '',
+      status: j.status,
+      started_at: j.started_at,
+      ended_at: j.ended_at,
+      episodes: (j.episodes ?? []).map((e) => ({
+        id: e.id,
+        name: e.name,
+        order: e.order,
+        status: e.status,
+        started_at: e.started_at,
+        ended_at: e.ended_at,
+        visits: e.visits.map((v) => this.toDto(v)),
+      })),
+    };
   }
 
   private toDto(v: PatientVisitRow): PatientVisitItemDto {

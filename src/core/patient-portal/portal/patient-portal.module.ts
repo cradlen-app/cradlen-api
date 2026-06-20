@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { PatientProfileModule } from './profile/patient-profile.module.js';
 import { PatientMedicationsModule } from './medications/patient-medications.module.js';
 import { PatientVisitsModule } from './visits/patient-visits.module.js';
+import { PatientJourneyModule } from './journey/patient-journey.module.js';
 import { PatientInvestigationsModule } from './investigations/patient-investigations.module.js';
 
 /**
@@ -17,6 +18,7 @@ import { PatientInvestigationsModule } from './investigations/patient-investigat
     PatientProfileModule,
     PatientMedicationsModule,
     PatientVisitsModule,
+    PatientJourneyModule,
     PatientInvestigationsModule,
   ],
 })
