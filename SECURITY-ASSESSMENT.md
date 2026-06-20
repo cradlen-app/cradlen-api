@@ -23,8 +23,8 @@ Both are now fixed with regression tests.
 | F1 | Committed migrations can't rebuild the DB → signup 500 on fresh deploy/DR | **High (availability/integrity)** | ✅ Fixed + verified |
 | F2 | No upper bound on monetary inputs (`unit_price`, payment `amount`) | **Medium** | ✅ Fixed + tested |
 | F3 | `GET /auth/registration/status?email=` unthrottled account enumeration | Low | ✅ Fixed (IP throttle) |
-| F4 | P2002 errors return unique-constraint field names | Low (informational) | 📋 Reported (documented contract) |
-| F5 | Presigned GET TTL 300s + client-asserted content-type | Low (informational) | 📋 Reported |
+| F4 | P2002 errors return unique-constraint field names | Low | ✅ Fixed (allowlist) |
+| F5 | Presigned GET TTL 300s + client-asserted content-type | Low | ✅ Fixed (TTL 120s) |
 | F6 | `CORS_ORIGINS` empty in prod silently rejects all browser clients | Low (availability) | ✅ Fixed (boot fail-fast) |
 | — | Cross-tenant IDOR / CORS reflect-any / upload overwrite / SQLi | — | ❌ Disproven (see below) |
 
@@ -124,16 +124,23 @@ first-party browser clients. **Fixed** by a boot-time check in `main.ts` that th
 `CORS_ORIGINS` is empty under `NODE_ENV=production` — surfacing the misconfiguration at
 startup instead of in live traffic.
 
-## Reported (no code change — by design / low risk)
+### F4 — P2002 unique-conflict field names *(Low)*
+`GlobalExceptionFilter` returned `details.fields = meta.target` — every column of the
+violated unique index, including internal FKs (`organization_id`, …) — usable to map the
+schema's constraints. **Fixed** by allowlisting caller-submitted fields
+(`email`, `phone_number`, `national_id`, `code`, `slug`, `username`): the signup UX still
+learns which of *its* inputs conflicted, but internal columns are withheld. Pinned by a new
+case in `global-exception.filter.spec.ts` (`target: [organization_id, code, email]` →
+`fields: [code, email]`). The existing signup-edge-cases assertions (email/phone_number)
+still pass.
 
-- **F4 — P2002 leaks field names.** `GlobalExceptionFilter` returns
-  `details.fields = meta.target` (the unique-index columns). This is the **documented
-  error contract** (CLAUDE.md), so I did not change it unilaterally — the enumeration value
-  is low. *Recommendation:* decide whether to keep field names on auth-sensitive endpoints.
-- **F5 — Presigned GET TTL + content-type trust.** Result-download URLs live 300s and the
-  stored content-type is whatever the client declared on PUT (no magic-byte inspection) —
-  standard for presigned flows, low risk given keys are non-guessable and access is
-  list-gated. *Recommendation:* consider a shorter TTL for result downloads.
+### F5 — Presigned GET TTL *(Low)*
+Result-download URLs lived **300s**. **Fixed** by lowering the default
+`R2_PRESIGN_GET_TTL_SECONDS` to **120s** — a presigned GET only needs to live long enough
+to *start* the fetch, so this narrows the replay window for a leaked URL (PUT TTL stays 300s
+for larger/slower uploads; both remain env-overridable). *Residual (accepted):* the stored
+content-type is the client-declared one on PUT (no magic-byte inspection) — standard for
+presigned flows and low risk given keys are non-guessable and access is list-gated.
 
 ---
 
@@ -165,3 +172,5 @@ npm run build   # → webpack compiled successfully
 - `test/integration/financial/money-bounds.int.spec.ts` *(new — F2 regression)*
 - `src/core/auth/auth.controller.ts` *(F3 — IP throttle on registration/status)*
 - `src/main.ts` *(F6 — CORS prod fail-fast)*
+- `src/common/filters/global-exception.filter.ts` + `.spec.ts` *(F4 — conflict-field allowlist + test)*
+- `src/config/storage.config.ts`, `.env.example`, `CLAUDE.md` *(F5 — GET TTL 120s + docs)*
