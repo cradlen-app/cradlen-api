@@ -36,9 +36,30 @@ export async function cleanDatabase(prisma: PrismaClient): Promise<void> {
   // against Neon's latency; a single statement is atomic, faster, and
   // FK-order-independent (CASCADE handles dependents).
   const tableList = TABLES.map((table) => `"${table}"`).join(', ');
-  await (
+  const exec = (
     prisma as unknown as {
       $executeRawUnsafe: (sql: string) => Promise<unknown>;
     }
-  ).$executeRawUnsafe(`TRUNCATE TABLE ${tableList} CASCADE`);
+  ).$executeRawUnsafe.bind(prisma);
+
+  // TRUNCATE takes an ACCESS EXCLUSIVE lock on every listed table. The app
+  // under test runs background async work (scheduled cleanup crons, domain
+  // event-listener writes) that can momentarily hold a conflicting lock,
+  // surfacing as a transient `40P01 deadlock detected` (or `55P03 lock not
+  // available`). The loser is aborted immediately, so a short bounded retry
+  // clears it deterministically without masking a real failure.
+  const RETRYABLE = new Set(['40P01', '55P03']);
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      await exec(`TRUNCATE TABLE ${tableList} CASCADE`);
+      return;
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (!RETRYABLE.has(code ?? '')) throw error;
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 150 * attempt));
+    }
+  }
+  throw lastError;
 }

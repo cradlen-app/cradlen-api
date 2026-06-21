@@ -3,6 +3,7 @@ import {
   ValidationPipe,
   VersioningType,
 } from '@nestjs/common';
+import { SchedulerRegistry } from '@nestjs/schedule';
 import { Test } from '@nestjs/testing';
 import { AppModule } from '../../src/app.module';
 import { GlobalExceptionFilter } from '../../src/common/filters/global-exception.filter';
@@ -59,5 +60,19 @@ export async function createTestApp(
   });
 
   await app.init();
+
+  // Integration tests must not run the app's wall-clock cron jobs. ScheduleModule
+  // (app.module) starts @Cron jobs on init — subscription-expiry (every 30m,
+  // writes `subscriptions`) and registration-cleanup (hourly, deletes `users`).
+  // Those tables are in the cleanDatabase TRUNCATE set, so a cron firing
+  // mid-suite opens a background transaction that races the `TRUNCATE … CASCADE`
+  // in beforeEach and intermittently deadlocks (Postgres 40P01) — the failure is
+  // non-deterministic because it depends on wall-clock timing. Stop every cron
+  // right after init so the test is the only writer for the duration of the run.
+  const scheduler = app.get(SchedulerRegistry, { strict: false });
+  for (const job of scheduler.getCronJobs().values()) {
+    await job.stop();
+  }
+
   return app;
 }
