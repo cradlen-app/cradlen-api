@@ -12,7 +12,9 @@ import { computePregnancyDating } from './pregnancy-dating.util.js';
 
 /** Prisma `include` for the patient's active journey + its stages and pregnancy. */
 const journeyInclude = {
-  care_path: { select: { code: true, name: true, specialty: { select: { code: true } } } },
+  care_path: {
+    select: { code: true, name: true, specialty: { select: { code: true } } },
+  },
   episodes: {
     where: { is_deleted: false },
     orderBy: { order: 'asc' },

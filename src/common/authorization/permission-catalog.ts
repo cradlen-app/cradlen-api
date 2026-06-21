@@ -1,9 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
-import {
-  PERMISSIONS,
-  type CatalogPermissionId,
-} from './permission-matrix.js';
+import { PERMISSIONS, type CatalogPermissionId } from './permission-matrix.js';
 
 /**
  * Capability-gate evaluator. Mirrors the frontend permission predicates
@@ -50,7 +47,8 @@ const PREDICATES: Record<CatalogPermissionId, Predicate> = {
     hasAnyStaffRole(u) && !isReceptionist(u) && !isAccountant(u),
   [PERMISSIONS.operationsView]: (u) =>
     isManager(u) || isReceptionist(u) || isClinical(u),
-  [PERMISSIONS.clinicalWorkspaceView]: (u) => isReceptionist(u) || isClinical(u),
+  [PERMISSIONS.clinicalWorkspaceView]: (u) =>
+    isReceptionist(u) || isClinical(u),
   [PERMISSIONS.patientDetailView]: (u) => isClinical(u),
   [PERMISSIONS.staffRead]: (u) => isManager(u) || isReceptionist(u),
   [PERMISSIONS.staffManage]: (u) => isManager(u),
@@ -68,7 +66,8 @@ const PREDICATES: Record<CatalogPermissionId, Predicate> = {
   [PERMISSIONS.financialRefund]: canAccessBilling,
   [PERMISSIONS.financialManageCatalog]: (u) => isOwner(u),
   [PERMISSIONS.financialManagePricing]: (u) => isOwner(u),
-  [PERMISSIONS.financialManageProviderPricing]: (u) => isOwner(u) || isClinical(u),
+  [PERMISSIONS.financialManageProviderPricing]: (u) =>
+    isOwner(u) || isClinical(u),
   [PERMISSIONS.financialCaptureCharge]: (u) => isDoctor(u) || isOwner(u),
   [PERMISSIONS.financialViewReports]: (u) => isManager(u) || isAccountant(u),
   [PERMISSIONS.financialViewOwnReports]: (u) => isClinical(u),

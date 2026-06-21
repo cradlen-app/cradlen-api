@@ -89,7 +89,11 @@ describe('PatientJourneyService', () => {
       id: 'j1',
       status: 'ACTIVE',
       started_at: new Date('2026-05-01T00:00:00Z'),
-      care_path: { code: 'OBGYN_PREGNANCY', name: 'Pregnancy', specialty: { code: 'OBGYN' } },
+      care_path: {
+        code: 'OBGYN_PREGNANCY',
+        name: 'Pregnancy',
+        specialty: { code: 'OBGYN' },
+      },
       episodes: [],
       pregnancy_record: {
         lmp: null,

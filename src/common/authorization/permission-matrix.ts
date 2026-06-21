@@ -46,7 +46,8 @@ export const PERMISSIONS = {
 } as const;
 
 /** Union of catalog permission id literals (e.g. `'financial.read'`). */
-export type CatalogPermissionId = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
+export type CatalogPermissionId =
+  (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 
 /**
  * The 7 reference personas. The owner and branch-manager axes are each split by
@@ -81,29 +82,29 @@ const F = false;
  */
 export const PERMISSION_MATRIX: PermissionMatrix = {
   // id                         ownDoc ownOnly bmDoc bmOnly doctor recep  acct
-  'dashboard.home':            row(T,    T,     T,    T,     T,     F,     F),
-  'operations.view':           row(T,    T,     T,    T,     T,     T,     F),
-  'clinicalWorkspace.view':    row(T,    F,     T,    F,     T,     T,     F),
-  'patient.detail.view':       row(T,    F,     T,    F,     T,     F,     F),
-  'staff.read':                row(T,    T,     T,    T,     F,     T,     F),
-  'staff.manage':              row(T,    T,     T,    T,     F,     F,     F),
-  'staff.editRoles':           row(T,    T,     F,    F,     F,     F,     F),
-  'staff.delete':              row(T,    T,     F,    F,     F,     F,     F),
-  'settings.view':             row(T,    T,     T,    T,     T,     T,     T),
-  'settings.manageOrg':        row(T,    T,     F,    F,     F,     F,     F),
-  'medicine.read':             row(T,    T,     T,    T,     T,     F,     F),
-  'medicalRep.view':           row(T,    T,     T,    T,     T,     F,     F),
-  'financial.read':            row(T,    T,     T,    T,     F,     T,     T),
-  'financial.collectPayment':  row(T,    T,     T,    T,     F,     T,     T),
-  'financial.manageCash':      row(T,    T,     T,    T,     F,     T,     T),
-  'financial.refund':          row(T,    T,     T,    T,     F,     T,     T),
-  'financial.manageCatalog':   row(T,    T,     F,    F,     F,     F,     F),
-  'financial.managePricing':   row(T,    T,     F,    F,     F,     F,     F),
-  'financial.manageProviderPricing': row(T, T,   T,    F,     T,     F,     F),
-  'financial.captureCharge':   row(T,    T,     T,    F,     T,     F,     F),
-  'financial.viewReports':     row(T,    T,     T,    T,     F,     F,     T),
-  'financial.viewOwnReports':  row(T,    F,     T,    F,     T,     F,     F),
-  'financial.viewReportsNav':  row(T,    T,     T,    T,     T,     F,     T),
+  'dashboard.home': row(T, T, T, T, T, F, F),
+  'operations.view': row(T, T, T, T, T, T, F),
+  'clinicalWorkspace.view': row(T, F, T, F, T, T, F),
+  'patient.detail.view': row(T, F, T, F, T, F, F),
+  'staff.read': row(T, T, T, T, F, T, F),
+  'staff.manage': row(T, T, T, T, F, F, F),
+  'staff.editRoles': row(T, T, F, F, F, F, F),
+  'staff.delete': row(T, T, F, F, F, F, F),
+  'settings.view': row(T, T, T, T, T, T, T),
+  'settings.manageOrg': row(T, T, F, F, F, F, F),
+  'medicine.read': row(T, T, T, T, T, F, F),
+  'medicalRep.view': row(T, T, T, T, T, F, F),
+  'financial.read': row(T, T, T, T, F, T, T),
+  'financial.collectPayment': row(T, T, T, T, F, T, T),
+  'financial.manageCash': row(T, T, T, T, F, T, T),
+  'financial.refund': row(T, T, T, T, F, T, T),
+  'financial.manageCatalog': row(T, T, F, F, F, F, F),
+  'financial.managePricing': row(T, T, F, F, F, F, F),
+  'financial.manageProviderPricing': row(T, T, T, F, T, F, F),
+  'financial.captureCharge': row(T, T, T, F, T, F, F),
+  'financial.viewReports': row(T, T, T, T, F, F, T),
+  'financial.viewOwnReports': row(T, F, T, F, T, F, F),
+  'financial.viewReportsNav': row(T, T, T, T, T, F, T),
 };
 
 function row(
