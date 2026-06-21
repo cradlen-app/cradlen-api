@@ -1,6 +1,5 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { JwtService } from '@nestjs/jwt';
 import type { PrismaClient } from '@prisma/client';
 import { createTestApp } from '../../helpers/app-factory';
 import { cleanDatabase } from '../../helpers/db-cleaner';
@@ -10,6 +9,7 @@ import {
 } from '../../helpers/prisma-test-client';
 import { seedOrg } from '../../helpers/financial-helpers';
 import { seedVisit } from '../../helpers/visits-helpers';
+import { createPatientAccount } from '../../helpers/patient-portal-helpers';
 
 /**
  * Patient-portal cross-account isolation (IDOR). A patient-portal session is
@@ -27,7 +27,6 @@ describe('Patient portal — cross-account IDOR (integration)', () => {
   let app: INestApplication;
   let mailMock: jest.Mock;
   let prisma: PrismaClient;
-  const jwt = new JwtService({});
 
   beforeAll(async () => {
     mailMock = jest.fn().mockResolvedValue(undefined);
@@ -54,26 +53,6 @@ describe('Patient portal — cross-account IDOR (integration)', () => {
     );
     mailMock.mockClear();
   });
-
-  /** Mint a patient-portal access token the PatientJwtStrategy will accept. */
-  function patientToken(accountId: string, patientId: string): string {
-    return jwt.sign(
-      { accountId, patientId, type: 'patient_access' },
-      { secret: process.env.JWT_ACCESS_SECRET!, expiresIn: '15m' },
-    );
-  }
-
-  async function createAccount(
-    patientId: string,
-  ): Promise<{ accountId: string; token: string }> {
-    const account = await prisma.patientAccount.create({
-      data: { patient_id: patientId, is_active: true },
-    });
-    return {
-      accountId: account.id,
-      token: patientToken(account.id, patientId),
-    };
-  }
 
   /**
    * Two orgs are irrelevant here — both patients are seeded under one clinic so
@@ -105,8 +84,8 @@ describe('Patient portal — cross-account IDOR (integration)', () => {
         status: 'ORDERED',
       },
     });
-    const accA = await createAccount(a.patientId);
-    const accB = await createAccount(b.patientId);
+    const accA = await createPatientAccount(prisma, a.patientId);
+    const accB = await createPatientAccount(prisma, b.patientId);
     return { a, b, bInvestigation, accA, accB };
   }
 
