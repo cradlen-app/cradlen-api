@@ -1,5 +1,6 @@
 import { config } from 'dotenv';
 import { PrismaNeon } from '@prisma/adapter-neon';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 import { seedBookVisitTemplate } from './seeds/book-visit.js';
 import { seedObgynPatientHistoryTemplate } from './seeds/obgyn-patient-history.js';
@@ -17,7 +18,11 @@ config({
   override: true,
 });
 
-const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! });
+const connectionString = process.env.DATABASE_URL!;
+const adapter =
+  process.env.DB_ADAPTER === 'pg'
+    ? new PrismaPg({ connectionString })
+    : new PrismaNeon({ connectionString });
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
