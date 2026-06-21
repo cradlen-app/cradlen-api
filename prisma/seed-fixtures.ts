@@ -17,6 +17,7 @@
  */
 import { config } from 'dotenv';
 import { PrismaNeon } from '@prisma/adapter-neon';
+import { PrismaPg } from '@prisma/adapter-pg';
 import {
   PrismaClient,
   type EngagementType,
@@ -31,7 +32,11 @@ config({
   override: true,
 });
 
-const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! });
+const connectionString = process.env.DATABASE_URL!;
+const adapter =
+  process.env.DB_ADAPTER === 'pg'
+    ? new PrismaPg({ connectionString })
+    : new PrismaNeon({ connectionString });
 const prisma = new PrismaClient({ adapter });
 
 const DEFAULT_PASSWORD = 'TestPass123!';

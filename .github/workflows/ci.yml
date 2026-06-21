@@ -5,9 +5,8 @@ on:
   push:
     branches: [development, testing, main]
 
-# The DB tests share a Neon test branch (the app uses the @prisma/adapter-neon
-# driver, so a plain Postgres service container can't back it). Serialize runs on
-# the same ref so concurrent runs don't truncate each other's test data.
+# Each run gets its own in-runner Postgres, so runs are isolated; still cancel
+# superseded runs on the same ref to save minutes.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -32,11 +31,27 @@ jobs:
     name: Unit + integration + e2e
     runs-on: ubuntu-latest
     needs: quality
+    services:
+      # Ephemeral, in-runner Postgres — ~0 latency and fully isolated per run
+      # (no shared Neon branch). The app talks to it via the node-postgres driver
+      # adapter (DB_ADAPTER=pg); Neon stays the prod/dev driver.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: cradlen_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     env:
-      # Point at a dedicated Neon TEST branch (data is truncated between tests —
-      # never a branch with real data). Provided as repo/environment secrets.
-      DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
-      DIRECT_URL: ${{ secrets.TEST_DIRECT_URL }}
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/cradlen_test
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/cradlen_test
+      DB_ADAPTER: pg
       # Signing secrets for test-minted tokens — fixed, non-production values.
       JWT_ACCESS_SECRET: ci-access-secret-at-least-32-chars-long!!
       JWT_REFRESH_SECRET: ci-refresh-secret-at-least-32-chars-long!!
@@ -57,7 +72,7 @@ jobs:
       - name: Unit tests (+coverage gate)
         run: npm run test:cov
       # Integration: global-setup runs `migrate deploy` + `db seed` against the
-      # Neon test branch, then the 27 suites (security / financial / clinical).
+      # in-runner Postgres, then the suites (security / financial / clinical).
       - name: Integration tests
         run: npm run test:integration
       - name: E2E tests
