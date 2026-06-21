@@ -111,7 +111,10 @@ and was accepted (201); the `@Max` is the sole reason it now 400s.
 ### F7 — `GET /patients/search` is a global cross-org patient registry *(Risk accepted)*
 **What it does.** The book-visit autocomplete fuzzy-matches by name / national id / phone
 across **all** organizations and returns full identity (national id, DOB, address, phone)
-so the booking form can prefill — the caller's own enrolled patients rank first.
+so the booking form can prefill — the caller's own enrolled patients rank first. The
+**guardian** lookup (`GET /guardians?search=`) follows the same model: with a search term it
+resolves guardians by name / national id across all orgs (full info, own-org first); without
+one it returns only the caller's org roster.
 
 **Posture.** The automated review flagged this as cross-tenant PII disclosure, and it is:
 any authenticated staff member can look up patients registered at other clinics and see
