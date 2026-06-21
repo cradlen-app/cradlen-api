@@ -1,5 +1,9 @@
 import { INestApplication } from '@nestjs/common';
-import * as request from 'supertest';
+import {
+  ThrottlerStorage,
+  type ThrottlerStorageOptions,
+} from '@nestjs/throttler';
+import request from 'supertest';
 import { createTestApp } from '../helpers/app-factory';
 import { cleanDatabase } from '../helpers/db-cleaner';
 import {
@@ -26,15 +30,26 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
   beforeEach(async () => {
     await cleanDatabase(getTestPrisma());
     mailMock.mockClear();
+    // Reset the in-memory rate-limit counters between tests. The auth routes
+    // carry a strict per-route cap (e.g. signup/start is 5 per 10-min window
+    // on the IP-only global throttler), which would otherwise accumulate
+    // across the suite and surface as spurious 429s.
+    app
+      .get<{ storage: Map<string, ThrottlerStorageOptions> }>(ThrottlerStorage)
+      .storage.clear();
   });
 
-  async function completeOwnerSignup() {
+  // Each test gets a distinct owner email so the per-identifier signup/start
+  // throttle (limit 5 / 10-min window, keyed by `${ip}:${email}`) never
+  // accumulates across the suite. The caller passes the bare lowercase email;
+  // start sends a padded/uppercased variant to exercise normalization.
+  async function completeOwnerSignup(email = 'sara@example.com') {
     const start = await request(app.getHttpServer())
       .post('/v1/auth/signup/start')
       .send({
         first_name: 'Sara',
         last_name: 'Ali',
-        email: '  SARA@example.com  ',
+        email: `  ${email.toUpperCase()}  `,
         phone_number: '+201012345678',
         password: PASSWORD,
         confirm_password: PASSWORD,
@@ -129,7 +144,7 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
             profile_id: expect.any(String),
             organization_id: expect.any(String),
             organization_name: 'Nour Clinic',
-            roles: ['OWNER'],
+            role: 'OWNER',
             branches: [
               expect.objectContaining({
                 branch_id: expect.any(String),
@@ -309,11 +324,12 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
   });
 
   it('logs in with profile selection and issues contextual tokens', async () => {
-    await completeOwnerSignup();
+    const email = 'owner-login@example.com';
+    await completeOwnerSignup(email);
 
     const login = await request(app.getHttpServer())
       .post('/v1/auth/login')
-      .send({ email: '  SARA@example.com  ', password: PASSWORD })
+      .send({ email: `  ${email.toUpperCase()}  `, password: PASSWORD })
       .expect(200);
 
     expect(login.body.data.type).toBe('profile_selection');
@@ -322,7 +338,7 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
         profile_id: expect.any(String),
         organization_id: expect.any(String),
         organization_name: 'Cradlen Clinic',
-        roles: ['OWNER'],
+        role: 'OWNER',
         branches: [
           expect.objectContaining({
             branch_id: expect.any(String),
@@ -347,7 +363,8 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
   });
 
   it('requires branch selection for profiles with multiple branches', async () => {
-    await completeOwnerSignup();
+    const email = 'owner-multibranch@example.com';
+    await completeOwnerSignup(email);
     const profile = await getTestPrisma().profile.findFirstOrThrow();
     const extraBranch = await getTestPrisma().branch.create({
       data: {
@@ -368,7 +385,7 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
 
     const login = await request(app.getHttpServer())
       .post('/v1/auth/login')
-      .send({ email: 'sara@example.com', password: PASSWORD })
+      .send({ email, password: PASSWORD })
       .expect(200);
 
     await request(app.getHttpServer())
@@ -390,7 +407,8 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
   });
 
   it('rejects branch selection outside the selected profile', async () => {
-    await completeOwnerSignup();
+    const email = 'owner-otherbranch@example.com';
+    await completeOwnerSignup(email);
     const profile = await getTestPrisma().profile.findFirstOrThrow();
     const otherOrganization = await getTestPrisma().organization.create({
       data: { name: 'Other Clinic' },
@@ -407,7 +425,7 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
 
     const login = await request(app.getHttpServer())
       .post('/v1/auth/login')
-      .send({ email: 'sara@example.com', password: PASSWORD })
+      .send({ email, password: PASSWORD })
       .expect(200);
 
     await request(app.getHttpServer())
@@ -421,8 +439,20 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
   });
 
   it('allows owner to create and list organization branches', async () => {
-    const tokens = await completeOwnerSignup();
+    const tokens = await completeOwnerSignup('owner-branches@example.com');
     const profile = await getTestPrisma().profile.findFirstOrThrow();
+
+    // Signup provisions a free-trial subscription capped at 1 branch
+    // (`assertBranchLimit` → 403 once the cap is hit). To exercise the branch
+    // create + list path the org must be on a plan that permits >1 branch, so
+    // move the subscription onto the multi-branch `network` plan first.
+    const networkPlan = await getTestPrisma().subscriptionPlan.findFirstOrThrow(
+      { where: { plan: 'network' } },
+    );
+    await getTestPrisma().subscription.updateMany({
+      where: { organization_id: profile.organization_id },
+      data: { subscription_plan_id: networkPlan.id },
+    });
 
     await request(app.getHttpServer())
       .post(`/v1/organizations/${profile.organization_id}/branches`)
