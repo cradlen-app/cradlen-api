@@ -77,7 +77,11 @@ describe('Calendar — events CRUD + visibility (integration)', () => {
   }
 
   async function setup() {
-    const org = await seedOrg(prisma, 'Calendar Clinic', 'owner.cal@example.com');
+    const org = await seedOrg(
+      prisma,
+      'Calendar Clinic',
+      'owner.cal@example.com',
+    );
     const member = await seedMember(prisma, {
       orgId: org.org.id,
       branchId: org.branch.id,
@@ -85,8 +89,16 @@ describe('Calendar — events CRUD + visibility (integration)', () => {
       roleCode: 'STAFF',
       assignToBranch: true,
     });
-    const ownerAuth = await authFor(org.ownerProfileId, org.org.id, org.branch.id);
-    const memberAuth = await authFor(member.profileId, org.org.id, org.branch.id);
+    const ownerAuth = await authFor(
+      org.ownerProfileId,
+      org.org.id,
+      org.branch.id,
+    );
+    const memberAuth = await authFor(
+      member.profileId,
+      org.org.id,
+      org.branch.id,
+    );
     return { org, member, ownerAuth, memberAuth };
   }
 
@@ -143,9 +155,9 @@ describe('Calendar — events CRUD + visibility (integration)', () => {
       ).expect(204);
 
       // Gone afterwards
-      await ownerAuth(
-        request(http()).get(`/v1/calendar/events/${id}`),
-      ).expect(404);
+      await ownerAuth(request(http()).get(`/v1/calendar/events/${id}`)).expect(
+        404,
+      );
 
       // soft-deleted in the DB
       const row = await prisma.calendarEvent.findUnique({ where: { id } });
@@ -177,14 +189,14 @@ describe('Calendar — events CRUD + visibility (integration)', () => {
       const id = created.body.data.id as string;
 
       // Owner can read it
-      await ownerAuth(
-        request(http()).get(`/v1/calendar/events/${id}`),
-      ).expect(200);
+      await ownerAuth(request(http()).get(`/v1/calendar/events/${id}`)).expect(
+        200,
+      );
 
       // Member cannot read it directly
-      await memberAuth(
-        request(http()).get(`/v1/calendar/events/${id}`),
-      ).expect(404);
+      await memberAuth(request(http()).get(`/v1/calendar/events/${id}`)).expect(
+        404,
+      );
 
       // Member's own list excludes it
       const memberList = await memberAuth(
@@ -235,9 +247,9 @@ describe('Calendar — events CRUD + visibility (integration)', () => {
       expect(created.body.data.branch_id).toBeNull();
 
       // Member can read it directly
-      await memberAuth(
-        request(http()).get(`/v1/calendar/events/${id}`),
-      ).expect(200);
+      await memberAuth(request(http()).get(`/v1/calendar/events/${id}`)).expect(
+        200,
+      );
 
       // Member sees it in their list
       const memberList = await memberAuth(
@@ -272,9 +284,9 @@ describe('Calendar — events CRUD + visibility (integration)', () => {
       expect(created.body.data.branch_id).toBe(org.branch.id);
 
       // Member is assigned to that branch and has it as active branch → visible
-      await memberAuth(
-        request(http()).get(`/v1/calendar/events/${id}`),
-      ).expect(200);
+      await memberAuth(request(http()).get(`/v1/calendar/events/${id}`)).expect(
+        200,
+      );
 
       const memberList = await memberAuth(
         request(http()).get(`/v1/calendar/events?from=${FROM}&to=${TO}`),
@@ -297,9 +309,7 @@ describe('Calendar — events CRUD + visibility (integration)', () => {
       const id = created.body.data.id as string;
 
       // Even though the member can SEE the org event, they can't edit it.
-      await memberAuth(
-        request(http()).patch(`/v1/calendar/events/${id}`),
-      )
+      await memberAuth(request(http()).patch(`/v1/calendar/events/${id}`))
         .send({ title: 'Hijacked' })
         .expect(404);
 
@@ -329,7 +339,11 @@ describe('Calendar — events CRUD + visibility (integration)', () => {
   describe('cross-org isolation', () => {
     it('an event in another org is not readable (404)', async () => {
       const { ownerAuth } = await setup();
-      const other = await seedOrg(prisma, 'Other Clinic', 'owner.other@example.com');
+      const other = await seedOrg(
+        prisma,
+        'Other Clinic',
+        'owner.other@example.com',
+      );
       const otherAuth = await authFor(
         other.ownerProfileId,
         other.org.id,
@@ -344,9 +358,9 @@ describe('Calendar — events CRUD + visibility (integration)', () => {
       const id = created.body.data.id as string;
 
       // First org's owner cannot read the other org's event
-      await ownerAuth(
-        request(http()).get(`/v1/calendar/events/${id}`),
-      ).expect(404);
+      await ownerAuth(request(http()).get(`/v1/calendar/events/${id}`)).expect(
+        404,
+      );
     });
   });
 });

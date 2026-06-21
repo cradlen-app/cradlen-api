@@ -91,7 +91,11 @@ describe('Notifications — staff inbox + scoping + listener (integration)', () 
   }
 
   async function setup() {
-    const org = await seedOrg(prisma, 'Notify Clinic', 'owner.notify@example.com');
+    const org = await seedOrg(
+      prisma,
+      'Notify Clinic',
+      'owner.notify@example.com',
+    );
     const memberB = await seedMember(prisma, {
       orgId: org.org.id,
       branchId: org.branch.id,
@@ -149,7 +153,9 @@ describe('Notifications — staff inbox + scoping + listener (integration)', () 
         request(http()).patch(`/v1/notifications/${nA.id}/read`),
       ).expect(404);
 
-      const row = await prisma.notification.findUnique({ where: { id: nA.id } });
+      const row = await prisma.notification.findUnique({
+        where: { id: nA.id },
+      });
       expect(row?.is_read).toBe(false);
     });
 
@@ -171,9 +177,9 @@ describe('Notifications — staff inbox + scoping + listener (integration)', () 
       await seedNotification(profileA, { title: 'A2' });
       const nB = await seedNotification(memberB.profileId, { title: 'B1' });
 
-      await authA(
-        request(http()).patch('/v1/notifications/read-all'),
-      ).expect(204);
+      await authA(request(http()).patch('/v1/notifications/read-all')).expect(
+        204,
+      );
 
       const aUnread = await prisma.notification.count({
         where: { profile_id: profileA, is_read: false },
