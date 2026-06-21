@@ -62,6 +62,22 @@ describe('GlobalExceptionFilter', () => {
       );
     });
 
+    it('P2002 surfaces caller fields but withholds internal columns (no schema enumeration)', () => {
+      const { host, json } = buildMockHost();
+      // Composite unique conflict that mixes a caller field with an internal FK.
+      const err = buildPrismaKnownError('P2002', {
+        target: ['organization_id', 'code', 'email'],
+      });
+
+      filter.catch(err, host);
+
+      const body = json.mock.calls[0][0] as {
+        error: { details: { fields: string[] } };
+      };
+      expect(body.error.details.fields).toEqual(['code', 'email']);
+      expect(body.error.details.fields).not.toContain('organization_id');
+    });
+
     it('maps P2025 (not found) to 404 NOT_FOUND', () => {
       const { host, status, json } = buildMockHost();
       const err = buildPrismaKnownError('P2025');

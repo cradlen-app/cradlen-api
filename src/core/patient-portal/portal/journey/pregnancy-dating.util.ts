@@ -53,10 +53,8 @@ export function computePregnancyDating(
   now: Date,
 ): PregnancyDating {
   if (input.us_dating_date) {
-    const gaAtScanDays =
-      (input.us_ga_weeks ?? 0) * 7 + (input.us_ga_days ?? 0);
-    const currentGaDays =
-      gaAtScanDays + daysBetween(input.us_dating_date, now);
+    const gaAtScanDays = (input.us_ga_weeks ?? 0) * 7 + (input.us_ga_days ?? 0);
+    const currentGaDays = gaAtScanDays + daysBetween(input.us_dating_date, now);
     const { weeks, days } = splitGa(currentGaDays);
     return {
       gestationalAgeWeeks: weeks,

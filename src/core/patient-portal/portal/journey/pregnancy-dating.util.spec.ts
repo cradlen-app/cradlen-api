@@ -43,7 +43,12 @@ describe('computePregnancyDating', () => {
   it('returns all-null when no dating anchor is recorded', () => {
     expect(
       computePregnancyDating(
-        { lmp: null, us_dating_date: null, us_ga_weeks: null, us_ga_days: null },
+        {
+          lmp: null,
+          us_dating_date: null,
+          us_ga_weeks: null,
+          us_ga_days: null,
+        },
         now,
       ),
     ).toEqual({

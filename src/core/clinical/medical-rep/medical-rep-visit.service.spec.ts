@@ -167,7 +167,10 @@ describe('MedicalRepVisitService', () => {
 
   describe('rep visit history — branch gating', () => {
     it('confines a BRANCH_MANAGER to their assigned branches', async () => {
-      const branchManager: AuthContext = { ...mockUser, role: 'BRANCH_MANAGER' };
+      const branchManager: AuthContext = {
+        ...mockUser,
+        role: 'BRANCH_MANAGER',
+      };
       db.$transaction.mockResolvedValue([[], 0]);
       await service.listRepVisitHistory('rep-1', {}, branchManager);
       const where = db.medicalRepVisit.findMany.mock.calls[0][0].where;

@@ -30,6 +30,23 @@ interface HandledError {
   body: ErrorBody;
 }
 
+/**
+ * Field names a P2002 (unique-conflict) response may echo back. These are values
+ * the caller themselves submitted, so naming the conflicting one is useful (the
+ * signup UX relies on `email` / `phone_number`) rather than a leak. Any other
+ * column from the violated unique index — internal FKs such as
+ * `organization_id`, or composite-constraint columns — is withheld so the error
+ * can't be used to enumerate the schema's constraints.
+ */
+const CLIENT_SAFE_CONFLICT_FIELDS = new Set([
+  'email',
+  'phone_number',
+  'national_id',
+  'code',
+  'slug',
+  'username',
+]);
+
 function isValidationErrorResponse(v: unknown): v is ValidationErrorResponse {
   return typeof v === 'object' && v !== null && 'message' in v;
 }
@@ -132,9 +149,12 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const { code, meta } = exception;
 
     if (code === 'P2002') {
-      const fields = Array.isArray(meta?.['target'])
+      const target = Array.isArray(meta?.['target'])
         ? (meta['target'] as string[])
         : [];
+      // Only surface caller-submitted fields; withhold internal columns so the
+      // conflict can't be used to map the schema's unique constraints.
+      const fields = target.filter((f) => CLIENT_SAFE_CONFLICT_FIELDS.has(f));
       return {
         status: HttpStatus.CONFLICT,
         body: {

@@ -46,10 +46,21 @@ describe('Visits — my-current (integration)', () => {
     `/v1/branches/${branchId}/visits/my-current`;
   const ids = (rows: Array<{ id: string }>) => rows.map((r) => r.id);
 
+  // my-current windows started_at to today's calendar bounds (todayBounds), so
+  // anchor seeds to start-of-today + a fixed offset rather than `now - N min`,
+  // which slips into yesterday's window when the suite runs just after local
+  // midnight. The window has no upper "now" bound, so any of-today offset works.
+  const todayAt = (minutesAfterMidnight: number): Date => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setMinutes(minutesAfterMidnight);
+    return d;
+  };
+
   it("returns ALL of the doctor's in-progress visits, oldest first", async () => {
     const a = await seedOrg(prisma, 'Clinic A', 'doc.a@example.com');
-    const earlier = new Date(Date.now() - 60 * 60 * 1000);
-    const later = new Date(Date.now() - 5 * 60 * 1000);
+    const earlier = todayAt(1);
+    const later = todayAt(2);
 
     // Seed the later one first to prove ordering is by started_at, not insert order.
     const late = await seedVisit(prisma, {
@@ -83,14 +94,14 @@ describe('Visits — my-current (integration)', () => {
       branchId: a.branch.id,
       doctorProfileId: a.ownerProfileId,
       status: 'IN_PROGRESS',
-      startedAt: new Date(Date.now() - 30 * 60 * 1000),
+      startedAt: todayAt(1),
     });
     const inConsultation = await seedVisit(prisma, {
       organizationId: a.org.id,
       branchId: a.branch.id,
       doctorProfileId: a.ownerProfileId,
       status: 'IN_CONSULTATION',
-      startedAt: new Date(Date.now() - 10 * 60 * 1000),
+      startedAt: todayAt(2),
     });
     await seedVisit(prisma, {
       organizationId: a.org.id,
@@ -103,7 +114,7 @@ describe('Visits — my-current (integration)', () => {
       branchId: a.branch.id,
       doctorProfileId: a.ownerProfileId,
       status: 'COMPLETED',
-      startedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+      startedAt: todayAt(3),
     });
 
     const auth = bearer(await loginAs(app, a.ownerEmail));

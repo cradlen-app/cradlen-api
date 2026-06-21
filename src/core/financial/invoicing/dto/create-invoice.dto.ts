@@ -7,11 +7,13 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   Min,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { DiscountType, InvoiceType } from '@prisma/client';
+import { MAX_MONETARY_AMOUNT } from '../../shared/money/money.js';
 
 export class InvoiceItemInputDto {
   @IsUUID()
@@ -28,6 +30,7 @@ export class InvoiceItemInputDto {
 
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
+  @Max(MAX_MONETARY_AMOUNT)
   unit_price!: number;
 
   @IsNumber({ maxDecimalPlaces: 2 })

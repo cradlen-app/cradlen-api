@@ -10,7 +10,11 @@ import {
 } from 'class-validator';
 
 export class CreateProviderServicesDto {
-  @ApiProperty({ isArray: true, type: String, description: 'Service IDs to authorize' })
+  @ApiProperty({
+    isArray: true,
+    type: String,
+    description: 'Service IDs to authorize',
+  })
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(50)
@@ -22,7 +26,9 @@ export class CreateProviderServicesDto {
   @IsOptional()
   branch_id?: string;
 
-  @ApiPropertyOptional({ description: 'Duration in minutes (shared across all)' })
+  @ApiPropertyOptional({
+    description: 'Duration in minutes (shared across all)',
+  })
   @IsInt()
   @Min(1)
   @IsOptional()

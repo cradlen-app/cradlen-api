@@ -243,7 +243,11 @@ describe('CashManagementService', () => {
       await service.reconcile(ORG, 'cs-1', accountant);
 
       // Accountants are gated by branch *access*, not branch *management*.
-      expect(mockAuth.assertCanAccessBranch).toHaveBeenCalledWith('p1', ORG, BRANCH);
+      expect(mockAuth.assertCanAccessBranch).toHaveBeenCalledWith(
+        'p1',
+        ORG,
+        BRANCH,
+      );
       expect(mockAuth.assertCanManageBranch).not.toHaveBeenCalled();
       expect(mockDb.cashSession.update.mock.calls[0][0].data.status).toBe(
         CashSessionStatus.RECONCILED,

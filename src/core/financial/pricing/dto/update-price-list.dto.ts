@@ -23,7 +23,7 @@ export class UpdatePriceListDto {
     description: 'Branch scope; null = org-wide.',
   })
   @IsOptional()
-  @ValidateIf((o) => o.branch_id !== null)
+  @ValidateIf((o: UpdatePriceListDto) => o.branch_id !== null)
   @IsUUID('4')
   branch_id?: string | null;
 
