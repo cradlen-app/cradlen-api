@@ -28,9 +28,15 @@ interface CarePathClinicalSurfaceMap {
 }
 
 const OBGYN_CARE_PATH_SURFACES: CarePathClinicalSurfaceMap[] = [
-  // Deferred follow-up (pregnancy vertical) will add e.g.:
-  // { specialtyCode: 'OBGYN', carePathCode: 'OBGYN_PREGNANCY',
-  //   templateCode: 'obgyn_pregnancy', label: 'Pregnancy', order: 0 },
+  // The pregnancy vertical: the active-journey "Pregnancy" tab backed by the
+  // obgyn_pregnancy template (profile + maternal/fetal surveillance).
+  {
+    specialtyCode: 'OBGYN',
+    carePathCode: 'OBGYN_PREGNANCY',
+    templateCode: 'obgyn_pregnancy',
+    label: 'Pregnancy',
+    order: 0,
+  },
 ];
 
 export async function seedCarePathClinicalSurfaces(

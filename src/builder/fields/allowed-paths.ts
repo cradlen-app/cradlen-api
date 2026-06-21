@@ -74,7 +74,10 @@ export const ALLOWED_PATHS = {
   ],
   LOOKUP: ['patient_id', 'medical_rep_id'],
   SYSTEM: ['visitor_type', 'specialty_code'],
-  COMPUTED: ['vitals.bmi'],
+  // vitals.bmi recomputed server-side; ga_*/edd_* recomputed by the pregnancy
+  // clinical surface (Naegele math from LMP / US dating). All read-only —
+  // build-submission strips COMPUTED, so the client never overwrites them.
+  COMPUTED: ['vitals.bmi', 'ga_lmp', 'edd_lmp', 'ga_us', 'edd_us'],
   // PATIENT_OBGYN_HISTORY targets the unified bulk PATCH at
   // `/patients/:id/obgyn-history`. Singleton JSON columns are reached via
   // their dotted nested path. Repeatable child collections (pregnancies,
@@ -298,6 +301,74 @@ export const ALLOWED_PATHS = {
     'outcome',
     'follow_up_date',
     'notes',
+  ],
+  // ---------------------------------------------------------------------------
+  // Pregnancy clinical surface (journey-centric chart). The obgyn_pregnancy
+  // template flattens these to the envelope root by binding path (no namespace
+  // containers); the backend pregnancy-clinical PATCH demuxes each root key into
+  // the right scoped record by namespace. Scopes:
+  //   PREGNANCY_JOURNEY → pregnancy_journey_records (one per pregnancy journey)
+  //   PREGNANCY_EPISODE → pregnancy_episode_records (one per episode; JSON labs)
+  //   PREGNANCY_VISIT   → visit_pregnancy_records   (maternal + shared fetal)
+  //   PREGNANCY_FETUS   → visit_fetal_records       (repeatable, per fetus)
+  // status/created_at/updated_at are read-only display fields (lifecycle-managed
+  // by activation/close); the demux's writable allow-list excludes them.
+  PREGNANCY_JOURNEY: [
+    'status',
+    'risk_level',
+    'lmp',
+    'blood_group_rh',
+    'us_dating_date',
+    'us_ga_weeks',
+    'us_ga_days',
+    'pregnancy_type',
+    'number_of_fetuses',
+    'gender',
+    'created_at',
+    'updated_at',
+  ],
+  PREGNANCY_EPISODE: [
+    'anomaly_scan.date',
+    'anomaly_scan.result',
+    'anomaly_scan.notes',
+    'gtt_result.fasting',
+    'gtt_result.one_hour',
+    'gtt_result.two_hour',
+    'gtt_result.interpretation',
+    'trimester_summary.notes',
+  ],
+  PREGNANCY_VISIT: [
+    'cervix_length_mm',
+    'cervix_dilatation_cm',
+    'cervix_effacement_pct',
+    'cervix_position',
+    'membranes',
+    'warning_symptoms',
+    'fundal_height_cm',
+    'fundal_corresponds_ga',
+    'amniotic_fluid',
+    'placenta_location',
+    'placenta_grade',
+    'additional_findings',
+  ],
+  // Repeatable per-fetus section (body.fetuses[]); each row keyed by path tail.
+  PREGNANCY_FETUS: [
+    'fetus_label',
+    'gender',
+    'fetal_lie',
+    'presentation',
+    'engagement',
+    'fetal_heart_rate_bpm',
+    'fetal_rhythm',
+    'fetal_movements',
+    'bpd_mm',
+    'hc_mm',
+    'ac_mm',
+    'fl_mm',
+    'efw_g',
+    'growth_percentile',
+    'growth_impression',
+    'additional_findings',
   ],
 } as const satisfies Record<BindingNamespace, readonly string[]>;
 
