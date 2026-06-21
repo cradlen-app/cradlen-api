@@ -275,7 +275,10 @@ describe('PatientsService', () => {
 
     it('caps each tier at 20', async () => {
       db.$transaction.mockResolvedValue([[], []]);
-      await service.searchGlobal({ search: '01012345678', limit: 999 }, mockUser);
+      await service.searchGlobal(
+        { search: '01012345678', limit: 999 },
+        mockUser,
+      );
       expect(db.patient.findMany.mock.calls[0][0].take).toBe(20);
       expect(db.patient.findMany.mock.calls[1][0].take).toBe(20);
     });
