@@ -312,6 +312,7 @@ Table profiles {
   pregnancy_journey_updates pregnancy_journey_records [not null]
   pregnancy_episode_updates pregnancy_episode_records [not null]
   visit_pregnancy_updates visit_pregnancy_records [not null]
+  visit_fetal_updates visit_fetal_records [not null]
   visit_encounter_updates visit_encounters [not null]
   prescription_updates prescriptions [not null]
   prescription_item_updates prescription_items [not null]
@@ -324,6 +325,7 @@ Table profiles {
   pregnancy_journey_revisions pregnancy_journey_record_revisions [not null]
   pregnancy_episode_revisions pregnancy_episode_record_revisions [not null]
   visit_pregnancy_revisions visit_pregnancy_record_revisions [not null]
+  visit_fetal_revisions visit_fetal_record_revisions [not null]
   form_templates_created form_templates [not null]
   form_templates_updated form_templates [not null]
   medical_rep_visits_doctor medical_rep_visits [not null]
@@ -792,6 +794,7 @@ Table visits {
   encounter visit_encounters
   obgyn_encounter visit_obgyn_encounters
   pregnancy_record visit_pregnancy_records
+  fetal_records visit_fetal_records [not null]
   investigations visit_investigations [not null]
   diagnoses visit_diagnoses [not null]
   prescription prescriptions
@@ -1314,6 +1317,24 @@ Table visit_pregnancy_records {
   amniotic_fluid String
   placenta_location String
   placenta_grade Int
+  additional_findings Json
+  version Int [not null, default: 1]
+  updated_by_id String
+  updated_by profiles
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
+Table visit_fetal_records {
+  id String [pk]
+  visit_id String [not null]
+  visit visits [not null]
+  revisions visit_fetal_record_revisions [not null]
+  fetus_index Int [not null, default: 0]
+  fetus_label String
+  gender String
   fetal_lie String
   presentation String
   engagement String
@@ -1432,6 +1453,19 @@ Table visit_pregnancy_record_revisions {
   id String [pk]
   entity_id String [not null]
   entity visit_pregnancy_records [not null]
+  version Int [not null]
+  snapshot Json [not null]
+  changed_fields Json [not null]
+  revised_by_id String [not null]
+  revised_by profiles [not null]
+  revised_at DateTime [default: `now()`, not null]
+  revision_reason String
+}
+
+Table visit_fetal_record_revisions {
+  id String [pk]
+  entity_id String [not null]
+  entity visit_fetal_records [not null]
   version Int [not null]
   snapshot Json [not null]
   changed_fields Json [not null]
@@ -2233,6 +2267,10 @@ Enum BindingNamespace {
   VISIT_DIAGNOSIS
   PRESCRIPTION_ITEM
   MEDICAL_REP_VISIT
+  PREGNANCY_JOURNEY
+  PREGNANCY_EPISODE
+  PREGNANCY_VISIT
+  PREGNANCY_FETUS
 }
 
 Enum MedicalRepVisitStatus {
@@ -2665,6 +2703,10 @@ Ref: visit_pregnancy_records.visit_id - visits.id [delete: Cascade]
 
 Ref: visit_pregnancy_records.updated_by_id > profiles.id [delete: Set Null]
 
+Ref: visit_fetal_records.visit_id > visits.id [delete: Cascade]
+
+Ref: visit_fetal_records.updated_by_id > profiles.id [delete: Set Null]
+
 Ref: patient_obgyn_history_revisions.entity_id > patient_obgyn_histories.id [delete: Cascade]
 
 Ref: patient_obgyn_history_revisions.revised_by_id > profiles.id [delete: Cascade]
@@ -2696,6 +2738,10 @@ Ref: pregnancy_episode_record_revisions.revised_by_id > profiles.id [delete: Cas
 Ref: visit_pregnancy_record_revisions.entity_id > visit_pregnancy_records.id [delete: Cascade]
 
 Ref: visit_pregnancy_record_revisions.revised_by_id > profiles.id [delete: Cascade]
+
+Ref: visit_fetal_record_revisions.entity_id > visit_fetal_records.id [delete: Cascade]
+
+Ref: visit_fetal_record_revisions.revised_by_id > profiles.id [delete: Cascade]
 
 Ref: form_templates.specialty_id > specialties.id [delete: Set Null]
 

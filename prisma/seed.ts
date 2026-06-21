@@ -5,6 +5,7 @@ import { PrismaClient } from '@prisma/client';
 import { seedBookVisitTemplate } from './seeds/book-visit.js';
 import { seedObgynPatientHistoryTemplate } from './seeds/obgyn-patient-history.js';
 import { seedObgynExaminationTemplate } from './seeds/obgyn-examination.js';
+import { seedObgynPregnancyTemplate } from './seeds/obgyn-pregnancy.js';
 import { seedCarePathHistorySections } from './seeds/care-path-history-sections.js';
 import { seedCarePathClinicalSurfaces } from './seeds/care-path-clinical-surfaces.js';
 import { seedObgynDiagnosisCodes } from './seeds/diagnosis-codes-obgyn.js';
@@ -594,6 +595,7 @@ async function main() {
   await seedBookVisitTemplate(prisma);
   await seedObgynPatientHistoryTemplate(prisma);
   await seedObgynExaminationTemplate(prisma);
+  await seedObgynPregnancyTemplate(prisma);
   await seedMedicalRepVisitTemplate(prisma);
   await seedPrescriptionDefaultTemplate(prisma);
 

@@ -135,6 +135,19 @@ export interface VisitPregnancyRecordUpdatedEvent {
 }
 
 /**
+ * Payload for `pregnancy.closed`. Emitted when a pregnancy is closed (delivery
+ * recorded). The active journey is completed in the same transaction, freeing
+ * the single-active-journey slot for the next care path.
+ */
+export interface PregnancyClosedEvent {
+  journey_id: string;
+  patient_id: string;
+  /** Free-form delivery outcome snapshot (mode, date, notes). */
+  delivery_outcome?: Record<string, unknown> | null;
+  closed_by_id: string;
+}
+
+/**
  * Payload for `journey.clinical.updated`. Emitted when a care path's journey
  * clinical surface (journey profile + per-visit surveillance) is saved within a
  * visit. The concrete writer is the deferred pregnancy clinical vertical.

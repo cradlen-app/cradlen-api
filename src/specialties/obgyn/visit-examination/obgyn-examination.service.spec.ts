@@ -52,6 +52,8 @@ function createTx(opts: {
         ),
     },
     patientJourney: { update: jest.fn() },
+    // Pregnancy care-path switch guard: no active pregnancy in these fixtures.
+    pregnancyJourneyRecord: { findFirst: jest.fn().mockResolvedValue(null) },
   };
   return tx;
 }
