@@ -193,6 +193,10 @@ enum BindingNamespace {
   VISIT_DIAGNOSIS
   PRESCRIPTION_ITEM
   MEDICAL_REP_VISIT
+  PREGNANCY_JOURNEY
+  PREGNANCY_EPISODE
+  PREGNANCY_VISIT
+  PREGNANCY_FETUS
 }
 
 enum MedicalRepVisitStatus {
@@ -739,6 +743,7 @@ model Profile {
   pregnancy_journey_updates        PregnancyJourneyRecord[]         @relation("PregnancyJourneyRecordUpdatedBy")
   pregnancy_episode_updates        PregnancyEpisodeRecord[]         @relation("PregnancyEpisodeRecordUpdatedBy")
   visit_pregnancy_updates          VisitPregnancyRecord[]           @relation("VisitPregnancyRecordUpdatedBy")
+  visit_fetal_updates              VisitFetalRecord[]               @relation("VisitFetalRecordUpdatedBy")
   visit_encounter_updates          VisitEncounter[]                 @relation("VisitEncounterUpdatedBy")
   prescription_updates             Prescription[]                   @relation("PrescriptionUpdatedBy")
   prescription_item_updates        PrescriptionItem[]               @relation("PrescriptionItemUpdatedBy")
@@ -752,6 +757,7 @@ model Profile {
   pregnancy_journey_revisions      PregnancyJourneyRecordRevision[] @relation("PregnancyJourneyRecordRevisedBy")
   pregnancy_episode_revisions      PregnancyEpisodeRecordRevision[] @relation("PregnancyEpisodeRecordRevisedBy")
   visit_pregnancy_revisions        VisitPregnancyRecordRevision[]   @relation("VisitPregnancyRecordRevisedBy")
+  visit_fetal_revisions            VisitFetalRecordRevision[]       @relation("VisitFetalRecordRevisedBy")
   // Builder / medical-rep back-relations
   form_templates_created           FormTemplate[]                   @relation("FormTemplateCreatedBy")
   form_templates_updated           FormTemplate[]                   @relation("FormTemplateUpdatedBy")
@@ -1338,6 +1344,7 @@ model Visit {
   encounter               VisitEncounter?
   obgyn_encounter         VisitObgynEncounter?
   pregnancy_record        VisitPregnancyRecord?
+  fetal_records           VisitFetalRecord[]
   investigations          VisitInvestigation[]
   diagnoses               VisitDiagnosis[]
   prescription            Prescription?
@@ -2013,10 +2020,39 @@ model VisitPregnancyRecord {
   fundal_height_cm      Decimal? @db.Decimal(5, 2)
   fundal_corresponds_ga String?
 
-  // Amniotic & Placenta
+  // Amniotic & Placenta (shared across fetuses — single per visit)
   amniotic_fluid    String?
   placenta_location String?
   placenta_grade    Int?
+
+  // Per-fetus Fetal Lie + Biometric Measurements moved to VisitFetalRecord
+  // (multi-fetus). This row holds maternal + shared fetal context only.
+
+  additional_findings Json?
+  version             Int       @default(1)
+  updated_by_id       String?   @db.Uuid
+  updated_by          Profile?  @relation("VisitPregnancyRecordUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
+  is_deleted          Boolean   @default(false)
+  deleted_at          DateTime?
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
+
+  @@map("visit_pregnancy_records")
+}
+
+// Per-fetus surveillance within a single visit. A singleton pregnancy has one
+// row; twins/triplets add a row per fetus (fetus_index 0,1,2…). Fetal lie +
+// biometrics live here so multi-fetus is first-class. Maternal + shared fetal
+// context (cervix, fundal, amniotic, placenta) stay on VisitPregnancyRecord.
+model VisitFetalRecord {
+  id        String                     @id @default(uuid()) @db.Uuid
+  visit_id  String                     @db.Uuid
+  visit     Visit                      @relation(fields: [visit_id], references: [id], onDelete: Cascade)
+  revisions VisitFetalRecordRevision[]
+
+  fetus_index Int     @default(0)
+  fetus_label String?
+  gender      String?
 
   // Fetal Lie
   fetal_lie    String?
@@ -2038,13 +2074,14 @@ model VisitPregnancyRecord {
   additional_findings Json?
   version             Int       @default(1)
   updated_by_id       String?   @db.Uuid
-  updated_by          Profile?  @relation("VisitPregnancyRecordUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
+  updated_by          Profile?  @relation("VisitFetalRecordUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
   is_deleted          Boolean   @default(false)
   deleted_at          DateTime?
   created_at          DateTime  @default(now())
   updated_at          DateTime  @updatedAt
 
-  @@map("visit_pregnancy_records")
+  @@index([visit_id, is_deleted])
+  @@map("visit_fetal_records")
 }
 
 // ============================================================================
@@ -2189,6 +2226,22 @@ model VisitPregnancyRecordRevision {
 
   @@index([entity_id, version])
   @@map("visit_pregnancy_record_revisions")
+}
+
+model VisitFetalRecordRevision {
+  id              String           @id @default(uuid()) @db.Uuid
+  entity_id       String           @db.Uuid
+  entity          VisitFetalRecord @relation(fields: [entity_id], references: [id], onDelete: Cascade)
+  version         Int
+  snapshot        Json
+  changed_fields  Json
+  revised_by_id   String           @db.Uuid
+  revised_by      Profile          @relation("VisitFetalRecordRevisedBy", fields: [revised_by_id], references: [id], onDelete: Cascade)
+  revised_at      DateTime         @default(now())
+  revision_reason String?
+
+  @@index([entity_id, version])
+  @@map("visit_fetal_record_revisions")
 }
 
 // ============================================================================

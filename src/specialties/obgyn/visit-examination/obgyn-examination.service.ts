@@ -15,6 +15,7 @@ import {
 } from '@core/clinical/events/events.public';
 import { PatientAccessService } from '@core/patient/patient-access/patient-access.public';
 import { buildRevision } from '../revisions.helper';
+import { assertCarePathChangeAllowed } from '../pregnancy/pregnancy-care-path.guard';
 import { ObgynHistoryService } from '../patient-history/obgyn-history.service';
 import {
   DiagnosisRowDto,
@@ -173,6 +174,10 @@ export class ObgynExaminationService {
         `Care path "${carePathCode}" not found for this visit's specialty`,
       );
     }
+
+    // An ACTIVE pregnancy locks the journey's care path — it must be closed
+    // (delivery/outcome) before switching to a different (resolved) care path.
+    await assertCarePathChangeAllowed(tx, journey.id, carePathCode);
 
     await tx.patientJourney.update({
       where: { id: journey.id },
