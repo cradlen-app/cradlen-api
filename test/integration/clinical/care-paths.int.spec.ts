@@ -93,8 +93,16 @@ describe('Care paths — org-scoped read (integration)', () => {
     seedCarePath(orgId, label);
 
   it('returns system rows plus the caller org rows, but excludes another org private path', async () => {
-    const a = await seedOrg(prisma, 'Clinic A', `owner-a-${randomUUID()}@x.com`);
-    const b = await seedOrg(prisma, 'Clinic B', `owner-b-${randomUUID()}@x.com`);
+    const a = await seedOrg(
+      prisma,
+      'Clinic A',
+      `owner-a-${randomUUID()}@x.com`,
+    );
+    const b = await seedOrg(
+      prisma,
+      'Clinic B',
+      `owner-b-${randomUUID()}@x.com`,
+    );
     const system = await seedCarePath(null, 'SYS');
     const mine = await seedOrgCarePath(a.org.id, 'A');
     const foreign = await seedOrgCarePath(b.org.id, 'B');
@@ -129,8 +137,16 @@ describe('Care paths — org-scoped read (integration)', () => {
   });
 
   it('404s when fetching another org private care path by id', async () => {
-    const a = await seedOrg(prisma, 'Clinic A', `owner-a-${randomUUID()}@x.com`);
-    const b = await seedOrg(prisma, 'Clinic B', `owner-b-${randomUUID()}@x.com`);
+    const a = await seedOrg(
+      prisma,
+      'Clinic A',
+      `owner-a-${randomUUID()}@x.com`,
+    );
+    const b = await seedOrg(
+      prisma,
+      'Clinic B',
+      `owner-b-${randomUUID()}@x.com`,
+    );
     const foreign = await seedOrgCarePath(b.org.id, 'FOREIGN');
     const auth = await authFor(a.ownerProfileId, a.org.id);
 

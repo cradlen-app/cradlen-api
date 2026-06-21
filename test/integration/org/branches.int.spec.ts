@@ -183,8 +183,16 @@ describe('Branches — CRUD auth gates (integration)', () => {
   });
 
   it('a cross-org caller cannot create or update branches in this org (403)', async () => {
-    const a = await seedOrg(prisma, 'Clinic A', `owner-a-${randomUUID()}@x.com`);
-    const b = await seedOrg(prisma, 'Clinic B', `owner-b-${randomUUID()}@x.com`);
+    const a = await seedOrg(
+      prisma,
+      'Clinic A',
+      `owner-a-${randomUUID()}@x.com`,
+    );
+    const b = await seedOrg(
+      prisma,
+      'Clinic B',
+      `owner-b-${randomUUID()}@x.com`,
+    );
     const authB = await authFor(b.ownerProfileId, b.org.id);
 
     await authB(request(http()).post(`/v1/organizations/${a.org.id}/branches`))

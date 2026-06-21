@@ -68,8 +68,16 @@ describe('Medications — org-scoped read + create (integration)', () => {
   }
 
   it('search excludes another org medication, includes own + global', async () => {
-    const a = await seedOrg(prisma, 'Clinic A', `owner-a-${randomUUID()}@x.com`);
-    const b = await seedOrg(prisma, 'Clinic B', `owner-b-${randomUUID()}@x.com`);
+    const a = await seedOrg(
+      prisma,
+      'Clinic A',
+      `owner-a-${randomUUID()}@x.com`,
+    );
+    const b = await seedOrg(
+      prisma,
+      'Clinic B',
+      `owner-b-${randomUUID()}@x.com`,
+    );
     const tag = randomUUID().slice(0, 8);
 
     const mine = await prisma.medication.create({

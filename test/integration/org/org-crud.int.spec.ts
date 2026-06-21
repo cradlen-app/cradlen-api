@@ -112,16 +112,24 @@ describe('Organizations — CRUD auth gates (integration)', () => {
   });
 
   it('a caller from another org cannot PATCH or DELETE this org (403)', async () => {
-    const a = await seedOrg(prisma, 'Clinic A', `owner-a-${randomUUID()}@x.com`);
-    const b = await seedOrg(prisma, 'Clinic B', `owner-b-${randomUUID()}@x.com`);
+    const a = await seedOrg(
+      prisma,
+      'Clinic A',
+      `owner-a-${randomUUID()}@x.com`,
+    );
+    const b = await seedOrg(
+      prisma,
+      'Clinic B',
+      `owner-b-${randomUUID()}@x.com`,
+    );
     // Owner of B, token scoped to B, attempting to act on A.
     const authB = await authFor(b.ownerProfileId, b.org.id);
 
     await authB(request(http()).patch(`/v1/organizations/${a.org.id}`))
       .send({ name: 'Cross-tenant' })
       .expect(403);
-    await authB(
-      request(http()).delete(`/v1/organizations/${a.org.id}`),
-    ).expect(403);
+    await authB(request(http()).delete(`/v1/organizations/${a.org.id}`)).expect(
+      403,
+    );
   });
 });

@@ -104,8 +104,16 @@ describe('Invitations — create gate (integration)', () => {
   });
 
   it('a cross-org caller cannot invite into this org (403)', async () => {
-    const a = await seedOrg(prisma, 'Clinic A', `owner-a-${randomUUID()}@x.com`);
-    const b = await seedOrg(prisma, 'Clinic B', `owner-b-${randomUUID()}@x.com`);
+    const a = await seedOrg(
+      prisma,
+      'Clinic A',
+      `owner-a-${randomUUID()}@x.com`,
+    );
+    const b = await seedOrg(
+      prisma,
+      'Clinic B',
+      `owner-b-${randomUUID()}@x.com`,
+    );
     const staffRoleId = await roleIdByCode(prisma, 'STAFF');
     const authB = await authFor(b.ownerProfileId, b.org.id);
     const url = `/v1/organizations/${a.org.id}/branches/${a.branch.id}/invitations`;
