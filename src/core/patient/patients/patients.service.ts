@@ -7,6 +7,7 @@ import { AuthContext } from '@common/interfaces/auth-context.interface.js';
 import { CreatePatientDto } from './dto/create-patient.dto.js';
 import { UpdatePatientDto } from './dto/update-patient.dto.js';
 import { ListPatientsQueryDto } from './dto/list-patients-query.dto.js';
+import { SearchPatientsQueryDto } from './dto/search-patients-query.dto.js';
 import { ListBranchPatientsQueryDto } from './dto/list-branch-patients-query.dto.js';
 import { paginated } from '@common/utils/pagination.utils.js';
 import { PatientOrgEnrollmentStatus } from '@prisma/client';
@@ -75,6 +76,70 @@ export class PatientsService {
         address: dto.address,
       },
     });
+  }
+
+  /**
+   * Global patient lookup for the book-visit autocomplete. By product design the
+   * `Patient` record is a GLOBAL master index (org-scoping lives on Journey, not
+   * Patient), so a clinic can find and prefill from a patient first registered at
+   * any other clinic. The lookup fuzzy-matches by name / national id / phone
+   * across all organizations and returns the full identity needed to prefill the
+   * booking form.
+   *
+   * The caller's own enrolled patients rank first (the common case), then matches
+   * from other orgs. Authentication is required and results are capped per page;
+   * the cross-org exposure of the shared registry is an accepted product decision
+   * (see SECURITY-ASSESSMENT.md F7). `search` is pre-validated by the DTO.
+   */
+  async searchGlobal(query: SearchPatientsQueryDto, user: AuthContext) {
+    const limit = Math.min(query.limit ?? 20, 20);
+    const search = query.search.trim();
+
+    const fuzzy = [
+      { full_name: { contains: search, mode: 'insensitive' as const } },
+      { national_id: { contains: search } },
+      { phone_number: { contains: search } },
+    ];
+    const select = {
+      id: true,
+      full_name: true,
+      national_id: true,
+      phone_number: true,
+      date_of_birth: true,
+      address: true,
+      marital_status: true,
+      created_at: true,
+    };
+
+    const [own, all] = await this.prismaService.db.$transaction([
+      this.prismaService.db.patient.findMany({
+        where: {
+          is_deleted: false,
+          enrollments: {
+            some: { organization_id: user.organizationId, is_deleted: false },
+          },
+          OR: fuzzy,
+        },
+        take: limit,
+        orderBy: { created_at: 'desc' },
+        select,
+      }),
+      this.prismaService.db.patient.findMany({
+        where: { is_deleted: false, OR: fuzzy },
+        take: limit,
+        orderBy: { created_at: 'desc' },
+        select,
+      }),
+    ]);
+
+    // Caller's own patients first; then any other-org matches, deduped + capped.
+    const ownIds = new Set(own.map((p) => p.id));
+    const items = [...own, ...all.filter((p) => !ownIds.has(p.id))].slice(
+      0,
+      limit,
+    );
+
+    return paginated(items, { page: 1, limit, total: items.length });
   }
 
   async findAll(query: ListPatientsQueryDto, user: AuthContext) {

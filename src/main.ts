@@ -24,6 +24,16 @@ async function bootstrap() {
 
   app.use(helmet());
 
+  // Fail fast rather than boot a production API with no allowed origins. An
+  // empty CORS allowlist is fail-closed (every browser request is rejected), so
+  // an unset CORS_ORIGINS in prod silently breaks all first-party clients — a
+  // misconfiguration we'd rather surface at startup than in production traffic.
+  if (appConfig.env === 'production' && appConfig.cors.origins.length === 0) {
+    throw new Error(
+      'CORS_ORIGINS must be set in production (empty allowlist rejects all browser clients)',
+    );
+  }
+
   app.enableCors({
     origin: appConfig.cors.origins,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

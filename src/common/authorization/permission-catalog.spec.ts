@@ -23,8 +23,18 @@ const base = {
 };
 
 const personaContexts: Record<Persona, AuthContext> = {
-  ownerDoctor: { ...base, role: 'OWNER', jobFunction: 'DOCTOR', isClinical: true },
-  ownerNonDoctor: { ...base, role: 'OWNER', jobFunction: null, isClinical: false },
+  ownerDoctor: {
+    ...base,
+    role: 'OWNER',
+    jobFunction: 'DOCTOR',
+    isClinical: true,
+  },
+  ownerNonDoctor: {
+    ...base,
+    role: 'OWNER',
+    jobFunction: null,
+    isClinical: false,
+  },
   branchManagerDoctor: {
     ...base,
     role: 'BRANCH_MANAGER',

@@ -1,5 +1,5 @@
 import { INestApplication } from '@nestjs/common';
-import * as request from 'supertest';
+import request from 'supertest';
 import { createTestApp } from '../helpers/app-factory';
 import { disconnectTestPrisma } from '../helpers/prisma-test-client';
 

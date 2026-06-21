@@ -1,5 +1,10 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Public } from '@common/decorators/public.decorator.js';
 import { CurrentPatient } from '@common/decorators/current-patient.decorator.js';
 import { PatientJwtAuthGuard } from '@common/guards/patient-jwt-auth.guard.js';

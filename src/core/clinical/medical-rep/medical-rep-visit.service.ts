@@ -648,7 +648,8 @@ export class MedicalRepVisitService {
     user: AuthContext,
   ): Prisma.MedicalRepVisitWhereInput {
     if (user.role === 'OWNER') return {};
-    if (user.role === 'BRANCH_MANAGER') return { branch_id: { in: user.branchIds } };
+    if (user.role === 'BRANCH_MANAGER')
+      return { branch_id: { in: user.branchIds } };
     return { assigned_doctor_id: user.profileId };
   }
 

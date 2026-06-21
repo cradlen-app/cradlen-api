@@ -146,6 +146,11 @@ export class AuthController {
 
   @Get('registration/status')
   @Public()
+  // IP-throttled tighter than the global default: this endpoint returns a
+  // different shape for a known vs unknown email, so an unbounded caller could
+  // enumerate registered accounts. Per-identifier throttling doesn't help here
+  // (each probe is a different email), so the IP bucket is what bounds the sweep.
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Get registration onboarding status' })
   @ApiStandardResponse(RegistrationStatusResponseDto)

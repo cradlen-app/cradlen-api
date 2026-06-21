@@ -19,9 +19,14 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "test:integration": "jest --config ./test/jest-integration.json",
-    "test:all": "npm run test && npm run test:e2e",
+    "test:all": "npm run test && npm run test:integration && npm run test:e2e",
+    "migrate:check": "prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code",
+    "smoke": "node scripts/smoke.mjs",
     "seed:fixtures": "tsx prisma/seed-fixtures.ts",
     "backfill:invoice-doctor": "tsx prisma/backfill-invoice-doctor.ts"
+  },
+  "engines": {
+    "node": ">=22 <23"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1062.0",
@@ -126,6 +131,14 @@
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node",
-    "clearMocks": true
+    "clearMocks": true,
+    "coverageThreshold": {
+      "global": {
+        "statements": 45,
+        "branches": 42,
+        "functions": 48,
+        "lines": 45
+      }
+    }
   }
 }

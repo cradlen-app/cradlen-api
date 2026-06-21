@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [development, testing, main]
+
+# The DB tests share a Neon test branch (the app uses the @prisma/adapter-neon
+# driver, so a plain Postgres service container can't back it). Serialize runs on
+# the same ref so concurrent runs don't truncate each other's test data.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Lint & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx prisma generate
+      # No --fix in CI: any lint problem must fail the gate, not be auto-patched.
+      - run: npx eslint "{src,apps,libs,test}/**/*.ts"
+      - run: npm run build
+
+  tests:
+    name: Unit + integration + e2e
+    runs-on: ubuntu-latest
+    needs: quality
+    env:
+      # Point at a dedicated Neon TEST branch (data is truncated between tests —
+      # never a branch with real data). Provided as repo/environment secrets.
+      DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+      DIRECT_URL: ${{ secrets.TEST_DIRECT_URL }}
+      # Signing secrets for test-minted tokens — fixed, non-production values.
+      JWT_ACCESS_SECRET: ci-access-secret-at-least-32-chars-long!!
+      JWT_REFRESH_SECRET: ci-refresh-secret-at-least-32-chars-long!!
+      JWT_RESET_SECRET: ci-reset-secret-at-least-32-chars-long!!
+      APP_URL: http://localhost:3000
+      RESEND_API_KEY: test-key
+      RESEND_FROM_EMAIL: noreply@example.com
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx prisma generate
+      # Unit tests with coverage so the coverageThreshold gate is enforced.
+      - name: Unit tests (+coverage gate)
+        run: npm run test:cov
+      # Integration: global-setup runs `migrate deploy` + `db seed` against the
+      # Neon test branch, then the 27 suites (security / financial / clinical).
+      - name: Integration tests
+        run: npm run test:integration
+      - name: E2E tests
+        run: npm run test:e2e
+      # Migration integrity: after deploy, the live schema must match schema.prisma
+      # with no leftover drift (guards the "column in schema, no migration" class).
+      - name: Migration drift check
+        run: npm run migrate:check

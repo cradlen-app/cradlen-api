@@ -40,7 +40,10 @@ export default registerAs('storage', (): StorageConfig => {
     },
     presign: {
       putTtlSeconds: parsePositiveInt('R2_PRESIGN_PUT_TTL_SECONDS', '300'),
-      getTtlSeconds: parsePositiveInt('R2_PRESIGN_GET_TTL_SECONDS', '300'),
+      // Short-lived download links: a presigned GET only needs to live long
+      // enough for the client to START the fetch, so a tight default narrows the
+      // window in which a leaked result-file URL is replayable.
+      getTtlSeconds: parsePositiveInt('R2_PRESIGN_GET_TTL_SECONDS', '120'),
     },
     uploads: {
       maxBytes: parsePositiveInt('R2_MAX_UPLOAD_BYTES', '15000000'),

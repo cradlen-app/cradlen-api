@@ -371,12 +371,12 @@ describe('Financial RCM — lifecycle + cross-tenant (integration)', () => {
       .send({ branch_id: a.branch.id, opening_float: 100 })
       .expect(409);
 
-    // record a 200 CASH payment linked to the session
+    // record a 200 CASH payment — the server attributes it to the caller's open
+    // drawer (clients don't pass a session id; that's resolved server-side).
     await auth(request(http).post(`${base}/invoices/${invoiceId}/payments`))
       .send({
         amount: 200,
         payment_method: 'CASH',
-        cash_session_id: sessionId,
       })
       .expect(201);
 

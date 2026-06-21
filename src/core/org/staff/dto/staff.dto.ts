@@ -301,7 +301,9 @@ export class ListStaffQueryDto {
       'Filters to doctors who hold the given subspecialty code (via ProfileSubspecialty). Composes (AND) with `specialty_code` to narrow the book-visit doctor picker. An empty value leaves the list at the specialty level.',
   })
   @IsOptional()
-  @Transform(({ value }) => (value === '' ? undefined : value))
+  @Transform(({ value }: { value: unknown }) =>
+    value === '' ? undefined : value,
+  )
   @IsString()
   subspecialty_code?: string;
 
@@ -310,7 +312,9 @@ export class ListStaffQueryDto {
       'Filters to providers authorized (active ProviderService) for the given service id — at the path branch or org-wide. Narrows the book-visit doctor picker to doctors who can deliver the chosen service.',
   })
   @IsOptional()
-  @Transform(({ value }) => (value === '' ? undefined : value))
+  @Transform(({ value }: { value: unknown }) =>
+    value === '' ? undefined : value,
+  )
   @IsUUID('4')
   authorized_for_service?: string;
 

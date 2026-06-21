@@ -64,8 +64,8 @@ describe('ProviderServicesService', () => {
     mockDb.profile.findFirst.mockResolvedValue({ id: PROFILE });
     mockDb.service.findFirst.mockResolvedValue({ id: 'svc-1' });
     // Run the $transaction callback against the same mock db.
-    mockDb.$transaction.mockImplementation((cb: (tx: typeof mockDb) => unknown) =>
-      cb(mockDb),
+    mockDb.$transaction.mockImplementation(
+      (cb: (tx: typeof mockDb) => unknown) => cb(mockDb),
     );
   });
 
@@ -118,7 +118,11 @@ describe('ProviderServicesService', () => {
       const result = await service.authorizeServices(
         ORG,
         PROFILE,
-        { service_ids: ['svc-1', 'svc-2'], branch_id: 'br-1', duration_minutes: 30 },
+        {
+          service_ids: ['svc-1', 'svc-2'],
+          branch_id: 'br-1',
+          duration_minutes: 30,
+        },
         USER,
       );
 
@@ -159,12 +163,7 @@ describe('ProviderServicesService', () => {
     it('rejects when one of the services is unknown', async () => {
       mockDb.service.findFirst.mockResolvedValue(null);
       await expect(
-        service.authorizeServices(
-          ORG,
-          PROFILE,
-          { service_ids: ['bad'] },
-          USER,
-        ),
+        service.authorizeServices(ORG, PROFILE, { service_ids: ['bad'] }, USER),
       ).rejects.toThrow(BadRequestException);
       expect(mockDb.providerService.create).not.toHaveBeenCalled();
     });

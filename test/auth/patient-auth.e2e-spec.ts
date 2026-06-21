@@ -1,5 +1,9 @@
 import { INestApplication } from '@nestjs/common';
-import * as request from 'supertest';
+import {
+  ThrottlerStorage,
+  type ThrottlerStorageOptions,
+} from '@nestjs/throttler';
+import request from 'supertest';
 import { createTestApp } from '../helpers/app-factory';
 import { cleanDatabase } from '../helpers/db-cleaner';
 import {
@@ -51,6 +55,13 @@ describe('Patient self-signup and login (E2E)', () => {
     ).$executeRawUnsafe(
       'TRUNCATE TABLE "patient_guardians", "guardians", "patients" CASCADE',
     );
+    // Reset the in-memory rate-limit counters between tests. The patient auth
+    // routes carry a strict per-route cap (signup/start is 5 per 10-min window
+    // on the IP-only global throttler), which would otherwise accumulate across
+    // the suite and surface as spurious 429s.
+    app
+      .get<{ storage: Map<string, ThrottlerStorageOptions> }>(ThrottlerStorage)
+      .storage.clear();
   });
 
   function http() {
@@ -88,6 +99,8 @@ describe('Patient self-signup and login (E2E)', () => {
         patient_signup_token: start.body.data.patient_signup_token,
         password: PASSWORD,
         confirm_password: PASSWORD,
+        security_question: 'BIRTH_CITY',
+        security_answer: 'Cairo',
       })
       .expect(201);
     expect(complete.body.data.type).toBe('tokens');
@@ -117,12 +130,14 @@ describe('Patient self-signup and login (E2E)', () => {
       guardian_id: null,
       accessible_patient_ids: [patient.id],
       display_name: 'Sara Ali',
+      security_question: 'BIRTH_CITY',
       accessible_patients: [
         {
           id: patient.id,
           full_name: 'Sara Ali',
           date_of_birth: DOB,
           relation: 'SELF',
+          profile_image_url: null,
         },
       ],
     });
@@ -218,6 +233,8 @@ describe('Patient self-signup and login (E2E)', () => {
         patient_signup_token: start.body.data.patient_signup_token,
         password: PASSWORD,
         confirm_password: PASSWORD,
+        security_question: 'BIRTH_CITY',
+        security_answer: 'Cairo',
       })
       .expect(201);
 
@@ -258,6 +275,8 @@ describe('Patient self-signup and login (E2E)', () => {
         patient_signup_token: start.body.data.patient_signup_token,
         password: PASSWORD,
         confirm_password: PASSWORD,
+        security_question: 'BIRTH_CITY',
+        security_answer: 'Cairo',
       })
       .expect(201);
 
@@ -275,6 +294,7 @@ describe('Patient self-signup and login (E2E)', () => {
         full_name: 'Sara Ali',
         date_of_birth: DOB,
         relation: 'SPOUSE',
+        profile_image_url: null,
       },
     ]);
   });
@@ -312,6 +332,8 @@ describe('Patient self-signup and login (E2E)', () => {
         patient_signup_token: start.body.data.patient_signup_token,
         password: 'password123',
         confirm_password: 'password123',
+        security_question: 'BIRTH_CITY',
+        security_answer: 'Cairo',
       })
       .expect(400);
   });

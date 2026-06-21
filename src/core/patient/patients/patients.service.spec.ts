@@ -215,6 +215,75 @@ describe('PatientsService', () => {
     });
   });
 
+  describe('searchGlobal', () => {
+    it('tier A: fuzzy name/id/phone scoped to the caller org, returning full identity', async () => {
+      db.$transaction.mockResolvedValue([[mockPatient], []]);
+      const result = await service.searchGlobal({ search: 'Sara' }, mockUser);
+
+      const ownCall = db.patient.findMany.mock.calls[0][0];
+      expect(ownCall.where.enrollments.some.organization_id).toBe(
+        mockUser.organizationId,
+      );
+      expect(ownCall.where.OR).toEqual([
+        { full_name: { contains: 'Sara', mode: 'insensitive' } },
+        { national_id: { contains: 'Sara' } },
+        { phone_number: { contains: 'Sara' } },
+      ]);
+      // Own patients prefill the booking form → full identity projection.
+      expect(ownCall.select.date_of_birth).toBe(true);
+      expect(ownCall.select.address).toBe(true);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((result as any).items).toEqual([mockPatient]);
+    });
+
+    it('tier B: cross-org fuzzy lookup over the shared registry (accepted product tradeoff, F7)', async () => {
+      db.$transaction.mockResolvedValue([[], []]);
+      await service.searchGlobal({ search: 'Sara' }, mockUser);
+
+      const crossCall = db.patient.findMany.mock.calls[1][0];
+      // Patient is a global master index by design — the second tier is NOT
+      // org-scoped, so a patient first registered elsewhere is found.
+      expect(crossCall.where.enrollments).toBeUndefined();
+      expect(crossCall.where.OR).toEqual([
+        { full_name: { contains: 'Sara', mode: 'insensitive' } },
+        { national_id: { contains: 'Sara' } },
+        { phone_number: { contains: 'Sara' } },
+      ]);
+      // Full identity is returned to prefill the booking form.
+      expect(crossCall.select.date_of_birth).toBe(true);
+    });
+
+    it('merges both tiers, with own (full) winning over a duplicate cross-org id', async () => {
+      const own = { ...mockPatient, id: 'p-own' };
+      const crossNew = { id: 'p-cross', full_name: 'Other Clinic Patient' };
+      const crossDup = { id: 'p-own', full_name: 'stale dup' };
+      db.$transaction.mockResolvedValue([[own], [crossNew, crossDup]]);
+
+      const result = await service.searchGlobal({ search: 'x' }, mockUser);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((result as any).items).toEqual([own, crossNew]);
+    });
+
+    it('contrast: findAll (org roster) still scopes by enrollment for the same caller', async () => {
+      db.$transaction.mockResolvedValue([[], 0]);
+      await service.findAll({ search: 'Sara' }, mockUser);
+      const where = db.patient.findMany.mock.calls[0][0].where;
+      expect(where.enrollments.some.organization_id).toBe(
+        mockUser.organizationId,
+      );
+    });
+
+    it('caps each tier at 20', async () => {
+      db.$transaction.mockResolvedValue([[], []]);
+      await service.searchGlobal(
+        { search: '01012345678', limit: 999 },
+        mockUser,
+      );
+      expect(db.patient.findMany.mock.calls[0][0].take).toBe(20);
+      expect(db.patient.findMany.mock.calls[1][0].take).toBe(20);
+    });
+  });
+
   describe('findOne', () => {
     it('asserts branch-gated access before returning the patient', async () => {
       db.patient.findUnique.mockResolvedValue({ ...mockPatient });
