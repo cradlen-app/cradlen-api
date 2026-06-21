@@ -66,8 +66,9 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
       .expect(200);
 
     // Signup makes the user OWNER automatically — there is no `roles`
-    // field. Clinical attribution is via job_function_codes (OBGYN,
-    // OTHER_DOCTOR, NURSE, …) and the specialties M2M.
+    // field. Job function is coarse (DOCTOR / RECEPTIONIST / ACCOUNTANT);
+    // clinical specialization lives in the specialties M2M + practitioner
+    // specialty (OBGYN, …).
     const complete = await request(app.getHttpServer())
       .post('/v1/auth/signup/complete')
       .send({
@@ -80,7 +81,7 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
         branch_city: 'Cairo',
         branch_governorate: 'Cairo',
         branch_country: 'Egypt',
-        job_function_code: 'OBGYN',
+        job_function_code: 'DOCTOR',
         executive_title: 'CMO',
       })
       .expect(201);
@@ -194,8 +195,8 @@ describe('Cradlen onboarding and tenant context (E2E)', () => {
 
     // Founder is always OWNER.
     expect(profile.role.code).toBe('OWNER');
-    // job_function_code: 'OBGYN' flowed through.
-    expect(profile.job_function?.code).toBe('OBGYN');
+    // job_function_code: 'DOCTOR' flowed through.
+    expect(profile.job_function?.code).toBe('DOCTOR');
     expect(profile.job_function?.is_clinical).toBe(true);
     // practitioner_specialty_code: 'OBGYN' flowed through to the owner profile.
     expect(profile.specialty?.code).toBe('OBGYN');
