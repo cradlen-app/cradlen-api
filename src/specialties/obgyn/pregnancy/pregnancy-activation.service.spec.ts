@@ -5,6 +5,7 @@ import { PatientAccessService } from '@core/patient/patient-access/patient-acces
 import { EventBus } from '@infrastructure/messaging/event-bus';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { CLINICAL_EVENTS } from '@core/clinical/events/clinical-events';
+import { PregnancyEpisodeRouterService } from './pregnancy-episode-router.service';
 
 const user: AuthContext = {
   userId: 'u1',
@@ -23,6 +24,10 @@ describe('PregnancyActivationService', () => {
   let db: any;
   let access: { assertVisitInOrg: jest.Mock };
   let eventBus: { publish: jest.Mock };
+  let episodeRouter: {
+    resolveTrimesterOrder: jest.Mock;
+    routeVisitToTrimester: jest.Mock;
+  };
 
   beforeEach(async () => {
     db = {
@@ -33,6 +38,10 @@ describe('PregnancyActivationService', () => {
     };
     access = { assertVisitInOrg: jest.fn().mockResolvedValue(undefined) };
     eventBus = { publish: jest.fn() };
+    episodeRouter = {
+      resolveTrimesterOrder: jest.fn().mockReturnValue(null),
+      routeVisitToTrimester: jest.fn().mockResolvedValue(undefined),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -40,6 +49,7 @@ describe('PregnancyActivationService', () => {
         { provide: PrismaService, useValue: { db } },
         { provide: PatientAccessService, useValue: access },
         { provide: EventBus, useValue: eventBus },
+        { provide: PregnancyEpisodeRouterService, useValue: episodeRouter },
       ],
     }).compile();
 
@@ -51,9 +61,11 @@ describe('PregnancyActivationService', () => {
       db.visit.findFirst.mockResolvedValue({
         specialty_code: 'OBGYN',
         episode: {
+          id: 'episode-0',
           journey: {
             id: 'journey-1',
             patient_id: 'patient-1',
+            organization_id: 'org-A',
             status: 'ACTIVE',
             care_path: carePathCode ? { code: carePathCode } : null,
           },
@@ -77,16 +89,35 @@ describe('PregnancyActivationService', () => {
       expect(eventBus.publish).not.toHaveBeenCalled();
     });
 
-    it('sets the care path, creates an ACTIVE profile, and emits care-path + booked events', async () => {
+    it('opens a NEW pregnancy journey + episodes, re-points the visit, completes the old journey', async () => {
       liveJourney('OBGYN_GENERAL');
       db.pregnancyJourneyRecord.findFirst.mockResolvedValue(null);
-      db.carePath.findFirst.mockResolvedValue({ id: 'cp-preg' });
+      db.carePath.findFirst.mockResolvedValue({
+        id: 'cp-preg',
+        journey_template_id: 'jt-preg',
+      });
 
       const tx = {
-        patientJourney: { update: jest.fn() },
+        journeyTemplate: {
+          findUniqueOrThrow: jest.fn().mockResolvedValue({
+            id: 'jt-preg',
+            episodes: [
+              { id: 'et-1', name: 'First Trimester', order: 1 },
+              { id: 'et-2', name: 'Second Trimester', order: 2 },
+            ],
+          }),
+        },
+        patientJourney: {
+          create: jest.fn().mockResolvedValue({ id: 'journey-PREG' }),
+          update: jest.fn(),
+        },
+        patientEpisode: {
+          createMany: jest.fn(),
+        },
+        visit: { update: jest.fn() },
         pregnancyJourneyRecord: {
           create: jest.fn().mockResolvedValue({
-            journey_id: 'journey-1',
+            journey_id: 'journey-PREG',
             status: 'ACTIVE',
             created_at: new Date('2026-02-01T00:00:00.000Z'),
             lmp: null,
@@ -103,30 +134,47 @@ describe('PregnancyActivationService', () => {
         user,
       );
 
+      // A fresh pregnancy journey is created (not the old one reclassified).
+      expect(tx.patientJourney.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            journey_template_id: 'jt-preg',
+            care_path_id: 'cp-preg',
+            status: 'ACTIVE',
+          }),
+        }),
+      );
+      expect(tx.patientEpisode.createMany).toHaveBeenCalled();
+      // The current visit is routed to its trimester episode (no dating → T1).
+      expect(episodeRouter.routeVisitToTrimester).toHaveBeenCalledWith(
+        tx,
+        'journey-PREG',
+        VISIT,
+        1,
+      );
+      // The old (general) journey is archived.
       expect(tx.patientJourney.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'journey-1' },
-          data: { care_path_id: 'cp-preg' },
+          data: expect.objectContaining({ status: 'COMPLETED' }),
         }),
       );
+      // The pregnancy record attaches to the NEW journey.
       expect(tx.pregnancyJourneyRecord.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
-            journey_id: 'journey-1',
+            journey_id: 'journey-PREG',
             status: 'ACTIVE',
           }),
         }),
       );
       expect(eventBus.publish).toHaveBeenCalledWith(
-        CLINICAL_EVENTS.journey.carePathSet,
-        expect.objectContaining({
-          previous_care_path_code: 'OBGYN_GENERAL',
-          new_care_path_code: 'OBGYN_PREGNANCY',
-        }),
+        CLINICAL_EVENTS.journey.completed,
+        expect.objectContaining({ journey_id: 'journey-1' }),
       );
       expect(eventBus.publish).toHaveBeenCalledWith(
         CLINICAL_EVENTS.pregnancy.booked,
-        expect.objectContaining({ journey_id: 'journey-1' }),
+        expect.objectContaining({ journey_id: 'journey-PREG' }),
       );
       expect(result.status).toBe('ACTIVE');
     });

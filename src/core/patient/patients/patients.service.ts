@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { StorageService } from '@infrastructure/storage/storage.service.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
@@ -463,6 +467,19 @@ export class PatientsService {
 
   async update(id: string, dto: UpdatePatientDto, user: AuthContext) {
     await this.findOne(id, user);
+    // Correcting the national id (the global identity key) is an org-manager
+    // action — owners and branch managers only. Demographic edits stay open to
+    // anyone with patient access. Uniqueness is enforced by the DB `@unique`
+    // constraint (P2002 → 409 via the global exception filter).
+    if (
+      dto.national_id !== undefined &&
+      !(await this.authorizationService.isManager(
+        user.profileId,
+        user.organizationId,
+      ))
+    ) {
+      throw new ForbiddenException('National ID correction is manager-only');
+    }
     return this.prismaService.db.patient.update({
       where: { id },
       data: {
@@ -476,6 +493,9 @@ export class PatientsService {
         ...(dto.address !== undefined && { address: dto.address }),
         ...(dto.marital_status !== undefined && {
           marital_status: dto.marital_status,
+        }),
+        ...(dto.national_id !== undefined && {
+          national_id: dto.national_id,
         }),
       },
     });

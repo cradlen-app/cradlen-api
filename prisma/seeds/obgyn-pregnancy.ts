@@ -26,7 +26,7 @@ import { assertValidConfig } from '../../src/builder/fields/field-config.schema.
 import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 
 const TEMPLATE_CODE = 'obgyn_pregnancy';
-const TEMPLATE_VERSION = 2;
+const TEMPLATE_VERSION = 3;
 
 type FieldType = keyof typeof FIELD_TYPES;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -84,6 +84,28 @@ const computed = (
   config: { ui: { colSpan, derivedFrom }, logic: { formula } },
 });
 
+/**
+ * A read-only Summary field that reflects another editable field's LIVE value
+ * (no binding — the value comes from `mirrorOf`, not the envelope). SELECT
+ * mirrors carry the source options so codes render as labels.
+ */
+const mirror = (
+  code: string,
+  label: string,
+  mirrorOf: string,
+  type: FieldType = 'TEXT',
+  options?: { code: string; label: string }[],
+  colSpan = 3,
+): FieldSpec => ({
+  code,
+  label,
+  type,
+  config: {
+    ui: { readOnly: true, mirrorOf, colSpan },
+    ...(options ? { validation: { options } } : {}),
+  },
+});
+
 const SECTIONS: SectionSpec[] = [
   // ---------------------------------------------------------------------------
   // 1. Summary — read-only overview (journey + episode + visit). Not submitted.
@@ -94,15 +116,32 @@ const SECTIONS: SectionSpec[] = [
     group: 'Summary',
     readOnly: true,
     fields: [
-      display('summary_status', 'Status', 'PREGNANCY_JOURNEY', 'status'),
-      display('summary_risk', 'Risk level', 'PREGNANCY_JOURNEY', 'risk_level'),
+      {
+        // Editable status: choosing "Closed" opens the outcome drawer (custom
+        // input). Binds the journey status so its value hydrates from the GET.
+        code: 'status',
+        label: 'Status',
+        type: 'SELECT',
+        binding: { namespace: 'PREGNANCY_JOURNEY', path: 'status' },
+        config: {
+          ui: { variant: 'pregnancy-status', colSpan: 3 },
+          validation: {
+            options: [opt('ACTIVE', 'Active'), opt('CLOSED', 'Closed')],
+          },
+        },
+      },
+      mirror('summary_risk', 'Risk level', 'risk_level', 'SELECT', [
+        opt('NORMAL', 'Normal'),
+        opt('MODERATE', 'Moderate'),
+        opt('HIGH', 'High'),
+      ]),
       display(
         'summary_blood_group',
         'Blood group & RH',
         'PATIENT_OBGYN_HISTORY',
         'blood_group_rh',
       ),
-      display('summary_lmp', 'LMP', 'PREGNANCY_JOURNEY', 'lmp'),
+      mirror('summary_lmp', 'LMP', 'lmp'),
       computed('summary_ga_lmp', 'GA (LMP)', 'ga_lmp', 'ga_from_lmp', ['lmp']),
       computed('summary_edd_lmp', 'EDD (LMP)', 'edd_lmp', 'edd_from_lmp', [
         'lmp',
@@ -117,43 +156,47 @@ const SECTIONS: SectionSpec[] = [
         'us_ga_weeks',
         'us_ga_days',
       ]),
-      display('summary_type', 'Pregnancy type', 'PREGNANCY_JOURNEY', 'pregnancy_type'),
-      display(
-        'summary_fetuses',
-        'Number of fetuses',
-        'PREGNANCY_JOURNEY',
-        'number_of_fetuses',
-      ),
+      mirror('summary_type', 'Pregnancy type', 'pregnancy_type', 'SELECT', [
+        opt('SINGLETON', 'Singleton'),
+        opt('TWINS', 'Twins'),
+        opt('TRIPLETS', 'Triplets'),
+        opt('HIGHER_ORDER', 'Higher-order'),
+      ]),
+      mirror('summary_fetuses', 'Number of fetuses', 'number_of_fetuses'),
       display('summary_created', 'Created', 'PREGNANCY_JOURNEY', 'created_at'),
       display('summary_updated', 'Updated', 'PREGNANCY_JOURNEY', 'updated_at'),
-      // Episode highlights
-      display(
+      // Episode highlights (live mirrors of the editable Episode fields)
+      mirror(
         'summary_anomaly',
         'Anomaly scan',
-        'PREGNANCY_EPISODE',
-        'anomaly_scan.result',
+        'anomaly_scan_result',
+        'SELECT',
+        [opt('NORMAL', 'Normal'), opt('ABNORMAL', 'Abnormal')],
         4,
       ),
-      display(
+      mirror(
         'summary_gtt',
         'GTT',
-        'PREGNANCY_EPISODE',
-        'gtt_result.interpretation',
+        'gtt_interpretation',
+        'SELECT',
+        [opt('NORMAL', 'Normal'), opt('GDM', 'GDM')],
         4,
       ),
-      display(
+      mirror(
         'summary_trimester',
         'Trimester summary',
-        'PREGNANCY_EPISODE',
-        'trimester_summary.notes',
+        'trimester_summary_notes',
+        'TEXT',
+        undefined,
         4,
       ),
       // This-visit highlights
-      display(
+      mirror(
         'summary_fundal',
         'Fundal height (this visit)',
-        'PREGNANCY_VISIT',
         'fundal_height_cm',
+        'TEXT',
+        undefined,
         4,
       ),
     ],
@@ -245,6 +288,21 @@ const SECTIONS: SectionSpec[] = [
           validation: { min: 1, max: 6 },
         },
       },
+      // Read-only GA/EDD shown inline as LMP / US dating are entered (live).
+      computed('journey_ga_lmp', 'GA (LMP)', 'ga_lmp', 'ga_from_lmp', ['lmp']),
+      computed('journey_edd_lmp', 'EDD (LMP)', 'edd_lmp', 'edd_from_lmp', [
+        'lmp',
+      ]),
+      computed('journey_ga_us', 'GA (US)', 'ga_us', 'ga_from_us', [
+        'us_dating_date',
+        'us_ga_weeks',
+        'us_ga_days',
+      ]),
+      computed('journey_edd_us', 'EDD (US)', 'edd_us', 'edd_from_us', [
+        'us_dating_date',
+        'us_ga_weeks',
+        'us_ga_days',
+      ]),
     ],
   },
 
@@ -267,7 +325,10 @@ const SECTIONS: SectionSpec[] = [
         code: 'anomaly_scan_result',
         label: 'Anomaly scan result',
         type: 'SELECT',
-        binding: { namespace: 'PREGNANCY_EPISODE', path: 'anomaly_scan.result' },
+        binding: {
+          namespace: 'PREGNANCY_EPISODE',
+          path: 'anomaly_scan.result',
+        },
         config: {
           ui: { placeholder: 'Ex : Normal', colSpan: 4 },
           validation: {
@@ -293,14 +354,20 @@ const SECTIONS: SectionSpec[] = [
         code: 'gtt_one_hour',
         label: 'GTT 1-hour',
         type: 'NUMBER',
-        binding: { namespace: 'PREGNANCY_EPISODE', path: 'gtt_result.one_hour' },
+        binding: {
+          namespace: 'PREGNANCY_EPISODE',
+          path: 'gtt_result.one_hour',
+        },
         config: { ui: { colSpan: 3, suffix: 'mmol/L', step: 0.1 } },
       },
       {
         code: 'gtt_two_hour',
         label: 'GTT 2-hour',
         type: 'NUMBER',
-        binding: { namespace: 'PREGNANCY_EPISODE', path: 'gtt_result.two_hour' },
+        binding: {
+          namespace: 'PREGNANCY_EPISODE',
+          path: 'gtt_result.two_hour',
+        },
         config: { ui: { colSpan: 3, suffix: 'mmol/L', step: 0.1 } },
       },
       {
@@ -363,7 +430,10 @@ const SECTIONS: SectionSpec[] = [
         code: 'cervix_effacement_pct',
         label: 'Effacement',
         type: 'NUMBER',
-        binding: { namespace: 'PREGNANCY_VISIT', path: 'cervix_effacement_pct' },
+        binding: {
+          namespace: 'PREGNANCY_VISIT',
+          path: 'cervix_effacement_pct',
+        },
         config: {
           ui: { placeholder: 'Ex : 50', colSpan: 4, suffix: '%' },
           validation: { min: 0, max: 100 },
@@ -442,7 +512,10 @@ const SECTIONS: SectionSpec[] = [
         code: 'fundal_corresponds_ga',
         label: 'Corresponds to GA',
         type: 'SELECT',
-        binding: { namespace: 'PREGNANCY_VISIT', path: 'fundal_corresponds_ga' },
+        binding: {
+          namespace: 'PREGNANCY_VISIT',
+          path: 'fundal_corresponds_ga',
+        },
         config: {
           ui: { placeholder: 'Ex : Yes', colSpan: 4 },
           validation: { options: [opt('YES', 'Yes'), opt('NO', 'No')] },
@@ -689,7 +762,10 @@ const SECTIONS: SectionSpec[] = [
 
 function buildSectionConfig(section: SectionSpec): SectionConfig {
   return {
-    ui: { group: section.group, ...(section.readOnly ? { readOnly: true } : {}) },
+    ui: {
+      group: section.group,
+      ...(section.readOnly ? { readOnly: true } : {}),
+    },
     validation: {},
     logic: {},
   };

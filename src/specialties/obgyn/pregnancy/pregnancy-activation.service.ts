@@ -17,6 +17,7 @@ import {
 import { PatientAccessService } from '@core/patient/patient-access/patient-access.public';
 import { buildRevision } from '../revisions.helper';
 import { PREGNANCY_CARE_PATH_CODE } from './pregnancy-care-path.guard';
+import { PregnancyEpisodeRouterService } from './pregnancy-episode-router.service';
 import {
   ClosePregnancyDto,
   CreatePregnancyDto,
@@ -25,11 +26,11 @@ import {
 
 /**
  * Lifecycle of a pregnancy profile: activation (the drawer's "Create") and
- * closing (delivery). Activation reclassifies the patient's single ACTIVE
- * journey in place — it never opens or closes a journey — and attaches an
- * ACTIVE pregnancy profile, which makes the descriptor declare the clinical
- * surface so the Pregnancy tab appears. Closing records the delivery outcome
- * and completes the journey, freeing the single-active slot.
+ * closing. Activation opens a NEW pregnancy journey — completing the visit's
+ * current (provisional) journey and re-pointing the visit onto the new journey's
+ * trimester episode (by GA) — and attaches an ACTIVE pregnancy profile, which
+ * makes the descriptor declare the clinical surface so the Pregnancy tab
+ * appears. Closing records the outcome and completes the journey.
  */
 @Injectable()
 export class PregnancyActivationService {
@@ -37,6 +38,7 @@ export class PregnancyActivationService {
     private readonly prismaService: PrismaService,
     private readonly access: PatientAccessService,
     private readonly eventBus: EventBus,
+    private readonly episodeRouter: PregnancyEpisodeRouterService,
   ) {}
 
   async activate(
@@ -50,12 +52,15 @@ export class PregnancyActivationService {
       where: { id: visitId, is_deleted: false },
       select: {
         specialty_code: true,
+        scheduled_at: true,
         episode: {
           select: {
+            id: true,
             journey: {
               select: {
                 id: true,
                 patient_id: true,
+                organization_id: true,
                 status: true,
                 care_path: { select: { code: true } },
               },
@@ -101,7 +106,7 @@ export class PregnancyActivationService {
         ],
       },
       orderBy: [{ organization_id: { sort: 'desc', nulls: 'last' } }],
-      select: { id: true },
+      select: { id: true, journey_template_id: true },
     });
     if (!carePath) {
       throw new NotFoundException(
@@ -110,15 +115,81 @@ export class PregnancyActivationService {
     }
 
     const previousCarePathCode = journey.care_path?.code ?? null;
+    const oldJourneyId = journey.id;
+    const patientId = journey.patient_id;
 
+    // A pregnancy is its OWN journey: complete the provisional/general journey,
+    // open a fresh pregnancy journey + episodes (from the PREGNANCY template),
+    // re-point the current visit onto the new first episode, and attach the
+    // pregnancy record to the new journey. Subsequent visits join it via the
+    // normal booking active-journey lookup.
     const record = await this.prismaService.db.$transaction(async (tx) => {
-      await tx.patientJourney.update({
-        where: { id: journey.id },
-        data: { care_path_id: carePath.id },
+      const journeyTemplate = await tx.journeyTemplate.findUniqueOrThrow({
+        where: { id: carePath.journey_template_id },
+        select: {
+          id: true,
+          episodes: {
+            where: { is_deleted: false },
+            orderBy: { order: 'asc' },
+            select: { id: true, name: true, order: true },
+          },
+        },
       });
+
+      // Archive the journey the visit came from (the provisional general one)
+      // BEFORE creating the new one — the "one ACTIVE journey per (patient,
+      // template)" partial-unique index would otherwise reject a second active
+      // row when the general and pregnancy care paths share a journey template.
+      await tx.patientJourney.update({
+        where: { id: oldJourneyId },
+        data: { status: 'COMPLETED', ended_at: new Date() },
+      });
+
+      const newJourney = await tx.patientJourney.create({
+        data: {
+          patient_id: patientId,
+          organization_id: journey.organization_id,
+          journey_template_id: journeyTemplate.id,
+          care_path_id: carePath.id,
+          created_by_id: user.profileId,
+          status: 'ACTIVE',
+        },
+      });
+
+      await tx.patientEpisode.createMany({
+        data: journeyTemplate.episodes.map((ep, i) => ({
+          journey_id: newJourney.id,
+          episode_template_id: ep.id,
+          name: ep.name,
+          order: ep.order,
+          status: i === 0 ? ('ACTIVE' as const) : ('PENDING' as const),
+          started_at: i === 0 ? new Date() : null,
+        })),
+      });
+      // Re-point the current visit onto the trimester episode matching its GA
+      // (defaults to the first episode when there's no dating yet).
+      const trimesterOrder =
+        this.episodeRouter.resolveTrimesterOrder(
+          {
+            lmp: dto.lmp ? new Date(dto.lmp) : null,
+            us_dating_date: dto.us_dating_date
+              ? new Date(dto.us_dating_date)
+              : null,
+            us_ga_weeks: dto.us_ga_weeks ?? null,
+            us_ga_days: dto.us_ga_days ?? null,
+          },
+          visit.scheduled_at ?? new Date(),
+        ) ?? 1;
+      await this.episodeRouter.routeVisitToTrimester(
+        tx,
+        newJourney.id,
+        visitId,
+        trimesterOrder,
+      );
+
       return tx.pregnancyJourneyRecord.create({
         data: {
-          journey_id: journey.id,
+          journey_id: newJourney.id,
           status: 'ACTIVE',
           risk_level: dto.risk_level ?? null,
           lmp: dto.lmp ? new Date(dto.lmp) : null,
@@ -135,24 +206,30 @@ export class PregnancyActivationService {
       });
     });
 
-    if (previousCarePathCode !== PREGNANCY_CARE_PATH_CODE) {
-      this.eventBus.publish<JourneyCarePathSetEvent>(
-        CLINICAL_EVENTS.journey.carePathSet,
-        {
-          journey_id: journey.id,
-          visit_id: visitId,
-          patient_id: journey.patient_id,
-          previous_care_path_code: previousCarePathCode,
-          new_care_path_code: PREGNANCY_CARE_PATH_CODE,
-          updated_by_id: user.profileId,
-        },
-      );
-    }
+    this.eventBus.publish(CLINICAL_EVENTS.journey.completed, {
+      journey_id: oldJourneyId,
+      patient_id: patientId,
+    });
+    this.eventBus.publish(CLINICAL_EVENTS.journey.started, {
+      journey_id: record.journey_id,
+      patient_id: patientId,
+    });
+    this.eventBus.publish<JourneyCarePathSetEvent>(
+      CLINICAL_EVENTS.journey.carePathSet,
+      {
+        journey_id: record.journey_id,
+        visit_id: visitId,
+        patient_id: patientId,
+        previous_care_path_code: previousCarePathCode,
+        new_care_path_code: PREGNANCY_CARE_PATH_CODE,
+        updated_by_id: user.profileId,
+      },
+    );
     this.eventBus.publish<PregnancyBookedEvent>(
       CLINICAL_EVENTS.pregnancy.booked,
       {
-        journey_id: journey.id,
-        patient_id: journey.patient_id,
+        journey_id: record.journey_id,
+        patient_id: patientId,
         lmp: record.lmp,
         risk_level: dto.risk_level ?? null,
       },
