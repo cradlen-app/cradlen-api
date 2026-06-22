@@ -28,5 +28,8 @@ import { ObgynPortalHistoryService } from './patient-portal/obgyn-portal-history
     HistorySummaryService,
     ObgynPortalHistoryService,
   ],
+  // Exported so the pregnancy clinical surface can fold the patient's history
+  // blood group into its read-only summary (single source of truth).
+  exports: [ObgynHistoryService],
 })
 export class ObgynModule {}

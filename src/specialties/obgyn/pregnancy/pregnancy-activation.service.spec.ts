@@ -160,7 +160,13 @@ describe('PregnancyActivationService', () => {
 
       const result = await service.close(
         VISIT,
-        { delivery_outcome: { mode: 'CESAREAN', notes: 'twins' } },
+        {
+          outcome: {
+            outcome_type: 'LIVE_BIRTH',
+            delivery_mode: 'CESAREAN',
+            notes: 'twins',
+          },
+        },
         user,
       );
 
@@ -174,7 +180,8 @@ describe('PregnancyActivationService', () => {
         CLINICAL_EVENTS.pregnancy.closed,
         expect.objectContaining({
           journey_id: 'journey-1',
-          delivery_outcome: { mode: 'CESAREAN', notes: 'twins' },
+          outcome_type: 'LIVE_BIRTH',
+          outcome: expect.objectContaining({ delivery_mode: 'CESAREAN' }),
         }),
       );
       expect(result.status).toBe('CLOSED');
