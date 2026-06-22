@@ -15,7 +15,10 @@ import {
 } from '@core/clinical/events/events.public';
 import { PatientAccessService } from '@core/patient/patient-access/patient-access.public';
 import { buildRevision } from '../revisions.helper';
-import { assertCarePathChangeAllowed } from '../pregnancy/pregnancy-care-path.guard';
+import {
+  assertCarePathChangeAllowed,
+  PREGNANCY_CARE_PATH_CODE,
+} from '../pregnancy/pregnancy-care-path.guard';
 import { ObgynHistoryService } from '../patient-history/obgyn-history.service';
 import {
   DiagnosisRowDto,
@@ -154,6 +157,13 @@ export class ObgynExaminationService {
     }
     const previousCode = journey.care_path?.code ?? null;
     if (previousCode === carePathCode) return null;
+
+    // Pregnancy is entered via the activation flow ("Create pregnancy profile"),
+    // which opens its own journey + PregnancyJourneyRecord. The examination
+    // care-path field must never flip a journey to OBGYN_PREGNANCY on its own —
+    // that would declare the pregnancy surface (tab) with no actual pregnancy
+    // profile (and a 404 on open). Activation owns this care path.
+    if (carePathCode === PREGNANCY_CARE_PATH_CODE) return null;
 
     // Resolve the target care path for the visit's specialty (org ∪ system),
     // preferring an org-specific override over the global fallback.
