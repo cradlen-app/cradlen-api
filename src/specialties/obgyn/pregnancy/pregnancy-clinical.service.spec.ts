@@ -7,6 +7,7 @@ import { EventBus } from '@infrastructure/messaging/event-bus';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { CLINICAL_EVENTS } from '@core/clinical/events/clinical-events';
 import { ObgynHistoryService } from '../patient-history/obgyn-history.service';
+import { JourneyClinicalRegistry } from '../journeys/journey-clinical.registry';
 
 const user: AuthContext = {
   userId: 'u1',
@@ -87,6 +88,10 @@ describe('PregnancyClinicalService', () => {
         { provide: TemplateValidator, useValue: validator },
         { provide: EventBus, useValue: eventBus },
         { provide: ObgynHistoryService, useValue: obgynHistory },
+        {
+          provide: JourneyClinicalRegistry,
+          useValue: { register: jest.fn(), resolve: jest.fn() },
+        },
       ],
     }).compile();
 

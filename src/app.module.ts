@@ -42,6 +42,7 @@ import { CalendarModule } from '@core/calendar/calendar.module';
 import { ProceduresModule } from '@core/org/procedures/procedures.module';
 import { ObgynModule } from '@specialties/obgyn/obgyn.module';
 import { PregnancyModule } from '@specialties/obgyn/pregnancy/pregnancy.module';
+import { SurgicalModule } from '@specialties/obgyn/surgical/surgical.module';
 import { TemplatesModule } from '@builder/templates/templates.module.js';
 import { FinancialModule } from '@core/financial/financial.module.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -105,6 +106,7 @@ import { PermissionsModule } from '@common/authorization/permissions.module.js';
     ProceduresModule,
     ObgynModule,
     PregnancyModule,
+    SurgicalModule,
     TemplatesModule,
   ],
   controllers: [],

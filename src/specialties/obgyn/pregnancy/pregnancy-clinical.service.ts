@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service';
@@ -17,6 +18,8 @@ import { TemplateValidator } from '@builder/validator/template.validator';
 import { buildRevision } from '../revisions.helper';
 import { ObgynHistoryService } from '../patient-history/obgyn-history.service';
 import { formatBloodGroupRh } from '../blood-group.util';
+import { JourneyClinicalHandler } from '../journeys/journey-clinical.handler';
+import { JourneyClinicalRegistry } from '../journeys/journey-clinical.registry';
 import {
   eddFromLmp,
   eddFromUsDating,
@@ -112,14 +115,21 @@ interface VisitJourneyContext {
  * every save. Last-write-wins (no If-Match), like the Examination tab.
  */
 @Injectable()
-export class PregnancyClinicalService {
+export class PregnancyClinicalService
+  implements JourneyClinicalHandler, OnModuleInit
+{
   constructor(
     private readonly prismaService: PrismaService,
     private readonly access: PatientAccessService,
     private readonly validator: TemplateValidator,
     private readonly eventBus: EventBus,
     private readonly obgynHistory: ObgynHistoryService,
+    private readonly registry: JourneyClinicalRegistry,
   ) {}
+
+  onModuleInit(): void {
+    this.registry.register('OBGYN_PREGNANCY', this);
+  }
 
   // ---------------------------------------------------------------------------
   // GET

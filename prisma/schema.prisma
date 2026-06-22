@@ -197,6 +197,9 @@ enum BindingNamespace {
   PREGNANCY_EPISODE
   PREGNANCY_VISIT
   PREGNANCY_FETUS
+  SURGICAL_JOURNEY
+  SURGICAL_EPISODE
+  SURGICAL_VISIT
 }
 
 enum MedicalRepVisitStatus {
@@ -744,6 +747,9 @@ model Profile {
   pregnancy_episode_updates        PregnancyEpisodeRecord[]         @relation("PregnancyEpisodeRecordUpdatedBy")
   visit_pregnancy_updates          VisitPregnancyRecord[]           @relation("VisitPregnancyRecordUpdatedBy")
   visit_fetal_updates              VisitFetalRecord[]               @relation("VisitFetalRecordUpdatedBy")
+  surgical_journey_updates         SurgicalJourneyRecord[]          @relation("SurgicalJourneyRecordUpdatedBy")
+  surgical_episode_updates         SurgicalEpisodeRecord[]          @relation("SurgicalEpisodeRecordUpdatedBy")
+  visit_surgical_updates           VisitSurgicalRecord[]            @relation("VisitSurgicalRecordUpdatedBy")
   visit_encounter_updates          VisitEncounter[]                 @relation("VisitEncounterUpdatedBy")
   prescription_updates             Prescription[]                   @relation("PrescriptionUpdatedBy")
   prescription_item_updates        PrescriptionItem[]               @relation("PrescriptionItemUpdatedBy")
@@ -758,6 +764,9 @@ model Profile {
   pregnancy_episode_revisions      PregnancyEpisodeRecordRevision[] @relation("PregnancyEpisodeRecordRevisedBy")
   visit_pregnancy_revisions        VisitPregnancyRecordRevision[]   @relation("VisitPregnancyRecordRevisedBy")
   visit_fetal_revisions            VisitFetalRecordRevision[]       @relation("VisitFetalRecordRevisedBy")
+  surgical_journey_revisions       SurgicalJourneyRecordRevision[]  @relation("SurgicalJourneyRecordRevisedBy")
+  surgical_episode_revisions       SurgicalEpisodeRecordRevision[]  @relation("SurgicalEpisodeRecordRevisedBy")
+  visit_surgical_revisions         VisitSurgicalRecordRevision[]    @relation("VisitSurgicalRecordRevisedBy")
   // Builder / medical-rep back-relations
   form_templates_created           FormTemplate[]                   @relation("FormTemplateCreatedBy")
   form_templates_updated           FormTemplate[]                   @relation("FormTemplateUpdatedBy")
@@ -1263,6 +1272,7 @@ model PatientJourney {
   ended_at            DateTime?
   episodes            PatientEpisode[]
   pregnancy_record    PregnancyJourneyRecord?
+  surgical_record     SurgicalJourneyRecord?
   created_at          DateTime                @default(now())
   updated_at          DateTime                @updatedAt
   is_deleted          Boolean                 @default(false)
@@ -1292,6 +1302,7 @@ model PatientEpisode {
   ended_at             DateTime?
   visits               Visit[]
   pregnancy_record     PregnancyEpisodeRecord?
+  surgical_record      SurgicalEpisodeRecord?
   created_at           DateTime                @default(now())
   updated_at           DateTime                @updatedAt
   is_deleted           Boolean                 @default(false)
@@ -1345,6 +1356,7 @@ model Visit {
   obgyn_encounter         VisitObgynEncounter?
   pregnancy_record        VisitPregnancyRecord?
   fetal_records           VisitFetalRecord[]
+  surgical_record         VisitSurgicalRecord?
   investigations          VisitInvestigation[]
   diagnoses               VisitDiagnosis[]
   prescription            Prescription?
@@ -2084,6 +2096,96 @@ model VisitFetalRecord {
 }
 
 // ============================================================================
+// Surgical journey clinical surface — the second journey care path
+// (OBGYN_SURGICAL). Mirrors the pregnancy vertical: one record per journey /
+// episode / visit, each shadowed by a *_revisions table. Enum-like columns
+// (status, urgency, anesthesia_type) are stored as String, matching the
+// pregnancy records' convention.
+// ============================================================================
+
+model SurgicalJourneyRecord {
+  id          String                          @id @default(uuid()) @db.Uuid
+  journey_id  String                          @unique @db.Uuid
+  journey     PatientJourney                  @relation(fields: [journey_id], references: [id], onDelete: Cascade)
+  revisions   SurgicalJourneyRecordRevision[]
+  status      String? // ACTIVE | CLOSED
+  // Surgery type — resolved against the Procedure catalog (no FK; free entry
+  // stays valid). procedure_name is the snapshot label shown on the surface.
+  procedure_id   String?   @db.Uuid
+  procedure_code String?
+  procedure_name String?
+  indication     String?
+  planned_date   DateTime? @db.Date
+  surgery_date   DateTime? @db.Date
+  anesthesia_type String? // GENERAL | REGIONAL | LOCAL | SEDATION
+  urgency         String? // ELECTIVE | URGENT | EMERGENCY
+  // Set when this surgical journey was opened by a cesarean handoff — points at
+  // the pregnancy journey that was closed, so the Summary can mirror it.
+  source_pregnancy_journey_id String?  @db.Uuid
+  // Typed close outcome: { outcome_type, date, complications, notes }
+  outcome                     Json?
+  version       Int                            @default(1)
+  updated_by_id String?                        @db.Uuid
+  updated_by    Profile?                       @relation("SurgicalJourneyRecordUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
+  is_deleted    Boolean                        @default(false)
+  deleted_at    DateTime?
+  created_at    DateTime                       @default(now())
+  updated_at    DateTime                       @updatedAt
+
+  @@map("surgical_journey_records")
+}
+
+model SurgicalEpisodeRecord {
+  id                String                          @id @default(uuid()) @db.Uuid
+  episode_id        String                          @unique @db.Uuid
+  episode           PatientEpisode                  @relation(fields: [episode_id], references: [id], onDelete: Cascade)
+  revisions         SurgicalEpisodeRecordRevision[]
+  // Phase summary blobs (one record covers the episode; the active episode
+  // drives which block the surface shows).
+  preop_assessment  Json? // ASA class, clearance, fasting, consent, pre-op labs
+  operative_summary Json?
+  postop_summary    Json?
+  version           Int                             @default(1)
+  updated_by_id     String?                         @db.Uuid
+  updated_by        Profile?                        @relation("SurgicalEpisodeRecordUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
+  is_deleted        Boolean                         @default(false)
+  deleted_at        DateTime?
+  created_at        DateTime                        @default(now())
+  updated_at        DateTime                        @updatedAt
+
+  @@map("surgical_episode_records")
+}
+
+model VisitSurgicalRecord {
+  id        String                        @id @default(uuid()) @db.Uuid
+  visit_id  String                        @unique @db.Uuid
+  visit     Visit                         @relation(fields: [visit_id], references: [id], onDelete: Cascade)
+  revisions VisitSurgicalRecordRevision[]
+
+  // Per-encounter operative note. On the surgery-day visit this is the operative
+  // record; on pre-op/post-op visits it captures assessment/recovery findings.
+  procedure_performed     String?
+  findings                Json?
+  estimated_blood_loss_ml Int?
+  duration_minutes        Int?
+  complications           Json?
+  wound_status            String?
+  drains                  String?
+  recovery_notes          String?
+  additional_findings     Json?
+
+  version       Int       @default(1)
+  updated_by_id String?   @db.Uuid
+  updated_by    Profile?  @relation("VisitSurgicalRecordUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
+  is_deleted    Boolean   @default(false)
+  deleted_at    DateTime?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  @@map("visit_surgical_records")
+}
+
+// ============================================================================
 // UMR redesign — PR4
 // Revision shadow tables. Append-only audit trail of prior snapshots for
 // clinical mutable rows. Written inside the same transaction as the live-row
@@ -2241,6 +2343,54 @@ model VisitFetalRecordRevision {
 
   @@index([entity_id, version])
   @@map("visit_fetal_record_revisions")
+}
+
+model SurgicalJourneyRecordRevision {
+  id              String                @id @default(uuid()) @db.Uuid
+  entity_id       String                @db.Uuid
+  entity          SurgicalJourneyRecord @relation(fields: [entity_id], references: [id], onDelete: Cascade)
+  version         Int
+  snapshot        Json
+  changed_fields  Json
+  revised_by_id   String                @db.Uuid
+  revised_by      Profile               @relation("SurgicalJourneyRecordRevisedBy", fields: [revised_by_id], references: [id], onDelete: Cascade)
+  revised_at      DateTime              @default(now())
+  revision_reason String?
+
+  @@index([entity_id, version])
+  @@map("surgical_journey_record_revisions")
+}
+
+model SurgicalEpisodeRecordRevision {
+  id              String                @id @default(uuid()) @db.Uuid
+  entity_id       String                @db.Uuid
+  entity          SurgicalEpisodeRecord @relation(fields: [entity_id], references: [id], onDelete: Cascade)
+  version         Int
+  snapshot        Json
+  changed_fields  Json
+  revised_by_id   String                @db.Uuid
+  revised_by      Profile               @relation("SurgicalEpisodeRecordRevisedBy", fields: [revised_by_id], references: [id], onDelete: Cascade)
+  revised_at      DateTime              @default(now())
+  revision_reason String?
+
+  @@index([entity_id, version])
+  @@map("surgical_episode_record_revisions")
+}
+
+model VisitSurgicalRecordRevision {
+  id              String              @id @default(uuid()) @db.Uuid
+  entity_id       String              @db.Uuid
+  entity          VisitSurgicalRecord @relation(fields: [entity_id], references: [id], onDelete: Cascade)
+  version         Int
+  snapshot        Json
+  changed_fields  Json
+  revised_by_id   String              @db.Uuid
+  revised_by      Profile             @relation("VisitSurgicalRecordRevisedBy", fields: [revised_by_id], references: [id], onDelete: Cascade)
+  revised_at      DateTime            @default(now())
+  revision_reason String?
+
+  @@index([entity_id, version])
+  @@map("visit_surgical_record_revisions")
 }
 
 // ============================================================================

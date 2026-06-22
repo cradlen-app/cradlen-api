@@ -19,6 +19,10 @@ import {
   assertCarePathChangeAllowed,
   PREGNANCY_CARE_PATH_CODE,
 } from '../pregnancy/pregnancy-care-path.guard';
+import {
+  assertSurgicalCarePathChangeAllowed,
+  SURGICAL_CARE_PATH_CODE,
+} from '../surgical/surgical-care-path.guard';
 import { ObgynHistoryService } from '../patient-history/obgyn-history.service';
 import {
   DiagnosisRowDto,
@@ -158,12 +162,18 @@ export class ObgynExaminationService {
     const previousCode = journey.care_path?.code ?? null;
     if (previousCode === carePathCode) return null;
 
-    // Pregnancy is entered via the activation flow ("Create pregnancy profile"),
-    // which opens its own journey + PregnancyJourneyRecord. The examination
-    // care-path field must never flip a journey to OBGYN_PREGNANCY on its own —
-    // that would declare the pregnancy surface (tab) with no actual pregnancy
-    // profile (and a 404 on open). Activation owns this care path.
-    if (carePathCode === PREGNANCY_CARE_PATH_CODE) return null;
+    // Pregnancy and Surgical are entered via their activation flows ("Create
+    // pregnancy/surgical profile"), each of which opens its OWN journey + scoped
+    // record. The examination care-path field must never flip a journey to these
+    // on its own — that would declare the surface (tab) with no actual profile
+    // (and a 404 on open). Activation owns these care paths; the surgical drawer
+    // additionally performs the cesarean handoff (closing an active pregnancy).
+    if (
+      carePathCode === PREGNANCY_CARE_PATH_CODE ||
+      carePathCode === SURGICAL_CARE_PATH_CODE
+    ) {
+      return null;
+    }
 
     // Resolve the target care path for the visit's specialty (org ∪ system),
     // preferring an org-specific override over the global fallback.
@@ -185,9 +195,11 @@ export class ObgynExaminationService {
       );
     }
 
-    // An ACTIVE pregnancy locks the journey's care path — it must be closed
-    // (delivery/outcome) before switching to a different (resolved) care path.
+    // An ACTIVE pregnancy or surgical journey locks the journey's care path — it
+    // must be closed (outcome recorded) before switching to a different
+    // (resolved) care path, else the active scoped record is orphaned.
     await assertCarePathChangeAllowed(tx, journey.id, carePathCode);
+    await assertSurgicalCarePathChangeAllowed(tx, journey.id, carePathCode);
 
     await tx.patientJourney.update({
       where: { id: journey.id },
