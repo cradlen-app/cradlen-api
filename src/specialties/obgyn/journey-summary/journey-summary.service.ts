@@ -3,6 +3,7 @@ import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { PatientAccessService } from '@core/patient/patient-access/patient-access.public';
 import { ObgynHistoryService } from '../patient-history/obgyn-history.service';
+import { formatBloodGroupRh } from '../blood-group.util';
 import {
   eddFromLmp,
   eddFromUsDating,
@@ -160,9 +161,10 @@ export class JourneySummaryService {
     asOf: Date,
   ): Promise<ActiveJourneySummaryDto> {
     const history = await this.obgynHistory.readEnvelope(patientId);
-    const bloodGroup =
+    const bloodGroup = formatBloodGroupRh(
       (history as { blood_group_rh?: string | null } | null)?.blood_group_rh ??
-      null;
+        null,
+    );
 
     const hasUs =
       record.us_dating_date != null &&

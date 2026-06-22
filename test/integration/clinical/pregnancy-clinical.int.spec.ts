@@ -275,7 +275,7 @@ describe('OB/GYN — pregnancy clinical surface (integration)', () => {
     expect(res.body.data.version).toBe(1);
     expect(res.body.data.lmp).toBe('2026-01-01');
     expect(res.body.data.edd_lmp).toBe('2026-10-08'); // LMP + 280 days
-    expect(res.body.data.blood_group_rh).toBe('O_POS');
+    expect(res.body.data.blood_group_rh).toBe('O+'); // enum formatted to label
     expect(res.body.data.fetuses).toEqual([]);
   });
 

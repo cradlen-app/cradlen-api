@@ -16,6 +16,7 @@ import { PatientAccessService } from '@core/patient/patient-access/patient-acces
 import { TemplateValidator } from '@builder/validator/template.validator';
 import { buildRevision } from '../revisions.helper';
 import { ObgynHistoryService } from '../patient-history/obgyn-history.service';
+import { formatBloodGroupRh } from '../blood-group.util';
 import {
   eddFromLmp,
   eddFromUsDating,
@@ -150,9 +151,10 @@ export class PregnancyClinicalService {
       // Blood group is patient-level — single source of truth is OB/GYN history.
       this.obgynHistory.readEnvelope(ctx.patientId),
     ]);
-    const bloodGroupRh =
+    const bloodGroupRh = formatBloodGroupRh(
       (history as { blood_group_rh?: string | null } | null)?.blood_group_rh ??
-      null;
+        null,
+    );
 
     const asOf = ctx.scheduledAt ?? new Date();
     return this.buildEnvelope(
