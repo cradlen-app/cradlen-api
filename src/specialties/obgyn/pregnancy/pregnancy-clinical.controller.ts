@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Get,
-  Headers,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -21,9 +20,9 @@ import {
 
 /**
  * Pregnancy journey clinical surface — the active-journey tab for the
- * `OBGYN_PREGNANCY` care path. GET/PATCH a flat envelope; PATCH carries an
- * `If-Match: version:N` precondition on the `PregnancyJourneyRecord.version`
- * token (independent of `examination_version`). Closed visits are blocked by
+ * `OBGYN_PREGNANCY` care path. GET/PATCH a flat envelope. PATCH is last-write-
+ * wins (no `If-Match`), like the Examination tab; `PregnancyJourneyRecord.version`
+ * still increments as a revision/cache token. Closed visits are blocked by
  * `EncounterMutationGuard` — post-close edits go via amendments.
  */
 @ApiTags('OB/GYN — Pregnancy Clinical Surface')
@@ -48,14 +47,12 @@ export class PregnancyClinicalController {
   patch(
     @Param('visitId', ParseUUIDPipe) visitId: string,
     @Param('journeyId', ParseUUIDPipe) journeyId: string,
-    @Headers('if-match') ifMatch: string | undefined,
     @Body() dto: UpdatePregnancyClinicalDto,
     @CurrentUser() user: AuthContext,
   ) {
     return this.service.patch(
       visitId,
       journeyId,
-      ifMatch,
       dto as Record<string, unknown>,
       user,
     );

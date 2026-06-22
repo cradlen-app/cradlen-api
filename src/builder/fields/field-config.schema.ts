@@ -37,6 +37,13 @@ export interface ConfigShape {
        */
       lockFilled?: boolean;
       /**
+       * Narrows `lockFilled` to specific fill targets. When present, only the
+       * listed field codes are rendered read-only on resolve (and `lockFilled`
+       * is ignored). Use to keep immutable fields (e.g. `national_id`) locked
+       * while leaving the rest of the prefilled identity editable.
+       */
+      lockFilledFields?: string[];
+      /**
        * Resolves a sibling ENTITY_SEARCH field from the same raw payload. Keyed
        * by the target search field's `code`. Used to pre-resolve a dependent
        * entity-search picker when a parent entity is selected.

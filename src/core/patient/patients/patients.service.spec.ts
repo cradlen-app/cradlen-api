@@ -47,6 +47,7 @@ describe('PatientsService', () => {
     assertCanAccessBranch: jest.Mock;
     assertCanManageOrganization: jest.Mock;
     isClinical: jest.Mock;
+    isManager: jest.Mock;
     isRestrictedToOwnData: jest.Mock;
   };
   let accessMock: { assertPatientAccessible: jest.Mock };
@@ -71,6 +72,8 @@ describe('PatientsService', () => {
       assertCanAccessBranch: jest.fn(),
       assertCanManageOrganization: jest.fn(),
       isClinical: jest.fn().mockResolvedValue(false),
+      // Default caller is not an org manager (reception/doctor).
+      isManager: jest.fn().mockResolvedValue(false),
       // Default: a non-doctor caller (reception/owner) sees the full branch.
       isRestrictedToOwnData: jest.fn().mockResolvedValue(false),
     };
@@ -322,6 +325,11 @@ describe('PatientsService', () => {
   });
 
   describe('update', () => {
+    beforeEach(() => {
+      db.patient.findUnique.mockResolvedValue({ ...mockPatient });
+      db.patient.update.mockResolvedValue({ ...mockPatient });
+    });
+
     it('asserts branch-gated access before updating', async () => {
       accessMock.assertPatientAccessible.mockRejectedValue(
         new NotFoundException('Patient bad-id not found'),
@@ -330,6 +338,45 @@ describe('PatientsService', () => {
         service.update('bad-id', { full_name: 'X' }, mockUser),
       ).rejects.toThrow(NotFoundException);
       expect(db.patient.update).not.toHaveBeenCalled();
+    });
+
+    it('lets a non-manager edit demographics without an identity check', async () => {
+      await service.update(
+        'patient-uuid',
+        { phone_number: '01099999999' },
+        mockUser,
+      );
+      // No national_id in the payload → the manager gate is never consulted.
+      expect(authMock.isManager).not.toHaveBeenCalled();
+      expect(db.patient.update).toHaveBeenCalledWith({
+        where: { id: 'patient-uuid' },
+        data: { phone_number: '01099999999' },
+      });
+    });
+
+    it('rejects a national_id correction by a non-manager', async () => {
+      authMock.isManager.mockResolvedValue(false);
+      await expect(
+        service.update('patient-uuid', { national_id: '99999999' }, mockUser),
+      ).rejects.toThrow(ForbiddenException);
+      expect(db.patient.update).not.toHaveBeenCalled();
+    });
+
+    it('persists a national_id correction for a manager', async () => {
+      authMock.isManager.mockResolvedValue(true);
+      await service.update(
+        'patient-uuid',
+        { national_id: '99999999' },
+        mockUser,
+      );
+      expect(authMock.isManager).toHaveBeenCalledWith(
+        mockUser.profileId,
+        mockUser.organizationId,
+      );
+      expect(db.patient.update).toHaveBeenCalledWith({
+        where: { id: 'patient-uuid' },
+        data: { national_id: '99999999' },
+      });
     });
   });
 
