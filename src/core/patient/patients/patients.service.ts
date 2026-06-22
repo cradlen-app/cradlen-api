@@ -474,6 +474,9 @@ export class PatientsService {
           phone_number: dto.phone_number,
         }),
         ...(dto.address !== undefined && { address: dto.address }),
+        ...(dto.marital_status !== undefined && {
+          marital_status: dto.marital_status,
+        }),
       },
     });
   }
