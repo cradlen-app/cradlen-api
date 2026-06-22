@@ -1,5 +1,4 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { PreconditionFailedException } from '@nestjs/common';
 import { PregnancyClinicalService } from './pregnancy-clinical.service';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { PatientAccessService } from '@core/patient/patient-access/patient-access.service';
@@ -114,25 +113,8 @@ describe('PregnancyClinicalService', () => {
   });
 
   describe('PATCH', () => {
-    it('rejects a stale If-Match with 412', async () => {
-      db.pregnancyJourneyRecord.findUnique.mockResolvedValue(journeyRecord());
-
-      await expect(
-        service.patch(
-          VISIT,
-          JOURNEY,
-          'version:1',
-          { risk_level: 'HIGH' },
-          user,
-        ),
-      ).rejects.toBeInstanceOf(PreconditionFailedException);
-
-      expect(db.$transaction).not.toHaveBeenCalled();
-      expect(validator.validatePayload).not.toHaveBeenCalled();
-    });
-
-    it('bumps the journey version and emits journey.clinical.updated on success', async () => {
-      // First findUnique = the precondition read (v2); second = the trailing GET.
+    it('saves last-write-wins (no If-Match), bumps the version, emits journey.clinical.updated', async () => {
+      // First findUnique = the pre-write read (v2); second = the trailing GET.
       db.pregnancyJourneyRecord.findUnique
         .mockResolvedValueOnce(journeyRecord())
         .mockResolvedValueOnce(
@@ -152,7 +134,6 @@ describe('PregnancyClinicalService', () => {
       const env = await service.patch(
         VISIT,
         JOURNEY,
-        'version:2',
         { risk_level: 'HIGH' },
         user,
       );

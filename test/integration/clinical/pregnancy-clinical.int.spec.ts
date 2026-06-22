@@ -14,10 +14,10 @@ import { seedVisit } from '../../helpers/visits-helpers';
 import { seedObgynPregnancyTemplate } from '../../../prisma/seeds/obgyn-pregnancy';
 
 /**
- * Pregnancy clinical vertical (journey-centric chart): activation, the
- * active-journey clinical surface (flat envelope + If-Match concurrency +
- * server-computed GA/EDD + multi-fetus), the care-path switch guard, closing,
- * closed-visit locking, and cross-org isolation. Depends on the seeded
+ * Pregnancy clinical vertical (journey-centric chart): activation (opens a new
+ * pregnancy journey), the active-journey clinical surface (flat envelope,
+ * last-write-wins, server-computed GA/EDD + multi-fetus), the care-path switch
+ * guard, closing, closed-visit locking, and cross-org isolation. Depends on the seeded
  * OBGYN_PREGNANCY care path, the obgyn_pregnancy template, and the
  * CarePathClinicalSurface row (global-setup runs `prisma db seed`).
  */
@@ -59,8 +59,10 @@ describe('OB/GYN — pregnancy clinical surface (integration)', () => {
     const obgyn = await prisma.specialty.findUniqueOrThrow({
       where: { code: 'OBGYN' },
     });
-    const journeyTemplate = await prisma.journeyTemplate.findFirstOrThrow({
-      where: { specialty_id: obgyn.id },
+    // OBGYN_PREGNANCY must resolve to the PREGNANCY journey template, which seeds
+    // the First/Second/Third Trimester episodes the trimester router routes into.
+    const pregnancyTemplate = await prisma.journeyTemplate.findFirstOrThrow({
+      where: { specialty_id: obgyn.id, code: 'PREGNANCY' },
     });
     for (const code of ['OBGYN_PREGNANCY', 'OBGYN_GENERAL']) {
       await prisma.carePath.create({
@@ -69,7 +71,7 @@ describe('OB/GYN — pregnancy clinical surface (integration)', () => {
           organization_id: null,
           code,
           name: code,
-          journey_template_id: journeyTemplate.id,
+          journey_template_id: pregnancyTemplate.id,
         },
       });
     }
@@ -154,8 +156,13 @@ describe('OB/GYN — pregnancy clinical surface (integration)', () => {
 
   // ---------- activation ----------
 
-  it('activation opens an ACTIVE profile and makes the descriptor declare the surface', async () => {
+  it('activation opens a NEW pregnancy journey (≠ booking journey), archives the old one, declares the surface', async () => {
     const ctx = await seedOpenVisit();
+    const before = await ctx
+      .auth(request(http()).get(descriptorUrl(ctx.visitId)))
+      .expect(200);
+    const bookingJourneyId = before.body.data.journey_id as string;
+
     const res = await ctx
       .auth(request(http()).post(activateUrl(ctx.visitId)))
       .send({ lmp: '2026-01-01', risk_level: 'NORMAL' })
@@ -165,11 +172,45 @@ describe('OB/GYN — pregnancy clinical surface (integration)', () => {
     const desc = await ctx
       .auth(request(http()).get(descriptorUrl(ctx.visitId)))
       .expect(200);
+    // The visit now belongs to a fresh pregnancy journey, not the general one.
+    expect(desc.body.data.journey_id).not.toBe(bookingJourneyId);
     expect(desc.body.data.care_path_code).toBe('OBGYN_PREGNANCY');
     expect(desc.body.data.clinical_surface).toEqual({
       template_code: 'obgyn_pregnancy',
       label: 'Pregnancy',
     });
+    const oldJourney = await prisma.patientJourney.findUniqueOrThrow({
+      where: { id: bookingJourneyId },
+    });
+    expect(oldJourney.status).toBe('COMPLETED');
+  });
+
+  it('routes the visit to its trimester episode by GA (20w → Second Trimester, First completed)', async () => {
+    const ctx = await seedOpenVisit();
+    // LMP 140 days (= 20w0d) before the visit date → Second Trimester (order 2).
+    const v = await prisma.visit.findUniqueOrThrow({
+      where: { id: ctx.visitId },
+      select: { scheduled_at: true },
+    });
+    const lmp = new Date(v.scheduled_at.getTime() - 140 * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+
+    const journeyId = await activate(ctx, { lmp });
+
+    const target = await prisma.patientEpisode.findFirstOrThrow({
+      where: { journey_id: journeyId, order: 2 },
+    });
+    const visit = await prisma.visit.findUniqueOrThrow({
+      where: { id: ctx.visitId },
+      select: { episode_id: true },
+    });
+    expect(visit.episode_id).toBe(target.id); // re-pointed to Second Trimester
+    expect(target.status).toBe('ACTIVE');
+    const firstTri = await prisma.patientEpisode.findFirstOrThrow({
+      where: { journey_id: journeyId, order: 1 },
+    });
+    expect(firstTri.status).toBe('COMPLETED'); // earlier trimester advanced
   });
 
   it('activation is idempotent (second call returns the same profile, 201)', async () => {
@@ -218,7 +259,6 @@ describe('OB/GYN — pregnancy clinical surface (integration)', () => {
 
     await ctx
       .auth(request(http()).patch(clinicalUrl(ctx.visitId, journeyId)))
-      .set('If-Match', 'version:1')
       .send({
         risk_level: 'HIGH',
         cervix_length_mm: '30',
@@ -241,14 +281,22 @@ describe('OB/GYN — pregnancy clinical surface (integration)', () => {
     expect(revisions).toBe(1);
   });
 
-  it('PATCH with a stale If-Match is rejected (412)', async () => {
+  it('PATCH is last-write-wins (no If-Match) — repeated saves succeed and bump the version', async () => {
+    await seedObgynPregnancyTemplate(prisma);
     const ctx = await seedOpenVisit();
     const journeyId = await activate(ctx);
+    const url = clinicalUrl(ctx.visitId, journeyId);
     await ctx
-      .auth(request(http()).patch(clinicalUrl(ctx.visitId, journeyId)))
-      .set('If-Match', 'version:99')
+      .auth(request(http()).patch(url))
       .send({ risk_level: 'HIGH' })
-      .expect(412);
+      .expect(200);
+    await ctx
+      .auth(request(http()).patch(url))
+      .send({ risk_level: 'MODERATE' })
+      .expect(200);
+    const res = await ctx.auth(request(http()).get(url)).expect(200);
+    expect(res.body.data.version).toBe(3);
+    expect(res.body.data.risk_level).toBe('MODERATE');
   });
 
   it('another org cannot read the clinical surface (404, org isolation)', async () => {
@@ -314,7 +362,6 @@ describe('OB/GYN — pregnancy clinical surface (integration)', () => {
     });
     const res = await ctx
       .auth(request(http()).patch(clinicalUrl(ctx.visitId, journeyId)))
-      .set('If-Match', 'version:1')
       .send({ risk_level: 'HIGH' })
       .expect(409);
     expect(res.body.error.code).toBe('ENCOUNTER_LOCKED');

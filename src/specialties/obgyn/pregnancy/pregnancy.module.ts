@@ -7,6 +7,8 @@ import { PregnancyClinicalController } from './pregnancy-clinical.controller';
 import { PregnancyClinicalService } from './pregnancy-clinical.service';
 import { PregnancyActivationController } from './pregnancy-activation.controller';
 import { PregnancyActivationService } from './pregnancy-activation.service';
+import { PregnancyEpisodeRouterService } from './pregnancy-episode-router.service';
+import { PregnancyVisitRoutingListener } from './pregnancy-visit-routing.listener';
 
 /**
  * Pregnancy clinical vertical — activates the journey-centric chart for the
@@ -14,10 +16,17 @@ import { PregnancyActivationService } from './pregnancy-activation.service';
  * (closed-visit lock), PatientAccessModule for org-scope gating, ValidatorModule
  * for the template-driven PATCH validation, and ObgynModule for
  * ObgynHistoryService (the patient blood group on the read-only summary).
+ * `PregnancyVisitRoutingListener` reacts to `visit.booked` to route pregnancy
+ * visits into their trimester episode (booking lives in core and can't call here).
  */
 @Module({
   imports: [VisitsModule, PatientAccessModule, ValidatorModule, ObgynModule],
   controllers: [PregnancyClinicalController, PregnancyActivationController],
-  providers: [PregnancyClinicalService, PregnancyActivationService],
+  providers: [
+    PregnancyClinicalService,
+    PregnancyActivationService,
+    PregnancyEpisodeRouterService,
+    PregnancyVisitRoutingListener,
+  ],
 })
 export class PregnancyModule {}

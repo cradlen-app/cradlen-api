@@ -2,7 +2,6 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
-  PreconditionFailedException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service';
@@ -108,8 +107,8 @@ interface VisitJourneyContext {
  * PATCH demuxes each field into its scoped record (journey profile / episode
  * labs / per-visit maternal surveillance / per-fetus biometrics) inside one
  * transaction, with `*_revisions` shadows, and bumps the single
- * `PregnancyJourneyRecord.version` token (the `If-Match` authority) on every
- * save. Examination stays the single source of truth for complaint/treatment.
+ * `PregnancyJourneyRecord.version` token (revision snapshot + FE remount key) on
+ * every save. Last-write-wins (no If-Match), like the Examination tab.
  */
 @Injectable()
 export class PregnancyClinicalService {
@@ -173,7 +172,6 @@ export class PregnancyClinicalService {
   async patch(
     visitId: string,
     journeyId: string,
-    ifMatch: string | undefined,
     body: Body,
     user: AuthContext,
   ) {
@@ -188,14 +186,9 @@ export class PregnancyClinicalService {
       throw new NotFoundException('No pregnancy profile for this journey');
     }
 
-    const expected = this.parseIfMatch(ifMatch);
-    if (expected !== journeyRecord.version) {
-      throw new PreconditionFailedException({
-        code: 'STALE_VERSION',
-        message: `Stale version — expected ${journeyRecord.version}, got ${expected}`,
-      });
-    }
-
+    // Last-write-wins on an open visit, like the Examination tab — no If-Match
+    // precondition. The version still increments (revision snapshot token + FE
+    // remount key); closed visits are blocked upstream by the encounter guard.
     const validation = await this.validator.validatePayload(
       PREGNANCY_TEMPLATE_CODE,
       body,
@@ -213,7 +206,7 @@ export class PregnancyClinicalService {
     const newVersion = await this.prismaService.db.$transaction(
       async (tx) => {
         // Journey scope — always bump the version token + write one revision,
-        // even when only sub-scopes changed, so the next If-Match stays valid.
+        // even when only sub-scopes changed (the version is the FE remount key).
         const journeyData = pickWritable(body, JOURNEY_WRITABLE);
         if (Object.keys(journeyData).length > 0) scopes.push('journey');
         await tx.pregnancyJourneyRecordRevision.create({
@@ -430,19 +423,6 @@ export class PregnancyClinicalService {
       carePathCode: journey.care_path?.code ?? null,
       scheduledAt: visit.scheduled_at,
     };
-  }
-
-  private parseIfMatch(header: string | undefined): number {
-    if (!header) {
-      throw new BadRequestException('If-Match header is required');
-    }
-    const match = /^version:(\d+)$/.exec(header.trim());
-    if (!match) {
-      throw new BadRequestException(
-        'If-Match must be of the form "version:<n>"',
-      );
-    }
-    return Number(match[1]);
   }
 
   private buildEnvelope(
