@@ -103,6 +103,8 @@ describe('OB/GYN — pregnancy clinical surface (integration)', () => {
   const closeUrl = (id: string) => `/v1/visits/${id}/pregnancy/close`;
   const descriptorUrl = (id: string) => `/v1/visits/${id}/journey`;
   const examUrl = (id: string) => `/v1/visits/${id}/examination`;
+  const summaryUrl = (patientId: string) =>
+    `/v1/patients/${patientId}/active-journey-summary`;
   const clinicalUrl = (visitId: string, journeyId: string) =>
     `/v1/visits/${visitId}/journeys/${journeyId}/clinical`;
 
@@ -211,6 +213,33 @@ describe('OB/GYN — pregnancy clinical surface (integration)', () => {
       where: { journey_id: journeyId, order: 1 },
     });
     expect(firstTri.status).toBe('COMPLETED'); // earlier trimester advanced
+  });
+
+  it('active-journey-summary returns the pregnancy identifier + risk flag', async () => {
+    const ctx = await seedOpenVisit();
+    const v = await prisma.visit.findUniqueOrThrow({
+      where: { id: ctx.visitId },
+      select: { scheduled_at: true },
+    });
+    const lmp = new Date(v.scheduled_at.getTime() - 140 * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    await activate(ctx, { lmp, risk_level: 'HIGH' });
+
+    const res = await ctx
+      .auth(request(http()).get(summaryUrl(ctx.patientId)))
+      .expect(200);
+    const body = res.body.data;
+    expect(body.journey_exists).toBe(true);
+    expect(body.is_active).toBe(true);
+    expect(body.care_path_code).toBe('OBGYN_PREGNANCY');
+    expect(body.identifier.ga).toBeTruthy();
+    expect(body.identifier.edd).toBeTruthy();
+    expect(body.flags).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: 'High risk', severity: 'high' }),
+      ]),
+    );
   });
 
   it('activation is idempotent (second call returns the same profile, 201)', async () => {
