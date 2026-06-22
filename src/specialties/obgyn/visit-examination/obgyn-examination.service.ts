@@ -237,6 +237,16 @@ export class ObgynExaminationService {
       tx.visitInvestigation.findMany({
         where: { visit_id: visitId, is_deleted: false },
         orderBy: { created_at: 'asc' },
+        // Fold in the catalog test name + attachment metadata so the read-only
+        // results view can show name + an attachment count (no object_key /
+        // presigned URLs — files are not downloaded from this surface).
+        include: {
+          lab_test: { select: { name: true } },
+          result_attachments: {
+            where: { is_deleted: false },
+            select: { id: true, source: true, content_type: true },
+          },
+        },
       }),
       tx.visitDiagnosis.findMany({
         where: { visit_id: visitId, is_deleted: false },
