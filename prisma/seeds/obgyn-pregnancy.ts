@@ -1,20 +1,23 @@
 /**
  * OB/GYN Pregnancy clinical-surface template seed (code='obgyn_pregnancy').
  *
- * Backs the dynamic "Pregnancy" tab the OBGYN_PREGNANCY care path declares
- * (CarePathClinicalSurface). The generic JourneyClinicalFormShell renders it and
- * submits a FLAT body keyed by binding path; the pregnancy-clinical PATCH demuxes
- * each field into its scoped record:
+ * Backs the dynamic "Pregnancy" tab the OBGYN_PREGNANCY care path declares. The
+ * tab embodies journey → episode → visit, led by a READ-ONLY Summary:
  *
- *   - PREGNANCY_JOURNEY → pregnancy_journey_records (profile + snapshot)
- *   - PREGNANCY_EPISODE → pregnancy_episode_records (JSON labs)
- *   - PREGNANCY_VISIT   → visit_pregnancy_records   (maternal + shared fetal)
- *   - PREGNANCY_FETUS   → visit_fetal_records       (repeatable, per fetus)
- *   - COMPUTED          → server-computed GA/EDD (read-only; never submitted)
+ *   - Summary (read-only, NOT submitted) — at-a-glance overview aggregating
+ *     journey + episode + visit; live GA/EDD (COMPUTED) recompute from the
+ *     editable journey LMP/US inputs; blood group is read-only from patient
+ *     OB/GYN history; created/updated are date-only.
+ *   - Journey — dating & profile (editable): LMP (single capture), US dating,
+ *     risk, pregnancy type, #fetuses → PREGNANCY_JOURNEY.
+ *   - Episode — labs (editable): anomaly scan / GTT / trimester → PREGNANCY_EPISODE.
+ *   - Visit — maternal / fetal (editable, fetuses repeatable) → PREGNANCY_VISIT /
+ *     PREGNANCY_FETUS.
  *
- * Vitals are intentionally absent — the Examination tab stays the single source
- * of truth for vitals (and complaint/treatment). Activation flips this template
- * active + PUBLISHED. Idempotent (upsert by (code, version)).
+ * The Summary section is flagged `config.ui.readOnly` — the FE renders it
+ * read-only and excludes it from submission (its fields mirror the editable
+ * ones, so the editable sections own the writes). Vitals stay on the
+ * Examination tab. Activation flips this template active + PUBLISHED. Idempotent.
  */
 
 import { BindingNamespace, PrismaClient } from '@prisma/client';
@@ -23,7 +26,7 @@ import { assertValidConfig } from '../../src/builder/fields/field-config.schema.
 import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 
 const TEMPLATE_CODE = 'obgyn_pregnancy';
-const TEMPLATE_VERSION = 1;
+const TEMPLATE_VERSION = 2;
 
 type FieldType = keyof typeof FIELD_TYPES;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -43,18 +46,20 @@ interface SectionSpec {
   name: string;
   group: string;
   is_repeatable?: boolean;
+  /** Rendered read-only by the FE and excluded from submission (overview). */
+  readOnly?: boolean;
   fields: FieldSpec[];
 }
 
 const opt = (code: string, label: string) => ({ code, label });
 
-/** A read-only display field (server-owned value shown verbatim). */
+/** A read-only display field in the Summary (mirrors a value owned elsewhere). */
 const display = (
   code: string,
   label: string,
   namespace: BindingNamespace,
   path: string,
-  colSpan = 4,
+  colSpan = 3,
 ): FieldSpec => ({
   code,
   label,
@@ -63,45 +68,105 @@ const display = (
   config: { ui: { readOnly: true, colSpan } },
 });
 
+/** A live COMPUTED field (recomputes on the FE from `derivedFrom` field codes). */
+const computed = (
+  code: string,
+  label: string,
+  path: string,
+  formula: string,
+  derivedFrom: string[],
+  colSpan = 3,
+): FieldSpec => ({
+  code,
+  label,
+  type: 'COMPUTED',
+  binding: { namespace: 'COMPUTED', path },
+  config: { ui: { colSpan, derivedFrom }, logic: { formula } },
+});
+
 const SECTIONS: SectionSpec[] = [
   // ---------------------------------------------------------------------------
-  // Pregnancy profile (read-only lifecycle)
+  // 1. Summary — read-only overview (journey + episode + visit). Not submitted.
   // ---------------------------------------------------------------------------
   {
-    code: 'pregnancy_profile',
-    name: 'Pregnancy profile',
-    group: 'Pregnancy profile',
+    code: 'summary',
+    name: 'Pregnancy summary',
+    group: 'Summary',
+    readOnly: true,
     fields: [
-      display('profile_status', 'Profile status', 'PREGNANCY_JOURNEY', 'status'),
-      display('profile_created_at', 'Created at', 'PREGNANCY_JOURNEY', 'created_at'),
-      display('profile_updated_at', 'Updated at', 'PREGNANCY_JOURNEY', 'updated_at'),
+      display('summary_status', 'Status', 'PREGNANCY_JOURNEY', 'status'),
+      display('summary_risk', 'Risk level', 'PREGNANCY_JOURNEY', 'risk_level'),
+      display(
+        'summary_blood_group',
+        'Blood group & RH',
+        'PATIENT_OBGYN_HISTORY',
+        'blood_group_rh',
+      ),
+      display('summary_lmp', 'LMP', 'PREGNANCY_JOURNEY', 'lmp'),
+      computed('summary_ga_lmp', 'GA (LMP)', 'ga_lmp', 'ga_from_lmp', ['lmp']),
+      computed('summary_edd_lmp', 'EDD (LMP)', 'edd_lmp', 'edd_from_lmp', [
+        'lmp',
+      ]),
+      computed('summary_ga_us', 'GA (US)', 'ga_us', 'ga_from_us', [
+        'us_dating_date',
+        'us_ga_weeks',
+        'us_ga_days',
+      ]),
+      computed('summary_edd_us', 'EDD (US)', 'edd_us', 'edd_from_us', [
+        'us_dating_date',
+        'us_ga_weeks',
+        'us_ga_days',
+      ]),
+      display('summary_type', 'Pregnancy type', 'PREGNANCY_JOURNEY', 'pregnancy_type'),
+      display(
+        'summary_fetuses',
+        'Number of fetuses',
+        'PREGNANCY_JOURNEY',
+        'number_of_fetuses',
+      ),
+      display('summary_created', 'Created', 'PREGNANCY_JOURNEY', 'created_at'),
+      display('summary_updated', 'Updated', 'PREGNANCY_JOURNEY', 'updated_at'),
+      // Episode highlights
+      display(
+        'summary_anomaly',
+        'Anomaly scan',
+        'PREGNANCY_EPISODE',
+        'anomaly_scan.result',
+        4,
+      ),
+      display(
+        'summary_gtt',
+        'GTT',
+        'PREGNANCY_EPISODE',
+        'gtt_result.interpretation',
+        4,
+      ),
+      display(
+        'summary_trimester',
+        'Trimester summary',
+        'PREGNANCY_EPISODE',
+        'trimester_summary.notes',
+        4,
+      ),
+      // This-visit highlights
+      display(
+        'summary_fundal',
+        'Fundal height (this visit)',
+        'PREGNANCY_VISIT',
+        'fundal_height_cm',
+        4,
+      ),
     ],
   },
 
   // ---------------------------------------------------------------------------
-  // Pregnancy snapshot (journey scope + computed GA/EDD)
+  // 2. Journey — dating & profile (editable). The single LMP capture.
   // ---------------------------------------------------------------------------
   {
-    code: 'pregnancy_snapshot',
-    name: 'Pregnancy snapshot',
-    group: 'Pregnancy snapshot',
+    code: 'journey_dating',
+    name: 'Dating & profile',
+    group: 'Journey',
     fields: [
-      {
-        code: 'risk_level',
-        label: 'Risk level',
-        type: 'SELECT',
-        binding: { namespace: 'PREGNANCY_JOURNEY', path: 'risk_level' },
-        config: {
-          ui: { placeholder: 'Ex : Normal', colSpan: 4 },
-          validation: {
-            options: [
-              opt('NORMAL', 'Normal'),
-              opt('MODERATE', 'Moderate'),
-              opt('HIGH', 'High'),
-            ],
-          },
-        },
-      },
       {
         code: 'lmp',
         label: 'LMP',
@@ -109,15 +174,6 @@ const SECTIONS: SectionSpec[] = [
         binding: { namespace: 'PREGNANCY_JOURNEY', path: 'lmp' },
         config: { ui: { placeholder: '1 / 1 / 2026', colSpan: 4 } },
       },
-      {
-        code: 'blood_group_rh',
-        label: 'Blood group & RH',
-        type: 'TEXT',
-        binding: { namespace: 'PREGNANCY_JOURNEY', path: 'blood_group_rh' },
-        config: { ui: { placeholder: 'Ex : A+', colSpan: 4 } },
-      },
-      display('ga_lmp', 'Gestational age (LMP)', 'COMPUTED', 'ga_lmp'),
-      display('edd_lmp', 'EDD (LMP)', 'COMPUTED', 'edd_lmp'),
       {
         code: 'us_dating_date',
         label: 'US dating date',
@@ -141,12 +197,26 @@ const SECTIONS: SectionSpec[] = [
         type: 'NUMBER',
         binding: { namespace: 'PREGNANCY_JOURNEY', path: 'us_ga_days' },
         config: {
-          ui: { placeholder: 'Ex : 6', colSpan: 2, suffix: 'days' },
+          ui: { placeholder: 'Ex : 3', colSpan: 2, suffix: 'days' },
           validation: { min: 0, max: 6 },
         },
       },
-      display('ga_us', 'Gestational age (US)', 'COMPUTED', 'ga_us'),
-      display('edd_us', 'EDD (US)', 'COMPUTED', 'edd_us'),
+      {
+        code: 'risk_level',
+        label: 'Risk level',
+        type: 'SELECT',
+        binding: { namespace: 'PREGNANCY_JOURNEY', path: 'risk_level' },
+        config: {
+          ui: { placeholder: 'Ex : Normal', colSpan: 4 },
+          validation: {
+            options: [
+              opt('NORMAL', 'Normal'),
+              opt('MODERATE', 'Moderate'),
+              opt('HIGH', 'High'),
+            ],
+          },
+        },
+      },
       {
         code: 'pregnancy_type',
         label: 'Pregnancy type',
@@ -159,11 +229,13 @@ const SECTIONS: SectionSpec[] = [
               opt('SINGLETON', 'Singleton'),
               opt('TWINS', 'Twins'),
               opt('TRIPLETS', 'Triplets'),
+              opt('HIGHER_ORDER', 'Higher-order'),
             ],
           },
         },
       },
       {
+        // Auto-set from pregnancy_type on the FE (manual for Higher-order).
         code: 'number_of_fetuses',
         label: 'Number of fetuses',
         type: 'NUMBER',
@@ -177,16 +249,99 @@ const SECTIONS: SectionSpec[] = [
   },
 
   // ---------------------------------------------------------------------------
-  // Maternal — Cervix (per-visit)
+  // 3. Episode — labs (editable, JSON columns)
   // ---------------------------------------------------------------------------
   {
-    code: 'maternal_cervix',
-    name: 'Cervix',
-    group: 'Maternal',
+    code: 'episode_labs',
+    name: 'Pregnancy labs',
+    group: 'Episode',
+    fields: [
+      {
+        code: 'anomaly_scan_date',
+        label: 'Anomaly scan date',
+        type: 'DATE',
+        binding: { namespace: 'PREGNANCY_EPISODE', path: 'anomaly_scan.date' },
+        config: { ui: { colSpan: 4 } },
+      },
+      {
+        code: 'anomaly_scan_result',
+        label: 'Anomaly scan result',
+        type: 'SELECT',
+        binding: { namespace: 'PREGNANCY_EPISODE', path: 'anomaly_scan.result' },
+        config: {
+          ui: { placeholder: 'Ex : Normal', colSpan: 4 },
+          validation: {
+            options: [opt('NORMAL', 'Normal'), opt('ABNORMAL', 'Abnormal')],
+          },
+        },
+      },
+      {
+        code: 'anomaly_scan_notes',
+        label: 'Anomaly scan notes',
+        type: 'TEXTAREA',
+        binding: { namespace: 'PREGNANCY_EPISODE', path: 'anomaly_scan.notes' },
+        config: { ui: { colSpan: 4 } },
+      },
+      {
+        code: 'gtt_fasting',
+        label: 'GTT fasting',
+        type: 'NUMBER',
+        binding: { namespace: 'PREGNANCY_EPISODE', path: 'gtt_result.fasting' },
+        config: { ui: { colSpan: 3, suffix: 'mmol/L', step: 0.1 } },
+      },
+      {
+        code: 'gtt_one_hour',
+        label: 'GTT 1-hour',
+        type: 'NUMBER',
+        binding: { namespace: 'PREGNANCY_EPISODE', path: 'gtt_result.one_hour' },
+        config: { ui: { colSpan: 3, suffix: 'mmol/L', step: 0.1 } },
+      },
+      {
+        code: 'gtt_two_hour',
+        label: 'GTT 2-hour',
+        type: 'NUMBER',
+        binding: { namespace: 'PREGNANCY_EPISODE', path: 'gtt_result.two_hour' },
+        config: { ui: { colSpan: 3, suffix: 'mmol/L', step: 0.1 } },
+      },
+      {
+        code: 'gtt_interpretation',
+        label: 'GTT interpretation',
+        type: 'SELECT',
+        binding: {
+          namespace: 'PREGNANCY_EPISODE',
+          path: 'gtt_result.interpretation',
+        },
+        config: {
+          ui: { placeholder: 'Ex : Normal', colSpan: 3 },
+          validation: {
+            options: [opt('NORMAL', 'Normal'), opt('GDM', 'GDM')],
+          },
+        },
+      },
+      {
+        code: 'trimester_summary_notes',
+        label: 'Trimester summary',
+        type: 'TEXTAREA',
+        binding: {
+          namespace: 'PREGNANCY_EPISODE',
+          path: 'trimester_summary.notes',
+        },
+        config: { ui: { colSpan: 12 } },
+      },
+    ],
+  },
+
+  // ---------------------------------------------------------------------------
+  // 4. Visit — maternal (editable)
+  // ---------------------------------------------------------------------------
+  {
+    code: 'visit_maternal',
+    name: 'Maternal',
+    group: 'Visit',
     fields: [
       {
         code: 'cervix_length_mm',
-        label: 'Length',
+        label: 'Cervix length',
         type: 'NUMBER',
         binding: { namespace: 'PREGNANCY_VISIT', path: 'cervix_length_mm' },
         config: {
@@ -242,17 +397,6 @@ const SECTIONS: SectionSpec[] = [
           },
         },
       },
-    ],
-  },
-
-  // ---------------------------------------------------------------------------
-  // Maternal — Pregnancy Warning Symptoms (per-visit, multi-select)
-  // ---------------------------------------------------------------------------
-  {
-    code: 'maternal_warning_symptoms',
-    name: 'Pregnancy Warning Symptoms',
-    group: 'Maternal',
-    fields: [
       {
         code: 'warning_symptoms',
         label: 'Warning symptoms',
@@ -277,12 +421,12 @@ const SECTIONS: SectionSpec[] = [
   },
 
   // ---------------------------------------------------------------------------
-  // Fetal — Fundal (per-visit, shared across fetuses)
+  // 5. Visit — fetal (shared, editable)
   // ---------------------------------------------------------------------------
   {
-    code: 'fetal_fundal',
-    name: 'Fundal',
-    group: 'Fetal',
+    code: 'visit_fetal',
+    name: 'Fetal',
+    group: 'Visit',
     fields: [
       {
         code: 'fundal_height_cm',
@@ -290,7 +434,7 @@ const SECTIONS: SectionSpec[] = [
         type: 'NUMBER',
         binding: { namespace: 'PREGNANCY_VISIT', path: 'fundal_height_cm' },
         config: {
-          ui: { placeholder: 'Ex : 30', colSpan: 6, suffix: 'cm', step: 0.1 },
+          ui: { placeholder: 'Ex : 30', colSpan: 4, suffix: 'cm', step: 0.1 },
           validation: { min: 0, max: 60 },
         },
       },
@@ -300,21 +444,10 @@ const SECTIONS: SectionSpec[] = [
         type: 'SELECT',
         binding: { namespace: 'PREGNANCY_VISIT', path: 'fundal_corresponds_ga' },
         config: {
-          ui: { placeholder: 'Ex : Yes', colSpan: 6 },
+          ui: { placeholder: 'Ex : Yes', colSpan: 4 },
           validation: { options: [opt('YES', 'Yes'), opt('NO', 'No')] },
         },
       },
-    ],
-  },
-
-  // ---------------------------------------------------------------------------
-  // Fetal — Amniotic & Placenta (per-visit, shared)
-  // ---------------------------------------------------------------------------
-  {
-    code: 'fetal_amniotic_placenta',
-    name: 'Amniotic & Placenta',
-    group: 'Fetal',
-    fields: [
       {
         code: 'amniotic_fluid',
         label: 'Amniotic fluid',
@@ -337,7 +470,7 @@ const SECTIONS: SectionSpec[] = [
         type: 'SELECT',
         binding: { namespace: 'PREGNANCY_VISIT', path: 'placenta_location' },
         config: {
-          ui: { placeholder: 'Ex : Anterior', colSpan: 4 },
+          ui: { placeholder: 'Ex : Anterior', colSpan: 6 },
           validation: {
             options: [
               opt('ANTERIOR', 'Anterior'),
@@ -354,7 +487,7 @@ const SECTIONS: SectionSpec[] = [
         type: 'NUMBER',
         binding: { namespace: 'PREGNANCY_VISIT', path: 'placenta_grade' },
         config: {
-          ui: { placeholder: 'Ex : 0', colSpan: 4 },
+          ui: { placeholder: 'Ex : 0', colSpan: 6 },
           validation: { min: 0, max: 3 },
         },
       },
@@ -362,13 +495,12 @@ const SECTIONS: SectionSpec[] = [
   },
 
   // ---------------------------------------------------------------------------
-  // Fetuses — per-fetus lie + biometrics (REPEATABLE → visit_fetal_records)
-  // Section code 'fetuses' = the body array key the diff consumes.
+  // 6. Fetuses — per-fetus lie + biometrics (REPEATABLE → visit_fetal_records)
   // ---------------------------------------------------------------------------
   {
     code: 'fetuses',
     name: 'Fetus',
-    group: 'Fetal',
+    group: 'Visit',
     is_repeatable: true,
     fields: [
       {
@@ -547,103 +679,20 @@ const SECTIONS: SectionSpec[] = [
         config: {
           ui: { placeholder: 'Ex : AGA', colSpan: 4 },
           validation: {
-            options: [
-              opt('AGA', 'AGA'),
-              opt('SGA', 'SGA'),
-              opt('LGA', 'LGA'),
-            ],
+            options: [opt('AGA', 'AGA'), opt('SGA', 'SGA'), opt('LGA', 'LGA')],
           },
         },
-      },
-    ],
-  },
-
-  // ---------------------------------------------------------------------------
-  // Pregnancy labs (episode scope — JSON columns)
-  // ---------------------------------------------------------------------------
-  {
-    code: 'pregnancy_labs',
-    name: 'Pregnancy labs',
-    group: 'Labs',
-    fields: [
-      {
-        code: 'anomaly_scan_date',
-        label: 'Anomaly scan date',
-        type: 'DATE',
-        binding: { namespace: 'PREGNANCY_EPISODE', path: 'anomaly_scan.date' },
-        config: { ui: { colSpan: 4 } },
-      },
-      {
-        code: 'anomaly_scan_result',
-        label: 'Anomaly scan result',
-        type: 'SELECT',
-        binding: { namespace: 'PREGNANCY_EPISODE', path: 'anomaly_scan.result' },
-        config: {
-          ui: { placeholder: 'Ex : Normal', colSpan: 4 },
-          validation: {
-            options: [opt('NORMAL', 'Normal'), opt('ABNORMAL', 'Abnormal')],
-          },
-        },
-      },
-      {
-        code: 'anomaly_scan_notes',
-        label: 'Anomaly scan notes',
-        type: 'TEXTAREA',
-        binding: { namespace: 'PREGNANCY_EPISODE', path: 'anomaly_scan.notes' },
-        config: { ui: { colSpan: 4 } },
-      },
-      {
-        code: 'gtt_fasting',
-        label: 'GTT fasting',
-        type: 'NUMBER',
-        binding: { namespace: 'PREGNANCY_EPISODE', path: 'gtt_result.fasting' },
-        config: { ui: { colSpan: 3, suffix: 'mmol/L', step: 0.1 } },
-      },
-      {
-        code: 'gtt_one_hour',
-        label: 'GTT 1-hour',
-        type: 'NUMBER',
-        binding: { namespace: 'PREGNANCY_EPISODE', path: 'gtt_result.one_hour' },
-        config: { ui: { colSpan: 3, suffix: 'mmol/L', step: 0.1 } },
-      },
-      {
-        code: 'gtt_two_hour',
-        label: 'GTT 2-hour',
-        type: 'NUMBER',
-        binding: { namespace: 'PREGNANCY_EPISODE', path: 'gtt_result.two_hour' },
-        config: { ui: { colSpan: 3, suffix: 'mmol/L', step: 0.1 } },
-      },
-      {
-        code: 'gtt_interpretation',
-        label: 'GTT interpretation',
-        type: 'SELECT',
-        binding: {
-          namespace: 'PREGNANCY_EPISODE',
-          path: 'gtt_result.interpretation',
-        },
-        config: {
-          ui: { placeholder: 'Ex : Normal', colSpan: 3 },
-          validation: {
-            options: [opt('NORMAL', 'Normal'), opt('GDM', 'GDM')],
-          },
-        },
-      },
-      {
-        code: 'trimester_summary_notes',
-        label: 'Trimester summary',
-        type: 'TEXTAREA',
-        binding: {
-          namespace: 'PREGNANCY_EPISODE',
-          path: 'trimester_summary.notes',
-        },
-        config: { ui: { colSpan: 12 } },
       },
     ],
   },
 ];
 
 function buildSectionConfig(section: SectionSpec): SectionConfig {
-  return { ui: { group: section.group }, validation: {}, logic: {} };
+  return {
+    ui: { group: section.group, ...(section.readOnly ? { readOnly: true } : {}) },
+    validation: {},
+    logic: {},
+  };
 }
 
 function assertAllValid(sections: SectionSpec[]): void {
@@ -674,7 +723,7 @@ export async function seedObgynPregnancyTemplate(prisma: PrismaClient) {
   });
 
   const description =
-    'Pregnancy journey clinical surface (active-journey tab for the OBGYN_PREGNANCY care path): profile + snapshot (computed GA/EDD) + maternal (cervix, warning symptoms) + fetal (fundal, amniotic/placenta, repeatable per-fetus biometrics) + episode labs. Writes via PATCH /visits/:visitId/journeys/:journeyId/clinical. No vitals — the Examination tab is the single source of truth for vitals/complaint/treatment.';
+    'Pregnancy journey clinical surface (OBGYN_PREGNANCY active-journey tab), structured journey → episode → visit and led by a read-only Summary (live GA/EDD, blood group from patient history). Writes via PATCH /visits/:visitId/journeys/:journeyId/clinical. No vitals — the Examination tab is the single source of truth for vitals/complaint/treatment; LMP is captured here, not in the examination menstrual section.';
 
   const template = await prisma.formTemplate.upsert({
     where: { code_version: { code: TEMPLATE_CODE, version: TEMPLATE_VERSION } },

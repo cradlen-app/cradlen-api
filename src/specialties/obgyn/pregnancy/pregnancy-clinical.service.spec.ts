@@ -7,6 +7,7 @@ import { TemplateValidator } from '@builder/validator/template.validator';
 import { EventBus } from '@infrastructure/messaging/event-bus';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { CLINICAL_EVENTS } from '@core/clinical/events/clinical-events';
+import { ObgynHistoryService } from '../patient-history/obgyn-history.service';
 
 const user: AuthContext = {
   userId: 'u1',
@@ -49,6 +50,7 @@ describe('PregnancyClinicalService', () => {
   let access: { assertVisitInOrg: jest.Mock };
   let validator: { validatePayload: jest.Mock };
   let eventBus: { publish: jest.Mock };
+  let obgynHistory: { readEnvelope: jest.Mock };
 
   beforeEach(async () => {
     db = {
@@ -57,7 +59,11 @@ describe('PregnancyClinicalService', () => {
           scheduled_at: new Date('2026-02-15T00:00:00.000Z'),
           episode: {
             id: 'episode-1',
-            journey: { id: JOURNEY, care_path: { code: 'OBGYN_PREGNANCY' } },
+            journey: {
+              id: JOURNEY,
+              patient_id: 'patient-1',
+              care_path: { code: 'OBGYN_PREGNANCY' },
+            },
           },
         }),
       },
@@ -70,6 +76,9 @@ describe('PregnancyClinicalService', () => {
     access = { assertVisitInOrg: jest.fn().mockResolvedValue(undefined) };
     validator = { validatePayload: jest.fn().mockResolvedValue({ ok: true }) };
     eventBus = { publish: jest.fn() };
+    obgynHistory = {
+      readEnvelope: jest.fn().mockResolvedValue({ blood_group_rh: 'A_POS' }),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -78,6 +87,7 @@ describe('PregnancyClinicalService', () => {
         { provide: PatientAccessService, useValue: access },
         { provide: TemplateValidator, useValue: validator },
         { provide: EventBus, useValue: eventBus },
+        { provide: ObgynHistoryService, useValue: obgynHistory },
       ],
     }).compile();
 
@@ -96,6 +106,9 @@ describe('PregnancyClinicalService', () => {
       expect(env.lmp).toBe('2026-01-01');
       expect(env.ga_lmp).toBe('6w 3d');
       expect(env.edd_lmp).toBe('2026-10-08');
+      // Blood group is folded in read-only from patient OB/GYN history.
+      expect(obgynHistory.readEnvelope).toHaveBeenCalledWith('patient-1');
+      expect(env.blood_group_rh).toBe('A_POS');
       expect(env.fetuses).toEqual([]);
     });
   });

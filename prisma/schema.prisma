@@ -1962,7 +1962,6 @@ model PregnancyJourneyRecord {
   status            String?
   risk_level        String?
   lmp               DateTime?                        @db.Date
-  blood_group_rh    String?
   us_dating_date    DateTime?                        @db.Date
   us_ga_weeks       Int?
   us_ga_days        Int?

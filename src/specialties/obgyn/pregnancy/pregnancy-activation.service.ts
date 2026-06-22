@@ -122,7 +122,6 @@ export class PregnancyActivationService {
           status: 'ACTIVE',
           risk_level: dto.risk_level ?? null,
           lmp: dto.lmp ? new Date(dto.lmp) : null,
-          blood_group_rh: dto.blood_group_rh ?? null,
           us_dating_date: dto.us_dating_date
             ? new Date(dto.us_dating_date)
             : null,
@@ -207,8 +206,9 @@ export class PregnancyActivationService {
       );
     }
 
-    const deliveryOutcome = (dto.delivery_outcome ??
-      null) as Prisma.InputJsonValue | null;
+    // The outcome (delivery or otherwise) is stored in the existing
+    // `delivery_plan` Json column — the journey completes for ANY outcome type.
+    const outcome = { ...dto.outcome } as Prisma.InputJsonValue;
 
     const updated = await this.prismaService.db.$transaction(async (tx) => {
       await tx.pregnancyJourneyRecordRevision.create({
@@ -222,7 +222,7 @@ export class PregnancyActivationService {
         where: { id: record.id },
         data: {
           status: 'CLOSED',
-          delivery_plan: deliveryOutcome ?? Prisma.DbNull,
+          delivery_plan: outcome,
           updated_by_id: user.profileId,
           version: { increment: 1 },
         },
@@ -240,9 +240,8 @@ export class PregnancyActivationService {
       {
         journey_id: journey.id,
         patient_id: journey.patient_id,
-        delivery_outcome: dto.delivery_outcome
-          ? { ...dto.delivery_outcome }
-          : null,
+        outcome_type: dto.outcome.outcome_type,
+        outcome: { ...dto.outcome },
         closed_by_id: user.profileId,
       },
     );

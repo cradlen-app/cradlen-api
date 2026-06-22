@@ -190,8 +190,12 @@ describe('OB/GYN — pregnancy clinical surface (integration)', () => {
 
   // ---------- clinical surface (GET/PATCH) ----------
 
-  it('GET returns a flat envelope with version 1 and server-computed EDD', async () => {
+  it('GET returns a flat envelope with version 1, computed EDD, and history blood group', async () => {
     const ctx = await seedOpenVisit();
+    // Blood group is single-sourced from patient OB/GYN history.
+    await prisma.patientObgynHistory.create({
+      data: { patient_id: ctx.patientId, blood_group_rh: 'O_POS' },
+    });
     const journeyId = await activate(ctx, { lmp: '2026-01-01' });
 
     const res = await ctx
@@ -201,6 +205,7 @@ describe('OB/GYN — pregnancy clinical surface (integration)', () => {
     expect(res.body.data.version).toBe(1);
     expect(res.body.data.lmp).toBe('2026-01-01');
     expect(res.body.data.edd_lmp).toBe('2026-10-08'); // LMP + 280 days
+    expect(res.body.data.blood_group_rh).toBe('O_POS');
     expect(res.body.data.fetuses).toEqual([]);
   });
 
@@ -278,7 +283,13 @@ describe('OB/GYN — pregnancy clinical surface (integration)', () => {
 
     await ctx
       .auth(request(http()).post(closeUrl(ctx.visitId)))
-      .send({ delivery_outcome: { mode: 'CESAREAN', notes: 'twins' } })
+      .send({
+        outcome: {
+          outcome_type: 'LIVE_BIRTH',
+          delivery_mode: 'CESAREAN',
+          notes: 'twins',
+        },
+      })
       .expect(201);
 
     const record = await prisma.pregnancyJourneyRecord.findUniqueOrThrow({
