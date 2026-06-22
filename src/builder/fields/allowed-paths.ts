@@ -317,7 +317,6 @@ export const ALLOWED_PATHS = {
     'status',
     'risk_level',
     'lmp',
-    'blood_group_rh',
     'us_dating_date',
     'us_ga_weeks',
     'us_ga_days',

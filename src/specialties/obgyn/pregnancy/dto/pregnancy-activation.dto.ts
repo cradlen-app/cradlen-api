@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsDateString,
+  IsIn,
   IsInt,
   IsObject,
   IsOptional,
@@ -13,7 +14,8 @@ import {
 /**
  * "Create pregnancy profile" payload (the activation drawer). Every field is
  * optional — the doctor can open the profile with nothing but the act of
- * confirming, and fill the snapshot afterwards via the clinical surface.
+ * confirming, and fill the summary afterwards via the clinical surface. Blood
+ * group is NOT captured here — it is patient-level and lives in OB/GYN history.
  */
 export class CreatePregnancyDto {
   @ApiPropertyOptional()
@@ -25,11 +27,6 @@ export class CreatePregnancyDto {
   @IsOptional()
   @IsDateString()
   lmp?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  blood_group_rh?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -60,12 +57,37 @@ export class CreatePregnancyDto {
   number_of_fetuses?: number;
 }
 
-/** The structured delivery outcome captured when closing a pregnancy. */
-export class DeliveryOutcomeDto {
-  @ApiPropertyOptional({ description: 'e.g. VAGINAL | CESAREAN | ASSISTED' })
+/**
+ * How a pregnancy ended. A pregnancy can close without a delivery (loss,
+ * termination, transfer of care, …), so the outcome is a typed taxonomy rather
+ * than a delivery-only record. `delivery_mode` applies only to `LIVE_BIRTH`.
+ */
+export const PREGNANCY_OUTCOME_TYPES = [
+  'LIVE_BIRTH',
+  'MISCARRIAGE',
+  'STILLBIRTH',
+  'ECTOPIC',
+  'TERMINATION',
+  'TRANSFERRED',
+  'LOST_TO_FOLLOWUP',
+  'OTHER',
+] as const;
+export type PregnancyOutcomeType = (typeof PREGNANCY_OUTCOME_TYPES)[number];
+
+export const DELIVERY_MODES = ['VAGINAL', 'CESAREAN', 'ASSISTED'] as const;
+
+export class PregnancyOutcomeDto {
+  @ApiProperty({ enum: PREGNANCY_OUTCOME_TYPES })
+  @IsIn(PREGNANCY_OUTCOME_TYPES)
+  outcome_type!: PregnancyOutcomeType;
+
+  @ApiPropertyOptional({
+    enum: DELIVERY_MODES,
+    description: 'Only for LIVE_BIRTH.',
+  })
   @IsOptional()
-  @IsString()
-  mode?: string;
+  @IsIn(DELIVERY_MODES)
+  delivery_mode?: (typeof DELIVERY_MODES)[number];
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -78,14 +100,13 @@ export class DeliveryOutcomeDto {
   notes?: string;
 }
 
-/** Close-the-pregnancy payload (records delivery, completes the journey). */
+/** Close-the-pregnancy payload (records the outcome, completes the journey). */
 export class ClosePregnancyDto {
-  @ApiPropertyOptional({ type: DeliveryOutcomeDto })
-  @IsOptional()
+  @ApiProperty({ type: PregnancyOutcomeDto })
   @IsObject()
   @ValidateNested()
-  @Type(() => DeliveryOutcomeDto)
-  delivery_outcome?: DeliveryOutcomeDto;
+  @Type(() => PregnancyOutcomeDto)
+  outcome!: PregnancyOutcomeDto;
 }
 
 export class PregnancyProfileDto {

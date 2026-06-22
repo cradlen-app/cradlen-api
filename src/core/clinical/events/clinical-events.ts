@@ -142,8 +142,14 @@ export interface VisitPregnancyRecordUpdatedEvent {
 export interface PregnancyClosedEvent {
   journey_id: string;
   patient_id: string;
-  /** Free-form delivery outcome snapshot (mode, date, notes). */
-  delivery_outcome?: Record<string, unknown> | null;
+  /**
+   * How the pregnancy ended — LIVE_BIRTH | MISCARRIAGE | STILLBIRTH | ECTOPIC |
+   * TERMINATION | TRANSFERRED | LOST_TO_FOLLOWUP | OTHER. A pregnancy can close
+   * without a delivery.
+   */
+  outcome_type: string;
+  /** Full outcome snapshot (outcome_type, delivery_mode?, date?, notes?). */
+  outcome: Record<string, unknown>;
   closed_by_id: string;
 }
 

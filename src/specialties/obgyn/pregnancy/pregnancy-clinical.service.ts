@@ -16,6 +16,7 @@ import {
 import { PatientAccessService } from '@core/patient/patient-access/patient-access.public';
 import { TemplateValidator } from '@builder/validator/template.validator';
 import { buildRevision } from '../revisions.helper';
+import { ObgynHistoryService } from '../patient-history/obgyn-history.service';
 import {
   eddFromLmp,
   eddFromUsDating,
@@ -46,7 +47,6 @@ const DATE_COLUMNS = new Set(['lmp', 'us_dating_date']);
 const JOURNEY_WRITABLE = [
   'risk_level',
   'lmp',
-  'blood_group_rh',
   'us_dating_date',
   'us_ga_weeks',
   'us_ga_days',
@@ -97,6 +97,7 @@ type Data = Record<string, unknown>;
 interface VisitJourneyContext {
   episodeId: string;
   journeyId: string;
+  patientId: string;
   carePathCode: string | null;
   scheduledAt: Date | null;
 }
@@ -117,6 +118,7 @@ export class PregnancyClinicalService {
     private readonly access: PatientAccessService,
     private readonly validator: TemplateValidator,
     private readonly eventBus: EventBus,
+    private readonly obgynHistory: ObgynHistoryService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -135,7 +137,7 @@ export class PregnancyClinicalService {
       throw new NotFoundException('No pregnancy profile for this journey');
     }
 
-    const [episode, visitRecord, fetuses] = await Promise.all([
+    const [episode, visitRecord, fetuses, history] = await Promise.all([
       this.prismaService.db.pregnancyEpisodeRecord.findUnique({
         where: { episode_id: ctx.episodeId },
       }),
@@ -146,7 +148,12 @@ export class PregnancyClinicalService {
         where: { visit_id: visitId, is_deleted: false },
         orderBy: { fetus_index: 'asc' },
       }),
+      // Blood group is patient-level — single source of truth is OB/GYN history.
+      this.obgynHistory.readEnvelope(ctx.patientId),
     ]);
+    const bloodGroupRh =
+      (history as { blood_group_rh?: string | null } | null)?.blood_group_rh ??
+      null;
 
     const asOf = ctx.scheduledAt ?? new Date();
     return this.buildEnvelope(
@@ -154,6 +161,7 @@ export class PregnancyClinicalService {
       episode,
       visitRecord,
       fetuses,
+      bloodGroupRh,
       asOf,
     );
   }
@@ -398,7 +406,11 @@ export class PregnancyClinicalService {
           select: {
             id: true,
             journey: {
-              select: { id: true, care_path: { select: { code: true } } },
+              select: {
+                id: true,
+                patient_id: true,
+                care_path: { select: { code: true } },
+              },
             },
           },
         },
@@ -414,6 +426,7 @@ export class PregnancyClinicalService {
     return {
       episodeId: visit.episode.id,
       journeyId: journey.id,
+      patientId: journey.patient_id,
       carePathCode: journey.care_path?.code ?? null,
       scheduledAt: visit.scheduled_at,
     };
@@ -437,19 +450,21 @@ export class PregnancyClinicalService {
     episode: Prisma.PregnancyEpisodeRecordGetPayload<true> | null,
     visit: Prisma.VisitPregnancyRecordGetPayload<true> | null,
     fetuses: Prisma.VisitFetalRecordGetPayload<true>[],
+    bloodGroupRh: string | null,
     asOf: Date,
   ): Record<string, unknown> {
     return {
       journey_id: journey.journey_id,
       version: journey.version,
 
-      // Journey scope
+      // Journey scope. created_at/updated_at are date-only (display). Blood
+      // group is read-only from the patient's OB/GYN history (single source).
       status: journey.status,
-      created_at: journey.created_at.toISOString(),
-      updated_at: journey.updated_at.toISOString(),
+      created_at: formatEdd(journey.created_at),
+      updated_at: formatEdd(journey.updated_at),
       risk_level: journey.risk_level,
       lmp: formatEdd(journey.lmp),
-      blood_group_rh: journey.blood_group_rh,
+      blood_group_rh: bloodGroupRh,
       us_dating_date: formatEdd(journey.us_dating_date),
       us_ga_weeks: journey.us_ga_weeks,
       us_ga_days: journey.us_ga_days,
