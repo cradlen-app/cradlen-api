@@ -107,7 +107,8 @@ describe('PregnancyClinicalService', () => {
       expect(env.edd_lmp).toBe('2026-10-08');
       // Blood group is folded in read-only from patient OB/GYN history.
       expect(obgynHistory.readEnvelope).toHaveBeenCalledWith('patient-1');
-      expect(env.blood_group_rh).toBe('A_POS');
+      // Raw enum (A_POS) is formatted to its display label for the surface.
+      expect(env.blood_group_rh).toBe('A+');
       expect(env.fetuses).toEqual([]);
     });
   });

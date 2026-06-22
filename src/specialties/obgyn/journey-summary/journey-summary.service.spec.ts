@@ -28,7 +28,7 @@ describe('JourneySummaryService', () => {
       pregnancyEpisodeRecord: { findMany: jest.fn().mockResolvedValue([]) },
     };
     history = {
-      readEnvelope: jest.fn().mockResolvedValue({ blood_group_rh: 'O+' }),
+      readEnvelope: jest.fn().mockResolvedValue({ blood_group_rh: 'O_POS' }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
