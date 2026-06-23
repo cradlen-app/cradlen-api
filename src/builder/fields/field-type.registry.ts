@@ -39,6 +39,9 @@ const ALL_NS: readonly BindingNamespace[] = [
   'PREGNANCY_EPISODE',
   'PREGNANCY_VISIT',
   'PREGNANCY_FETUS',
+  'SURGICAL_JOURNEY',
+  'SURGICAL_EPISODE',
+  'SURGICAL_VISIT',
 ];
 
 function assertSelectOptions(config: ConfigShape, label: string) {
@@ -156,6 +159,7 @@ export const FIELD_TYPES: Record<FormFieldType, FieldTypeDescriptor> = {
       'VISIT_DIAGNOSIS',
       'PRESCRIPTION_ITEM',
       'VISIT_ENCOUNTER',
+      'SURGICAL_JOURNEY',
     ]),
     assertConfig: assertEntitySearch,
   },

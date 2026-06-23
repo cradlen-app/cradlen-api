@@ -37,6 +37,15 @@ const OBGYN_CARE_PATH_SURFACES: CarePathClinicalSurfaceMap[] = [
     label: 'Pregnancy',
     order: 0,
   },
+  // The surgical vertical: the active-journey "Surgical" tab backed by the
+  // obgyn_surgical template (surgery profile + pre-op/operative/post-op note).
+  {
+    specialtyCode: 'OBGYN',
+    carePathCode: 'OBGYN_SURGICAL',
+    templateCode: 'obgyn_surgical',
+    label: 'Surgical',
+    order: 1,
+  },
 ];
 
 export async function seedCarePathClinicalSurfaces(

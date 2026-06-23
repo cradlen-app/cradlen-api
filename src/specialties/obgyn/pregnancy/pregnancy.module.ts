@@ -3,7 +3,7 @@ import { VisitsModule } from '@core/clinical/visits/visits.public';
 import { PatientAccessModule } from '@core/patient/patient-access/patient-access.public';
 import { ValidatorModule } from '@builder/validator/validator.module';
 import { ObgynModule } from '../obgyn.module';
-import { PregnancyClinicalController } from './pregnancy-clinical.controller';
+import { JourneyClinicalModule } from '../journeys/journey-clinical.module';
 import { PregnancyClinicalService } from './pregnancy-clinical.service';
 import { PregnancyActivationController } from './pregnancy-activation.controller';
 import { PregnancyActivationService } from './pregnancy-activation.service';
@@ -20,8 +20,14 @@ import { PregnancyVisitRoutingListener } from './pregnancy-visit-routing.listene
  * visits into their trimester episode (booking lives in core and can't call here).
  */
 @Module({
-  imports: [VisitsModule, PatientAccessModule, ValidatorModule, ObgynModule],
-  controllers: [PregnancyClinicalController, PregnancyActivationController],
+  imports: [
+    VisitsModule,
+    PatientAccessModule,
+    ValidatorModule,
+    ObgynModule,
+    JourneyClinicalModule,
+  ],
+  controllers: [PregnancyActivationController],
   providers: [
     PregnancyClinicalService,
     PregnancyActivationService,

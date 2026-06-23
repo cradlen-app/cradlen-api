@@ -6,6 +6,7 @@ import { seedBookVisitTemplate } from './seeds/book-visit.js';
 import { seedObgynPatientHistoryTemplate } from './seeds/obgyn-patient-history.js';
 import { seedObgynExaminationTemplate } from './seeds/obgyn-examination.js';
 import { seedObgynPregnancyTemplate } from './seeds/obgyn-pregnancy.js';
+import { seedObgynSurgicalTemplate } from './seeds/obgyn-surgical.js';
 import { seedCarePathHistorySections } from './seeds/care-path-history-sections.js';
 import { seedCarePathClinicalSurfaces } from './seeds/care-path-clinical-surfaces.js';
 import { seedObgynDiagnosisCodes } from './seeds/diagnosis-codes-obgyn.js';
@@ -596,6 +597,7 @@ async function main() {
   await seedObgynPatientHistoryTemplate(prisma);
   await seedObgynExaminationTemplate(prisma);
   await seedObgynPregnancyTemplate(prisma);
+  await seedObgynSurgicalTemplate(prisma);
   await seedMedicalRepVisitTemplate(prisma);
   await seedPrescriptionDefaultTemplate(prisma);
 

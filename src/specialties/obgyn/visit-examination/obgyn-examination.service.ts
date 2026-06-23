@@ -15,7 +15,14 @@ import {
 } from '@core/clinical/events/events.public';
 import { PatientAccessService } from '@core/patient/patient-access/patient-access.public';
 import { buildRevision } from '../revisions.helper';
-import { assertCarePathChangeAllowed } from '../pregnancy/pregnancy-care-path.guard';
+import {
+  assertCarePathChangeAllowed,
+  PREGNANCY_CARE_PATH_CODE,
+} from '../pregnancy/pregnancy-care-path.guard';
+import {
+  assertSurgicalCarePathChangeAllowed,
+  SURGICAL_CARE_PATH_CODE,
+} from '../surgical/surgical-care-path.guard';
 import { ObgynHistoryService } from '../patient-history/obgyn-history.service';
 import {
   DiagnosisRowDto,
@@ -155,6 +162,19 @@ export class ObgynExaminationService {
     const previousCode = journey.care_path?.code ?? null;
     if (previousCode === carePathCode) return null;
 
+    // Pregnancy and Surgical are entered via their activation flows ("Create
+    // pregnancy/surgical profile"), each of which opens its OWN journey + scoped
+    // record. The examination care-path field must never flip a journey to these
+    // on its own — that would declare the surface (tab) with no actual profile
+    // (and a 404 on open). Activation owns these care paths; the surgical drawer
+    // additionally performs the cesarean handoff (closing an active pregnancy).
+    if (
+      carePathCode === PREGNANCY_CARE_PATH_CODE ||
+      carePathCode === SURGICAL_CARE_PATH_CODE
+    ) {
+      return null;
+    }
+
     // Resolve the target care path for the visit's specialty (org ∪ system),
     // preferring an org-specific override over the global fallback.
     const carePath = await tx.carePath.findFirst({
@@ -175,9 +195,11 @@ export class ObgynExaminationService {
       );
     }
 
-    // An ACTIVE pregnancy locks the journey's care path — it must be closed
-    // (delivery/outcome) before switching to a different (resolved) care path.
+    // An ACTIVE pregnancy or surgical journey locks the journey's care path — it
+    // must be closed (outcome recorded) before switching to a different
+    // (resolved) care path, else the active scoped record is orphaned.
     await assertCarePathChangeAllowed(tx, journey.id, carePathCode);
+    await assertSurgicalCarePathChangeAllowed(tx, journey.id, carePathCode);
 
     await tx.patientJourney.update({
       where: { id: journey.id },
@@ -237,6 +259,16 @@ export class ObgynExaminationService {
       tx.visitInvestigation.findMany({
         where: { visit_id: visitId, is_deleted: false },
         orderBy: { created_at: 'asc' },
+        // Fold in the catalog test name + attachment metadata so the read-only
+        // results view can show name + an attachment count (no object_key /
+        // presigned URLs — files are not downloaded from this surface).
+        include: {
+          lab_test: { select: { name: true } },
+          result_attachments: {
+            where: { is_deleted: false },
+            select: { id: true, source: true, content_type: true },
+          },
+        },
       }),
       tx.visitDiagnosis.findMany({
         where: { visit_id: visitId, is_deleted: false },
