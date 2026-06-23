@@ -369,6 +369,47 @@ export const ALLOWED_PATHS = {
     'growth_impression',
     'additional_findings',
   ],
+  // ---------------------------------------------------------------------------
+  // Surgical clinical surface (journey-centric chart) — the OBGYN_SURGICAL care
+  // path. Same flat-envelope/demux model as pregnancy. Scopes:
+  //   SURGICAL_JOURNEY → surgical_journey_records (procedure, dates, urgency)
+  //   SURGICAL_EPISODE → surgical_episode_records (phase summaries; JSON blobs)
+  //   SURGICAL_VISIT   → visit_surgical_records   (per-encounter operative note)
+  // status/created_at/updated_at are read-only display (lifecycle-managed by
+  // activation/close); the demux's writable allow-list excludes them.
+  SURGICAL_JOURNEY: [
+    'status',
+    'procedure_id',
+    'procedure_code',
+    'procedure_name',
+    'indication',
+    'planned_date',
+    'surgery_date',
+    'anesthesia_type',
+    'urgency',
+    'created_at',
+    'updated_at',
+  ],
+  SURGICAL_EPISODE: [
+    'preop_assessment.asa_class',
+    'preop_assessment.clearance',
+    'preop_assessment.fasting_status',
+    'preop_assessment.consent_obtained',
+    'preop_assessment.notes',
+    'operative_summary.notes',
+    'postop_summary.notes',
+  ],
+  SURGICAL_VISIT: [
+    'procedure_performed',
+    'findings',
+    'estimated_blood_loss_ml',
+    'duration_minutes',
+    'complications',
+    'wound_status',
+    'drains',
+    'recovery_notes',
+    'additional_findings',
+  ],
 } as const satisfies Record<BindingNamespace, readonly string[]>;
 
 export class InvalidBindingError extends Error {
