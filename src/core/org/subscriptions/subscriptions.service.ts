@@ -444,8 +444,9 @@ export class SubscriptionsService {
    * plan's effective caps (base + active add-ons + any `cartAddOns` bought in the
    * same checkout). Unlike the add-time `>=` gate this uses strict `>` (exactly
    * filling the plan is allowed). Throws `SUBSCRIPTION_LIMIT_REACHED` with
-   * `reason: 'PLAN_CHANGE_OVER_LIMIT'` and a `suggested_add_on` the FE can offer
-   * as a one-click "buy the missing seats" path.
+   * `reason: 'PLAN_CHANGE_OVER_LIMIT'` and `suggested_add_ons` — the add-on set
+   * (branch bundles + extra seats) the FE can buy together with the plan to keep
+   * everything in one combined payment.
    */
   async assertUsageFitsPlan(
     organizationId: string,
@@ -488,36 +489,61 @@ export class SubscriptionsService {
     if (over.length === 0) return;
 
     const staffOver = over.find((o) => o.resource === 'staff');
-    const suggestedAddOn = staffOver
-      ? await client.addOn.findFirst({
-          where: {
-            subscription_plan_id: targetPlanId,
-            kind: 'EXTRA_USER',
-            is_active: true,
-            is_deleted: false,
-          },
-          select: { code: true },
-        })
-      : null;
+    const branchOver = over.find((o) => o.resource === 'branches');
+
+    // Build the add-on set that would cover EVERY over-resource so the FE can
+    // offer a one-click "reduce plan + buy add-ons to keep everything". Branch
+    // bundles also bundle staff seats, so they're applied first and their
+    // bundled users offset the remaining staff overage.
+    const planAddOns = await client.addOn.findMany({
+      where: {
+        subscription_plan_id: targetPlanId,
+        is_active: true,
+        is_deleted: false,
+      },
+    });
+    const bundle = planAddOns.find((a) => a.kind === 'BRANCH_BUNDLE');
+    const extraUser = planAddOns.find((a) => a.kind === 'EXTRA_USER');
+
+    const suggestedAddOns: {
+      code: string;
+      quantity: number;
+      resource: 'branches' | 'staff';
+    }[] = [];
+    let bundledStaff = 0;
+    if (branchOver && bundle && bundle.delta_branches > 0) {
+      const bundleQty = Math.ceil(branchOver.excess / bundle.delta_branches);
+      bundledStaff = bundleQty * bundle.delta_users;
+      suggestedAddOns.push({
+        code: bundle.code,
+        quantity: bundleQty,
+        resource: 'branches',
+      });
+    }
+    if (staffOver && extraUser && extraUser.delta_users > 0) {
+      const residual = Math.max(0, staffOver.excess - bundledStaff);
+      if (residual > 0) {
+        suggestedAddOns.push({
+          code: extraUser.code,
+          quantity: Math.ceil(residual / extraUser.delta_users),
+          resource: 'staff',
+        });
+      }
+    }
 
     const parts = over.map(
-      (o) => `${o.resource}: ${o.current}/${o.limit} (remove ${o.excess})`,
+      (o) => `${o.resource}: ${o.current}/${o.limit} (over by ${o.excess})`,
     );
     throw new ForbiddenException({
       code: ERROR_CODES.SUBSCRIPTION_LIMIT_REACHED,
       message: `This plan does not fit your current usage — ${parts.join(
         '; ',
-      )}. Free up resources, add seat add-ons, or choose a larger plan.`,
+      )}. Free up resources, add add-ons, or choose a larger plan.`,
       details: {
         reason: 'PLAN_CHANGE_OVER_LIMIT',
         over,
-        ...(suggestedAddOn && staffOver
-          ? {
-              suggested_add_on: {
-                code: suggestedAddOn.code,
-                quantity: staffOver.excess,
-              },
-            }
+        ...(suggestedAddOns.length > 0
+          ? { suggested_add_ons: suggestedAddOns }
           : {}),
       },
     });
