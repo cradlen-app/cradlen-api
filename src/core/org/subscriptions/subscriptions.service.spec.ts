@@ -167,17 +167,31 @@ describe('SubscriptionsService', () => {
       mockDb.branch.count.mockResolvedValue(branches);
     }
 
-    it('rejects an over-limit downgrade with PLAN_CHANGE_OVER_LIMIT + a suggested add-on', async () => {
-      // Target Individual (max_staff 2), org has 5 active staff, no add-ons.
+    // Target-plan add-on catalog used to build suggestions.
+    const INDIVIDUAL_ADD_ONS = [
+      {
+        code: 'individual_extra_branch',
+        kind: 'BRANCH_BUNDLE',
+        delta_branches: 1,
+        delta_users: 2,
+      },
+      {
+        code: 'individual_extra_user',
+        kind: 'EXTRA_USER',
+        delta_branches: 0,
+        delta_users: 1,
+      },
+    ];
+
+    it('rejects a staff-only over-limit downgrade and suggests extra seats', async () => {
+      // Target Individual (max_staff 2), org has 5 active staff, 1 branch.
       mockDb.subscriptionPlan.findUnique.mockResolvedValue({
         max_branches: 1,
         max_staff: 2,
       });
       mockDb.subscriptionAddOn.findMany.mockResolvedValue([]);
-      mockDb.addOn.findFirst.mockResolvedValue({
-        code: 'individual_extra_user',
-      });
-      mockUsage(5);
+      mockDb.addOn.findMany.mockResolvedValue(INDIVIDUAL_ADD_ONS);
+      mockUsage(5, 1);
 
       await expect(
         service.assertUsageFitsPlan('org-1', 'plan-individual'),
@@ -187,7 +201,75 @@ describe('SubscriptionsService', () => {
           details: {
             reason: 'PLAN_CHANGE_OVER_LIMIT',
             over: [{ resource: 'staff', limit: 2, current: 5, excess: 3 }],
-            suggested_add_on: { code: 'individual_extra_user', quantity: 3 },
+            suggested_add_ons: [
+              {
+                code: 'individual_extra_user',
+                quantity: 3,
+                resource: 'staff',
+              },
+            ],
+          },
+        },
+      });
+    });
+
+    it('suggests branch bundles for a branch-only overage (no seat line)', async () => {
+      // Network-like org: 3 branches, 2 staff → Individual (1 branch / 2 staff).
+      mockDb.subscriptionPlan.findUnique.mockResolvedValue({
+        max_branches: 1,
+        max_staff: 2,
+      });
+      mockDb.subscriptionAddOn.findMany.mockResolvedValue([]);
+      mockDb.addOn.findMany.mockResolvedValue(INDIVIDUAL_ADD_ONS);
+      mockUsage(2, 3);
+
+      await expect(
+        service.assertUsageFitsPlan('org-1', 'plan-individual'),
+      ).rejects.toMatchObject({
+        response: {
+          details: {
+            over: [{ resource: 'branches', limit: 1, current: 3, excess: 2 }],
+            // 2 excess branches → 2 bundles; staff fits (bundled users cover it).
+            suggested_add_ons: [
+              {
+                code: 'individual_extra_branch',
+                quantity: 2,
+                resource: 'branches',
+              },
+            ],
+          },
+        },
+      });
+    });
+
+    it('suggests bundles + residual seats for a branch+staff overage', async () => {
+      // 3 branches, 10 staff → Individual. 2 bundles (+1 branch, +2 users each)
+      // cover branches and 4 of the 8 excess staff; 4 extra seats cover the rest.
+      mockDb.subscriptionPlan.findUnique.mockResolvedValue({
+        max_branches: 1,
+        max_staff: 2,
+      });
+      mockDb.subscriptionAddOn.findMany.mockResolvedValue([]);
+      mockDb.addOn.findMany.mockResolvedValue(INDIVIDUAL_ADD_ONS);
+      mockUsage(10, 3);
+
+      await expect(
+        service.assertUsageFitsPlan('org-1', 'plan-individual'),
+      ).rejects.toMatchObject({
+        response: {
+          details: {
+            suggested_add_ons: [
+              {
+                code: 'individual_extra_branch',
+                quantity: 2,
+                resource: 'branches',
+              },
+              {
+                code: 'individual_extra_user',
+                quantity: 4,
+                resource: 'staff',
+              },
+            ],
           },
         },
       });
