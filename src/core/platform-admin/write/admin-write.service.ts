@@ -213,7 +213,10 @@ export class AdminWriteService {
     const password_hashed = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
 
     await this.prismaService.db.$transaction(async (tx) => {
-      await tx.user.update({ where: { id }, data: { password_hashed } });
+      await tx.user.update({
+        where: { id },
+        data: { password_hashed, password_changed_at: new Date() },
+      });
       await tx.refreshToken.updateMany({
         where: { user_id: id, is_revoked: false },
         data: { is_revoked: true, revoked_at: new Date() },

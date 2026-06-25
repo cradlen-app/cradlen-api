@@ -26,6 +26,7 @@ export class AuthorizationService {
     profileId: string,
     organizationId: string,
     activeBranchId?: string,
+    issuedAtSeconds?: number,
   ) {
     // Single query covers profile + user-alive + org-active + roles.
     // Replaces the prior 3-query path (user.findFirst in the caller,
@@ -43,6 +44,7 @@ export class AuthorizationService {
       include: {
         role: true,
         job_function: true,
+        user: { select: { password_changed_at: true } },
       },
     });
 
@@ -52,6 +54,19 @@ export class AuthorizationService {
       // "profile gone" without a second round-trip, and from the
       // client's perspective both mean "re-authenticate".
       throw new UnauthorizedException('Invalid auth context');
+    }
+
+    // Reject an access token minted before the user's last password change so a
+    // credential reset invalidates outstanding access tokens immediately (not
+    // just refresh tokens). `iat` is epoch-seconds; compare against the change
+    // instant floored to seconds so a token issued in the same second is kept.
+    const changedAt = profile.user?.password_changed_at;
+    if (
+      issuedAtSeconds !== undefined &&
+      changedAt &&
+      issuedAtSeconds < Math.floor(changedAt.getTime() / 1000)
+    ) {
+      throw new UnauthorizedException('Token issued before password change');
     }
 
     const isOwner = profile.role.name === 'OWNER';

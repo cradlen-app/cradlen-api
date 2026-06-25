@@ -59,6 +59,13 @@ enum SubscriptionPaymentStatus {
 enum SubscriptionPaymentPurpose {
   PLAN
   ADD_ON
+  COMBINED
+}
+
+// A line on a COMBINED checkout: either the base PLAN or one ADD_ON purchase.
+enum SubscriptionPaymentItemKind {
+  PLAN
+  ADD_ON
 }
 
 // An add-on stacks extra capacity on a base plan. BRANCH_BUNDLE adds a branch
@@ -392,6 +399,7 @@ model SubscriptionPlan {
   subscriptions     Subscription[]
   prices            PlanPrice[]
   payments          SubscriptionPayment[]
+  payment_items     SubscriptionPaymentItem[]
   add_ons           AddOn[]
 
   @@map("subscription_plans")
@@ -412,6 +420,7 @@ model PlanPrice {
   updated_at           DateTime              @updatedAt
   subscription_plan    SubscriptionPlan      @relation(fields: [subscription_plan_id], references: [id], onDelete: Cascade)
   payments             SubscriptionPayment[]
+  payment_items        SubscriptionPaymentItem[]
 
   @@unique([subscription_plan_id, billing_interval, currency])
   @@map("plan_prices")
@@ -438,6 +447,7 @@ model AddOn {
   prices               AddOnPrice[]
   subscription_add_ons SubscriptionAddOn[]
   payments             SubscriptionPayment[]
+  payment_items        SubscriptionPaymentItem[]
 
   @@index([subscription_plan_id, is_active])
   @@map("add_ons")
@@ -519,9 +529,37 @@ model SubscriptionPayment {
   plan_price           PlanPrice?                  @relation(fields: [plan_price_id], references: [id], onDelete: SetNull)
   add_on               AddOn?                      @relation(fields: [add_on_id], references: [id], onDelete: SetNull)
   proofs               SubscriptionPaymentProof[]
+  items                SubscriptionPaymentItem[]
 
   @@index([organization_id, status])
   @@map("subscription_payments")
+}
+
+// A line on a COMBINED checkout (one payment buys a plan AND add-ons in a single
+// amount/proof). Canonical only for COMBINED payments; PLAN-only / ADD_ON-only
+// payments keep their header-column shape. unit_amount/amount are snapshots so a
+// later price change never alters a captured line.
+model SubscriptionPaymentItem {
+  id                      String                      @id @default(uuid()) @db.Uuid
+  subscription_payment_id String                      @db.Uuid
+  kind                    SubscriptionPaymentItemKind
+  subscription_plan_id    String?                     @db.Uuid
+  plan_price_id           String?                     @db.Uuid
+  add_on_id               String?                     @db.Uuid
+  quantity                Int                         @default(1)
+  unit_amount             Decimal                     @db.Decimal(12, 2)
+  amount                  Decimal                     @db.Decimal(12, 2)
+  is_deleted              Boolean                     @default(false)
+  deleted_at              DateTime?
+  created_at              DateTime                    @default(now())
+  updated_at              DateTime                    @updatedAt
+  payment                 SubscriptionPayment         @relation(fields: [subscription_payment_id], references: [id], onDelete: Cascade)
+  subscription_plan       SubscriptionPlan?           @relation(fields: [subscription_plan_id], references: [id])
+  plan_price              PlanPrice?                  @relation(fields: [plan_price_id], references: [id], onDelete: SetNull)
+  add_on                  AddOn?                      @relation(fields: [add_on_id], references: [id], onDelete: SetNull)
+
+  @@index([subscription_payment_id])
+  @@map("subscription_payment_items")
 }
 
 // Uploaded proof-of-payment file(s) for a manual-settlement payment. Stored in
@@ -629,6 +667,10 @@ model User {
   phone_number         String?
   date_of_birth        DateTime?            @db.Date
   password_hashed      String?
+  // Set whenever the password changes (reset flows). The staff JWT strategy
+  // rejects access tokens issued before this instant, so a credential change
+  // invalidates outstanding access tokens immediately — not just refresh tokens.
+  password_changed_at  DateTime?
   is_active            Boolean              @default(true)
   is_deleted           Boolean              @default(false)
   deleted_at           DateTime?
@@ -2155,33 +2197,33 @@ model VisitFetalRecord {
 // ============================================================================
 
 model SurgicalJourneyRecord {
-  id          String                          @id @default(uuid()) @db.Uuid
-  journey_id  String                          @unique @db.Uuid
-  journey     PatientJourney                  @relation(fields: [journey_id], references: [id], onDelete: Cascade)
-  revisions   SurgicalJourneyRecordRevision[]
-  status      String? // ACTIVE | CLOSED
+  id                          String                          @id @default(uuid()) @db.Uuid
+  journey_id                  String                          @unique @db.Uuid
+  journey                     PatientJourney                  @relation(fields: [journey_id], references: [id], onDelete: Cascade)
+  revisions                   SurgicalJourneyRecordRevision[]
+  status                      String? // ACTIVE | CLOSED
   // Surgery type — resolved against the Procedure catalog (no FK; free entry
   // stays valid). procedure_name is the snapshot label shown on the surface.
-  procedure_id   String?   @db.Uuid
-  procedure_code String?
-  procedure_name String?
-  indication     String?
-  planned_date   DateTime? @db.Date
-  surgery_date   DateTime? @db.Date
-  anesthesia_type String? // GENERAL | REGIONAL | LOCAL | SEDATION
-  urgency         String? // ELECTIVE | URGENT | EMERGENCY
+  procedure_id                String?                         @db.Uuid
+  procedure_code              String?
+  procedure_name              String?
+  indication                  String?
+  planned_date                DateTime?                       @db.Date
+  surgery_date                DateTime?                       @db.Date
+  anesthesia_type             String? // GENERAL | REGIONAL | LOCAL | SEDATION
+  urgency                     String? // ELECTIVE | URGENT | EMERGENCY
   // Set when this surgical journey was opened by a cesarean handoff — points at
   // the pregnancy journey that was closed, so the Summary can mirror it.
-  source_pregnancy_journey_id String?  @db.Uuid
+  source_pregnancy_journey_id String?                         @db.Uuid
   // Typed close outcome: { outcome_type, date, complications, notes }
   outcome                     Json?
-  version       Int                            @default(1)
-  updated_by_id String?                        @db.Uuid
-  updated_by    Profile?                       @relation("SurgicalJourneyRecordUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
-  is_deleted    Boolean                        @default(false)
-  deleted_at    DateTime?
-  created_at    DateTime                       @default(now())
-  updated_at    DateTime                       @updatedAt
+  version                     Int                             @default(1)
+  updated_by_id               String?                         @db.Uuid
+  updated_by                  Profile?                        @relation("SurgicalJourneyRecordUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
+  is_deleted                  Boolean                         @default(false)
+  deleted_at                  DateTime?
+  created_at                  DateTime                        @default(now())
+  updated_at                  DateTime                        @updatedAt
 
   @@map("surgical_journey_records")
 }

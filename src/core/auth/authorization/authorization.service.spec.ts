@@ -324,6 +324,42 @@ describe('AuthorizationService.getProfileContext', () => {
     expect(branch.findMany).not.toHaveBeenCalled();
     expect(profileBranch.findMany).not.toHaveBeenCalled();
   });
+
+  it('rejects a token issued before the user last changed their password', async () => {
+    const changedAt = new Date('2026-06-01T00:00:00Z');
+    profile.findFirst.mockResolvedValue({
+      role: { code: 'OWNER', name: 'OWNER' },
+      job_function: null,
+      user: { password_changed_at: changedAt },
+    });
+    const issuedBefore = Math.floor(changedAt.getTime() / 1000) - 60;
+
+    await expect(
+      service.getProfileContext('u', 'p', 'org', 'b1', issuedBefore),
+    ).rejects.toThrow(UnauthorizedException);
+    // Short-circuits before loading branches.
+    expect(branch.findMany).not.toHaveBeenCalled();
+  });
+
+  it('accepts a token issued at/after the password change', async () => {
+    const changedAt = new Date('2026-06-01T00:00:00Z');
+    profile.findFirst.mockResolvedValue({
+      role: { code: 'OWNER', name: 'OWNER' },
+      job_function: null,
+      user: { password_changed_at: changedAt },
+    });
+    branch.findMany.mockResolvedValue([{ id: 'b1' }]);
+    const issuedAfter = Math.floor(changedAt.getTime() / 1000) + 60;
+
+    const ctx = await service.getProfileContext(
+      'u',
+      'p',
+      'org',
+      'b1',
+      issuedAfter,
+    );
+    expect(ctx.role).toEqual('OWNER');
+  });
 });
 
 describe('AuthorizationService.isClinical', () => {
