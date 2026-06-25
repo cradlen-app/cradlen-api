@@ -152,11 +152,14 @@ export class PasswordResetService {
       }
       await tx.user.update({
         where: { id: userId },
-        data: { password_hashed: passwordHash },
+        data: {
+          password_hashed: passwordHash,
+          password_changed_at: new Date(),
+        },
       });
       await tx.refreshToken.updateMany({
         where: { user_id: userId, is_revoked: false },
-        data: { is_revoked: true },
+        data: { is_revoked: true, revoked_at: new Date() },
       });
     });
 

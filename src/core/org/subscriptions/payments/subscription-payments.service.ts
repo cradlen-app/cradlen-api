@@ -9,6 +9,8 @@ import {
   Prisma,
   SubscriptionAddOnStatus,
   type SubscriptionPayment,
+  type SubscriptionPaymentItem,
+  SubscriptionPaymentItemKind,
   type SubscriptionPaymentProof,
   SubscriptionPaymentPurpose,
   SubscriptionPaymentStatus,
@@ -66,9 +68,12 @@ export class SubscriptionPaymentsService {
       organizationId,
     );
 
-    const payment = dto.add_on_code
-      ? await this.createAddOnPayment(organizationId, dto, user)
-      : await this.createPlanPayment(organizationId, dto, user);
+    const payment =
+      dto.add_ons && dto.add_ons.length > 0
+        ? await this.createCombinedPayment(organizationId, dto, user)
+        : dto.add_on_code
+          ? await this.createAddOnPayment(organizationId, dto, user)
+          : await this.createPlanPayment(organizationId, dto, user);
 
     const provider = this.providerFactory.get(dto.provider);
     const initiated = await provider.initiate({
@@ -99,6 +104,14 @@ export class SubscriptionPaymentsService {
     if (plan.plan === 'free_trial') {
       throw new BadRequestException('The free trial plan cannot be purchased');
     }
+
+    // Block a plan purchase the org doesn't fit (e.g. trial with 5 staff buying
+    // Individual/2). The owner is told before paying; the combined plan+seats
+    // checkout is the alternative that keeps everyone.
+    await this.subscriptionsService.assertUsageFitsPlan(
+      organizationId,
+      plan.id,
+    );
 
     const price = await this.prismaService.db.planPrice.findFirst({
       where: {
@@ -207,6 +220,146 @@ export class SubscriptionPaymentsService {
         status: SubscriptionPaymentStatus.PENDING,
         submitted_by_id: user.profileId,
       },
+    });
+  }
+
+  /**
+   * Builds a PENDING combined payment: one base plan + one or more add-ons in a
+   * single amount/proof. The add-ons are validated against the TARGET plan (the
+   * org will be on it once verified) and charged full-term — they are co-terminus
+   * with the freshly-activated year, so no proration. Lets an owner switch plans
+   * AND buy enough seats to keep all their staff in one transaction.
+   */
+  private async createCombinedPayment(
+    organizationId: string,
+    dto: CreateSubscriptionPaymentDto,
+    user: AuthContext,
+  ): Promise<SubscriptionPayment> {
+    const plan = await this.prismaService.db.subscriptionPlan.findUnique({
+      where: { plan: dto.plan },
+    });
+    if (!plan) throw new NotFoundException('Plan not found');
+    if (plan.plan === 'free_trial') {
+      throw new BadRequestException('The free trial plan cannot be purchased');
+    }
+
+    const planPrice = await this.prismaService.db.planPrice.findFirst({
+      where: {
+        subscription_plan_id: plan.id,
+        billing_interval: BillingInterval.YEARLY,
+        is_active: true,
+        is_deleted: false,
+      },
+    });
+    if (!planPrice) {
+      throw new BadRequestException('No active price for this plan');
+    }
+
+    const addOnLines = await Promise.all(
+      (dto.add_ons ?? []).map(async (line) => {
+        const addOn = await this.prismaService.db.addOn.findFirst({
+          where: { code: line.code, is_deleted: false, is_active: true },
+        });
+        if (!addOn) {
+          throw new NotFoundException(`Add-on not found: ${line.code}`);
+        }
+        if (addOn.subscription_plan_id !== plan.id) {
+          throw new BadRequestException(
+            `Add-on ${line.code} is not available for the ${plan.plan} plan`,
+          );
+        }
+        const price = await this.prismaService.db.addOnPrice.findFirst({
+          where: {
+            add_on_id: addOn.id,
+            billing_interval: BillingInterval.YEARLY,
+            is_active: true,
+            is_deleted: false,
+          },
+        });
+        if (!price) {
+          throw new BadRequestException(
+            `No active price for add-on ${line.code}`,
+          );
+        }
+        return {
+          addOn,
+          quantity: line.quantity,
+          unit_amount: price.price,
+          amount: price.price.mul(line.quantity).toDecimalPlaces(2),
+          currency: price.currency,
+        };
+      }),
+    );
+
+    const currencies = new Set([
+      planPrice.currency,
+      ...addOnLines.map((l) => l.currency),
+    ]);
+    if (currencies.size > 1) {
+      throw new BadRequestException(
+        'All checkout lines must share a single currency',
+      );
+    }
+
+    // The cart's seats count toward the target plan, so a sufficiently-seated
+    // combined checkout passes; an under-seated one is rejected the same way a
+    // plain over-limit downgrade is.
+    await this.subscriptionsService.assertUsageFitsPlan(
+      organizationId,
+      plan.id,
+      {
+        cartAddOns: addOnLines.map((l) => ({
+          addOnId: l.addOn.id,
+          quantity: l.quantity,
+        })),
+      },
+    );
+
+    const totalAmount = addOnLines.reduce(
+      (sum, l) => sum.add(l.amount),
+      planPrice.price,
+    );
+
+    const subscription = await this.prismaService.db.subscription.findFirst({
+      where: { organization_id: organizationId, is_deleted: false },
+      orderBy: { created_at: 'desc' },
+      select: { id: true },
+    });
+
+    return this.prismaService.db.subscriptionPayment.create({
+      data: {
+        organization_id: organizationId,
+        subscription_id: subscription?.id ?? null,
+        subscription_plan_id: plan.id,
+        plan_price_id: planPrice.id,
+        purpose: SubscriptionPaymentPurpose.COMBINED,
+        provider: dto.provider,
+        billing_interval: BillingInterval.YEARLY,
+        amount: totalAmount,
+        currency: planPrice.currency,
+        status: SubscriptionPaymentStatus.PENDING,
+        submitted_by_id: user.profileId,
+        items: {
+          create: [
+            {
+              kind: SubscriptionPaymentItemKind.PLAN,
+              subscription_plan_id: plan.id,
+              plan_price_id: planPrice.id,
+              quantity: 1,
+              unit_amount: planPrice.price,
+              amount: planPrice.price,
+            },
+            ...addOnLines.map((l) => ({
+              kind: SubscriptionPaymentItemKind.ADD_ON,
+              add_on_id: l.addOn.id,
+              quantity: l.quantity,
+              unit_amount: l.unit_amount,
+              amount: l.amount,
+            })),
+          ],
+        },
+      },
+      include: { items: true },
     });
   }
 
@@ -339,17 +492,87 @@ export class SubscriptionPaymentsService {
         );
       }
 
-      const subscription =
-        payment.purpose === SubscriptionPaymentPurpose.ADD_ON
-          ? await this.grantAddOn(tx, payment)
-          : await this.subscriptionsService.activate(
-              {
-                organizationId: payment.organization_id,
-                subscriptionPlanId: payment.subscription_plan_id,
-                billingInterval: payment.billing_interval,
-              },
-              tx,
-            );
+      const grantedAddOns: { add_on_id: string; quantity: number }[] = [];
+      let subscription;
+
+      if (payment.purpose === SubscriptionPaymentPurpose.ADD_ON) {
+        subscription = await this.resolveSubscription(tx, payment);
+        if (!payment.add_on_id) {
+          throw new ConflictException('Add-on payment is missing its add-on');
+        }
+        await this.grantAddOn(
+          tx,
+          subscription,
+          payment.add_on_id,
+          payment.quantity,
+        );
+        grantedAddOns.push({
+          add_on_id: payment.add_on_id,
+          quantity: payment.quantity,
+        });
+      } else if (payment.purpose === SubscriptionPaymentPurpose.COMBINED) {
+        const items = await tx.subscriptionPaymentItem.findMany({
+          where: { subscription_payment_id: payment.id, is_deleted: false },
+        });
+        const planId =
+          items.find((i) => i.kind === SubscriptionPaymentItemKind.PLAN)
+            ?.subscription_plan_id ?? payment.subscription_plan_id;
+        const addOnItems = items.filter(
+          (i) =>
+            i.kind === SubscriptionPaymentItemKind.ADD_ON &&
+            i.add_on_id != null,
+        );
+        // Defensive: usage must still fit the plan base + this cart's seats.
+        await this.subscriptionsService.assertUsageFitsPlan(
+          payment.organization_id,
+          planId,
+          {
+            cartAddOns: addOnItems.map((i) => ({
+              addOnId: i.add_on_id!,
+              quantity: i.quantity,
+            })),
+          },
+          tx,
+        );
+        // Activate the plan first so the term/ends_at is set, then grant each
+        // add-on co-terminus with the freshly-activated subscription.
+        subscription = await this.subscriptionsService.activate(
+          {
+            organizationId: payment.organization_id,
+            subscriptionPlanId: planId,
+            billingInterval: payment.billing_interval,
+          },
+          tx,
+        );
+        for (const item of addOnItems) {
+          await this.grantAddOn(
+            tx,
+            subscription,
+            item.add_on_id!,
+            item.quantity,
+          );
+          grantedAddOns.push({
+            add_on_id: item.add_on_id!,
+            quantity: item.quantity,
+          });
+        }
+      } else {
+        // PLAN: defensive fit re-check before activating.
+        await this.subscriptionsService.assertUsageFitsPlan(
+          payment.organization_id,
+          payment.subscription_plan_id,
+          {},
+          tx,
+        );
+        subscription = await this.subscriptionsService.activate(
+          {
+            organizationId: payment.organization_id,
+            subscriptionPlanId: payment.subscription_plan_id,
+            billingInterval: payment.billing_interval,
+          },
+          tx,
+        );
+      }
 
       const updated = await tx.subscriptionPayment.update({
         where: { id: payment.id },
@@ -360,7 +583,7 @@ export class SubscriptionPaymentsService {
           subscription_id: subscription.id,
         },
       });
-      return { updated, subscription };
+      return { updated, subscription, grantedAddOns };
     });
 
     this.eventBus.publish<SubscriptionPaymentVerifiedEvent>(
@@ -373,19 +596,9 @@ export class SubscriptionPaymentsService {
       },
     );
 
-    if (result.updated.purpose === SubscriptionPaymentPurpose.ADD_ON) {
-      this.eventBus.publish<SubscriptionAddOnGrantedEvent>(
-        SUBSCRIPTION_EVENTS.addon.granted,
-        {
-          payment_id: result.updated.id,
-          organization_id: result.updated.organization_id,
-          subscription_id: result.subscription.id,
-          add_on_id: result.updated.add_on_id!,
-          quantity: result.updated.quantity,
-          verified_by_id: verifierId,
-        },
-      );
-    } else {
+    // A COMBINED / PLAN payment activates the plan; ADD_ON does not. Both
+    // COMBINED and ADD_ON may grant one or more add-ons.
+    if (result.updated.purpose !== SubscriptionPaymentPurpose.ADD_ON) {
       this.eventBus.publish<SubscriptionActivatedEvent>(
         SUBSCRIPTION_EVENTS.activated,
         {
@@ -396,16 +609,25 @@ export class SubscriptionPaymentsService {
         },
       );
     }
+    for (const grant of result.grantedAddOns) {
+      this.eventBus.publish<SubscriptionAddOnGrantedEvent>(
+        SUBSCRIPTION_EVENTS.addon.granted,
+        {
+          payment_id: result.updated.id,
+          organization_id: result.updated.organization_id,
+          subscription_id: result.subscription.id,
+          add_on_id: grant.add_on_id,
+          quantity: grant.quantity,
+          verified_by_id: verifierId,
+        },
+      );
+    }
 
     return this.toDto(result.updated);
   }
 
-  /**
-   * Grants (or increments) the add-on on the payment's subscription, co-terminus
-   * with the subscription's current `ends_at`. Returns the subscription so the
-   * caller can stamp the payment + publish events. Runs inside verify's txn.
-   */
-  private async grantAddOn(
+  /** Resolves the payment's target subscription (by id, else the org's latest). */
+  private async resolveSubscription(
     tx: Prisma.TransactionClient,
     payment: SubscriptionPayment,
   ) {
@@ -420,19 +642,29 @@ export class SubscriptionPaymentsService {
         'Cannot grant an add-on: the organization has no subscription',
       );
     }
-    if (!payment.add_on_id) {
-      throw new ConflictException('Add-on payment is missing its add-on');
-    }
+    return subscription;
+  }
 
+  /**
+   * Grants (or increments) one add-on on a subscription, co-terminus with the
+   * subscription's current `ends_at`. Reused per line by the ADD_ON and COMBINED
+   * verify branches. Runs inside verify's txn.
+   */
+  private async grantAddOn(
+    tx: Prisma.TransactionClient,
+    subscription: { id: string; ends_at: Date | null },
+    addOnId: string,
+    quantity: number,
+  ): Promise<void> {
     await tx.subscriptionAddOn.upsert({
       where: {
         subscription_id_add_on_id: {
           subscription_id: subscription.id,
-          add_on_id: payment.add_on_id,
+          add_on_id: addOnId,
         },
       },
       update: {
-        quantity: { increment: payment.quantity },
+        quantity: { increment: quantity },
         status: SubscriptionAddOnStatus.ACTIVE,
         ends_at: subscription.ends_at,
         is_deleted: false,
@@ -440,14 +672,12 @@ export class SubscriptionPaymentsService {
       },
       create: {
         subscription_id: subscription.id,
-        add_on_id: payment.add_on_id,
-        quantity: payment.quantity,
+        add_on_id: addOnId,
+        quantity,
         status: SubscriptionAddOnStatus.ACTIVE,
         ends_at: subscription.ends_at,
       },
     });
-
-    return subscription;
   }
 
   /** Rejects an awaiting-verification payment (DB-only, like verify). */
@@ -497,16 +727,24 @@ export class SubscriptionPaymentsService {
         is_deleted: false,
       },
       include: withProofs
-        ? { proofs: { where: { is_deleted: false } } }
-        : undefined,
+        ? {
+            proofs: { where: { is_deleted: false } },
+            items: { where: { is_deleted: false } },
+          }
+        : { items: { where: { is_deleted: false } } },
     });
     if (!payment) throw new NotFoundException('Payment not found');
     return payment as SubscriptionPayment & {
       proofs?: SubscriptionPaymentProof[];
+      items?: SubscriptionPaymentItem[];
     };
   }
 
-  private toDto(payment: SubscriptionPayment): SubscriptionPaymentResponseDto {
+  private toDto(
+    payment: SubscriptionPayment & {
+      items?: SubscriptionPaymentItem[];
+    },
+  ): SubscriptionPaymentResponseDto {
     return {
       id: payment.id,
       organization_id: payment.organization_id,
@@ -522,6 +760,21 @@ export class SubscriptionPaymentsService {
       rejection_reason: payment.rejection_reason,
       verified_at: payment.verified_at,
       created_at: payment.created_at,
+      ...(payment.items
+        ? {
+            items: payment.items
+              .filter((i) => !i.is_deleted)
+              .map((i) => ({
+                id: i.id,
+                kind: i.kind,
+                subscription_plan_id: i.subscription_plan_id,
+                add_on_id: i.add_on_id,
+                quantity: i.quantity,
+                unit_amount: i.unit_amount.toString(),
+                amount: i.amount.toString(),
+              })),
+          }
+        : {}),
     };
   }
 }

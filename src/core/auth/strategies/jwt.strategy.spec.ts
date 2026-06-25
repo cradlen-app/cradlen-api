@@ -31,22 +31,25 @@ describe('JwtStrategy.validate', () => {
     };
     getProfileContext.mockResolvedValue(context);
 
-    const payload: JwtAccessPayload = {
+    const payload: JwtAccessPayload & { iat: number } = {
       userId: 'user-1',
       profileId: 'profile-1',
       organizationId: 'org-1',
       activeBranchId: 'branch-1',
       type: 'access',
+      iat: 1_700_000_000,
     };
 
     await expect(strategy.validate(payload)).resolves.toBe(context);
     // Single AuthorizationService call — no separate user.findFirst path.
+    // `iat` is forwarded so the staleness (password-change) check can run.
     expect(getProfileContext).toHaveBeenCalledTimes(1);
     expect(getProfileContext).toHaveBeenCalledWith(
       'user-1',
       'profile-1',
       'org-1',
       'branch-1',
+      1_700_000_000,
     );
   });
 

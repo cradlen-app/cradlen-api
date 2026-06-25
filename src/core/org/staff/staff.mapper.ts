@@ -32,6 +32,7 @@ export function toStaffResponse(p: StaffProfileWithRelations) {
   return {
     profile_id: p.id,
     user_id: p.user.id,
+    is_active: p.is_active,
     first_name: p.user.first_name,
     last_name: p.user.last_name,
     email: p.user.email,
