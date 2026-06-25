@@ -17,6 +17,8 @@ import type { ResetTokenResponseDto } from '../dto/reset-token-response.dto.js';
 import type { WsTicketResponseDto } from '../dto/ws-ticket-response.dto.js';
 import type {
   JwtAccessPayload,
+  JwtAdminAccessPayload,
+  JwtAdminRefreshPayload,
   JwtPatientAccessPayload,
   JwtPatientRefreshPayload,
   JwtRefreshPayload,
@@ -65,6 +67,15 @@ export interface IssuePatientTokenPairArgs {
   /**
    * When set, the existing patient refresh-token row with this jti is
    * atomically revoked in the same transaction as the new issuance (rotation).
+   */
+  revokeJti?: string;
+}
+
+export interface IssueAdminTokenPairArgs {
+  adminId: string;
+  /**
+   * When set, the existing admin refresh-token row with this jti is atomically
+   * revoked in the same transaction as the new issuance (rotation).
    */
   revokeJti?: string;
 }
@@ -498,18 +509,111 @@ export class TokensService {
     return payload;
   }
 
+  /**
+   * Issues an access + refresh pair for a platform admin. The refresh row is
+   * persisted with only `platform_admin_id` set (user/patient/profile/org/branch
+   * are null) so the admin-refresh endpoint can rotate it. There is no profile
+   * to assert against — admins have no organization.
+   */
+  async issueAdminTokenPair(
+    args: IssueAdminTokenPairArgs,
+  ): Promise<AuthTokensDto> {
+    const jti = randomUUID();
+    const accessExpiresIn = this.parseDurationToSeconds(
+      this.authConfig.jwt.accessExpiration,
+    );
+    const refreshExpiresIn = this.parseDurationToSeconds(
+      this.authConfig.jwt.refreshExpiration,
+    );
+    const accessPayload: JwtAdminAccessPayload = {
+      adminId: args.adminId,
+      type: 'admin_access',
+    };
+    const refreshPayload: JwtAdminRefreshPayload = {
+      adminId: args.adminId,
+      jti,
+      type: 'admin_refresh',
+    };
+    const access_token = this.jwtService.sign(accessPayload, {
+      secret: this.authConfig.jwt.accessSecret,
+      audience: JWT_AUDIENCE,
+      issuer: JWT_ISSUER,
+      expiresIn: accessExpiresIn,
+    });
+    const refresh_token = this.jwtService.sign(refreshPayload, {
+      secret: this.authConfig.jwt.refreshSecret,
+      audience: JWT_AUDIENCE,
+      issuer: JWT_ISSUER,
+      expiresIn: refreshExpiresIn,
+    });
+    const token_hash = await bcrypt.hash(refresh_token, BCRYPT_ROUNDS);
+
+    // Same atomic rotation guard as issueTokenPair / issuePatientTokenPair.
+    await this.prismaService.db.$transaction(async (tx) => {
+      if (args.revokeJti) {
+        const revoked = await tx.refreshToken.updateMany({
+          where: { jti: args.revokeJti, is_revoked: false },
+          data: {
+            is_revoked: true,
+            revoked_at: new Date(),
+            replaced_by_jti: jti,
+          },
+        });
+        if (revoked.count !== 1) {
+          throw new UnauthorizedException(
+            'Refresh token already rotated or revoked',
+          );
+        }
+      }
+      await tx.refreshToken.create({
+        data: {
+          jti,
+          token_hash,
+          platform_admin_id: args.adminId,
+          profile_id: null,
+          organization_id: null,
+          active_branch_id: null,
+          expires_at: new Date(Date.now() + refreshExpiresIn * 1000),
+        },
+      });
+    });
+
+    return {
+      type: 'tokens',
+      access_token,
+      refresh_token,
+      token_type: 'Bearer',
+      expires_in: accessExpiresIn,
+    };
+  }
+
+  decodeAdminRefreshToken(token: string): JwtAdminRefreshPayload {
+    const payload = this.verifyWithGrace<JwtAdminRefreshPayload>(token, {
+      secret: this.authConfig.jwt.refreshSecret,
+      errorMessage: 'Invalid or expired refresh token',
+    });
+    if (payload.type !== 'admin_refresh') {
+      throw new UnauthorizedException('Invalid token type');
+    }
+    return payload;
+  }
+
   async revokeRefreshToken(rawRefreshToken: string): Promise<void> {
     try {
       const payload = this.verifyWithGrace<
-        JwtRefreshPayload | JwtPatientRefreshPayload
+        JwtRefreshPayload | JwtPatientRefreshPayload | JwtAdminRefreshPayload
       >(rawRefreshToken, {
         secret: this.authConfig.jwt.refreshSecret,
         ignoreExpiration: true,
         errorMessage: 'Invalid token',
       });
-      // Both staff (`refresh`) and patient (`patient_refresh`) tokens are
-      // revoked by jti — the lookup is type-agnostic.
-      if (payload.type !== 'refresh' && payload.type !== 'patient_refresh') {
+      // Staff (`refresh`), patient (`patient_refresh`), and admin
+      // (`admin_refresh`) tokens are all revoked by jti — type-agnostic lookup.
+      if (
+        payload.type !== 'refresh' &&
+        payload.type !== 'patient_refresh' &&
+        payload.type !== 'admin_refresh'
+      ) {
         return;
       }
       await this.prismaService.db.refreshToken.updateMany({

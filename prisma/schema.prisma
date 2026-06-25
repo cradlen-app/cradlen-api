@@ -99,6 +99,7 @@ enum VerificationPurpose {
   SIGNUP
   LOGIN
   PASSWORD_RESET
+  ADMIN_LOGIN
 }
 
 enum JourneyTemplateType {
@@ -676,6 +677,46 @@ model PatientAccount {
   @@map("patient_accounts")
 }
 
+// Platform operator (Cradlen staff) — a third auth audience alongside User
+// (staff) and PatientAccount (portal). Has NO organization; authenticated via
+// the `admin-jwt` strategy, never the org-scoped JwtAuthGuard. Flat tier: every
+// admin can do everything. First row is seeded from env (no self-signup).
+model PlatformAdmin {
+  id                String             @id @default(uuid()) @db.Uuid
+  email             String             @unique
+  password_hashed   String?
+  full_name         String
+  is_active         Boolean            @default(true)
+  is_deleted        Boolean            @default(false)
+  deleted_at        DateTime?
+  created_at        DateTime           @default(now())
+  updated_at        DateTime           @updatedAt
+  refreshTokens     RefreshToken[]
+  auditLogs         AdminAuditLog[]
+  verificationCodes VerificationCode[]
+
+  @@map("platform_admins")
+}
+
+// Append-only audit trail for every platform-admin WRITE action. Written inside
+// the same transaction as the mutation it records, so the action and its log are
+// atomic. before/after hold the relevant snapshot of the mutated entity.
+model AdminAuditLog {
+  id          String        @id @default(uuid()) @db.Uuid
+  admin_id    String        @db.Uuid
+  action      String
+  target_type String
+  target_id   String?
+  before      Json?
+  after       Json?
+  created_at  DateTime      @default(now())
+  admin       PlatformAdmin @relation(fields: [admin_id], references: [id], onDelete: Cascade)
+
+  @@index([admin_id, created_at])
+  @@index([target_type, target_id])
+  @@map("admin_audit_log")
+}
+
 model Role {
   id          String       @id @default(uuid()) @db.Uuid
   code        String       @unique
@@ -844,10 +885,12 @@ model RefreshToken {
   jti                String          @unique @db.Uuid
   token_hash         String
   // Exactly one owner is set: `user_id` for a staff session, `patient_account_id`
-  // for a patient/guardian portal session. Enforced by a CHECK constraint
-  // (`refresh_tokens_exactly_one_owner`) added in the migration raw SQL.
+  // for a patient/guardian portal session, `platform_admin_id` for a platform-admin
+  // session. Enforced by a CHECK constraint (`refresh_tokens_exactly_one_owner`)
+  // added in the migration raw SQL.
   user_id            String?         @db.Uuid
   patient_account_id String?         @db.Uuid
+  platform_admin_id  String?         @db.Uuid
   profile_id         String?         @db.Uuid
   organization_id    String?         @db.Uuid
   active_branch_id   String?         @db.Uuid
@@ -861,9 +904,11 @@ model RefreshToken {
   created_at         DateTime        @default(now())
   user               User?           @relation(fields: [user_id], references: [id], onDelete: Cascade)
   patientAccount     PatientAccount? @relation(fields: [patient_account_id], references: [id], onDelete: Cascade)
+  platformAdmin      PlatformAdmin?  @relation(fields: [platform_admin_id], references: [id], onDelete: Cascade)
 
   @@index([user_id, is_revoked])
   @@index([patient_account_id, is_revoked])
+  @@index([platform_admin_id, is_revoked])
   @@map("refresh_tokens")
 }
 
@@ -909,7 +954,11 @@ model PasswordResetToken {
 
 model VerificationCode {
   id           String              @id @default(uuid()) @db.Uuid
+  // user_id for staff/patient flows; admin_id for the ADMIN_LOGIN flow. Platform
+  // admins are not Users, so their OTP rows key on admin_id (target/purpose still
+  // index the lookup).
   user_id      String?             @db.Uuid
+  admin_id     String?             @db.Uuid
   channel      VerificationChannel
   purpose      VerificationPurpose
   target       String
@@ -921,9 +970,11 @@ model VerificationCode {
   consumed_at  DateTime?
   created_at   DateTime            @default(now())
   user         User?               @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  admin        PlatformAdmin?      @relation(fields: [admin_id], references: [id], onDelete: Cascade)
 
   @@index([target, purpose, consumed_at])
   @@index([user_id, purpose])
+  @@index([admin_id, purpose])
   @@map("verification_codes")
 }
 

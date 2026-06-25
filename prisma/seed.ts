@@ -13,6 +13,7 @@ import { seedObgynDiagnosisCodes } from './seeds/diagnosis-codes-obgyn.js';
 import { seedObgynLabTests } from './seeds/lab-tests-obgyn.js';
 import { seedMedicalRepVisitTemplate } from './seeds/medical-rep-visit.js';
 import { seedPrescriptionDefaultTemplate } from './seeds/prescription-default-template.js';
+import { seedPlatformAdmin } from './seeds/platform-admin.js';
 
 config({ path: '.env' });
 config({
@@ -600,6 +601,7 @@ async function main() {
   await seedObgynSurgicalTemplate(prisma);
   await seedMedicalRepVisitTemplate(prisma);
   await seedPrescriptionDefaultTemplate(prisma);
+  await seedPlatformAdmin(prisma);
 
   console.log('Seed complete.');
 }
