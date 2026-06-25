@@ -21,7 +21,11 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   }
 
   async validate(
-    payload: JwtAccessPayload & { aud?: string | string[]; iss?: string },
+    payload: JwtAccessPayload & {
+      aud?: string | string[];
+      iss?: string;
+      iat?: number;
+    },
   ) {
     if (payload.type !== 'access') {
       throw new UnauthorizedException('Invalid token type');
@@ -51,6 +55,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       payload.profileId,
       payload.organizationId,
       payload.activeBranchId,
+      payload.iat,
     );
   }
 }

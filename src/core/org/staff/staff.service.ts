@@ -227,11 +227,14 @@ export class StaffService {
     await this.prismaService.db.$transaction(async (tx) => {
       await tx.user.update({
         where: { id: profile.user_id },
-        data: { password_hashed: passwordHashed },
+        data: {
+          password_hashed: passwordHashed,
+          password_changed_at: new Date(),
+        },
       });
       await tx.refreshToken.updateMany({
         where: { user_id: profile.user_id, is_revoked: false },
-        data: { is_revoked: true },
+        data: { is_revoked: true, revoked_at: new Date() },
       });
     });
   }
@@ -244,6 +247,7 @@ export class StaffService {
   ) {
     const {
       role,
+      status = 'active',
       clinical,
       doctors_only: doctorsOnly,
       specialty_code: specialtyCode,
@@ -283,7 +287,9 @@ export class StaffService {
     const where: Prisma.ProfileWhereInput = {
       organization_id: organizationId,
       is_deleted: false,
-      is_active: true,
+      // Default to active (seat-occupying) members; 'inactive' powers the
+      // reactivation list, 'all' shows both.
+      ...(status === 'all' ? {} : { is_active: status === 'active' }),
       branches: { some: { branch_id: branchId } },
     };
     if (role) {
@@ -760,6 +766,137 @@ export class StaffService {
           data: { is_deleted: true, deleted_at: new Date() },
         });
       }
+    });
+  }
+
+  /**
+   * Deactivates a staff member: sets `is_active = false` (the profile is kept,
+   * not deleted) and revokes their active sessions. A deactivated profile no
+   * longer occupies a staff seat, so this is the gentle way to free a seat when
+   * fitting a smaller plan. Cannot deactivate yourself or the org's last active
+   * OWNER. Idempotent.
+   */
+  async deactivateStaff(
+    callerProfileId: string,
+    organizationId: string,
+    branchId: string,
+    staffProfileId: string,
+  ): Promise<void> {
+    await this.authorizationService.assertCanManageStaffOnBranches(
+      callerProfileId,
+      organizationId,
+      [branchId],
+    );
+    await this.authorizationService.assertCanManageStaffForTarget(
+      callerProfileId,
+      organizationId,
+      staffProfileId,
+    );
+
+    const profile = await this.prismaService.db.profile.findFirst({
+      where: {
+        id: staffProfileId,
+        organization_id: organizationId,
+        is_deleted: false,
+        branches: { some: { branch_id: branchId } },
+      },
+      select: {
+        id: true,
+        user_id: true,
+        is_active: true,
+        role: { select: { name: true } },
+      },
+    });
+    if (!profile) throw new NotFoundException('Staff member not found');
+
+    if (staffProfileId === callerProfileId) {
+      throw new BadRequestException('Cannot deactivate your own staff profile');
+    }
+
+    // Privileged-target guard mirrors resetStaffPassword: only an OWNER may
+    // deactivate an OWNER / BRANCH_MANAGER.
+    const targetIsPrivileged =
+      profile.role.name === 'OWNER' || profile.role.name === 'BRANCH_MANAGER';
+    if (targetIsPrivileged) {
+      await this.authorizationService.assertOwnerOnly(
+        callerProfileId,
+        organizationId,
+      );
+    }
+
+    // Never strand the org without an admin: refuse to deactivate the last
+    // active OWNER.
+    if (profile.role.name === 'OWNER') {
+      const activeOwners = await this.prismaService.db.profile.count({
+        where: {
+          organization_id: organizationId,
+          is_deleted: false,
+          is_active: true,
+          role: { name: 'OWNER' },
+        },
+      });
+      if (activeOwners <= 1) {
+        throw new BadRequestException(
+          'Cannot deactivate the last active owner of the organization',
+        );
+      }
+    }
+
+    if (!profile.is_active) return; // already deactivated — idempotent
+
+    await this.prismaService.db.$transaction(async (tx) => {
+      await tx.profile.update({
+        where: { id: staffProfileId },
+        data: { is_active: false },
+      });
+      // Drop active sessions so a deactivated member can't keep working.
+      await tx.refreshToken.updateMany({
+        where: { user_id: profile.user_id, is_revoked: false },
+        data: { is_revoked: true, revoked_at: new Date() },
+      });
+    });
+  }
+
+  /**
+   * Reactivates a previously-deactivated staff member (`is_active = true`).
+   * Because reactivation re-occupies a seat, it is gated by the plan's staff
+   * limit just like adding a new member.
+   */
+  async reactivateStaff(
+    callerProfileId: string,
+    organizationId: string,
+    branchId: string,
+    staffProfileId: string,
+  ): Promise<void> {
+    await this.authorizationService.assertCanManageStaffOnBranches(
+      callerProfileId,
+      organizationId,
+      [branchId],
+    );
+    await this.authorizationService.assertCanManageStaffForTarget(
+      callerProfileId,
+      organizationId,
+      staffProfileId,
+    );
+
+    const profile = await this.prismaService.db.profile.findFirst({
+      where: {
+        id: staffProfileId,
+        organization_id: organizationId,
+        is_deleted: false,
+        branches: { some: { branch_id: branchId } },
+      },
+      select: { id: true, is_active: true },
+    });
+    if (!profile) throw new NotFoundException('Staff member not found');
+    if (profile.is_active) return; // already active — idempotent
+
+    // Reactivation consumes a seat — must fit the current plan.
+    await this.subscriptionsService.assertStaffLimit(organizationId);
+
+    await this.prismaService.db.profile.update({
+      where: { id: staffProfileId },
+      data: { is_active: true },
     });
   }
 }

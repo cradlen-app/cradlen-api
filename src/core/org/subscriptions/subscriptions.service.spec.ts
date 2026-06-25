@@ -12,6 +12,20 @@ const mockDb = {
   },
   subscriptionAddOn: {
     updateMany: jest.fn(),
+    findMany: jest.fn(),
+  },
+  subscriptionPlan: {
+    findUnique: jest.fn(),
+  },
+  addOn: {
+    findMany: jest.fn(),
+    findFirst: jest.fn(),
+  },
+  profile: {
+    count: jest.fn(),
+  },
+  invitation: {
+    count: jest.fn(),
   },
   branch: {
     count: jest.fn(),
@@ -142,6 +156,96 @@ describe('SubscriptionsService', () => {
       });
 
       await expect(service.getEffectiveLimits('org-1')).rejects.toThrow();
+    });
+  });
+
+  describe('assertUsageFitsPlan', () => {
+    function mockUsage(staff: number, branches = 1) {
+      // countCurrentUsage = active profiles + PENDING invitations, and branches.
+      mockDb.profile.count.mockResolvedValue(staff);
+      mockDb.invitation.count.mockResolvedValue(0);
+      mockDb.branch.count.mockResolvedValue(branches);
+    }
+
+    it('rejects an over-limit downgrade with PLAN_CHANGE_OVER_LIMIT + a suggested add-on', async () => {
+      // Target Individual (max_staff 2), org has 5 active staff, no add-ons.
+      mockDb.subscriptionPlan.findUnique.mockResolvedValue({
+        max_branches: 1,
+        max_staff: 2,
+      });
+      mockDb.subscriptionAddOn.findMany.mockResolvedValue([]);
+      mockDb.addOn.findFirst.mockResolvedValue({
+        code: 'individual_extra_user',
+      });
+      mockUsage(5);
+
+      await expect(
+        service.assertUsageFitsPlan('org-1', 'plan-individual'),
+      ).rejects.toMatchObject({
+        response: {
+          code: 'SUBSCRIPTION_LIMIT_REACHED',
+          details: {
+            reason: 'PLAN_CHANGE_OVER_LIMIT',
+            over: [{ resource: 'staff', limit: 2, current: 5, excess: 3 }],
+            suggested_add_on: { code: 'individual_extra_user', quantity: 3 },
+          },
+        },
+      });
+    });
+
+    it('allows a purchase that exactly fits the plan', async () => {
+      mockDb.subscriptionPlan.findUnique.mockResolvedValue({
+        max_branches: 1,
+        max_staff: 2,
+      });
+      mockDb.subscriptionAddOn.findMany.mockResolvedValue([]);
+      mockUsage(2);
+
+      await expect(
+        service.assertUsageFitsPlan('org-1', 'plan-individual'),
+      ).resolves.toBeUndefined();
+    });
+
+    it('allows an over-base downgrade when the cart adds enough seats', async () => {
+      // Individual base 2 + 3 cart seats (delta_users 1 each) = 5 ≥ 5 staff.
+      mockDb.subscriptionPlan.findUnique.mockResolvedValue({
+        max_branches: 1,
+        max_staff: 2,
+      });
+      mockDb.subscriptionAddOn.findMany.mockResolvedValue([]);
+      mockDb.addOn.findMany.mockResolvedValue([
+        { id: 'addon-seat', delta_branches: 0, delta_users: 1 },
+      ]);
+      mockUsage(5);
+
+      await expect(
+        service.assertUsageFitsPlan('org-1', 'plan-individual', {
+          cartAddOns: [{ addOnId: 'addon-seat', quantity: 3 }],
+        }),
+      ).resolves.toBeUndefined();
+    });
+
+    it('still rejects when the cart adds too few seats', async () => {
+      mockDb.subscriptionPlan.findUnique.mockResolvedValue({
+        max_branches: 1,
+        max_staff: 2,
+      });
+      mockDb.subscriptionAddOn.findMany.mockResolvedValue([]);
+      mockDb.addOn.findMany.mockResolvedValue([
+        { id: 'addon-seat', delta_branches: 0, delta_users: 1 },
+      ]);
+      mockDb.addOn.findFirst.mockResolvedValue({
+        code: 'individual_extra_user',
+      });
+      mockUsage(5); // base 2 + 2 cart seats = 4 < 5
+
+      await expect(
+        service.assertUsageFitsPlan('org-1', 'plan-individual', {
+          cartAddOns: [{ addOnId: 'addon-seat', quantity: 2 }],
+        }),
+      ).rejects.toMatchObject({
+        response: { code: 'SUBSCRIPTION_LIMIT_REACHED' },
+      });
     });
   });
 

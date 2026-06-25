@@ -59,6 +59,13 @@ enum SubscriptionPaymentStatus {
 enum SubscriptionPaymentPurpose {
   PLAN
   ADD_ON
+  COMBINED
+}
+
+// A line on a COMBINED checkout: either the base PLAN or one ADD_ON purchase.
+enum SubscriptionPaymentItemKind {
+  PLAN
+  ADD_ON
 }
 
 // An add-on stacks extra capacity on a base plan. BRANCH_BUNDLE adds a branch
@@ -99,6 +106,7 @@ enum VerificationPurpose {
   SIGNUP
   LOGIN
   PASSWORD_RESET
+  ADMIN_LOGIN
 }
 
 enum JourneyTemplateType {
@@ -391,6 +399,7 @@ model SubscriptionPlan {
   subscriptions     Subscription[]
   prices            PlanPrice[]
   payments          SubscriptionPayment[]
+  payment_items     SubscriptionPaymentItem[]
   add_ons           AddOn[]
 
   @@map("subscription_plans")
@@ -411,6 +420,7 @@ model PlanPrice {
   updated_at           DateTime              @updatedAt
   subscription_plan    SubscriptionPlan      @relation(fields: [subscription_plan_id], references: [id], onDelete: Cascade)
   payments             SubscriptionPayment[]
+  payment_items        SubscriptionPaymentItem[]
 
   @@unique([subscription_plan_id, billing_interval, currency])
   @@map("plan_prices")
@@ -437,6 +447,7 @@ model AddOn {
   prices               AddOnPrice[]
   subscription_add_ons SubscriptionAddOn[]
   payments             SubscriptionPayment[]
+  payment_items        SubscriptionPaymentItem[]
 
   @@index([subscription_plan_id, is_active])
   @@map("add_ons")
@@ -518,9 +529,37 @@ model SubscriptionPayment {
   plan_price           PlanPrice?                  @relation(fields: [plan_price_id], references: [id], onDelete: SetNull)
   add_on               AddOn?                      @relation(fields: [add_on_id], references: [id], onDelete: SetNull)
   proofs               SubscriptionPaymentProof[]
+  items                SubscriptionPaymentItem[]
 
   @@index([organization_id, status])
   @@map("subscription_payments")
+}
+
+// A line on a COMBINED checkout (one payment buys a plan AND add-ons in a single
+// amount/proof). Canonical only for COMBINED payments; PLAN-only / ADD_ON-only
+// payments keep their header-column shape. unit_amount/amount are snapshots so a
+// later price change never alters a captured line.
+model SubscriptionPaymentItem {
+  id                      String                      @id @default(uuid()) @db.Uuid
+  subscription_payment_id String                      @db.Uuid
+  kind                    SubscriptionPaymentItemKind
+  subscription_plan_id    String?                     @db.Uuid
+  plan_price_id           String?                     @db.Uuid
+  add_on_id               String?                     @db.Uuid
+  quantity                Int                         @default(1)
+  unit_amount             Decimal                     @db.Decimal(12, 2)
+  amount                  Decimal                     @db.Decimal(12, 2)
+  is_deleted              Boolean                     @default(false)
+  deleted_at              DateTime?
+  created_at              DateTime                    @default(now())
+  updated_at              DateTime                    @updatedAt
+  payment                 SubscriptionPayment         @relation(fields: [subscription_payment_id], references: [id], onDelete: Cascade)
+  subscription_plan       SubscriptionPlan?           @relation(fields: [subscription_plan_id], references: [id])
+  plan_price              PlanPrice?                  @relation(fields: [plan_price_id], references: [id], onDelete: SetNull)
+  add_on                  AddOn?                      @relation(fields: [add_on_id], references: [id], onDelete: SetNull)
+
+  @@index([subscription_payment_id])
+  @@map("subscription_payment_items")
 }
 
 // Uploaded proof-of-payment file(s) for a manual-settlement payment. Stored in
@@ -628,6 +667,10 @@ model User {
   phone_number         String?
   date_of_birth        DateTime?            @db.Date
   password_hashed      String?
+  // Set whenever the password changes (reset flows). The staff JWT strategy
+  // rejects access tokens issued before this instant, so a credential change
+  // invalidates outstanding access tokens immediately — not just refresh tokens.
+  password_changed_at  DateTime?
   is_active            Boolean              @default(true)
   is_deleted           Boolean              @default(false)
   deleted_at           DateTime?
@@ -674,6 +717,46 @@ model PatientAccount {
   updated_at             DateTime       @updatedAt
 
   @@map("patient_accounts")
+}
+
+// Platform operator (Cradlen staff) — a third auth audience alongside User
+// (staff) and PatientAccount (portal). Has NO organization; authenticated via
+// the `admin-jwt` strategy, never the org-scoped JwtAuthGuard. Flat tier: every
+// admin can do everything. First row is seeded from env (no self-signup).
+model PlatformAdmin {
+  id                String             @id @default(uuid()) @db.Uuid
+  email             String             @unique
+  password_hashed   String?
+  full_name         String
+  is_active         Boolean            @default(true)
+  is_deleted        Boolean            @default(false)
+  deleted_at        DateTime?
+  created_at        DateTime           @default(now())
+  updated_at        DateTime           @updatedAt
+  refreshTokens     RefreshToken[]
+  auditLogs         AdminAuditLog[]
+  verificationCodes VerificationCode[]
+
+  @@map("platform_admins")
+}
+
+// Append-only audit trail for every platform-admin WRITE action. Written inside
+// the same transaction as the mutation it records, so the action and its log are
+// atomic. before/after hold the relevant snapshot of the mutated entity.
+model AdminAuditLog {
+  id          String        @id @default(uuid()) @db.Uuid
+  admin_id    String        @db.Uuid
+  action      String
+  target_type String
+  target_id   String?
+  before      Json?
+  after       Json?
+  created_at  DateTime      @default(now())
+  admin       PlatformAdmin @relation(fields: [admin_id], references: [id], onDelete: Cascade)
+
+  @@index([admin_id, created_at])
+  @@index([target_type, target_id])
+  @@map("admin_audit_log")
 }
 
 model Role {
@@ -844,10 +927,12 @@ model RefreshToken {
   jti                String          @unique @db.Uuid
   token_hash         String
   // Exactly one owner is set: `user_id` for a staff session, `patient_account_id`
-  // for a patient/guardian portal session. Enforced by a CHECK constraint
-  // (`refresh_tokens_exactly_one_owner`) added in the migration raw SQL.
+  // for a patient/guardian portal session, `platform_admin_id` for a platform-admin
+  // session. Enforced by a CHECK constraint (`refresh_tokens_exactly_one_owner`)
+  // added in the migration raw SQL.
   user_id            String?         @db.Uuid
   patient_account_id String?         @db.Uuid
+  platform_admin_id  String?         @db.Uuid
   profile_id         String?         @db.Uuid
   organization_id    String?         @db.Uuid
   active_branch_id   String?         @db.Uuid
@@ -861,9 +946,11 @@ model RefreshToken {
   created_at         DateTime        @default(now())
   user               User?           @relation(fields: [user_id], references: [id], onDelete: Cascade)
   patientAccount     PatientAccount? @relation(fields: [patient_account_id], references: [id], onDelete: Cascade)
+  platformAdmin      PlatformAdmin?  @relation(fields: [platform_admin_id], references: [id], onDelete: Cascade)
 
   @@index([user_id, is_revoked])
   @@index([patient_account_id, is_revoked])
+  @@index([platform_admin_id, is_revoked])
   @@map("refresh_tokens")
 }
 
@@ -909,7 +996,11 @@ model PasswordResetToken {
 
 model VerificationCode {
   id           String              @id @default(uuid()) @db.Uuid
+  // user_id for staff/patient flows; admin_id for the ADMIN_LOGIN flow. Platform
+  // admins are not Users, so their OTP rows key on admin_id (target/purpose still
+  // index the lookup).
   user_id      String?             @db.Uuid
+  admin_id     String?             @db.Uuid
   channel      VerificationChannel
   purpose      VerificationPurpose
   target       String
@@ -921,9 +1012,11 @@ model VerificationCode {
   consumed_at  DateTime?
   created_at   DateTime            @default(now())
   user         User?               @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  admin        PlatformAdmin?      @relation(fields: [admin_id], references: [id], onDelete: Cascade)
 
   @@index([target, purpose, consumed_at])
   @@index([user_id, purpose])
+  @@index([admin_id, purpose])
   @@map("verification_codes")
 }
 
@@ -2104,33 +2197,33 @@ model VisitFetalRecord {
 // ============================================================================
 
 model SurgicalJourneyRecord {
-  id          String                          @id @default(uuid()) @db.Uuid
-  journey_id  String                          @unique @db.Uuid
-  journey     PatientJourney                  @relation(fields: [journey_id], references: [id], onDelete: Cascade)
-  revisions   SurgicalJourneyRecordRevision[]
-  status      String? // ACTIVE | CLOSED
+  id                          String                          @id @default(uuid()) @db.Uuid
+  journey_id                  String                          @unique @db.Uuid
+  journey                     PatientJourney                  @relation(fields: [journey_id], references: [id], onDelete: Cascade)
+  revisions                   SurgicalJourneyRecordRevision[]
+  status                      String? // ACTIVE | CLOSED
   // Surgery type — resolved against the Procedure catalog (no FK; free entry
   // stays valid). procedure_name is the snapshot label shown on the surface.
-  procedure_id   String?   @db.Uuid
-  procedure_code String?
-  procedure_name String?
-  indication     String?
-  planned_date   DateTime? @db.Date
-  surgery_date   DateTime? @db.Date
-  anesthesia_type String? // GENERAL | REGIONAL | LOCAL | SEDATION
-  urgency         String? // ELECTIVE | URGENT | EMERGENCY
+  procedure_id                String?                         @db.Uuid
+  procedure_code              String?
+  procedure_name              String?
+  indication                  String?
+  planned_date                DateTime?                       @db.Date
+  surgery_date                DateTime?                       @db.Date
+  anesthesia_type             String? // GENERAL | REGIONAL | LOCAL | SEDATION
+  urgency                     String? // ELECTIVE | URGENT | EMERGENCY
   // Set when this surgical journey was opened by a cesarean handoff — points at
   // the pregnancy journey that was closed, so the Summary can mirror it.
-  source_pregnancy_journey_id String?  @db.Uuid
+  source_pregnancy_journey_id String?                         @db.Uuid
   // Typed close outcome: { outcome_type, date, complications, notes }
   outcome                     Json?
-  version       Int                            @default(1)
-  updated_by_id String?                        @db.Uuid
-  updated_by    Profile?                       @relation("SurgicalJourneyRecordUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
-  is_deleted    Boolean                        @default(false)
-  deleted_at    DateTime?
-  created_at    DateTime                       @default(now())
-  updated_at    DateTime                       @updatedAt
+  version                     Int                             @default(1)
+  updated_by_id               String?                         @db.Uuid
+  updated_by                  Profile?                        @relation("SurgicalJourneyRecordUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
+  is_deleted                  Boolean                         @default(false)
+  deleted_at                  DateTime?
+  created_at                  DateTime                        @default(now())
+  updated_at                  DateTime                        @updatedAt
 
   @@map("surgical_journey_records")
 }

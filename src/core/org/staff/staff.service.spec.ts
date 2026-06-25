@@ -494,7 +494,7 @@ describe('StaffService.resetStaffPassword', () => {
     expect(updateArg.data.password_hashed).not.toEqual(DTO.password);
     expect(db.refreshToken.updateMany).toHaveBeenCalledWith({
       where: { user_id: 'user-uuid', is_revoked: false },
-      data: { is_revoked: true },
+      data: { is_revoked: true, revoked_at: expect.any(Date) },
     });
   });
 

@@ -147,6 +147,53 @@ export class StaffController {
     );
   }
 
+  @Post(':staffProfileId/deactivate')
+  @RequirePermission(PERMISSIONS.staffManage)
+  @HttpCode(204)
+  @ApiOperation({
+    summary:
+      'Deactivate a staff member (free their seat without deleting them)',
+    description:
+      'Sets the profile inactive and revokes its sessions. The record is kept (unlike Remove), but it no longer occupies a staff seat — the gentle way to fit a smaller plan. Cannot deactivate yourself or the last active OWNER.',
+  })
+  @ApiVoidResponse()
+  deactivateStaff(
+    @CurrentUser() user: AuthContext,
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('branchId', ParseUUIDPipe) branchId: string,
+    @Param('staffProfileId', ParseUUIDPipe) staffProfileId: string,
+  ): Promise<void> {
+    return this.staffService.deactivateStaff(
+      user.profileId,
+      organizationId,
+      branchId,
+      staffProfileId,
+    );
+  }
+
+  @Post(':staffProfileId/reactivate')
+  @RequirePermission(PERMISSIONS.staffManage)
+  @HttpCode(204)
+  @ApiOperation({
+    summary: 'Reactivate a deactivated staff member',
+    description:
+      'Sets the profile active again. Re-occupies a staff seat, so it is gated by the plan limit just like adding a member.',
+  })
+  @ApiVoidResponse()
+  reactivateStaff(
+    @CurrentUser() user: AuthContext,
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('branchId', ParseUUIDPipe) branchId: string,
+    @Param('staffProfileId', ParseUUIDPipe) staffProfileId: string,
+  ): Promise<void> {
+    return this.staffService.reactivateStaff(
+      user.profileId,
+      organizationId,
+      branchId,
+      staffProfileId,
+    );
+  }
+
   @Delete(':staffProfileId')
   @RequirePermission(PERMISSIONS.staffManage)
   @HttpCode(204)
