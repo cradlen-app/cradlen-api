@@ -4,6 +4,7 @@ import { Public } from '@common/decorators/public.decorator.js';
 import { AdminJwtAuthGuard } from '@common/guards/admin-jwt-auth.guard.js';
 import {
   ApiPaginatedResponse,
+  ApiStandardArrayResponse,
   ApiStandardResponse,
 } from '@common/swagger/index.js';
 import { AdminOrganizationsService } from './admin-organizations.service.js';
@@ -22,7 +23,9 @@ import {
   AdminOrganizationListItemDto,
   AdminPaymentDetailDto,
   AdminPaymentListItemDto,
+  AdminPlanOptionDto,
   AdminSubscriptionListItemDto,
+  AdminSubscriptionStatsDto,
   AdminUserListItemDto,
 } from './dto/admin-read-response.dto.js';
 import { AdminMetricsOverviewDto } from './dto/admin-metrics.dto.js';
@@ -77,6 +80,20 @@ export class AdminReadController {
   @ApiPaginatedResponse(AdminUserListItemDto)
   listUsers(@Query() query: AdminListQueryDto) {
     return this.users.list(query);
+  }
+
+  @Get('subscriptions/stats')
+  @ApiOperation({ summary: 'Subscription totals, MRR, and plan mix' })
+  @ApiStandardResponse(AdminSubscriptionStatsDto)
+  subscriptionStats(): Promise<AdminSubscriptionStatsDto> {
+    return this.subscriptions.stats();
+  }
+
+  @Get('subscriptions/plans')
+  @ApiOperation({ summary: 'Available plan tiers for the change-plan picker' })
+  @ApiStandardArrayResponse(AdminPlanOptionDto)
+  subscriptionPlans(): Promise<AdminPlanOptionDto[]> {
+    return this.subscriptions.plans();
   }
 
   @Get('subscriptions')
