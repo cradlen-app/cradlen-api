@@ -97,27 +97,6 @@ export class AdminOrganizationDetailDto extends AdminOrganizationListItemDto {
   recent_activity!: AdminOrgActivityDto[];
 }
 
-export class AdminUserProfileDto {
-  @ApiProperty() profile_id!: string;
-  @ApiProperty() organization_id!: string;
-  @ApiProperty() organization_name!: string;
-  @ApiPropertyOptional({ nullable: true }) role!: string | null;
-  @ApiProperty() is_active!: boolean;
-}
-
-export class AdminUserListItemDto {
-  @ApiProperty() id!: string;
-  @ApiProperty() first_name!: string;
-  @ApiProperty() last_name!: string;
-  @ApiPropertyOptional({ nullable: true }) email!: string | null;
-  @ApiPropertyOptional({ nullable: true }) phone_number!: string | null;
-  @ApiProperty() is_active!: boolean;
-  @ApiProperty() profile_count!: number;
-  @ApiProperty({ type: [AdminUserProfileDto] })
-  profiles!: AdminUserProfileDto[];
-  @ApiProperty() created_at!: Date;
-}
-
 export class AdminSubscriptionListItemDto {
   @ApiProperty() id!: string;
   @ApiProperty() organization_id!: string;
