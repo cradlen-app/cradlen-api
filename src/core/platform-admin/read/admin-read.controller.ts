@@ -10,6 +10,7 @@ import { AdminOrganizationsService } from './admin-organizations.service.js';
 import { AdminUsersService } from './admin-users.service.js';
 import { AdminSubscriptionsService } from './admin-subscriptions.service.js';
 import { AdminPaymentsService } from './admin-payments.service.js';
+import { AdminMetricsService } from './admin-metrics.service.js';
 import {
   AdminListQueryDto,
   AdminOrganizationsQueryDto,
@@ -24,6 +25,7 @@ import {
   AdminSubscriptionListItemDto,
   AdminUserListItemDto,
 } from './dto/admin-read-response.dto.js';
+import { AdminMetricsOverviewDto } from './dto/admin-metrics.dto.js';
 
 /**
  * Cross-tenant read surfaces for the platform-admin dashboard. Every route is
@@ -42,7 +44,17 @@ export class AdminReadController {
     private readonly users: AdminUsersService,
     private readonly subscriptions: AdminSubscriptionsService,
     private readonly payments: AdminPaymentsService,
+    private readonly metrics: AdminMetricsService,
   ) {}
+
+  @Get('metrics/overview')
+  @ApiOperation({
+    summary: 'Aggregated metrics for the admin Overview dashboard',
+  })
+  @ApiStandardResponse(AdminMetricsOverviewDto)
+  getMetricsOverview(): Promise<AdminMetricsOverviewDto> {
+    return this.metrics.getOverview();
+  }
 
   @Get('organizations')
   @ApiOperation({ summary: 'List all organizations across tenants' })

@@ -15,6 +15,11 @@ export class AdminOrganizationListItemDto {
   @ApiPropertyOptional({ nullable: true })
   subscription_status!: SubscriptionStatus | null;
   @ApiPropertyOptional({ nullable: true }) plan!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: "City of the org's main branch, if any.",
+  })
+  city!: string | null;
   @ApiProperty() created_at!: Date;
 }
 
@@ -76,6 +81,11 @@ export class AdminPaymentListItemDto {
   @ApiProperty({ enum: SubscriptionPaymentStatus })
   status!: SubscriptionPaymentStatus;
   @ApiProperty() provider!: string;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Provider-specific payment reference (e.g. InstaPay tx id).',
+  })
+  reference!: string | null;
   @ApiProperty({ description: 'Decimal serialized as string.' })
   amount!: string;
   @ApiProperty() currency!: string;

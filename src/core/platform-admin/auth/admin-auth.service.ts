@@ -10,7 +10,9 @@ import type { AdminAuthContext } from '@common/interfaces/admin-auth-context.int
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { TokensService } from '@core/auth/services/tokens.service.js';
 import type { AuthTokensDto } from '@core/auth/dto/auth-tokens.dto.js';
+import { AdminAuditService } from '../audit/admin-audit.service.js';
 import { AdminVerificationService } from './admin-verification.service.js';
+import type { AdminSetPasswordDto } from './dto/admin-set-password.dto.js';
 import type { AdminLoginDto } from './dto/admin-login.dto.js';
 import type { AdminVerifyOtpDto } from './dto/admin-verify-otp.dto.js';
 import type { AdminResendOtpDto } from './dto/admin-resend-otp.dto.js';
@@ -28,7 +30,32 @@ export class AdminAuthService {
     private readonly prismaService: PrismaService,
     private readonly tokensService: TokensService,
     private readonly verification: AdminVerificationService,
+    private readonly audit: AdminAuditService,
   ) {}
+
+  /**
+   * Sets an invited admin's password from a single-use invite token and logs
+   * them in. The emailed token proves email ownership, so no extra OTP step is
+   * required. Generic failures avoid leaking which emails exist.
+   */
+  async setPassword(dto: AdminSetPasswordDto): Promise<AuthTokensDto> {
+    const admin = await this.requireActiveAdmin(dto.email);
+    await this.verification.consumeSetPasswordToken(admin.id, dto.token);
+
+    const password_hashed = await bcrypt.hash(dto.password, 12);
+    await this.prismaService.db.platformAdmin.update({
+      where: { id: admin.id },
+      data: { password_hashed },
+    });
+    await this.audit.record({
+      adminId: admin.id,
+      action: 'admin.set_password',
+      targetType: 'platform_admin',
+      targetId: admin.id,
+    });
+
+    return this.tokensService.issueAdminTokenPair({ adminId: admin.id });
+  }
 
   /** Step 1: verify the password, then email a login code. */
   async login(dto: AdminLoginDto): Promise<AdminLoginResponseDto> {

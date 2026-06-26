@@ -6,6 +6,7 @@ import {
 import authConfig from '@config/auth.config';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { StorageService } from '@infrastructure/storage/storage.service';
+import { EventBus } from '@infrastructure/messaging/event-bus';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service';
 import { SpecialtyCatalogService } from '@core/org/specialty-catalog/specialty-catalog.public';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
@@ -59,6 +60,7 @@ describe('OrganizationsService', () => {
       jobFunction: { findUnique: jest.fn() },
       subspecialty: { findMany: jest.fn() },
       subscriptionPlan: { findUnique: jest.fn() },
+      platformSetting: { findFirst: jest.fn() },
       profile: { findMany: jest.fn(), count: jest.fn() },
       branch: { updateMany: jest.fn() },
       subscription: { updateMany: jest.fn() },
@@ -98,6 +100,7 @@ describe('OrganizationsService', () => {
         { provide: SpecialtyCatalogService, useValue: specialties },
         { provide: SubscriptionsService, useValue: subscriptions },
         { provide: StorageService, useValue: storage },
+        { provide: EventBus, useValue: { publish: jest.fn() } },
         {
           provide: authConfig.KEY,
           useValue: { freeTrialDays: 14 },
