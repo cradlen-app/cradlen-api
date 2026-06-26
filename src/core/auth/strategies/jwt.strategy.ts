@@ -5,6 +5,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import authConfig from '@config/auth.config.js';
 import type { JwtAccessPayload } from '../interfaces/jwt-payload.interface.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
+import { LastActiveService } from '@core/auth/last-active.service.js';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
@@ -12,6 +13,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     @Inject(authConfig.KEY)
     config: ConfigType<typeof authConfig>,
     private readonly authorizationService: AuthorizationService,
+    private readonly lastActiveService: LastActiveService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -46,6 +48,10 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     if (payload.iss !== undefined && payload.iss !== 'cradlen-api') {
       throw new UnauthorizedException('Invalid token issuer');
     }
+
+    // Fire-and-forget daily-active heartbeat (throttled to one write/day).
+    // Never awaited, so it adds no latency to the request.
+    void this.lastActiveService.touchUser(payload.userId);
 
     // AuthorizationService.getProfileContext does the combined
     // profile + user + org existence check in a single query, then

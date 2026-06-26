@@ -58,3 +58,14 @@ export class AdminPaymentsQueryDto extends AdminListQueryDto {
   @IsOptional()
   status?: SubscriptionPaymentStatus;
 }
+
+/** How many trailing UTC days to return for the daily-engagement trend. */
+export class AdminDailyTrendsQueryDto {
+  @ApiPropertyOptional({ default: 30, maximum: 90 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(90)
+  @IsOptional()
+  days?: number = 30;
+}

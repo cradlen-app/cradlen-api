@@ -11,11 +11,14 @@ import { AdminOrganizationsService } from './admin-organizations.service.js';
 import { AdminSubscriptionsService } from './admin-subscriptions.service.js';
 import { AdminPaymentsService } from './admin-payments.service.js';
 import { AdminMetricsService } from './admin-metrics.service.js';
+import { AdminDailyMetricsService } from './admin-daily-metrics.service.js';
 import {
+  AdminDailyTrendsQueryDto,
   AdminOrganizationsQueryDto,
   AdminPaymentsQueryDto,
   AdminSubscriptionsQueryDto,
 } from './dto/admin-list-query.dto.js';
+import { AdminDailyMetricPointDto } from './dto/admin-daily-metrics.dto.js';
 import {
   AdminOrganizationDetailDto,
   AdminOrganizationListItemDto,
@@ -44,6 +47,7 @@ export class AdminReadController {
     private readonly subscriptions: AdminSubscriptionsService,
     private readonly payments: AdminPaymentsService,
     private readonly metrics: AdminMetricsService,
+    private readonly dailyMetrics: AdminDailyMetricsService,
   ) {}
 
   @Get('metrics/overview')
@@ -53,6 +57,17 @@ export class AdminReadController {
   @ApiStandardResponse(AdminMetricsOverviewDto)
   getMetricsOverview(): Promise<AdminMetricsOverviewDto> {
     return this.metrics.getOverview();
+  }
+
+  @Get('metrics/daily-trends')
+  @ApiOperation({
+    summary: 'Per-day active-staff and active-portal trend vs totals',
+  })
+  @ApiStandardArrayResponse(AdminDailyMetricPointDto)
+  getDailyTrends(
+    @Query() query: AdminDailyTrendsQueryDto,
+  ): Promise<AdminDailyMetricPointDto[]> {
+    return this.dailyMetrics.getDailyTrends(query.days);
   }
 
   @Get('organizations')
