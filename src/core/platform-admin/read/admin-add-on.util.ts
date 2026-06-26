@@ -1,7 +1,7 @@
 import { BillingInterval, Prisma } from '@prisma/client';
 import type { AdminSubscriptionAddOnDto } from './dto/admin-read-response.dto.js';
 
-type AddOnRow = {
+export type AddOnRow = {
   quantity: number;
   add_on: {
     name: string;
@@ -37,6 +37,19 @@ export function mapAddOns(
       amount: unit_amount != null ? round2(unit_amount * a.quantity) : null,
     };
   });
+}
+
+/**
+ * Summed monthly-equivalent revenue of the (already interval-priced) add-on lines.
+ * A YEARLY amount is divided by 12; a MONTHLY amount is taken as-is. Returns 0 when
+ * there are no priced add-ons. Used to fold add-ons into derived MRR.
+ */
+export function addOnsMonthlyEquivalent(
+  add_ons: { amount: number | null }[],
+  interval: 'MONTHLY' | 'YEARLY' | null,
+): number {
+  const sum = add_ons.reduce((t, a) => t + (a.amount ?? 0), 0);
+  return interval === 'YEARLY' ? round2(sum / 12) : round2(sum);
 }
 
 function round2(n: number): number {

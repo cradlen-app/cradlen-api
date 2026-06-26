@@ -9,7 +9,11 @@ import {
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { paginated } from '@common/utils/pagination.utils.js';
 import { OWNER_ROLE_CODE } from '@core/org/organizations/organizations.constants.js';
-import { mapAddOns } from './admin-add-on.util.js';
+import {
+  mapAddOns,
+  addOnsMonthlyEquivalent,
+  type AddOnRow,
+} from './admin-add-on.util.js';
 import type { AdminOrganizationsQueryDto } from './dto/admin-list-query.dto.js';
 import type {
   AdminOrgBillingDto,
@@ -289,6 +293,19 @@ export class AdminOrganizationsService {
               prices: { where: { is_active: true, is_deleted: false } },
             },
           },
+          add_ons: {
+            where: {
+              status: SubscriptionAddOnStatus.ACTIVE,
+              is_deleted: false,
+            },
+            include: {
+              add_on: {
+                include: {
+                  prices: { where: { is_active: true, is_deleted: false } },
+                },
+              },
+            },
+          },
         },
       },
       branches: {
@@ -328,6 +345,7 @@ export class AdminOrganizationsService {
         max_staff: number;
         prices: PriceRow[];
       };
+      add_ons: AddOnRow[];
     }[];
     branches: { city: string }[];
     profiles: {
@@ -340,6 +358,13 @@ export class AdminOrganizationsService {
     const plan = sub?.subscription_plan ?? null;
     const owner = org.profiles[0] ?? null;
     const billing = plan ? this.priceInfo(plan.prices) : null;
+    const planMrr = this.monthlyEquivalent(billing);
+    const addMrr = sub
+      ? addOnsMonthlyEquivalent(
+          mapAddOns(sub.add_ons, billing?.interval ?? null),
+          billing?.interval ?? null,
+        )
+      : 0;
     return {
       id: org.id,
       name: org.name,
@@ -359,7 +384,9 @@ export class AdminOrganizationsService {
       primary_contact_email: owner?.user.email ?? null,
       mrr:
         sub?.status === SubscriptionStatus.ACTIVE
-          ? this.monthlyEquivalent(billing)
+          ? planMrr == null && addMrr === 0
+            ? null
+            : round2((planMrr ?? 0) + addMrr)
           : null,
       branch_limit: plan?.max_branches ?? null,
       staff_limit: plan?.max_staff ?? null,
