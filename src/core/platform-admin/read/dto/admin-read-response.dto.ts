@@ -5,6 +5,7 @@ import {
   SubscriptionPaymentStatus,
   SubscriptionPaymentPurpose,
 } from '@prisma/client';
+import { PlanDistributionItemDto } from './admin-metrics.dto.js';
 
 export class AdminOrganizationListItemDto {
   @ApiProperty() id!: string;
@@ -126,6 +127,36 @@ export class AdminSubscriptionListItemDto {
   @ApiPropertyOptional({ nullable: true }) starts_at!: Date | null;
   @ApiPropertyOptional({ nullable: true }) ends_at!: Date | null;
   @ApiPropertyOptional({ nullable: true }) trial_ends_at!: Date | null;
+  @ApiPropertyOptional({ enum: ['MONTHLY', 'YEARLY'], nullable: true })
+  billing_interval!: 'MONTHLY' | 'YEARLY' | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Active plan price for the chosen interval.',
+  })
+  amount!: number | null;
+  @ApiPropertyOptional({ nullable: true }) currency!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Monthly-equivalent recurring revenue; null unless ACTIVE.',
+  })
+  mrr!: number | null;
+  @ApiProperty({ description: 'Count of ACTIVE add-ons on this subscription.' })
+  add_on_count!: number;
+}
+
+export class AdminSubscriptionStatsDto {
+  @ApiProperty() total!: number;
+  @ApiProperty() active!: number;
+  @ApiProperty() trial!: number;
+  @ApiProperty() expired!: number;
+  @ApiProperty() cancelled!: number;
+  @ApiProperty({
+    description: 'Sum of monthly-equivalent MRR over ACTIVE subs.',
+  })
+  mrr!: number;
+  @ApiProperty() currency!: string;
+  @ApiProperty({ type: [PlanDistributionItemDto] })
+  plan_distribution!: PlanDistributionItemDto[];
 }
 
 export class AdminPaymentProofDto {

@@ -23,6 +23,7 @@ import {
   AdminPaymentDetailDto,
   AdminPaymentListItemDto,
   AdminSubscriptionListItemDto,
+  AdminSubscriptionStatsDto,
   AdminUserListItemDto,
 } from './dto/admin-read-response.dto.js';
 import { AdminMetricsOverviewDto } from './dto/admin-metrics.dto.js';
@@ -77,6 +78,13 @@ export class AdminReadController {
   @ApiPaginatedResponse(AdminUserListItemDto)
   listUsers(@Query() query: AdminListQueryDto) {
     return this.users.list(query);
+  }
+
+  @Get('subscriptions/stats')
+  @ApiOperation({ summary: 'Subscription totals, MRR, and plan mix' })
+  @ApiStandardResponse(AdminSubscriptionStatsDto)
+  subscriptionStats(): Promise<AdminSubscriptionStatsDto> {
+    return this.subscriptions.stats();
   }
 
   @Get('subscriptions')
