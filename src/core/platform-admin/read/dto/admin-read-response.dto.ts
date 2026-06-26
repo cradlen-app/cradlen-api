@@ -13,6 +13,10 @@ export class AdminOrganizationListItemDto {
   @ApiProperty({ enum: OrganizationStatus }) status!: OrganizationStatus;
   @ApiProperty() branch_count!: number;
   @ApiProperty() staff_count!: number;
+  @ApiProperty({
+    description: 'Distinct patients with an ACTIVE org enrollment.',
+  })
+  enrolled_patients!: number;
   @ApiPropertyOptional({ nullable: true })
   subscription_status!: SubscriptionStatus | null;
   @ApiPropertyOptional({ nullable: true }) plan!: string | null;
@@ -81,6 +85,24 @@ export class AdminOrgActivityDto {
   @ApiProperty() created_at!: Date;
 }
 
+export class AdminOrgPortalDto {
+  @ApiProperty({ description: 'Distinct patients with an ACTIVE enrollment.' })
+  enrolled_patients!: number;
+  @ApiProperty({ description: 'Enrolled patients who created a portal login.' })
+  portal_accounts!: number;
+  @ApiProperty({ description: 'Portal logins currently enabled (is_active).' })
+  active_accounts!: number;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'portal_accounts / enrolled_patients as a percent; null if 0.',
+  })
+  activation_rate!: number | null;
+  @ApiProperty({
+    description: 'Distinct enrolled patients with a check-in this month.',
+  })
+  active_this_month!: number;
+}
+
 export class AdminOrganizationDetailDto extends AdminOrganizationListItemDto {
   @ApiPropertyOptional({ nullable: true }) subscription_ends_at!: Date | null;
   @ApiPropertyOptional({ nullable: true }) trial_ends_at!: Date | null;
@@ -95,27 +117,8 @@ export class AdminOrganizationDetailDto extends AdminOrganizationListItemDto {
   address!: AdminOrgAddressDto | null;
   @ApiProperty({ type: [AdminOrgActivityDto] })
   recent_activity!: AdminOrgActivityDto[];
-}
-
-export class AdminUserProfileDto {
-  @ApiProperty() profile_id!: string;
-  @ApiProperty() organization_id!: string;
-  @ApiProperty() organization_name!: string;
-  @ApiPropertyOptional({ nullable: true }) role!: string | null;
-  @ApiProperty() is_active!: boolean;
-}
-
-export class AdminUserListItemDto {
-  @ApiProperty() id!: string;
-  @ApiProperty() first_name!: string;
-  @ApiProperty() last_name!: string;
-  @ApiPropertyOptional({ nullable: true }) email!: string | null;
-  @ApiPropertyOptional({ nullable: true }) phone_number!: string | null;
-  @ApiProperty() is_active!: boolean;
-  @ApiProperty() profile_count!: number;
-  @ApiProperty({ type: [AdminUserProfileDto] })
-  profiles!: AdminUserProfileDto[];
-  @ApiProperty() created_at!: Date;
+  @ApiProperty({ type: AdminOrgPortalDto })
+  portal!: AdminOrgPortalDto;
 }
 
 export class AdminSubscriptionListItemDto {

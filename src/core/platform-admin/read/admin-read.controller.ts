@@ -8,12 +8,10 @@ import {
   ApiStandardResponse,
 } from '@common/swagger/index.js';
 import { AdminOrganizationsService } from './admin-organizations.service.js';
-import { AdminUsersService } from './admin-users.service.js';
 import { AdminSubscriptionsService } from './admin-subscriptions.service.js';
 import { AdminPaymentsService } from './admin-payments.service.js';
 import { AdminMetricsService } from './admin-metrics.service.js';
 import {
-  AdminListQueryDto,
   AdminOrganizationsQueryDto,
   AdminPaymentsQueryDto,
   AdminSubscriptionsQueryDto,
@@ -26,7 +24,6 @@ import {
   AdminPlanOptionDto,
   AdminSubscriptionListItemDto,
   AdminSubscriptionStatsDto,
-  AdminUserListItemDto,
 } from './dto/admin-read-response.dto.js';
 import { AdminMetricsOverviewDto } from './dto/admin-metrics.dto.js';
 
@@ -44,7 +41,6 @@ import { AdminMetricsOverviewDto } from './dto/admin-metrics.dto.js';
 export class AdminReadController {
   constructor(
     private readonly organizations: AdminOrganizationsService,
-    private readonly users: AdminUsersService,
     private readonly subscriptions: AdminSubscriptionsService,
     private readonly payments: AdminPaymentsService,
     private readonly metrics: AdminMetricsService,
@@ -73,13 +69,6 @@ export class AdminReadController {
     @Param('id') id: string,
   ): Promise<AdminOrganizationDetailDto> {
     return this.organizations.get(id);
-  }
-
-  @Get('users')
-  @ApiOperation({ summary: 'List all users across tenants (with memberships)' })
-  @ApiPaginatedResponse(AdminUserListItemDto)
-  listUsers(@Query() query: AdminListQueryDto) {
-    return this.users.list(query);
   }
 
   @Get('subscriptions/stats')
