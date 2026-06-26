@@ -13,10 +13,16 @@ type PaymentRow = Prisma.SubscriptionPaymentGetPayload<{
   include: { organization: true; subscription_plan: true };
 }>;
 
+/** Resolved submitter contact (a Profile → User), keyed by profile id. */
+type Submitter = { name: string; email: string | null; phone: string | null };
+
 /**
  * Cross-tenant subscription-payment list/detail for the admin dashboard. Detail
  * mints short-lived presigned GET URLs for each manual-payment proof so the
- * admin can view the bank-transfer slip before verifying.
+ * admin can view the bank-transfer slip before verifying. `submitted_by_id` is a
+ * Profile id and `verified_by_id` a PlatformAdmin id — neither has a relation on
+ * the payment model, so both are resolved with explicit lookups (batched on the
+ * list) to answer "who submitted / who verified".
  */
 @Injectable()
 export class AdminPaymentsService {
@@ -51,8 +57,14 @@ export class AdminPaymentsService {
       this.prismaService.db.subscriptionPayment.count({ where }),
     ]);
 
+    const submitters = await this.resolveSubmitters(
+      items.map((p) => p.submitted_by_id),
+    );
+
     return paginated(
-      items.map((p) => this.toListItem(p)),
+      items.map((p) =>
+        this.toListItem(p, submitters.get(p.submitted_by_id ?? '')),
+      ),
       { page, limit, total },
     );
   }
@@ -71,22 +83,65 @@ export class AdminPaymentsService {
     });
     if (!payment) throw new NotFoundException('Payment not found');
 
-    const proofs = await Promise.all(
-      payment.proofs.map(async (proof) => ({
-        id: proof.id,
-        url: await this.storageService.createPresignedDownloadUrl(
-          proof.object_key,
-        ),
-        content_type: proof.content_type,
-        size_bytes: proof.size_bytes,
-        created_at: proof.created_at,
-      })),
-    );
+    const [submitters, verifier, proofs] = await Promise.all([
+      this.resolveSubmitters([payment.submitted_by_id]),
+      payment.verified_by_id
+        ? this.prismaService.db.platformAdmin.findUnique({
+            where: { id: payment.verified_by_id },
+            select: { full_name: true },
+          })
+        : Promise.resolve(null),
+      Promise.all(
+        payment.proofs.map(async (proof) => ({
+          id: proof.id,
+          url: await this.storageService.createPresignedDownloadUrl(
+            proof.object_key,
+          ),
+          content_type: proof.content_type,
+          size_bytes: proof.size_bytes,
+          created_at: proof.created_at,
+        })),
+      ),
+    ]);
 
-    return { ...this.toListItem(payment), proofs };
+    const submitter = submitters.get(payment.submitted_by_id ?? '');
+
+    return {
+      ...this.toListItem(payment, submitter),
+      submitted_by_phone: submitter?.phone ?? null,
+      verified_by_name: verifier?.full_name ?? null,
+      proofs,
+    };
   }
 
-  private toListItem(payment: PaymentRow): AdminPaymentListItemDto {
+  /** Batch-resolve profile ids → submitter contact, skipping nulls. */
+  private async resolveSubmitters(
+    ids: (string | null)[],
+  ): Promise<Map<string, Submitter>> {
+    const unique = [...new Set(ids.filter((id): id is string => !!id))];
+    if (unique.length === 0) return new Map();
+
+    const profiles = await this.prismaService.db.profile.findMany({
+      where: { id: { in: unique } },
+      include: { user: true },
+    });
+
+    return new Map(
+      profiles.map((profile) => [
+        profile.id,
+        {
+          name: `${profile.user.first_name} ${profile.user.last_name}`.trim(),
+          email: profile.user.email,
+          phone: profile.user.phone_number,
+        },
+      ]),
+    );
+  }
+
+  private toListItem(
+    payment: PaymentRow,
+    submitter?: Submitter,
+  ): AdminPaymentListItemDto {
     return {
       id: payment.id,
       organization_id: payment.organization_id,
@@ -95,8 +150,12 @@ export class AdminPaymentsService {
       plan: payment.subscription_plan.plan,
       status: payment.status,
       provider: payment.provider,
+      reference: payment.provider_ref,
+      billing_interval: payment.billing_interval,
       amount: payment.amount.toString(),
       currency: payment.currency,
+      submitted_by_name: submitter?.name ?? null,
+      submitted_by_email: submitter?.email ?? null,
       verified_by_id: payment.verified_by_id,
       verified_at: payment.verified_at,
       rejection_reason: payment.rejection_reason,

@@ -280,6 +280,7 @@ Table platform_admins {
   email String [unique, not null]
   password_hashed String
   full_name String [not null]
+  role PlatformAdminRole [not null, default: 'SUPER_ADMIN']
   is_active Boolean [not null, default: true]
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
@@ -288,6 +289,28 @@ Table platform_admins {
   refreshTokens refresh_tokens [not null]
   auditLogs admin_audit_log [not null]
   verificationCodes verification_codes [not null]
+}
+
+Table platform_settings {
+  id String [pk]
+  instapay_handle String
+  wallet_number String
+  free_trial_days Int [not null, default: 14]
+  auto_verify_gateway_payments Boolean [not null, default: true]
+  default_currency String [not null, default: 'EGP']
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
+Table admin_notifications {
+  id String [pk]
+  type AdminNotificationType [not null]
+  title String [not null]
+  body String [not null]
+  organization_id String
+  related_id String
+  is_read Boolean [not null, default: false]
+  created_at DateTime [default: `now()`, not null]
 }
 
 Table admin_audit_log {
@@ -2348,6 +2371,7 @@ Enum VerificationPurpose {
   LOGIN
   PASSWORD_RESET
   ADMIN_LOGIN
+  ADMIN_SET_PASSWORD
 }
 
 Enum JourneyTemplateType {
@@ -2627,6 +2651,18 @@ Enum RefundStatus {
   COMPLETED
   FAILED
   VOID
+}
+
+Enum PlatformAdminRole {
+  SUPER_ADMIN
+  BILLING
+}
+
+Enum AdminNotificationType {
+  ORGANIZATION_CREATED
+  SUBSCRIPTION_STARTED
+  PLAN_CHANGED
+  PAYMENT_SUBMITTED
 }
 
 Enum DiagnosisCodeSource {

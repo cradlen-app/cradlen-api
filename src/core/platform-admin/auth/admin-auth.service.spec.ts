@@ -1,13 +1,14 @@
 import * as bcrypt from 'bcryptjs';
 import { AdminAuthService } from './admin-auth.service.js';
 import { AdminVerificationService } from './admin-verification.service.js';
+import { AdminAuditService } from '../audit/admin-audit.service.js';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { TokensService } from '@core/auth/services/tokens.service.js';
 
 jest.mock('bcryptjs');
 
 const mockDb = {
-  platformAdmin: { findFirst: jest.fn() },
+  platformAdmin: { findFirst: jest.fn(), update: jest.fn() },
   refreshToken: { findUnique: jest.fn() },
 };
 const mockPrisma = { db: mockDb } as unknown as PrismaService;
@@ -19,8 +20,10 @@ const mockTokens = {
 const mockVerification = {
   send: jest.fn(),
   consume: jest.fn(),
+  consumeSetPasswordToken: jest.fn(),
   assertCanResend: jest.fn(),
 };
+const mockAudit = { record: jest.fn() };
 
 const TOKENS = {
   type: 'tokens',
@@ -38,8 +41,10 @@ describe('AdminAuthService', () => {
       mockPrisma,
       mockTokens as unknown as TokensService,
       mockVerification as unknown as AdminVerificationService,
+      mockAudit as unknown as AdminAuditService,
     );
     (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+    (bcrypt.hash as jest.Mock).mockResolvedValue('hashed');
   });
 
   describe('login', () => {
@@ -98,6 +103,46 @@ describe('AdminAuthService', () => {
       mockDb.platformAdmin.findFirst.mockResolvedValue(null);
       await expect(
         service.verifyOtp({ email: 'nope@c.com', code: '123456' }),
+      ).rejects.toMatchObject({ response: { code: 'INVALID_CODE' } });
+    });
+  });
+
+  describe('setPassword', () => {
+    it('consumes the invite token, sets the password, audits, and logs in', async () => {
+      mockDb.platformAdmin.findFirst.mockResolvedValue({
+        id: 'a1',
+        email: 'a@c.com',
+      });
+      mockTokens.issueAdminTokenPair.mockResolvedValue(TOKENS);
+
+      const res = await service.setPassword({
+        email: 'a@c.com',
+        token: 'tok',
+        password: 'newsecret8',
+      });
+
+      expect(mockVerification.consumeSetPasswordToken).toHaveBeenCalledWith(
+        'a1',
+        'tok',
+      );
+      expect(mockDb.platformAdmin.update).toHaveBeenCalledWith({
+        where: { id: 'a1' },
+        data: { password_hashed: 'hashed' },
+      });
+      expect(mockAudit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'admin.set_password' }),
+      );
+      expect(res).toBe(TOKENS);
+    });
+
+    it('rejects an unknown email with a generic INVALID_CODE', async () => {
+      mockDb.platformAdmin.findFirst.mockResolvedValue(null);
+      await expect(
+        service.setPassword({
+          email: 'nope@c.com',
+          token: 'tok',
+          password: 'newsecret8',
+        }),
       ).rejects.toMatchObject({ response: { code: 'INVALID_CODE' } });
     });
   });

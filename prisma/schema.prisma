@@ -107,6 +107,7 @@ enum VerificationPurpose {
   LOGIN
   PASSWORD_RESET
   ADMIN_LOGIN
+  ADMIN_SET_PASSWORD
 }
 
 enum JourneyTemplateType {
@@ -728,6 +729,7 @@ model PlatformAdmin {
   email             String             @unique
   password_hashed   String?
   full_name         String
+  role              PlatformAdminRole  @default(SUPER_ADMIN)
   is_active         Boolean            @default(true)
   is_deleted        Boolean            @default(false)
   deleted_at        DateTime?
@@ -738,6 +740,54 @@ model PlatformAdmin {
   verificationCodes VerificationCode[]
 
   @@map("platform_admins")
+}
+
+// Coarse role label for the admin team list. Authorization is still flat (any
+// active admin is fully authorized); this only drives the Settings UI badge.
+enum PlatformAdminRole {
+  SUPER_ADMIN
+  BILLING
+}
+
+// Singleton platform configuration surfaced on the admin Settings page: the
+// manual-payment accounts shown to clinics plus a few global defaults. Exactly
+// one row exists; services read/write it via an upsert on a fixed sentinel id.
+model PlatformSetting {
+  id                           String   @id @default(uuid()) @db.Uuid
+  instapay_handle              String?
+  wallet_number                String?
+  free_trial_days              Int      @default(14)
+  auto_verify_gateway_payments Boolean  @default(true)
+  default_currency             String   @default("EGP")
+  created_at                   DateTime @default(now())
+  updated_at                   DateTime @updatedAt
+
+  @@map("platform_settings")
+}
+
+// What kind of platform event a notification records.
+enum AdminNotificationType {
+  ORGANIZATION_CREATED
+  SUBSCRIPTION_STARTED
+  PLAN_CHANGED
+  PAYMENT_SUBMITTED
+}
+
+// Platform-wide admin notification feed (shared across the small admin team, so
+// read-state is a single flag rather than per-admin). Materialized by the
+// AdminNotificationsListener from domain events.
+model AdminNotification {
+  id              String                @id @default(uuid()) @db.Uuid
+  type            AdminNotificationType
+  title           String
+  body            String
+  organization_id String?               @db.Uuid
+  related_id      String?               @db.Uuid
+  is_read         Boolean               @default(false)
+  created_at      DateTime              @default(now())
+
+  @@index([is_read, created_at])
+  @@map("admin_notifications")
 }
 
 // Append-only audit trail for every platform-admin WRITE action. Written inside

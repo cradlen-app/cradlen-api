@@ -3,6 +3,7 @@ import { AdminVerificationService } from './admin-verification.service.js';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { EmailService } from '@infrastructure/email/email.service.js';
 import type { AuthConfig } from '@config/auth.config.js';
+import type { AppConfig } from '@config/app.config.js';
 
 jest.mock('bcryptjs');
 
@@ -18,6 +19,7 @@ const mockDb = {
 const mockPrisma = { db: mockDb } as unknown as PrismaService;
 const mockMail = {
   sendVerificationEmail: jest.fn(),
+  sendAdminInviteEmail: jest.fn(),
 };
 const config = {
   verificationCodes: {
@@ -27,7 +29,9 @@ const config = {
     resendCooldownSeconds: 60,
     resendMaxPerHour: 5,
   },
+  invitationExpireHours: 72,
 } as unknown as AuthConfig;
+const appCfg = { adminAppUrl: 'http://localhost:3100' } as unknown as AppConfig;
 
 describe('AdminVerificationService', () => {
   let service: AdminVerificationService;
@@ -36,6 +40,7 @@ describe('AdminVerificationService', () => {
     service = new AdminVerificationService(
       mockPrisma,
       config,
+      appCfg,
       mockMail as unknown as EmailService,
     );
     (bcrypt.hash as jest.Mock).mockResolvedValue('hashed');
@@ -73,6 +78,23 @@ describe('AdminVerificationService', () => {
       expect(
         mockDb.verificationCode.create.mock.calls[0][0].data.is_resend,
       ).toBe(true);
+    });
+  });
+
+  describe('sendSetPasswordInvite', () => {
+    it('stores an ADMIN_SET_PASSWORD token and emails a set-password link', async () => {
+      await service.sendSetPasswordInvite('admin-1', 'ops@cradlen.com');
+
+      const created = mockDb.verificationCode.create.mock.calls[0][0].data;
+      expect(created).toMatchObject({
+        admin_id: 'admin-1',
+        purpose: 'ADMIN_SET_PASSWORD',
+        channel: 'EMAIL',
+      });
+      const [to, url] = mockMail.sendAdminInviteEmail.mock.calls[0];
+      expect(to).toBe('ops@cradlen.com');
+      expect(url).toContain('http://localhost:3100/set-password?token=');
+      expect(url).toContain('email=ops%40cradlen.com');
     });
   });
 
