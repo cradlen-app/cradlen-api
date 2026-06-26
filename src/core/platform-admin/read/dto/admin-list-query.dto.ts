@@ -35,6 +35,14 @@ export class AdminOrganizationsQueryDto extends AdminListQueryDto {
   @IsEnum(OrganizationStatus)
   @IsOptional()
   status?: OrganizationStatus;
+
+  @ApiPropertyOptional({
+    enum: SubscriptionStatus,
+    description: "Filter by the org's current subscription status.",
+  })
+  @IsEnum(SubscriptionStatus)
+  @IsOptional()
+  subscription_status?: SubscriptionStatus;
 }
 
 export class AdminSubscriptionsQueryDto extends AdminListQueryDto {

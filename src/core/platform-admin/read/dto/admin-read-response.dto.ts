@@ -20,12 +20,80 @@ export class AdminOrganizationListItemDto {
     description: "City of the org's main branch, if any.",
   })
   city!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: "Org's primary specialty.",
+  })
+  specialty!: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Owner full name.' })
+  primary_contact_name!: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Owner email.' })
+  primary_contact_email!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Monthly-equivalent recurring revenue; null unless ACTIVE & priced.',
+  })
+  mrr!: number | null;
+  @ApiPropertyOptional({ nullable: true }) branch_limit!: number | null;
+  @ApiPropertyOptional({ nullable: true }) staff_limit!: number | null;
+  @ApiProperty() created_at!: Date;
+}
+
+export class AdminOrgOwnerDto {
+  @ApiProperty() full_name!: string;
+  @ApiPropertyOptional({ nullable: true }) email!: string | null;
+  @ApiPropertyOptional({ nullable: true }) phone!: string | null;
+  @ApiPropertyOptional({ nullable: true }) specialty!: string | null;
+}
+
+export class AdminOrgBillingDto {
+  @ApiProperty() amount!: number;
+  @ApiProperty() currency!: string;
+  @ApiProperty({ enum: ['MONTHLY', 'YEARLY'] }) interval!: 'MONTHLY' | 'YEARLY';
+}
+
+export class AdminOrgPlanLimitsDto {
+  @ApiProperty() max_branches!: number;
+  @ApiProperty() max_staff!: number;
+}
+
+export class AdminOrgBranchDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() name!: string;
+  @ApiProperty() city!: string;
+  @ApiProperty() governorate!: string;
+  @ApiProperty() staff_count!: number;
+  @ApiProperty() is_main!: boolean;
+}
+
+export class AdminOrgAddressDto {
+  @ApiProperty() address!: string;
+  @ApiProperty() governorate!: string;
+  @ApiPropertyOptional({ nullable: true }) country!: string | null;
+}
+
+export class AdminOrgActivityDto {
+  @ApiProperty() type!: string;
+  @ApiProperty() title!: string;
+  @ApiProperty() body!: string;
   @ApiProperty() created_at!: Date;
 }
 
 export class AdminOrganizationDetailDto extends AdminOrganizationListItemDto {
   @ApiPropertyOptional({ nullable: true }) subscription_ends_at!: Date | null;
   @ApiPropertyOptional({ nullable: true }) trial_ends_at!: Date | null;
+  @ApiPropertyOptional({ nullable: true, type: AdminOrgOwnerDto })
+  owner!: AdminOrgOwnerDto | null;
+  @ApiPropertyOptional({ nullable: true, type: AdminOrgBillingDto })
+  billing!: AdminOrgBillingDto | null;
+  @ApiPropertyOptional({ nullable: true, type: AdminOrgPlanLimitsDto })
+  plan_limits!: AdminOrgPlanLimitsDto | null;
+  @ApiProperty({ type: [AdminOrgBranchDto] }) branches!: AdminOrgBranchDto[];
+  @ApiPropertyOptional({ nullable: true, type: AdminOrgAddressDto })
+  address!: AdminOrgAddressDto | null;
+  @ApiProperty({ type: [AdminOrgActivityDto] })
+  recent_activity!: AdminOrgActivityDto[];
 }
 
 export class AdminUserProfileDto {
