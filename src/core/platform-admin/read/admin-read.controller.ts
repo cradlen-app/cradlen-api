@@ -4,6 +4,7 @@ import { Public } from '@common/decorators/public.decorator.js';
 import { AdminJwtAuthGuard } from '@common/guards/admin-jwt-auth.guard.js';
 import {
   ApiPaginatedResponse,
+  ApiStandardArrayResponse,
   ApiStandardResponse,
 } from '@common/swagger/index.js';
 import { AdminOrganizationsService } from './admin-organizations.service.js';
@@ -22,6 +23,7 @@ import {
   AdminOrganizationListItemDto,
   AdminPaymentDetailDto,
   AdminPaymentListItemDto,
+  AdminPlanOptionDto,
   AdminSubscriptionListItemDto,
   AdminSubscriptionStatsDto,
   AdminUserListItemDto,
@@ -85,6 +87,13 @@ export class AdminReadController {
   @ApiStandardResponse(AdminSubscriptionStatsDto)
   subscriptionStats(): Promise<AdminSubscriptionStatsDto> {
     return this.subscriptions.stats();
+  }
+
+  @Get('subscriptions/plans')
+  @ApiOperation({ summary: 'Available plan tiers for the change-plan picker' })
+  @ApiStandardArrayResponse(AdminPlanOptionDto)
+  subscriptionPlans(): Promise<AdminPlanOptionDto[]> {
+    return this.subscriptions.plans();
   }
 
   @Get('subscriptions')

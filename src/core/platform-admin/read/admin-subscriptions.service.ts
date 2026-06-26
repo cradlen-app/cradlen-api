@@ -9,6 +9,7 @@ import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { paginated } from '@common/utils/pagination.utils.js';
 import type { AdminSubscriptionsQueryDto } from './dto/admin-list-query.dto.js';
 import type {
+  AdminPlanOptionDto,
   AdminSubscriptionListItemDto,
   AdminSubscriptionStatsDto,
 } from './dto/admin-read-response.dto.js';
@@ -149,6 +150,25 @@ export class AdminSubscriptionsService {
       currency,
       plan_distribution,
     };
+  }
+
+  /** Available plan tiers (smallest first) for the change-plan picker. */
+  async plans(): Promise<AdminPlanOptionDto[]> {
+    const plans = await this.prismaService.db.subscriptionPlan.findMany({
+      orderBy: { max_staff: 'asc' },
+      include: { prices: { where: { is_active: true, is_deleted: false } } },
+    });
+    return plans.map((p): AdminPlanOptionDto => {
+      const billing = this.priceInfo(p.prices);
+      return {
+        plan: p.plan,
+        max_branches: p.max_branches,
+        max_staff: p.max_staff,
+        amount: billing?.amount ?? null,
+        currency: billing?.currency ?? null,
+        billing_interval: billing?.interval ?? null,
+      };
+    });
   }
 
   /** Active plan price, preferring a monthly tier, else the yearly tier. */

@@ -144,6 +144,18 @@ export class AdminSubscriptionListItemDto {
   add_on_count!: number;
 }
 
+export class AdminPlanOptionDto {
+  @ApiProperty({ description: 'Unique plan code (e.g. individual).' })
+  plan!: string;
+  @ApiProperty() max_branches!: number;
+  @ApiProperty() max_staff!: number;
+  @ApiPropertyOptional({ nullable: true, description: 'Active plan price.' })
+  amount!: number | null;
+  @ApiPropertyOptional({ nullable: true }) currency!: string | null;
+  @ApiPropertyOptional({ enum: ['MONTHLY', 'YEARLY'], nullable: true })
+  billing_interval!: 'MONTHLY' | 'YEARLY' | null;
+}
+
 export class AdminSubscriptionStatsDto {
   @ApiProperty() total!: number;
   @ApiProperty() active!: number;
