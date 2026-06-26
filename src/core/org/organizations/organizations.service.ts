@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { ConfigType } from '@nestjs/config';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { StorageService } from '@infrastructure/storage/storage.service.js';
+import { EventBus } from '@infrastructure/messaging/event-bus.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import { resolveSubspecialties } from '@core/org/staff/staff.assertions.js';
 import {
@@ -32,6 +33,11 @@ import {
   type OrganizationWithSpecialties,
 } from './organizations.mapper.js';
 import { provisionOrganization } from './organizations.helpers.js';
+import {
+  ORGANIZATION_EVENTS,
+  type OrganizationCreatedEvent,
+  type OrganizationTrialStartedEvent,
+} from './organization.events.js';
 
 @Injectable()
 export class OrganizationsService {
@@ -44,6 +50,7 @@ export class OrganizationsService {
     private readonly specialtiesService: SpecialtyCatalogService,
     private readonly subscriptionsService: SubscriptionsService,
     private readonly storageService: StorageService,
+    private readonly eventBus: EventBus,
     @Inject(authConfig.KEY)
     config: ConfigType<typeof authConfig>,
   ) {
@@ -346,8 +353,14 @@ export class OrganizationsService {
     if (!freePlan)
       throw new InternalServerErrorException('Free trial plan not seeded');
 
+    // Trial length is platform-configurable (admin Settings); fall back to the
+    // env-seeded default when no settings row exists yet.
+    const setting = await this.prismaService.db.platformSetting.findFirst({
+      select: { free_trial_days: true },
+    });
+    const trialDays = setting?.free_trial_days ?? this.freeTrialDays;
     const trialEndsAt = new Date();
-    trialEndsAt.setDate(trialEndsAt.getDate() + this.freeTrialDays);
+    trialEndsAt.setDate(trialEndsAt.getDate() + trialDays);
 
     const { organization, branch, profile } =
       await this.prismaService.db.$transaction((tx) =>
@@ -368,6 +381,21 @@ export class OrganizationsService {
           },
         }),
       );
+
+    // Fan-out for admin notifications / analytics. Best-effort: a subscriber
+    // failure cannot fail org creation (see EventBus contract).
+    this.eventBus.publish<OrganizationCreatedEvent>(ORGANIZATION_EVENTS.created, {
+      organization_id: organization.id,
+      organization_name: organization.name,
+    });
+    this.eventBus.publish<OrganizationTrialStartedEvent>(
+      ORGANIZATION_EVENTS.trialStarted,
+      {
+        organization_id: organization.id,
+        organization_name: organization.name,
+        trial_ends_at: trialEndsAt.toISOString(),
+      },
+    );
 
     return {
       organization: {

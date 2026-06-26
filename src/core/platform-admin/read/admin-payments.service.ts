@@ -95,6 +95,7 @@ export class AdminPaymentsService {
       plan: payment.subscription_plan.plan,
       status: payment.status,
       provider: payment.provider,
+      reference: payment.provider_ref,
       amount: payment.amount.toString(),
       currency: payment.currency,
       verified_by_id: payment.verified_by_id,

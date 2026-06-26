@@ -19,6 +19,8 @@ import { AdminAuthModule } from '@core/platform-admin/auth/admin-auth.module.js'
 import { AdminReadModule } from '@core/platform-admin/read/admin-read.module.js';
 import { AdminWriteModule } from '@core/platform-admin/write/admin-write.module.js';
 import { AdminsModule } from '@core/platform-admin/admins/admins.module.js';
+import { AdminSettingsModule } from '@core/platform-admin/settings/admin-settings.module.js';
+import { AdminNotificationsModule } from '@core/platform-admin/notifications/admin-notifications.module.js';
 import { RolesModule } from '@core/org/roles/roles.module';
 import { OrganizationsModule } from '@core/org/organizations/organizations.module.js';
 import { BranchesModule } from '@core/org/branches/branches.module.js';
@@ -86,6 +88,8 @@ import { PermissionsModule } from '@common/authorization/permissions.module.js';
     AdminReadModule,
     AdminWriteModule,
     AdminsModule,
+    AdminSettingsModule,
+    AdminNotificationsModule,
     RolesModule,
     OrganizationsModule,
     ProfilesModule,

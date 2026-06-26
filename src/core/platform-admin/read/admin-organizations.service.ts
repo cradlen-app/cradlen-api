@@ -47,6 +47,12 @@ export class AdminOrganizationsService {
             take: 1,
             include: { subscription_plan: true },
           },
+          branches: {
+            where: { is_deleted: false },
+            orderBy: { is_main: 'desc' },
+            take: 1,
+            select: { city: true },
+          },
         },
       }),
       this.prismaService.db.organization.count({ where }),
@@ -74,6 +80,12 @@ export class AdminOrganizationsService {
           take: 1,
           include: { subscription_plan: true },
         },
+        branches: {
+          where: { is_deleted: false },
+          orderBy: { is_main: 'desc' },
+          take: 1,
+          select: { city: true },
+        },
       },
     });
     if (!org) throw new NotFoundException('Organization not found');
@@ -93,6 +105,7 @@ export class AdminOrganizationsService {
     created_at: Date;
     _count: { branches: number; profiles: number };
     subscriptions: { status: string; subscription_plan: { plan: string } }[];
+    branches: { city: string }[];
   }): AdminOrganizationListItemDto {
     const sub = org.subscriptions[0] ?? null;
     return {
@@ -105,6 +118,7 @@ export class AdminOrganizationsService {
         (sub?.status as AdminOrganizationListItemDto['subscription_status']) ??
         null,
       plan: sub?.subscription_plan.plan ?? null,
+      city: org.branches[0]?.city ?? null,
       created_at: org.created_at,
     };
   }
