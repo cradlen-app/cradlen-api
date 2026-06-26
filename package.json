@@ -23,7 +23,8 @@
     "migrate:check": "prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code",
     "smoke": "node scripts/smoke.mjs",
     "seed:fixtures": "tsx prisma/seed-fixtures.ts",
-    "backfill:invoice-doctor": "tsx prisma/backfill-invoice-doctor.ts"
+    "backfill:invoice-doctor": "tsx prisma/backfill-invoice-doctor.ts",
+    "backfill:daily-metrics": "tsx prisma/backfill-daily-metrics.ts"
   },
   "engines": {
     "node": ">=22 <23"

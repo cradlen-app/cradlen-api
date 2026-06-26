@@ -6,6 +6,7 @@ import { AuthController } from './auth.controller.js';
 import { JwtStrategy } from './strategies/jwt.strategy.js';
 import { EmailModule } from '@infrastructure/email/email.module.js';
 import { RegistrationCleanupService } from './registration-cleanup.service.js';
+import { LastActiveService } from './last-active.service.js';
 import { AuthorizationModule } from '@core/auth/authorization/authorization.module.js';
 import { SpecialtyCatalogModule } from '@core/org/specialty-catalog/specialty-catalog.public.js';
 import { TokensService } from './services/tokens.service.js';
@@ -34,7 +35,8 @@ import { AuthAuditListener } from './events/auth-audit.listener.js';
     JwtStrategy,
     RegistrationCleanupService,
     AuthAuditListener,
+    LastActiveService,
   ],
-  exports: [TokensService],
+  exports: [TokensService, LastActiveService],
 })
 export class AuthModule {}

@@ -678,6 +678,9 @@ model User {
   verified_at          DateTime?
   registration_status  RegistrationStatus   @default(PENDING)
   onboarding_completed Boolean              @default(false)
+  // Last authenticated request, stamped at most once per UTC day by the staff JWT
+  // strategy (fire-and-forget). Powers the admin daily-active-staff trend.
+  last_active_at       DateTime?
   created_at           DateTime             @default(now())
   updated_at           DateTime             @updatedAt
   // `users` is staff-only. Patient/guardian portal logins live in the dedicated
@@ -690,6 +693,7 @@ model User {
   sentInvitations      Invitation[]         @relation("InvitedBy")
 
   @@index([registration_status, onboarding_completed])
+  @@index([last_active_at])
   @@map("users")
 }
 
@@ -714,9 +718,14 @@ model PatientAccount {
   patient                Patient?       @relation("PatientAccount", fields: [patient_id], references: [id], onDelete: SetNull)
   guardian               Guardian?      @relation("GuardianAccount", fields: [guardian_id], references: [id], onDelete: SetNull)
   refreshTokens          RefreshToken[]
+  // Last authenticated portal request, stamped at most once per UTC day by the
+  // patient JWT strategy (patient accounts only). Powers the admin daily-active-
+  // portals trend.
+  last_active_at         DateTime?
   created_at             DateTime       @default(now())
   updated_at             DateTime       @updatedAt
 
+  @@index([last_active_at])
   @@map("patient_accounts")
 }
 
@@ -763,6 +772,24 @@ model PlatformSetting {
   updated_at                   DateTime @updatedAt
 
   @@map("platform_settings")
+}
+
+// One row per UTC day, written by DailyMetricsSnapshotJob just after midnight.
+// Stores platform-wide engagement so the admin dashboard can chart per-day
+// trends without re-scanning operational tables (and without depending on
+// refresh tokens, which are pruned nightly). `active_*` count distinct entities
+// whose `last_active_at` fell on that day; `total_*` are cumulative as-of the day.
+model DailyMetricSnapshot {
+  id                      String   @id @default(uuid()) @db.Uuid
+  date                    DateTime @unique @db.Date
+  active_staff            Int
+  total_staff             Int
+  active_portals          Int
+  total_portals           Int
+  total_enrolled_patients Int
+  created_at              DateTime @default(now())
+
+  @@map("daily_metric_snapshots")
 }
 
 // What kind of platform event a notification records.

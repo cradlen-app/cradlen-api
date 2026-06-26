@@ -1,6 +1,7 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { JwtStrategy } from './jwt.strategy.js';
 import type { AuthorizationService } from '../authorization/authorization.service.js';
+import type { LastActiveService } from '../last-active.service.js';
 import type { JwtAccessPayload } from '../interfaces/jwt-payload.interface.js';
 
 function buildStrategy() {
@@ -9,18 +10,25 @@ function buildStrategy() {
     getProfileContext,
   } as unknown as AuthorizationService;
 
+  const touchUser = jest.fn().mockResolvedValue(undefined);
+  const lastActiveService = { touchUser } as unknown as LastActiveService;
+
   const authConfig = {
     jwt: { accessSecret: 'access-secret' },
   };
 
-  const strategy = new JwtStrategy(authConfig as never, authorizationService);
+  const strategy = new JwtStrategy(
+    authConfig as never,
+    authorizationService,
+    lastActiveService,
+  );
 
-  return { strategy, getProfileContext };
+  return { strategy, getProfileContext, touchUser };
 }
 
 describe('JwtStrategy.validate', () => {
   it('forwards a valid access payload to AuthorizationService.getProfileContext', async () => {
-    const { strategy, getProfileContext } = buildStrategy();
+    const { strategy, getProfileContext, touchUser } = buildStrategy();
     const context = {
       userId: 'user-1',
       profileId: 'profile-1',
@@ -44,6 +52,8 @@ describe('JwtStrategy.validate', () => {
     // Single AuthorizationService call — no separate user.findFirst path.
     // `iat` is forwarded so the staleness (password-change) check can run.
     expect(getProfileContext).toHaveBeenCalledTimes(1);
+    // Fire-and-forget daily-active heartbeat for the authenticated user.
+    expect(touchUser).toHaveBeenCalledWith('user-1');
     expect(getProfileContext).toHaveBeenCalledWith(
       'user-1',
       'profile-1',

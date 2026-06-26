@@ -4,6 +4,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import authConfig from '@config/auth.config.js';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
+import { LastActiveService } from '@core/auth/last-active.service.js';
 import type { PatientAuthContext } from '@common/interfaces/patient-auth-context.interface.js';
 import type { JwtPatientAccessPayload } from '@core/auth/interfaces/jwt-payload.interface.js';
 
@@ -19,6 +20,7 @@ export class PatientJwtStrategy extends PassportStrategy(
     @Inject(authConfig.KEY)
     config: ConfigType<typeof authConfig>,
     private readonly prismaService: PrismaService,
+    private readonly lastActiveService: LastActiveService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -54,6 +56,12 @@ export class PatientJwtStrategy extends PassportStrategy(
       select: { id: true, patient_id: true, guardian_id: true },
     });
     if (!account) throw new UnauthorizedException('Invalid auth context');
+
+    // Fire-and-forget daily-active heartbeat for patient portals only
+    // (guardians are proxies, excluded from portal-adoption metrics).
+    if (account.patient_id) {
+      void this.lastActiveService.touchPatientAccount(account.id);
+    }
 
     const accessiblePatientIds = await this.resolveAccessiblePatients(payload);
 
