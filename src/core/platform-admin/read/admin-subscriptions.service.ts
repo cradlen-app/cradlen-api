@@ -7,6 +7,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { paginated } from '@common/utils/pagination.utils.js';
+import { mapAddOns } from './admin-add-on.util.js';
 import type { AdminSubscriptionsQueryDto } from './dto/admin-list-query.dto.js';
 import type {
   AdminPlanOptionDto,
@@ -65,12 +66,15 @@ export class AdminSubscriptionsService {
               prices: { where: { is_active: true, is_deleted: false } },
             },
           },
-          _count: {
-            select: {
-              add_ons: {
-                where: {
-                  status: SubscriptionAddOnStatus.ACTIVE,
-                  is_deleted: false,
+          add_ons: {
+            where: {
+              status: SubscriptionAddOnStatus.ACTIVE,
+              is_deleted: false,
+            },
+            include: {
+              add_on: {
+                include: {
+                  prices: { where: { is_active: true, is_deleted: false } },
                 },
               },
             },
@@ -83,6 +87,7 @@ export class AdminSubscriptionsService {
     return paginated(
       subs.map((s): AdminSubscriptionListItemDto => {
         const billing = this.priceInfo(s.subscription_plan.prices);
+        const add_ons = mapAddOns(s.add_ons, billing?.interval ?? null);
         return {
           id: s.id,
           organization_id: s.organization_id,
@@ -99,7 +104,8 @@ export class AdminSubscriptionsService {
             s.status === SubscriptionStatus.ACTIVE
               ? this.monthlyEquivalent(billing)
               : null,
-          add_on_count: s._count.add_ons,
+          add_on_count: add_ons.length,
+          add_ons,
         };
       }),
       { page, limit, total },

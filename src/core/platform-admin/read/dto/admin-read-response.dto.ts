@@ -103,6 +103,23 @@ export class AdminOrgPortalDto {
   active_this_month!: number;
 }
 
+export class AdminSubscriptionAddOnDto {
+  @ApiProperty() name!: string;
+  @ApiProperty({ enum: ['BRANCH_BUNDLE', 'EXTRA_USER'] }) kind!: string;
+  @ApiProperty() quantity!: number;
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Per-unit price at the subscription interval; null if unpriced.',
+  })
+  unit_amount!: number | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Line total (unit_amount × quantity); null if unpriced.',
+  })
+  amount!: number | null;
+}
+
 export class AdminOrganizationDetailDto extends AdminOrganizationListItemDto {
   @ApiPropertyOptional({ nullable: true }) subscription_ends_at!: Date | null;
   @ApiPropertyOptional({ nullable: true }) trial_ends_at!: Date | null;
@@ -119,6 +136,8 @@ export class AdminOrganizationDetailDto extends AdminOrganizationListItemDto {
   recent_activity!: AdminOrgActivityDto[];
   @ApiProperty({ type: AdminOrgPortalDto })
   portal!: AdminOrgPortalDto;
+  @ApiProperty({ type: [AdminSubscriptionAddOnDto] })
+  add_ons!: AdminSubscriptionAddOnDto[];
 }
 
 export class AdminSubscriptionListItemDto {
@@ -145,6 +164,8 @@ export class AdminSubscriptionListItemDto {
   mrr!: number | null;
   @ApiProperty({ description: 'Count of ACTIVE add-ons on this subscription.' })
   add_on_count!: number;
+  @ApiProperty({ type: [AdminSubscriptionAddOnDto] })
+  add_ons!: AdminSubscriptionAddOnDto[];
 }
 
 export class AdminPlanOptionDto {
