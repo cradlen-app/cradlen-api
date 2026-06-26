@@ -43,14 +43,18 @@ export async function cleanDatabase(prisma: PrismaClient): Promise<void> {
   ).$executeRawUnsafe.bind(prisma);
 
   // TRUNCATE takes an ACCESS EXCLUSIVE lock on every listed table. The app
-  // under test runs background async work (scheduled cleanup crons, domain
-  // event-listener writes) that can momentarily hold a conflicting lock,
-  // surfacing as a transient `40P01 deadlock detected` (or `55P03 lock not
-  // available`). The loser is aborted immediately, so a short bounded retry
-  // clears it deterministically without masking a real failure.
+  // under test runs background async work — scheduled cleanup crons and
+  // fire-and-forget domain event-listener writes (e.g. the admin-notification
+  // listener reads `organizations` after an org is created) — that can hold a
+  // conflicting lock past the request boundary, surfacing as a transient
+  // `40P01 deadlock detected` (or `55P03 lock not available`). The loser is
+  // aborted immediately, so a bounded retry with growing backoff lets the
+  // lingering write drain and clears it deterministically without masking a
+  // real failure.
   const RETRYABLE = new Set(['40P01', '55P03']);
+  const MAX_ATTEMPTS = 8;
   let lastError: unknown;
-  for (let attempt = 1; attempt <= 5; attempt += 1) {
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     try {
       await exec(`TRUNCATE TABLE ${tableList} CASCADE`);
       return;
@@ -58,7 +62,9 @@ export async function cleanDatabase(prisma: PrismaClient): Promise<void> {
       const code = (error as { code?: string }).code;
       if (!RETRYABLE.has(code ?? '')) throw error;
       lastError = error;
-      await new Promise((resolve) => setTimeout(resolve, 150 * attempt));
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.min(1000, 200 * attempt)),
+      );
     }
   }
   throw lastError;
