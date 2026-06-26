@@ -154,9 +154,18 @@ export class AdminPaymentListItemDto {
     description: 'Provider-specific payment reference (e.g. InstaPay tx id).',
   })
   reference!: string | null;
+  @ApiProperty({ enum: ['MONTHLY', 'YEARLY'] })
+  billing_interval!: 'MONTHLY' | 'YEARLY';
   @ApiProperty({ description: 'Decimal serialized as string.' })
   amount!: string;
   @ApiProperty() currency!: string;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Full name of the staff member who submitted the payment.',
+  })
+  submitted_by_name!: string | null;
+  @ApiPropertyOptional({ nullable: true })
+  submitted_by_email!: string | null;
   @ApiPropertyOptional({ nullable: true }) verified_by_id!: string | null;
   @ApiPropertyOptional({ nullable: true }) verified_at!: Date | null;
   @ApiPropertyOptional({ nullable: true }) rejection_reason!: string | null;
@@ -164,6 +173,14 @@ export class AdminPaymentListItemDto {
 }
 
 export class AdminPaymentDetailDto extends AdminPaymentListItemDto {
+  @ApiPropertyOptional({ nullable: true })
+  submitted_by_phone!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Name of the platform admin who verified/rejected the payment.',
+  })
+  verified_by_name!: string | null;
   @ApiProperty({ type: [AdminPaymentProofDto] })
   proofs!: AdminPaymentProofDto[];
 }
