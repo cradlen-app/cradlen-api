@@ -218,6 +218,19 @@ export class AdminPaymentListItemDto {
   @ApiProperty() created_at!: Date;
 }
 
+export class AdminPaymentItemDto {
+  @ApiProperty({ enum: ['PLAN', 'ADD_ON'] }) kind!: 'PLAN' | 'ADD_ON';
+  @ApiProperty({
+    description: 'Plan name for the PLAN line, add-on name for ADD_ON lines.',
+  })
+  label!: string;
+  @ApiProperty() quantity!: number;
+  @ApiProperty({ description: 'Per-unit price; Decimal serialized as string.' })
+  unit_amount!: string;
+  @ApiProperty({ description: 'Line total (qty x unit); Decimal as string.' })
+  amount!: string;
+}
+
 export class AdminPaymentDetailDto extends AdminPaymentListItemDto {
   @ApiPropertyOptional({ nullable: true })
   submitted_by_phone!: string | null;
@@ -229,4 +242,9 @@ export class AdminPaymentDetailDto extends AdminPaymentListItemDto {
   verified_by_name!: string | null;
   @ApiProperty({ type: [AdminPaymentProofDto] })
   proofs!: AdminPaymentProofDto[];
+  @ApiProperty({
+    type: [AdminPaymentItemDto],
+    description: 'Line-item breakdown; empty for non-COMBINED payments.',
+  })
+  items!: AdminPaymentItemDto[];
 }
