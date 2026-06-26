@@ -107,6 +107,7 @@ enum VerificationPurpose {
   LOGIN
   PASSWORD_RESET
   ADMIN_LOGIN
+  ADMIN_SET_PASSWORD
 }
 
 enum JourneyTemplateType {

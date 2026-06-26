@@ -18,6 +18,7 @@ import { PatientAuthModule } from '@core/patient-portal/auth/patient-auth.module
 import { AdminAuthModule } from '@core/platform-admin/auth/admin-auth.module.js';
 import { AdminReadModule } from '@core/platform-admin/read/admin-read.module.js';
 import { AdminWriteModule } from '@core/platform-admin/write/admin-write.module.js';
+import { AdminsModule } from '@core/platform-admin/admins/admins.module.js';
 import { RolesModule } from '@core/org/roles/roles.module';
 import { OrganizationsModule } from '@core/org/organizations/organizations.module.js';
 import { BranchesModule } from '@core/org/branches/branches.module.js';
@@ -84,6 +85,7 @@ import { PermissionsModule } from '@common/authorization/permissions.module.js';
     AdminAuthModule,
     AdminReadModule,
     AdminWriteModule,
+    AdminsModule,
     RolesModule,
     OrganizationsModule,
     ProfilesModule,

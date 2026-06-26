@@ -24,6 +24,7 @@ import { AdminLoginResponseDto } from './dto/admin-login-response.dto.js';
 import { AdminVerifyOtpDto } from './dto/admin-verify-otp.dto.js';
 import { AdminResendOtpDto } from './dto/admin-resend-otp.dto.js';
 import { AdminMeResponseDto } from './dto/admin-me-response.dto.js';
+import { AdminSetPasswordDto } from './dto/admin-set-password.dto.js';
 
 @ApiTags('Platform Admin Auth')
 @Controller({ path: 'admin/auth', version: '1' })
@@ -65,6 +66,19 @@ export class AdminAuthController {
   @ApiVoidResponse()
   async resendOtp(@Body() dto: AdminResendOtpDto): Promise<void> {
     await this.adminAuthService.resendOtp(dto);
+  }
+
+  @Post('set-password')
+  @Public()
+  @UseGuards(IdentifierThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 600000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Set an invited admin password from the email token (and log in)',
+  })
+  @ApiStandardResponse(AuthTokensDto)
+  setPassword(@Body() dto: AdminSetPasswordDto): Promise<AuthTokensDto> {
+    return this.adminAuthService.setPassword(dto);
   }
 
   @Post('refresh')
