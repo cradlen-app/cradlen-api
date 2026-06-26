@@ -1,8 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import {
-  SubscriptionStatus,
-  SubscriptionPaymentStatus,
-} from '@prisma/client';
+import { SubscriptionStatus, SubscriptionPaymentStatus } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import type {
   AdminMetricsOverviewDto,

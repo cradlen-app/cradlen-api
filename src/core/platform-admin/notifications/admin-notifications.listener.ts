@@ -49,7 +49,9 @@ export class AdminNotificationsListener {
   }
 
   @OnEvent(SUBSCRIPTION_EVENTS.payment.submitted)
-  async onPaymentSubmitted(e: SubscriptionPaymentSubmittedEvent): Promise<void> {
+  async onPaymentSubmitted(
+    e: SubscriptionPaymentSubmittedEvent,
+  ): Promise<void> {
     const orgName = await this.orgName(e.organization_id);
     await this.safeCreate('subscription_payment.submitted', {
       type: AdminNotificationType.PAYMENT_SUBMITTED,

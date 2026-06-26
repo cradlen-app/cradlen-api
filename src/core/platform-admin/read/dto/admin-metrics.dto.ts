@@ -18,7 +18,9 @@ export class RevenuePointDto {
  */
 export class AdminMetricsOverviewDto {
   @ApiProperty() organizations_total!: number;
-  @ApiProperty({ description: 'Organizations created since the 1st of this month.' })
+  @ApiProperty({
+    description: 'Organizations created since the 1st of this month.',
+  })
   organizations_added_this_month!: number;
   @ApiProperty() active_subscriptions!: number;
   @ApiProperty({ description: 'Payments in AWAITING_VERIFICATION.' })

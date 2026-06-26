@@ -384,10 +384,13 @@ export class OrganizationsService {
 
     // Fan-out for admin notifications / analytics. Best-effort: a subscriber
     // failure cannot fail org creation (see EventBus contract).
-    this.eventBus.publish<OrganizationCreatedEvent>(ORGANIZATION_EVENTS.created, {
-      organization_id: organization.id,
-      organization_name: organization.name,
-    });
+    this.eventBus.publish<OrganizationCreatedEvent>(
+      ORGANIZATION_EVENTS.created,
+      {
+        organization_id: organization.id,
+        organization_name: organization.name,
+      },
+    );
     this.eventBus.publish<OrganizationTrialStartedEvent>(
       ORGANIZATION_EVENTS.trialStarted,
       {

@@ -48,7 +48,9 @@ export class AdminReadController {
   ) {}
 
   @Get('metrics/overview')
-  @ApiOperation({ summary: 'Aggregated metrics for the admin Overview dashboard' })
+  @ApiOperation({
+    summary: 'Aggregated metrics for the admin Overview dashboard',
+  })
   @ApiStandardResponse(AdminMetricsOverviewDto)
   getMetricsOverview(): Promise<AdminMetricsOverviewDto> {
     return this.metrics.getOverview();
