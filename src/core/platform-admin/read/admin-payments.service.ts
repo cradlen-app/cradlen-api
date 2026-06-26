@@ -79,6 +79,10 @@ export class AdminPaymentsService {
           where: { is_deleted: false },
           orderBy: { created_at: 'desc' },
         },
+        items: {
+          where: { is_deleted: false },
+          include: { add_on: true, subscription_plan: true },
+        },
       },
     });
     if (!payment) throw new NotFoundException('Payment not found');
@@ -106,11 +110,26 @@ export class AdminPaymentsService {
 
     const submitter = submitters.get(payment.submitted_by_id ?? '');
 
+    // PLAN line first, then add-ons — nested-create rows can share created_at.
+    const items = payment.items
+      .map((it) => ({
+        kind: it.kind,
+        label:
+          it.kind === 'PLAN'
+            ? (it.subscription_plan?.plan ?? 'Plan')
+            : (it.add_on?.name ?? 'Add-on'),
+        quantity: it.quantity,
+        unit_amount: it.unit_amount.toString(),
+        amount: it.amount.toString(),
+      }))
+      .sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'PLAN' ? -1 : 1));
+
     return {
       ...this.toListItem(payment, submitter),
       submitted_by_phone: submitter?.phone ?? null,
       verified_by_name: verifier?.full_name ?? null,
       proofs,
+      items,
     };
   }
 
