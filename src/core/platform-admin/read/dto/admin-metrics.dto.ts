@@ -37,4 +37,16 @@ export class AdminMetricsOverviewDto {
   revenue_history!: RevenuePointDto[];
   @ApiProperty({ type: [PlanDistributionItemDto] })
   plan_distribution!: PlanDistributionItemDto[];
+  @ApiProperty({
+    description: 'Active patient-portal logins across the platform.',
+  })
+  portal_accounts_total!: number;
+  @ApiProperty({ description: 'Distinct patients with an ACTIVE enrollment.' })
+  enrolled_patients_total!: number;
+  @ApiProperty({
+    nullable: true,
+    description:
+      'portal_accounts_total / enrolled_patients_total as a percent.',
+  })
+  portal_activation_rate!: number | null;
 }

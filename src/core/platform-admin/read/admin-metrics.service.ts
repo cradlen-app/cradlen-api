@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { SubscriptionStatus, SubscriptionPaymentStatus } from '@prisma/client';
+import {
+  PatientOrgEnrollmentStatus,
+  SubscriptionStatus,
+  SubscriptionPaymentStatus,
+} from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import type {
   AdminMetricsOverviewDto,
@@ -38,6 +42,8 @@ export class AdminMetricsService {
       activeSubs,
       verifiedPayments,
       setting,
+      portal_accounts_total,
+      enrolled_patients_total,
     ] = await Promise.all([
       db.organization.count({ where: { is_deleted: false } }),
       db.organization.count({
@@ -65,6 +71,19 @@ export class AdminMetricsService {
         select: { amount: true, verified_at: true },
       }),
       db.platformSetting.findFirst(),
+      db.patientAccount.count({
+        where: {
+          is_deleted: false,
+          is_active: true,
+          patient_id: { not: null },
+        },
+      }),
+      db.patientOrgEnrollment.count({
+        where: {
+          is_deleted: false,
+          status: PatientOrgEnrollmentStatus.ACTIVE,
+        },
+      }),
     ]);
 
     // Plan distribution — group active subscriptions by plan name.
@@ -109,6 +128,12 @@ export class AdminMetricsService {
       mrr_change_pct,
       revenue_history,
       plan_distribution,
+      portal_accounts_total,
+      enrolled_patients_total,
+      portal_activation_rate:
+        enrolled_patients_total > 0
+          ? round2((portal_accounts_total / enrolled_patients_total) * 100)
+          : null,
     };
   }
 }

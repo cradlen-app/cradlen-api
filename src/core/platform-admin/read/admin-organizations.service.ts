@@ -1,11 +1,17 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { BillingInterval, Prisma, SubscriptionStatus } from '@prisma/client';
+import {
+  BillingInterval,
+  PatientOrgEnrollmentStatus,
+  Prisma,
+  SubscriptionStatus,
+} from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { paginated } from '@common/utils/pagination.utils.js';
 import { OWNER_ROLE_CODE } from '@core/org/organizations/organizations.constants.js';
 import type { AdminOrganizationsQueryDto } from './dto/admin-list-query.dto.js';
 import type {
   AdminOrgBillingDto,
+  AdminOrgPortalDto,
   AdminOrganizationDetailDto,
   AdminOrganizationListItemDto,
 } from './dto/admin-read-response.dto.js';
@@ -69,6 +75,12 @@ export class AdminOrganizationsService {
           select: {
             branches: { where: { is_deleted: false } },
             profiles: { where: { is_deleted: false, is_active: true } },
+            patient_org_enrollments: {
+              where: {
+                status: PatientOrgEnrollmentStatus.ACTIVE,
+                is_deleted: false,
+              },
+            },
           },
         },
         subscriptions: {
@@ -127,6 +139,11 @@ export class AdminOrganizationsService {
       select: { type: true, title: true, body: true, created_at: true },
     });
 
+    const portal = await this.portalStats(
+      id,
+      org._count.patient_org_enrollments,
+    );
+
     return {
       ...this.mapListFields(org),
       subscription_ends_at: sub?.ends_at ?? null,
@@ -160,6 +177,74 @@ export class AdminOrganizationsService {
           }
         : null,
       recent_activity: activity,
+      portal,
+    };
+  }
+
+  /**
+   * Patient-portal adoption for one org. `enrolled` comes from the org `_count`
+   * (distinct ACTIVE enrollments); the rest are keyed to those patients. Portal
+   * accounts are patient-only (guardians are proxies, excluded). "Active this
+   * month" = distinct enrolled patients with a Visit check-in since the 1st,
+   * deduped in TS since Prisma `distinct` can't span the visit→episode→journey
+   * relation.
+   */
+  private async portalStats(
+    organizationId: string,
+    enrolled: number,
+  ): Promise<AdminOrgPortalDto> {
+    const db = this.prismaService.db;
+    const now = new Date();
+    const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const enrollments = await db.patientOrgEnrollment.findMany({
+      where: {
+        organization_id: organizationId,
+        status: PatientOrgEnrollmentStatus.ACTIVE,
+        is_deleted: false,
+      },
+      select: { patient_id: true },
+    });
+    const patientIds = enrollments.map((e) => e.patient_id);
+
+    const [portal_accounts, active_accounts, monthVisits] = await Promise.all([
+      patientIds.length
+        ? db.patientAccount.count({
+            where: { is_deleted: false, patient_id: { in: patientIds } },
+          })
+        : Promise.resolve(0),
+      patientIds.length
+        ? db.patientAccount.count({
+            where: {
+              is_deleted: false,
+              is_active: true,
+              patient_id: { in: patientIds },
+            },
+          })
+        : Promise.resolve(0),
+      db.visit.findMany({
+        where: {
+          is_deleted: false,
+          checked_in_at: { gte: startOfThisMonth },
+          branch: { organization_id: organizationId },
+        },
+        select: {
+          episode: { select: { journey: { select: { patient_id: true } } } },
+        },
+      }),
+    ]);
+
+    const activePatients = new Set(
+      monthVisits.map((v) => v.episode.journey.patient_id),
+    );
+
+    return {
+      enrolled_patients: enrolled,
+      portal_accounts,
+      active_accounts,
+      activation_rate:
+        enrolled > 0 ? round2((portal_accounts / enrolled) * 100) : null,
+      active_this_month: activePatients.size,
     };
   }
 
@@ -169,6 +254,12 @@ export class AdminOrganizationsService {
         select: {
           branches: { where: { is_deleted: false } },
           profiles: { where: { is_deleted: false, is_active: true } },
+          patient_org_enrollments: {
+            where: {
+              status: PatientOrgEnrollmentStatus.ACTIVE,
+              is_deleted: false,
+            },
+          },
         },
       },
       subscriptions: {
@@ -207,7 +298,11 @@ export class AdminOrganizationsService {
     name: string;
     status: AdminOrganizationListItemDto['status'];
     created_at: Date;
-    _count: { branches: number; profiles: number };
+    _count: {
+      branches: number;
+      profiles: number;
+      patient_org_enrollments: number;
+    };
     subscriptions: {
       status: string;
       subscription_plan: {
@@ -234,6 +329,7 @@ export class AdminOrganizationsService {
       status: org.status,
       branch_count: org._count.branches,
       staff_count: org._count.profiles,
+      enrolled_patients: org._count.patient_org_enrollments,
       subscription_status:
         (sub?.status as AdminOrganizationListItemDto['subscription_status']) ??
         null,
