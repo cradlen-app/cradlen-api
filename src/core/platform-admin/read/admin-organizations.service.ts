@@ -3,11 +3,13 @@ import {
   BillingInterval,
   PatientOrgEnrollmentStatus,
   Prisma,
+  SubscriptionAddOnStatus,
   SubscriptionStatus,
 } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { paginated } from '@common/utils/pagination.utils.js';
 import { OWNER_ROLE_CODE } from '@core/org/organizations/organizations.constants.js';
+import { mapAddOns } from './admin-add-on.util.js';
 import type { AdminOrganizationsQueryDto } from './dto/admin-list-query.dto.js';
 import type {
   AdminOrgBillingDto,
@@ -93,6 +95,19 @@ export class AdminOrganizationsService {
                 prices: { where: { is_active: true, is_deleted: false } },
               },
             },
+            add_ons: {
+              where: {
+                status: SubscriptionAddOnStatus.ACTIVE,
+                is_deleted: false,
+              },
+              include: {
+                add_on: {
+                  include: {
+                    prices: { where: { is_active: true, is_deleted: false } },
+                  },
+                },
+              },
+            },
           },
         },
         branches: {
@@ -131,6 +146,7 @@ export class AdminOrganizationsService {
 
     const sub = org.subscriptions[0] ?? null;
     const plan = sub?.subscription_plan ?? null;
+    const billing = plan ? this.priceInfo(plan.prices) : null;
     const main = org.branches[0] ?? null;
     const activity = await this.prismaService.db.adminNotification.findMany({
       where: { organization_id: id },
@@ -157,7 +173,7 @@ export class AdminOrganizationsService {
             specialty: org.profiles[0].specialty?.name ?? null,
           }
         : null,
-      billing: plan ? this.priceInfo(plan.prices) : null,
+      billing,
       plan_limits: plan
         ? { max_branches: plan.max_branches, max_staff: plan.max_staff }
         : null,
@@ -178,6 +194,7 @@ export class AdminOrganizationsService {
         : null,
       recent_activity: activity,
       portal,
+      add_ons: sub ? mapAddOns(sub.add_ons, billing?.interval ?? null) : [],
     };
   }
 
