@@ -7,7 +7,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { paginated } from '@common/utils/pagination.utils.js';
-import { mapAddOns } from './admin-add-on.util.js';
+import { mapAddOns, addOnsMonthlyEquivalent } from './admin-add-on.util.js';
 import type { AdminSubscriptionsQueryDto } from './dto/admin-list-query.dto.js';
 import type {
   AdminPlanOptionDto,
@@ -88,6 +88,11 @@ export class AdminSubscriptionsService {
       subs.map((s): AdminSubscriptionListItemDto => {
         const billing = this.priceInfo(s.subscription_plan.prices);
         const add_ons = mapAddOns(s.add_ons, billing?.interval ?? null);
+        const planMrr = this.monthlyEquivalent(billing);
+        const addMrr = addOnsMonthlyEquivalent(
+          add_ons,
+          billing?.interval ?? null,
+        );
         return {
           id: s.id,
           organization_id: s.organization_id,
@@ -102,7 +107,9 @@ export class AdminSubscriptionsService {
           currency: billing?.currency ?? null,
           mrr:
             s.status === SubscriptionStatus.ACTIVE
-              ? this.monthlyEquivalent(billing)
+              ? planMrr == null && addMrr === 0
+                ? null
+                : round2((planMrr ?? 0) + addMrr)
               : null,
           add_on_count: add_ons.length,
           add_ons,
@@ -114,36 +121,58 @@ export class AdminSubscriptionsService {
 
   /** Global headline stats — counts by status, total MRR, and the plan mix. */
   async stats(): Promise<AdminSubscriptionStatsDto> {
-    const [byStatus, byPlan, plans] = await Promise.all([
+    // ACTIVE subs are loaded individually (not grouped) so per-subscription
+    // add-on quantities can be folded into MRR — keeping the header equal to the
+    // sum of the list's per-row `mrr`.
+    const [byStatus, activeSubs] = await Promise.all([
       this.prismaService.db.subscription.groupBy({
         by: ['status'],
         where: { is_deleted: false },
         _count: true,
       }),
-      this.prismaService.db.subscription.groupBy({
-        by: ['subscription_plan_id'],
+      this.prismaService.db.subscription.findMany({
         where: { is_deleted: false, status: SubscriptionStatus.ACTIVE },
-        _count: true,
-      }),
-      this.prismaService.db.subscriptionPlan.findMany({
-        include: { prices: { where: { is_active: true, is_deleted: false } } },
+        include: {
+          subscription_plan: {
+            include: {
+              prices: { where: { is_active: true, is_deleted: false } },
+            },
+          },
+          add_ons: {
+            where: {
+              status: SubscriptionAddOnStatus.ACTIVE,
+              is_deleted: false,
+            },
+            include: {
+              add_on: {
+                include: {
+                  prices: { where: { is_active: true, is_deleted: false } },
+                },
+              },
+            },
+          },
+        },
       }),
     ]);
 
     const counts = (status: SubscriptionStatus) =>
       byStatus.find((g) => g.status === status)?._count ?? 0;
 
-    const planById = new Map(plans.map((p) => [p.id, p]));
     let mrr = 0;
     let currency = 'EGP';
-    const plan_distribution = byPlan
-      .map((g) => {
-        const plan = planById.get(g.subscription_plan_id);
-        const billing = plan ? this.priceInfo(plan.prices) : null;
-        if (billing) currency = billing.currency;
-        mrr += (this.monthlyEquivalent(billing) ?? 0) * g._count;
-        return { plan: plan?.plan ?? 'unknown', count: g._count };
-      })
+    const planCounts = new Map<string, number>();
+    for (const s of activeSubs) {
+      const billing = this.priceInfo(s.subscription_plan.prices);
+      if (billing) currency = billing.currency;
+      const add_ons = mapAddOns(s.add_ons, billing?.interval ?? null);
+      mrr +=
+        (this.monthlyEquivalent(billing) ?? 0) +
+        addOnsMonthlyEquivalent(add_ons, billing?.interval ?? null);
+      const plan = s.subscription_plan.plan;
+      planCounts.set(plan, (planCounts.get(plan) ?? 0) + 1);
+    }
+    const plan_distribution = [...planCounts.entries()]
+      .map(([plan, count]) => ({ plan, count }))
       .sort((a, b) => b.count - a.count);
 
     return {
