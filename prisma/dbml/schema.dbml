@@ -248,6 +248,7 @@ Table users {
   verified_at DateTime
   registration_status RegistrationStatus [not null, default: 'PENDING']
   onboarding_completed Boolean [not null, default: false]
+  last_active_at DateTime
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   profiles profiles [not null]
@@ -271,6 +272,7 @@ Table patient_accounts {
   patient patients
   guardian guardians
   refreshTokens refresh_tokens [not null]
+  last_active_at DateTime
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
 }
@@ -300,6 +302,17 @@ Table platform_settings {
   default_currency String [not null, default: 'EGP']
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
+}
+
+Table daily_metric_snapshots {
+  id String [pk]
+  date DateTime [unique, not null]
+  active_staff Int [not null]
+  total_staff Int [not null]
+  active_portals Int [not null]
+  total_portals Int [not null]
+  total_enrolled_patients Int [not null]
+  created_at DateTime [default: `now()`, not null]
 }
 
 Table admin_notifications {
