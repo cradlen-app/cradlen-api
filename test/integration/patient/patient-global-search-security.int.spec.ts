@@ -135,7 +135,11 @@ describe('Patients — global lookup for booking autocomplete (integration)', ()
   });
 
   it('GET /patients/:id/identity reveals full identity for a chosen cross-org patient', async () => {
-    const id = await createPatient('Hana Said', 'NID-777888999', '+201000000009');
+    const id = await createPatient(
+      'Hana Said',
+      'NID-777888999',
+      '+201000000009',
+    );
     const res = await auth(
       request(app.getHttpServer()).get(`/v1/patients/${id}/identity`),
     ).expect(200);

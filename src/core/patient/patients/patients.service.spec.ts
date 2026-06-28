@@ -298,20 +298,32 @@ describe('PatientsService', () => {
     });
 
     it('merges both tiers, with own winning over a duplicate cross-org id', async () => {
-      const own = { id: 'p-own', full_name: 'Mine', phone_number: '0100000111' };
+      const own = {
+        id: 'p-own',
+        full_name: 'Mine',
+        phone_number: '0100000111',
+      };
       const crossNew = {
         id: 'p-cross',
         full_name: 'Other Clinic Patient',
         phone_number: '0100000222',
       };
-      const crossDup = { id: 'p-own', full_name: 'stale dup', phone_number: '0' };
+      const crossDup = {
+        id: 'p-own',
+        full_name: 'stale dup',
+        phone_number: '0',
+      };
       db.$transaction.mockResolvedValue([[own], [crossNew, crossDup]]);
 
       const result = await service.searchGlobal({ search: 'x' }, mockUser);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       expect((result as any).items).toEqual([
         { id: 'p-own', full_name: 'Mine', phone_last3: '111' },
-        { id: 'p-cross', full_name: 'Other Clinic Patient', phone_last3: '222' },
+        {
+          id: 'p-cross',
+          full_name: 'Other Clinic Patient',
+          phone_last3: '222',
+        },
       ]);
     });
 
