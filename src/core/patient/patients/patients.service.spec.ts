@@ -32,6 +32,7 @@ describe('PatientsService', () => {
   let db: {
     patient: {
       findUnique: jest.Mock;
+      findFirst: jest.Mock;
       findMany: jest.Mock;
       count: jest.Mock;
       create: jest.Mock;
@@ -56,6 +57,7 @@ describe('PatientsService', () => {
     db = {
       patient: {
         findUnique: jest.fn(),
+        findFirst: jest.fn(),
         findMany: jest.fn(),
         count: jest.fn(),
         create: jest.fn(),
@@ -219,7 +221,7 @@ describe('PatientsService', () => {
   });
 
   describe('searchGlobal', () => {
-    it('tier A: fuzzy name/id/phone scoped to the caller org, returning full identity', async () => {
+    it('tier A: fuzzy name/id/phone scoped to the caller org', async () => {
       db.$transaction.mockResolvedValue([[mockPatient], []]);
       const result = await service.searchGlobal({ search: 'Sara' }, mockUser);
 
@@ -232,14 +234,14 @@ describe('PatientsService', () => {
         { national_id: { contains: 'Sara' } },
         { phone_number: { contains: 'Sara' } },
       ]);
-      // Own patients prefill the booking form → full identity projection.
-      expect(ownCall.select.date_of_birth).toBe(true);
-      expect(ownCall.select.address).toBe(true);
+      // Disambiguation-only output: name + last 3 of phone, never full PII.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      expect((result as any).items).toEqual([mockPatient]);
+      expect((result as any).items).toEqual([
+        { id: mockPatient.id, full_name: 'Sara Ali', phone_last3: '678' },
+      ]);
     });
 
-    it('tier B: cross-org fuzzy lookup over the shared registry (accepted product tradeoff, F7)', async () => {
+    it('tier B: cross-org lookup over the shared registry (global master index)', async () => {
       db.$transaction.mockResolvedValue([[], []]);
       await service.searchGlobal({ search: 'Sara' }, mockUser);
 
@@ -252,19 +254,77 @@ describe('PatientsService', () => {
         { national_id: { contains: 'Sara' } },
         { phone_number: { contains: 'Sara' } },
       ]);
-      // Full identity is returned to prefill the booking form.
-      expect(crossCall.select.date_of_birth).toBe(true);
     });
 
-    it('merges both tiers, with own (full) winning over a duplicate cross-org id', async () => {
-      const own = { ...mockPatient, id: 'p-own' };
-      const crossNew = { id: 'p-cross', full_name: 'Other Clinic Patient' };
-      const crossDup = { id: 'p-own', full_name: 'stale dup' };
+    it('SECURITY (F7): never selects or returns cross-org PII from search', async () => {
+      db.$transaction.mockResolvedValue([[], [mockPatient]]);
+      const result = await service.searchGlobal({ search: 'Sara' }, mockUser);
+
+      // The query must not even SELECT the sensitive columns…
+      for (const call of db.patient.findMany.mock.calls) {
+        const select = call[0].select;
+        expect(select).toEqual({
+          id: true,
+          full_name: true,
+          phone_number: true,
+        });
+        expect(select.national_id).toBeUndefined();
+        expect(select.date_of_birth).toBeUndefined();
+        expect(select.address).toBeUndefined();
+        expect(select.marital_status).toBeUndefined();
+      }
+      // …and the returned rows expose none of it (only name + last-3 phone).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const row = (result as any).items[0];
+      expect(Object.keys(row).sort()).toEqual([
+        'full_name',
+        'id',
+        'phone_last3',
+      ]);
+      expect(row.national_id).toBeUndefined();
+      expect(row.date_of_birth).toBeUndefined();
+      expect(row.address).toBeUndefined();
+      expect(row.phone_number).toBeUndefined();
+    });
+
+    it('phone_last3 is null when the matched record has no phone', async () => {
+      db.$transaction.mockResolvedValue([
+        [{ id: 'p1', full_name: 'No Phone', phone_number: null }],
+        [],
+      ]);
+      const result = await service.searchGlobal({ search: 'No' }, mockUser);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((result as any).items[0].phone_last3).toBeNull();
+    });
+
+    it('merges both tiers, with own winning over a duplicate cross-org id', async () => {
+      const own = {
+        id: 'p-own',
+        full_name: 'Mine',
+        phone_number: '0100000111',
+      };
+      const crossNew = {
+        id: 'p-cross',
+        full_name: 'Other Clinic Patient',
+        phone_number: '0100000222',
+      };
+      const crossDup = {
+        id: 'p-own',
+        full_name: 'stale dup',
+        phone_number: '0',
+      };
       db.$transaction.mockResolvedValue([[own], [crossNew, crossDup]]);
 
       const result = await service.searchGlobal({ search: 'x' }, mockUser);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      expect((result as any).items).toEqual([own, crossNew]);
+      expect((result as any).items).toEqual([
+        { id: 'p-own', full_name: 'Mine', phone_last3: '111' },
+        {
+          id: 'p-cross',
+          full_name: 'Other Clinic Patient',
+          phone_last3: '222',
+        },
+      ]);
     });
 
     it('contrast: findAll (org roster) still scopes by enrollment for the same caller', async () => {
@@ -284,6 +344,31 @@ describe('PatientsService', () => {
       );
       expect(db.patient.findMany.mock.calls[0][0].take).toBe(20);
       expect(db.patient.findMany.mock.calls[1][0].take).toBe(20);
+    });
+  });
+
+  describe('resolveIdentity', () => {
+    it('returns the full identity for an exact id, NOT org-scoped (cross-org prefill)', async () => {
+      db.patient.findFirst.mockResolvedValue(mockPatient);
+      const result = await service.resolveIdentity('patient-uuid', mockUser);
+
+      const call = db.patient.findFirst.mock.calls[0][0];
+      // Global by exact id — no org/enrollment filter (booking prefill needs a
+      // patient first seen elsewhere). The unguessable UUID is the gate.
+      expect(call.where).toEqual({ id: 'patient-uuid', is_deleted: false });
+      expect(call.where.enrollments).toBeUndefined();
+      // Full identity is the whole point here.
+      expect(call.select.national_id).toBe(true);
+      expect(call.select.date_of_birth).toBe(true);
+      expect(call.select.address).toBe(true);
+      expect(result).toEqual(mockPatient);
+    });
+
+    it('throws NotFoundException when the id does not resolve', async () => {
+      db.patient.findFirst.mockResolvedValue(null);
+      await expect(
+        service.resolveIdentity('missing-uuid', mockUser),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 

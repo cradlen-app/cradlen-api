@@ -1,6 +1,7 @@
 import {
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
@@ -51,6 +52,8 @@ function branchCheckinEpisodeFilter(
 
 @Injectable()
 export class PatientsService {
+  private readonly logger = new Logger(PatientsService.name);
+
   constructor(
     private readonly prismaService: PrismaService,
     private readonly authorizationService: AuthorizationService,
@@ -85,15 +88,17 @@ export class PatientsService {
   /**
    * Global patient lookup for the book-visit autocomplete. By product design the
    * `Patient` record is a GLOBAL master index (org-scoping lives on Journey, not
-   * Patient), so a clinic can find and prefill from a patient first registered at
-   * any other clinic. The lookup fuzzy-matches by name / national id / phone
-   * across all organizations and returns the full identity needed to prefill the
-   * booking form.
+   * Patient), so a clinic can find a patient first registered at any other clinic.
+   * The lookup fuzzy-matches by name / national id / phone across all orgs.
    *
-   * The caller's own enrolled patients rank first (the common case), then matches
-   * from other orgs. Authentication is required and results are capped per page;
-   * the cross-org exposure of the shared registry is an accepted product decision
-   * (see SECURITY-ASSESSMENT.md F7). `search` is pre-validated by the DTO.
+   * IMPORTANT: results expose ONLY enough to disambiguate — `full_name` plus the
+   * last 3 digits of the phone. Full PII (national id, DOB, address, full phone)
+   * is NEVER returned here; it is revealed one record at a time, on explicit
+   * selection, via {@link resolveIdentity} (throttled + audited). Returning full
+   * PII from a `contains` search would let any authenticated user enumerate and
+   * harvest the entire multi-tenant patient population — the F7 regression this
+   * guards against. The caller's own enrolled patients rank first; `search` is
+   * pre-validated (≥2 chars) by the DTO.
    */
   async searchGlobal(query: SearchPatientsQueryDto, user: AuthContext) {
     const limit = Math.min(query.limit ?? 20, 20);
@@ -104,15 +109,11 @@ export class PatientsService {
       { national_id: { contains: search } },
       { phone_number: { contains: search } },
     ];
+    // Minimal disambiguation projection only — see method doc.
     const select = {
       id: true,
       full_name: true,
-      national_id: true,
       phone_number: true,
-      date_of_birth: true,
-      address: true,
-      marital_status: true,
-      created_at: true,
     };
 
     const [own, all] = await this.prismaService.db.$transaction([
@@ -137,13 +138,47 @@ export class PatientsService {
     ]);
 
     // Caller's own patients first; then any other-org matches, deduped + capped.
+    // Reduce each row to the disambiguation-only shape (no cross-org PII).
     const ownIds = new Set(own.map((p) => p.id));
-    const items = [...own, ...all.filter((p) => !ownIds.has(p.id))].slice(
-      0,
-      limit,
-    );
+    const items = [...own, ...all.filter((p) => !ownIds.has(p.id))]
+      .slice(0, limit)
+      .map((p) => ({
+        id: p.id,
+        full_name: p.full_name,
+        phone_last3: p.phone_number ? p.phone_number.slice(-3) : null,
+      }));
 
     return paginated(items, { page: 1, limit, total: items.length });
+  }
+
+  /**
+   * Reveal a single patient's FULL identity for booking prefill, by exact id.
+   * Deliberately NOT org-scoped: the book-visit flow must prefill a patient first
+   * registered at another clinic. Safe because the id is an unguessable UUID the
+   * caller obtained from an explicit {@link searchGlobal} selection — there is no
+   * enumeration surface. The route is throttled and every reveal is audit-logged,
+   * so the one-record-at-a-time disclosure cannot be turned into a bulk harvest.
+   */
+  async resolveIdentity(id: string, user: AuthContext) {
+    const patient = await this.prismaService.db.patient.findFirst({
+      where: { id, is_deleted: false },
+      select: {
+        id: true,
+        full_name: true,
+        national_id: true,
+        date_of_birth: true,
+        phone_number: true,
+        address: true,
+        marital_status: true,
+        created_at: true,
+      },
+    });
+    if (!patient) throw new NotFoundException(`Patient ${id} not found`);
+
+    this.logger.log(
+      `patient.identity.resolve user=${user.userId} profile=${user.profileId} org=${user.organizationId} patient=${id}`,
+    );
+    return patient;
   }
 
   async findAll(query: ListPatientsQueryDto, user: AuthContext) {
