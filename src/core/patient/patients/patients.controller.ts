@@ -9,6 +9,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { PatientsService } from './patients.service.js';
 import { CreatePatientDto } from './dto/create-patient.dto.js';
 import { UpdatePatientDto } from './dto/update-patient.dto.js';
@@ -20,6 +21,7 @@ import {
   PatientDto,
   PatientLookupDto,
   BranchPatientDto,
+  PatientSearchResultDto,
 } from './dto/patient.dto.js';
 import { PatientStatsDto } from './dto/patient-stats.dto.js';
 import { ApiStandardResponse, ApiPaginatedResponse } from '@common/swagger';
@@ -60,12 +62,26 @@ export class PatientsController {
   // clinic find a patient first registered elsewhere. The org roster stays
   // scoped via `findAll` above.
   @Get('/patients/search')
-  @ApiPaginatedResponse(PatientDto)
+  @ApiPaginatedResponse(PatientSearchResultDto)
   searchGlobal(
     @Query() query: SearchPatientsQueryDto,
     @CurrentUser() user: AuthContext,
   ) {
     return this.patientsService.searchGlobal(query, user);
+  }
+
+  // Per-record identity reveal for the book-visit prefill: returns the full
+  // identity of a patient selected from the (minimal) global search — including
+  // those at other clinics. Throttled + audited (in the service) so it can't be
+  // chained back into bulk PII harvesting. Declared before `/patients/:id`.
+  @Get('/patients/:id/identity')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @ApiStandardResponse(PatientDto)
+  resolveIdentity(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.patientsService.resolveIdentity(id, user);
   }
 
   // Declared before `/patients/:id` so "stats" isn't parsed as a patient id.

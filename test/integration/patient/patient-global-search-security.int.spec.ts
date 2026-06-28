@@ -14,10 +14,14 @@ import { seedOrg } from '../../helpers/financial-helpers';
 /**
  * GET /v1/patients/search — the GLOBAL book-visit autocomplete. By product design
  * `Patient` is a global master index, so a clinic can find a patient first
- * registered anywhere by name OR national id and prefill the booking form with
- * full identity. The caller's own enrolled patients rank first. (Cross-org
- * exposure of the shared registry is an accepted product decision — see
- * SECURITY-ASSESSMENT.md F7.)
+ * registered anywhere by name OR national id. The caller's own enrolled patients
+ * rank first.
+ *
+ * SECURITY (F7): search returns disambiguation-only fields (full_name + last 3 of
+ * phone) — NEVER cross-org national id / DOB / address / full phone, which would
+ * make the shared registry bulk-harvestable. Full identity is revealed one record
+ * at a time, on explicit selection, via GET /v1/patients/:id/identity (throttled +
+ * audited).
  */
 describe('Patients — global lookup for booking autocomplete (integration)', () => {
   let app: INestApplication;
@@ -107,24 +111,48 @@ describe('Patients — global lookup for booking autocomplete (integration)', ()
       ),
     );
 
-  it('finds a cross-org patient by partial name with full info (prefill)', async () => {
+  it('finds a cross-org patient by partial name — disambiguation fields only', async () => {
     await createPatient('Mariam Adel', 'NID-111222333', '+201000000001');
     const res = await search('Mariam').expect(200);
     expect(res.body.data).toHaveLength(1);
     const row = res.body.data[0];
     expect(row.full_name).toBe('Mariam Adel');
-    // Full identity is returned so the booking form can prefill.
-    expect(row.national_id).toBe('NID-111222333');
-    expect(row.phone_number).toBe('+201000000001');
-    expect(row).toHaveProperty('date_of_birth');
-    expect(row).toHaveProperty('address');
+    expect(row.phone_last3).toBe('001');
+    // SECURITY: no cross-org PII is exposed by the search itself.
+    expect(row.national_id).toBeUndefined();
+    expect(row.phone_number).toBeUndefined();
+    expect(row.date_of_birth).toBeUndefined();
+    expect(row.address).toBeUndefined();
+    expect(Object.keys(row).sort()).toEqual(['full_name', 'id', 'phone_last3']);
   });
 
-  it('finds a cross-org patient by partial national id', async () => {
+  it('finds a cross-org patient by partial national id (still no PII returned)', async () => {
     await createPatient('Omar Khaled', 'NID-555444333', '+201000000002');
     const res = await search('NID-555').expect(200);
     expect(res.body.data).toHaveLength(1);
     expect(res.body.data[0].full_name).toBe('Omar Khaled');
+    expect(res.body.data[0].national_id).toBeUndefined();
+  });
+
+  it('GET /patients/:id/identity reveals full identity for a chosen cross-org patient', async () => {
+    const id = await createPatient('Hana Said', 'NID-777888999', '+201000000009');
+    const res = await auth(
+      request(app.getHttpServer()).get(`/v1/patients/${id}/identity`),
+    ).expect(200);
+    const row = res.body.data;
+    expect(row.full_name).toBe('Hana Said');
+    expect(row.national_id).toBe('NID-777888999');
+    expect(row.phone_number).toBe('+201000000009');
+    expect(row).toHaveProperty('date_of_birth');
+    expect(row).toHaveProperty('address');
+  });
+
+  it('GET /patients/:id/identity returns 404 for an unknown id', async () => {
+    await auth(
+      request(app.getHttpServer()).get(
+        '/v1/patients/00000000-0000-0000-0000-000000000000/identity',
+      ),
+    ).expect(404);
   });
 
   it("ranks the caller's own enrolled patient first", async () => {
