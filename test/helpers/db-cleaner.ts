@@ -29,6 +29,36 @@ const TABLES = [
   'organizations',
 ];
 
+/**
+ * Decide whether a TRUNCATE failure is a transient lock conflict worth retrying.
+ *
+ * A `$executeRawUnsafe` failure is wrapped by Prisma as a
+ * `PrismaClientKnownRequestError` whose top-level `code` is the generic
+ * `"P2010"` ("Raw query failed") — the underlying Postgres SQLSTATE (`40P01`
+ * deadlock / `55P03` lock not available) is carried in `error.meta` as a driver
+ * adapter error and rendered into the message string ("Raw query failed. Code:
+ * `40P01`"), NOT in `error.code`. So matching on `error.code` alone never sees
+ * the lock codes. We check the top-level code, any nested meta code, and the
+ * message text so detection holds across Prisma's driver-adapter and classic
+ * error shapes.
+ */
+function isRetryableLockError(
+  error: unknown,
+  retryableSqlStates: readonly string[],
+): boolean {
+  const e = error as {
+    code?: string;
+    meta?: { code?: string };
+    message?: string;
+  };
+  const directCode = typeof e.code === 'string' ? e.code : '';
+  const metaCode = typeof e.meta?.code === 'string' ? e.meta.code : '';
+  if (retryableSqlStates.includes(directCode)) return true;
+  if (retryableSqlStates.includes(metaCode)) return true;
+  const message = typeof e.message === 'string' ? e.message : '';
+  return retryableSqlStates.some((state) => message.includes(state));
+}
+
 export async function cleanDatabase(prisma: PrismaClient): Promise<void> {
   // Single multi-table TRUNCATE … CASCADE — one network round-trip instead of
   // 21 sequential statements wrapped in a transaction. The transactional form
@@ -55,7 +85,7 @@ export async function cleanDatabase(prisma: PrismaClient): Promise<void> {
   // write drain and clears it deterministically without masking a real failure.
   // The short lock_timeout also keeps the transaction well under Prisma's
   // interactive-transaction timeout even against Neon latency.
-  const RETRYABLE = new Set(['40P01', '55P03']);
+  const RETRYABLE = ['40P01', '55P03'];
   const MAX_ATTEMPTS = 12;
   const LOCK_TIMEOUT_MS = 3000;
   let lastError: unknown;
@@ -69,8 +99,7 @@ export async function cleanDatabase(prisma: PrismaClient): Promise<void> {
       ]);
       return;
     } catch (error) {
-      const code = (error as { code?: string }).code;
-      if (!RETRYABLE.has(code ?? '')) throw error;
+      if (!isRetryableLockError(error, RETRYABLE)) throw error;
       lastError = error;
       await new Promise((resolve) =>
         setTimeout(resolve, Math.min(1500, 200 * attempt)),
