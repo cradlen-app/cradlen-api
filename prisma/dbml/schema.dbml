@@ -13,6 +13,7 @@ Table subscription_plans {
   subscriptions subscriptions [not null]
   prices plan_prices [not null]
   payments subscription_payments [not null]
+  payment_items subscription_payment_items [not null]
   add_ons add_ons [not null]
 }
 
@@ -29,6 +30,7 @@ Table plan_prices {
   updated_at DateTime [not null]
   subscription_plan subscription_plans [not null]
   payments subscription_payments [not null]
+  payment_items subscription_payment_items [not null]
 
   indexes {
     (subscription_plan_id, billing_interval, currency) [unique]
@@ -52,6 +54,7 @@ Table add_ons {
   prices add_on_prices [not null]
   subscription_add_ons subscription_add_ons [not null]
   payments subscription_payments [not null]
+  payment_items subscription_payment_items [not null]
 }
 
 Table add_on_prices {
@@ -121,6 +124,27 @@ Table subscription_payments {
   plan_price plan_prices
   add_on add_ons
   proofs subscription_payment_proofs [not null]
+  items subscription_payment_items [not null]
+}
+
+Table subscription_payment_items {
+  id String [pk]
+  subscription_payment_id String [not null]
+  kind SubscriptionPaymentItemKind [not null]
+  subscription_plan_id String
+  plan_price_id String
+  add_on_id String
+  quantity Int [not null, default: 1]
+  unit_amount Decimal [not null]
+  amount Decimal [not null]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  payment subscription_payments [not null]
+  subscription_plan subscription_plans
+  plan_price plan_prices
+  add_on add_ons
 }
 
 Table subscription_payment_proofs {
@@ -217,12 +241,14 @@ Table users {
   phone_number String
   date_of_birth DateTime
   password_hashed String
+  password_changed_at DateTime
   is_active Boolean [not null, default: true]
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
   verified_at DateTime
   registration_status RegistrationStatus [not null, default: 'PENDING']
   onboarding_completed Boolean [not null, default: false]
+  last_active_at DateTime
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   profiles profiles [not null]
@@ -246,8 +272,70 @@ Table patient_accounts {
   patient patients
   guardian guardians
   refreshTokens refresh_tokens [not null]
+  last_active_at DateTime
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
+}
+
+Table platform_admins {
+  id String [pk]
+  email String [unique, not null]
+  password_hashed String
+  full_name String [not null]
+  role PlatformAdminRole [not null, default: 'SUPER_ADMIN']
+  is_active Boolean [not null, default: true]
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  refreshTokens refresh_tokens [not null]
+  auditLogs admin_audit_log [not null]
+  verificationCodes verification_codes [not null]
+}
+
+Table platform_settings {
+  id String [pk]
+  instapay_handle String
+  wallet_number String
+  free_trial_days Int [not null, default: 14]
+  auto_verify_gateway_payments Boolean [not null, default: true]
+  default_currency String [not null, default: 'EGP']
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
+Table daily_metric_snapshots {
+  id String [pk]
+  date DateTime [unique, not null]
+  active_staff Int [not null]
+  total_staff Int [not null]
+  active_portals Int [not null]
+  total_portals Int [not null]
+  total_enrolled_patients Int [not null]
+  created_at DateTime [default: `now()`, not null]
+}
+
+Table admin_notifications {
+  id String [pk]
+  type AdminNotificationType [not null]
+  title String [not null]
+  body String [not null]
+  organization_id String
+  related_id String
+  is_read Boolean [not null, default: false]
+  created_at DateTime [default: `now()`, not null]
+}
+
+Table admin_audit_log {
+  id String [pk]
+  admin_id String [not null]
+  action String [not null]
+  target_type String [not null]
+  target_id String
+  before Json
+  after Json
+  created_at DateTime [default: `now()`, not null]
+  admin platform_admins [not null]
 }
 
 Table roles {
@@ -312,6 +400,10 @@ Table profiles {
   pregnancy_journey_updates pregnancy_journey_records [not null]
   pregnancy_episode_updates pregnancy_episode_records [not null]
   visit_pregnancy_updates visit_pregnancy_records [not null]
+  visit_fetal_updates visit_fetal_records [not null]
+  surgical_journey_updates surgical_journey_records [not null]
+  surgical_episode_updates surgical_episode_records [not null]
+  visit_surgical_updates visit_surgical_records [not null]
   visit_encounter_updates visit_encounters [not null]
   prescription_updates prescriptions [not null]
   prescription_item_updates prescription_items [not null]
@@ -324,6 +416,10 @@ Table profiles {
   pregnancy_journey_revisions pregnancy_journey_record_revisions [not null]
   pregnancy_episode_revisions pregnancy_episode_record_revisions [not null]
   visit_pregnancy_revisions visit_pregnancy_record_revisions [not null]
+  visit_fetal_revisions visit_fetal_record_revisions [not null]
+  surgical_journey_revisions surgical_journey_record_revisions [not null]
+  surgical_episode_revisions surgical_episode_record_revisions [not null]
+  visit_surgical_revisions visit_surgical_record_revisions [not null]
   form_templates_created form_templates [not null]
   form_templates_updated form_templates [not null]
   medical_rep_visits_doctor medical_rep_visits [not null]
@@ -393,6 +489,7 @@ Table refresh_tokens {
   token_hash String [not null]
   user_id String
   patient_account_id String
+  platform_admin_id String
   profile_id String
   organization_id String
   active_branch_id String
@@ -403,6 +500,7 @@ Table refresh_tokens {
   created_at DateTime [default: `now()`, not null]
   user users
   patientAccount patient_accounts
+  platformAdmin platform_admins
 }
 
 Table auth_audit_log {
@@ -430,6 +528,7 @@ Table password_reset_tokens {
 Table verification_codes {
   id String [pk]
   user_id String
+  admin_id String
   channel VerificationChannel [not null]
   purpose VerificationPurpose [not null]
   target String [not null]
@@ -441,6 +540,7 @@ Table verification_codes {
   consumed_at DateTime
   created_at DateTime [default: `now()`, not null]
   user users
+  admin platform_admins
 }
 
 Table invitations {
@@ -735,6 +835,7 @@ Table patient_journeys {
   ended_at DateTime
   episodes patient_episodes [not null]
   pregnancy_record pregnancy_journey_records
+  surgical_record surgical_journey_records
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   is_deleted Boolean [not null, default: false]
@@ -756,6 +857,7 @@ Table patient_episodes {
   ended_at DateTime
   visits visits [not null]
   pregnancy_record pregnancy_episode_records
+  surgical_record surgical_episode_records
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   is_deleted Boolean [not null, default: false]
@@ -792,6 +894,8 @@ Table visits {
   encounter visit_encounters
   obgyn_encounter visit_obgyn_encounters
   pregnancy_record visit_pregnancy_records
+  fetal_records visit_fetal_records [not null]
+  surgical_record visit_surgical_records
   investigations visit_investigations [not null]
   diagnoses visit_diagnoses [not null]
   prescription prescriptions
@@ -1264,7 +1368,6 @@ Table pregnancy_journey_records {
   status String
   risk_level String
   lmp DateTime
-  blood_group_rh String
   us_dating_date DateTime
   us_ga_weeks Int
   us_ga_days Int
@@ -1314,6 +1417,24 @@ Table visit_pregnancy_records {
   amniotic_fluid String
   placenta_location String
   placenta_grade Int
+  additional_findings Json
+  version Int [not null, default: 1]
+  updated_by_id String
+  updated_by profiles
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
+Table visit_fetal_records {
+  id String [pk]
+  visit_id String [not null]
+  visit visits [not null]
+  revisions visit_fetal_record_revisions [not null]
+  fetus_index Int [not null, default: 0]
+  fetus_label String
+  gender String
   fetal_lie String
   presentation String
   engagement String
@@ -1327,6 +1448,71 @@ Table visit_pregnancy_records {
   efw_g Decimal
   growth_percentile Int
   growth_impression String
+  additional_findings Json
+  version Int [not null, default: 1]
+  updated_by_id String
+  updated_by profiles
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
+Table surgical_journey_records {
+  id String [pk]
+  journey_id String [unique, not null]
+  journey patient_journeys [not null]
+  revisions surgical_journey_record_revisions [not null]
+  status String
+  procedure_id String
+  procedure_code String
+  procedure_name String
+  indication String
+  planned_date DateTime
+  surgery_date DateTime
+  anesthesia_type String
+  urgency String
+  source_pregnancy_journey_id String
+  outcome Json
+  version Int [not null, default: 1]
+  updated_by_id String
+  updated_by profiles
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
+Table surgical_episode_records {
+  id String [pk]
+  episode_id String [unique, not null]
+  episode patient_episodes [not null]
+  revisions surgical_episode_record_revisions [not null]
+  preop_assessment Json
+  operative_summary Json
+  postop_summary Json
+  version Int [not null, default: 1]
+  updated_by_id String
+  updated_by profiles
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
+Table visit_surgical_records {
+  id String [pk]
+  visit_id String [unique, not null]
+  visit visits [not null]
+  revisions visit_surgical_record_revisions [not null]
+  procedure_performed String
+  findings Json
+  estimated_blood_loss_ml Int
+  duration_minutes Int
+  complications Json
+  wound_status String
+  drains String
+  recovery_notes String
   additional_findings Json
   version Int [not null, default: 1]
   updated_by_id String
@@ -1432,6 +1618,58 @@ Table visit_pregnancy_record_revisions {
   id String [pk]
   entity_id String [not null]
   entity visit_pregnancy_records [not null]
+  version Int [not null]
+  snapshot Json [not null]
+  changed_fields Json [not null]
+  revised_by_id String [not null]
+  revised_by profiles [not null]
+  revised_at DateTime [default: `now()`, not null]
+  revision_reason String
+}
+
+Table visit_fetal_record_revisions {
+  id String [pk]
+  entity_id String [not null]
+  entity visit_fetal_records [not null]
+  version Int [not null]
+  snapshot Json [not null]
+  changed_fields Json [not null]
+  revised_by_id String [not null]
+  revised_by profiles [not null]
+  revised_at DateTime [default: `now()`, not null]
+  revision_reason String
+}
+
+Table surgical_journey_record_revisions {
+  id String [pk]
+  entity_id String [not null]
+  entity surgical_journey_records [not null]
+  version Int [not null]
+  snapshot Json [not null]
+  changed_fields Json [not null]
+  revised_by_id String [not null]
+  revised_by profiles [not null]
+  revised_at DateTime [default: `now()`, not null]
+  revision_reason String
+}
+
+Table surgical_episode_record_revisions {
+  id String [pk]
+  entity_id String [not null]
+  entity surgical_episode_records [not null]
+  version Int [not null]
+  snapshot Json [not null]
+  changed_fields Json [not null]
+  revised_by_id String [not null]
+  revised_by profiles [not null]
+  revised_at DateTime [default: `now()`, not null]
+  revision_reason String
+}
+
+Table visit_surgical_record_revisions {
+  id String [pk]
+  entity_id String [not null]
+  entity visit_surgical_records [not null]
   version Int [not null]
   snapshot Json [not null]
   changed_fields Json [not null]
@@ -2101,6 +2339,12 @@ Enum SubscriptionPaymentStatus {
 Enum SubscriptionPaymentPurpose {
   PLAN
   ADD_ON
+  COMBINED
+}
+
+Enum SubscriptionPaymentItemKind {
+  PLAN
+  ADD_ON
 }
 
 Enum AddOnKind {
@@ -2139,6 +2383,8 @@ Enum VerificationPurpose {
   SIGNUP
   LOGIN
   PASSWORD_RESET
+  ADMIN_LOGIN
+  ADMIN_SET_PASSWORD
 }
 
 Enum JourneyTemplateType {
@@ -2233,6 +2479,13 @@ Enum BindingNamespace {
   VISIT_DIAGNOSIS
   PRESCRIPTION_ITEM
   MEDICAL_REP_VISIT
+  PREGNANCY_JOURNEY
+  PREGNANCY_EPISODE
+  PREGNANCY_VISIT
+  PREGNANCY_FETUS
+  SURGICAL_JOURNEY
+  SURGICAL_EPISODE
+  SURGICAL_VISIT
 }
 
 Enum MedicalRepVisitStatus {
@@ -2413,6 +2666,18 @@ Enum RefundStatus {
   VOID
 }
 
+Enum PlatformAdminRole {
+  SUPER_ADMIN
+  BILLING
+}
+
+Enum AdminNotificationType {
+  ORGANIZATION_CREATED
+  SUBSCRIPTION_STARTED
+  PLAN_CHANGED
+  PAYMENT_SUBMITTED
+}
+
 Enum DiagnosisCodeSource {
   SYSTEM
   USER
@@ -2461,6 +2726,14 @@ Ref: subscription_payments.plan_price_id > plan_prices.id [delete: Set Null]
 
 Ref: subscription_payments.add_on_id > add_ons.id [delete: Set Null]
 
+Ref: subscription_payment_items.subscription_payment_id > subscription_payments.id [delete: Cascade]
+
+Ref: subscription_payment_items.subscription_plan_id > subscription_plans.id
+
+Ref: subscription_payment_items.plan_price_id > plan_prices.id [delete: Set Null]
+
+Ref: subscription_payment_items.add_on_id > add_ons.id [delete: Set Null]
+
 Ref: subscription_payment_proofs.subscription_payment_id > subscription_payments.id [delete: Cascade]
 
 Ref: branches.organization_id > organizations.id [delete: Cascade]
@@ -2468,6 +2741,8 @@ Ref: branches.organization_id > organizations.id [delete: Cascade]
 Ref: patient_accounts.patient_id - patients.id [delete: Set Null]
 
 Ref: patient_accounts.guardian_id - guardians.id [delete: Set Null]
+
+Ref: admin_audit_log.admin_id > platform_admins.id [delete: Cascade]
 
 Ref: profiles.user_id > users.id [delete: Cascade]
 
@@ -2491,11 +2766,15 @@ Ref: refresh_tokens.user_id > users.id [delete: Cascade]
 
 Ref: refresh_tokens.patient_account_id > patient_accounts.id [delete: Cascade]
 
+Ref: refresh_tokens.platform_admin_id > platform_admins.id [delete: Cascade]
+
 Ref: auth_audit_log.user_id > users.id [delete: Set Null]
 
 Ref: password_reset_tokens.user_id > users.id [delete: Cascade]
 
 Ref: verification_codes.user_id > users.id [delete: Cascade]
+
+Ref: verification_codes.admin_id > platform_admins.id [delete: Cascade]
 
 Ref: invitations.organization_id > organizations.id [delete: Cascade]
 
@@ -2665,6 +2944,22 @@ Ref: visit_pregnancy_records.visit_id - visits.id [delete: Cascade]
 
 Ref: visit_pregnancy_records.updated_by_id > profiles.id [delete: Set Null]
 
+Ref: visit_fetal_records.visit_id > visits.id [delete: Cascade]
+
+Ref: visit_fetal_records.updated_by_id > profiles.id [delete: Set Null]
+
+Ref: surgical_journey_records.journey_id - patient_journeys.id [delete: Cascade]
+
+Ref: surgical_journey_records.updated_by_id > profiles.id [delete: Set Null]
+
+Ref: surgical_episode_records.episode_id - patient_episodes.id [delete: Cascade]
+
+Ref: surgical_episode_records.updated_by_id > profiles.id [delete: Set Null]
+
+Ref: visit_surgical_records.visit_id - visits.id [delete: Cascade]
+
+Ref: visit_surgical_records.updated_by_id > profiles.id [delete: Set Null]
+
 Ref: patient_obgyn_history_revisions.entity_id > patient_obgyn_histories.id [delete: Cascade]
 
 Ref: patient_obgyn_history_revisions.revised_by_id > profiles.id [delete: Cascade]
@@ -2696,6 +2991,22 @@ Ref: pregnancy_episode_record_revisions.revised_by_id > profiles.id [delete: Cas
 Ref: visit_pregnancy_record_revisions.entity_id > visit_pregnancy_records.id [delete: Cascade]
 
 Ref: visit_pregnancy_record_revisions.revised_by_id > profiles.id [delete: Cascade]
+
+Ref: visit_fetal_record_revisions.entity_id > visit_fetal_records.id [delete: Cascade]
+
+Ref: visit_fetal_record_revisions.revised_by_id > profiles.id [delete: Cascade]
+
+Ref: surgical_journey_record_revisions.entity_id > surgical_journey_records.id [delete: Cascade]
+
+Ref: surgical_journey_record_revisions.revised_by_id > profiles.id [delete: Cascade]
+
+Ref: surgical_episode_record_revisions.entity_id > surgical_episode_records.id [delete: Cascade]
+
+Ref: surgical_episode_record_revisions.revised_by_id > profiles.id [delete: Cascade]
+
+Ref: visit_surgical_record_revisions.entity_id > visit_surgical_records.id [delete: Cascade]
+
+Ref: visit_surgical_record_revisions.revised_by_id > profiles.id [delete: Cascade]
 
 Ref: form_templates.specialty_id > specialties.id [delete: Set Null]
 

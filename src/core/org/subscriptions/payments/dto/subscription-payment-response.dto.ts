@@ -1,10 +1,34 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
   BillingInterval,
+  SubscriptionPaymentItemKind,
   SubscriptionPaymentProvider,
   SubscriptionPaymentPurpose,
   SubscriptionPaymentStatus,
 } from '@prisma/client';
+
+export class SubscriptionPaymentItemResponseDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty({ enum: SubscriptionPaymentItemKind })
+  kind!: SubscriptionPaymentItemKind;
+
+  @ApiProperty({ nullable: true })
+  subscription_plan_id!: string | null;
+
+  @ApiProperty({ nullable: true })
+  add_on_id!: string | null;
+
+  @ApiProperty()
+  quantity!: number;
+
+  @ApiProperty({ description: 'Unit amount as a decimal string' })
+  unit_amount!: string;
+
+  @ApiProperty({ description: 'Line amount as a decimal string' })
+  amount!: string;
+}
 
 export class SubscriptionPaymentProofResponseDto {
   @ApiProperty()
@@ -74,4 +98,11 @@ export class SubscriptionPaymentResponseDto {
 
   @ApiProperty({ type: [SubscriptionPaymentProofResponseDto], required: false })
   proofs?: SubscriptionPaymentProofResponseDto[];
+
+  @ApiProperty({
+    type: [SubscriptionPaymentItemResponseDto],
+    required: false,
+    description: 'Line items for a COMBINED checkout (plan + add-ons).',
+  })
+  items?: SubscriptionPaymentItemResponseDto[];
 }

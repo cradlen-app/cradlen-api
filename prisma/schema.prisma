@@ -59,6 +59,13 @@ enum SubscriptionPaymentStatus {
 enum SubscriptionPaymentPurpose {
   PLAN
   ADD_ON
+  COMBINED
+}
+
+// A line on a COMBINED checkout: either the base PLAN or one ADD_ON purchase.
+enum SubscriptionPaymentItemKind {
+  PLAN
+  ADD_ON
 }
 
 // An add-on stacks extra capacity on a base plan. BRANCH_BUNDLE adds a branch
@@ -99,6 +106,8 @@ enum VerificationPurpose {
   SIGNUP
   LOGIN
   PASSWORD_RESET
+  ADMIN_LOGIN
+  ADMIN_SET_PASSWORD
 }
 
 enum JourneyTemplateType {
@@ -193,6 +202,13 @@ enum BindingNamespace {
   VISIT_DIAGNOSIS
   PRESCRIPTION_ITEM
   MEDICAL_REP_VISIT
+  PREGNANCY_JOURNEY
+  PREGNANCY_EPISODE
+  PREGNANCY_VISIT
+  PREGNANCY_FETUS
+  SURGICAL_JOURNEY
+  SURGICAL_EPISODE
+  SURGICAL_VISIT
 }
 
 enum MedicalRepVisitStatus {
@@ -384,6 +400,7 @@ model SubscriptionPlan {
   subscriptions     Subscription[]
   prices            PlanPrice[]
   payments          SubscriptionPayment[]
+  payment_items     SubscriptionPaymentItem[]
   add_ons           AddOn[]
 
   @@map("subscription_plans")
@@ -404,6 +421,7 @@ model PlanPrice {
   updated_at           DateTime              @updatedAt
   subscription_plan    SubscriptionPlan      @relation(fields: [subscription_plan_id], references: [id], onDelete: Cascade)
   payments             SubscriptionPayment[]
+  payment_items        SubscriptionPaymentItem[]
 
   @@unique([subscription_plan_id, billing_interval, currency])
   @@map("plan_prices")
@@ -430,6 +448,7 @@ model AddOn {
   prices               AddOnPrice[]
   subscription_add_ons SubscriptionAddOn[]
   payments             SubscriptionPayment[]
+  payment_items        SubscriptionPaymentItem[]
 
   @@index([subscription_plan_id, is_active])
   @@map("add_ons")
@@ -511,9 +530,37 @@ model SubscriptionPayment {
   plan_price           PlanPrice?                  @relation(fields: [plan_price_id], references: [id], onDelete: SetNull)
   add_on               AddOn?                      @relation(fields: [add_on_id], references: [id], onDelete: SetNull)
   proofs               SubscriptionPaymentProof[]
+  items                SubscriptionPaymentItem[]
 
   @@index([organization_id, status])
   @@map("subscription_payments")
+}
+
+// A line on a COMBINED checkout (one payment buys a plan AND add-ons in a single
+// amount/proof). Canonical only for COMBINED payments; PLAN-only / ADD_ON-only
+// payments keep their header-column shape. unit_amount/amount are snapshots so a
+// later price change never alters a captured line.
+model SubscriptionPaymentItem {
+  id                      String                      @id @default(uuid()) @db.Uuid
+  subscription_payment_id String                      @db.Uuid
+  kind                    SubscriptionPaymentItemKind
+  subscription_plan_id    String?                     @db.Uuid
+  plan_price_id           String?                     @db.Uuid
+  add_on_id               String?                     @db.Uuid
+  quantity                Int                         @default(1)
+  unit_amount             Decimal                     @db.Decimal(12, 2)
+  amount                  Decimal                     @db.Decimal(12, 2)
+  is_deleted              Boolean                     @default(false)
+  deleted_at              DateTime?
+  created_at              DateTime                    @default(now())
+  updated_at              DateTime                    @updatedAt
+  payment                 SubscriptionPayment         @relation(fields: [subscription_payment_id], references: [id], onDelete: Cascade)
+  subscription_plan       SubscriptionPlan?           @relation(fields: [subscription_plan_id], references: [id])
+  plan_price              PlanPrice?                  @relation(fields: [plan_price_id], references: [id], onDelete: SetNull)
+  add_on                  AddOn?                      @relation(fields: [add_on_id], references: [id], onDelete: SetNull)
+
+  @@index([subscription_payment_id])
+  @@map("subscription_payment_items")
 }
 
 // Uploaded proof-of-payment file(s) for a manual-settlement payment. Stored in
@@ -621,12 +668,19 @@ model User {
   phone_number         String?
   date_of_birth        DateTime?            @db.Date
   password_hashed      String?
+  // Set whenever the password changes (reset flows). The staff JWT strategy
+  // rejects access tokens issued before this instant, so a credential change
+  // invalidates outstanding access tokens immediately — not just refresh tokens.
+  password_changed_at  DateTime?
   is_active            Boolean              @default(true)
   is_deleted           Boolean              @default(false)
   deleted_at           DateTime?
   verified_at          DateTime?
   registration_status  RegistrationStatus   @default(PENDING)
   onboarding_completed Boolean              @default(false)
+  // Last authenticated request, stamped at most once per UTC day by the staff JWT
+  // strategy (fire-and-forget). Powers the admin daily-active-staff trend.
+  last_active_at       DateTime?
   created_at           DateTime             @default(now())
   updated_at           DateTime             @updatedAt
   // `users` is staff-only. Patient/guardian portal logins live in the dedicated
@@ -639,6 +693,7 @@ model User {
   sentInvitations      Invitation[]         @relation("InvitedBy")
 
   @@index([registration_status, onboarding_completed])
+  @@index([last_active_at])
   @@map("users")
 }
 
@@ -663,10 +718,122 @@ model PatientAccount {
   patient                Patient?       @relation("PatientAccount", fields: [patient_id], references: [id], onDelete: SetNull)
   guardian               Guardian?      @relation("GuardianAccount", fields: [guardian_id], references: [id], onDelete: SetNull)
   refreshTokens          RefreshToken[]
+  // Last authenticated portal request, stamped at most once per UTC day by the
+  // patient JWT strategy (patient accounts only). Powers the admin daily-active-
+  // portals trend.
+  last_active_at         DateTime?
   created_at             DateTime       @default(now())
   updated_at             DateTime       @updatedAt
 
+  @@index([last_active_at])
   @@map("patient_accounts")
+}
+
+// Platform operator (Cradlen staff) — a third auth audience alongside User
+// (staff) and PatientAccount (portal). Has NO organization; authenticated via
+// the `admin-jwt` strategy, never the org-scoped JwtAuthGuard. Flat tier: every
+// admin can do everything. First row is seeded from env (no self-signup).
+model PlatformAdmin {
+  id                String             @id @default(uuid()) @db.Uuid
+  email             String             @unique
+  password_hashed   String?
+  full_name         String
+  role              PlatformAdminRole  @default(SUPER_ADMIN)
+  is_active         Boolean            @default(true)
+  is_deleted        Boolean            @default(false)
+  deleted_at        DateTime?
+  created_at        DateTime           @default(now())
+  updated_at        DateTime           @updatedAt
+  refreshTokens     RefreshToken[]
+  auditLogs         AdminAuditLog[]
+  verificationCodes VerificationCode[]
+
+  @@map("platform_admins")
+}
+
+// Coarse role label for the admin team list. Authorization is still flat (any
+// active admin is fully authorized); this only drives the Settings UI badge.
+enum PlatformAdminRole {
+  SUPER_ADMIN
+  BILLING
+}
+
+// Singleton platform configuration surfaced on the admin Settings page: the
+// manual-payment accounts shown to clinics plus a few global defaults. Exactly
+// one row exists; services read/write it via an upsert on a fixed sentinel id.
+model PlatformSetting {
+  id                           String   @id @default(uuid()) @db.Uuid
+  instapay_handle              String?
+  wallet_number                String?
+  free_trial_days              Int      @default(14)
+  auto_verify_gateway_payments Boolean  @default(true)
+  default_currency             String   @default("EGP")
+  created_at                   DateTime @default(now())
+  updated_at                   DateTime @updatedAt
+
+  @@map("platform_settings")
+}
+
+// One row per UTC day, written by DailyMetricsSnapshotJob just after midnight.
+// Stores platform-wide engagement so the admin dashboard can chart per-day
+// trends without re-scanning operational tables (and without depending on
+// refresh tokens, which are pruned nightly). `active_*` count distinct entities
+// whose `last_active_at` fell on that day; `total_*` are cumulative as-of the day.
+model DailyMetricSnapshot {
+  id                      String   @id @default(uuid()) @db.Uuid
+  date                    DateTime @unique @db.Date
+  active_staff            Int
+  total_staff             Int
+  active_portals          Int
+  total_portals           Int
+  total_enrolled_patients Int
+  created_at              DateTime @default(now())
+
+  @@map("daily_metric_snapshots")
+}
+
+// What kind of platform event a notification records.
+enum AdminNotificationType {
+  ORGANIZATION_CREATED
+  SUBSCRIPTION_STARTED
+  PLAN_CHANGED
+  PAYMENT_SUBMITTED
+}
+
+// Platform-wide admin notification feed (shared across the small admin team, so
+// read-state is a single flag rather than per-admin). Materialized by the
+// AdminNotificationsListener from domain events.
+model AdminNotification {
+  id              String                @id @default(uuid()) @db.Uuid
+  type            AdminNotificationType
+  title           String
+  body            String
+  organization_id String?               @db.Uuid
+  related_id      String?               @db.Uuid
+  is_read         Boolean               @default(false)
+  created_at      DateTime              @default(now())
+
+  @@index([is_read, created_at])
+  @@map("admin_notifications")
+}
+
+// Append-only audit trail for every platform-admin WRITE action. Written inside
+// the same transaction as the mutation it records, so the action and its log are
+// atomic. before/after hold the relevant snapshot of the mutated entity.
+model AdminAuditLog {
+  id          String        @id @default(uuid()) @db.Uuid
+  admin_id    String        @db.Uuid
+  action      String
+  target_type String
+  target_id   String?
+  before      Json?
+  after       Json?
+  created_at  DateTime      @default(now())
+  admin       PlatformAdmin @relation(fields: [admin_id], references: [id], onDelete: Cascade)
+
+  @@index([admin_id, created_at])
+  @@index([target_type, target_id])
+  @@map("admin_audit_log")
 }
 
 model Role {
@@ -739,6 +906,10 @@ model Profile {
   pregnancy_journey_updates        PregnancyJourneyRecord[]         @relation("PregnancyJourneyRecordUpdatedBy")
   pregnancy_episode_updates        PregnancyEpisodeRecord[]         @relation("PregnancyEpisodeRecordUpdatedBy")
   visit_pregnancy_updates          VisitPregnancyRecord[]           @relation("VisitPregnancyRecordUpdatedBy")
+  visit_fetal_updates              VisitFetalRecord[]               @relation("VisitFetalRecordUpdatedBy")
+  surgical_journey_updates         SurgicalJourneyRecord[]          @relation("SurgicalJourneyRecordUpdatedBy")
+  surgical_episode_updates         SurgicalEpisodeRecord[]          @relation("SurgicalEpisodeRecordUpdatedBy")
+  visit_surgical_updates           VisitSurgicalRecord[]            @relation("VisitSurgicalRecordUpdatedBy")
   visit_encounter_updates          VisitEncounter[]                 @relation("VisitEncounterUpdatedBy")
   prescription_updates             Prescription[]                   @relation("PrescriptionUpdatedBy")
   prescription_item_updates        PrescriptionItem[]               @relation("PrescriptionItemUpdatedBy")
@@ -752,6 +923,10 @@ model Profile {
   pregnancy_journey_revisions      PregnancyJourneyRecordRevision[] @relation("PregnancyJourneyRecordRevisedBy")
   pregnancy_episode_revisions      PregnancyEpisodeRecordRevision[] @relation("PregnancyEpisodeRecordRevisedBy")
   visit_pregnancy_revisions        VisitPregnancyRecordRevision[]   @relation("VisitPregnancyRecordRevisedBy")
+  visit_fetal_revisions            VisitFetalRecordRevision[]       @relation("VisitFetalRecordRevisedBy")
+  surgical_journey_revisions       SurgicalJourneyRecordRevision[]  @relation("SurgicalJourneyRecordRevisedBy")
+  surgical_episode_revisions       SurgicalEpisodeRecordRevision[]  @relation("SurgicalEpisodeRecordRevisedBy")
+  visit_surgical_revisions         VisitSurgicalRecordRevision[]    @relation("VisitSurgicalRecordRevisedBy")
   // Builder / medical-rep back-relations
   form_templates_created           FormTemplate[]                   @relation("FormTemplateCreatedBy")
   form_templates_updated           FormTemplate[]                   @relation("FormTemplateUpdatedBy")
@@ -829,10 +1004,12 @@ model RefreshToken {
   jti                String          @unique @db.Uuid
   token_hash         String
   // Exactly one owner is set: `user_id` for a staff session, `patient_account_id`
-  // for a patient/guardian portal session. Enforced by a CHECK constraint
-  // (`refresh_tokens_exactly_one_owner`) added in the migration raw SQL.
+  // for a patient/guardian portal session, `platform_admin_id` for a platform-admin
+  // session. Enforced by a CHECK constraint (`refresh_tokens_exactly_one_owner`)
+  // added in the migration raw SQL.
   user_id            String?         @db.Uuid
   patient_account_id String?         @db.Uuid
+  platform_admin_id  String?         @db.Uuid
   profile_id         String?         @db.Uuid
   organization_id    String?         @db.Uuid
   active_branch_id   String?         @db.Uuid
@@ -846,9 +1023,11 @@ model RefreshToken {
   created_at         DateTime        @default(now())
   user               User?           @relation(fields: [user_id], references: [id], onDelete: Cascade)
   patientAccount     PatientAccount? @relation(fields: [patient_account_id], references: [id], onDelete: Cascade)
+  platformAdmin      PlatformAdmin?  @relation(fields: [platform_admin_id], references: [id], onDelete: Cascade)
 
   @@index([user_id, is_revoked])
   @@index([patient_account_id, is_revoked])
+  @@index([platform_admin_id, is_revoked])
   @@map("refresh_tokens")
 }
 
@@ -894,7 +1073,11 @@ model PasswordResetToken {
 
 model VerificationCode {
   id           String              @id @default(uuid()) @db.Uuid
+  // user_id for staff/patient flows; admin_id for the ADMIN_LOGIN flow. Platform
+  // admins are not Users, so their OTP rows key on admin_id (target/purpose still
+  // index the lookup).
   user_id      String?             @db.Uuid
+  admin_id     String?             @db.Uuid
   channel      VerificationChannel
   purpose      VerificationPurpose
   target       String
@@ -906,9 +1089,11 @@ model VerificationCode {
   consumed_at  DateTime?
   created_at   DateTime            @default(now())
   user         User?               @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  admin        PlatformAdmin?      @relation(fields: [admin_id], references: [id], onDelete: Cascade)
 
   @@index([target, purpose, consumed_at])
   @@index([user_id, purpose])
+  @@index([admin_id, purpose])
   @@map("verification_codes")
 }
 
@@ -1257,6 +1442,7 @@ model PatientJourney {
   ended_at            DateTime?
   episodes            PatientEpisode[]
   pregnancy_record    PregnancyJourneyRecord?
+  surgical_record     SurgicalJourneyRecord?
   created_at          DateTime                @default(now())
   updated_at          DateTime                @updatedAt
   is_deleted          Boolean                 @default(false)
@@ -1286,6 +1472,7 @@ model PatientEpisode {
   ended_at             DateTime?
   visits               Visit[]
   pregnancy_record     PregnancyEpisodeRecord?
+  surgical_record      SurgicalEpisodeRecord?
   created_at           DateTime                @default(now())
   updated_at           DateTime                @updatedAt
   is_deleted           Boolean                 @default(false)
@@ -1338,6 +1525,8 @@ model Visit {
   encounter               VisitEncounter?
   obgyn_encounter         VisitObgynEncounter?
   pregnancy_record        VisitPregnancyRecord?
+  fetal_records           VisitFetalRecord[]
+  surgical_record         VisitSurgicalRecord?
   investigations          VisitInvestigation[]
   diagnoses               VisitDiagnosis[]
   prescription            Prescription?
@@ -1955,7 +2144,6 @@ model PregnancyJourneyRecord {
   status            String?
   risk_level        String?
   lmp               DateTime?                        @db.Date
-  blood_group_rh    String?
   us_dating_date    DateTime?                        @db.Date
   us_ga_weeks       Int?
   us_ga_days        Int?
@@ -2013,10 +2201,39 @@ model VisitPregnancyRecord {
   fundal_height_cm      Decimal? @db.Decimal(5, 2)
   fundal_corresponds_ga String?
 
-  // Amniotic & Placenta
+  // Amniotic & Placenta (shared across fetuses — single per visit)
   amniotic_fluid    String?
   placenta_location String?
   placenta_grade    Int?
+
+  // Per-fetus Fetal Lie + Biometric Measurements moved to VisitFetalRecord
+  // (multi-fetus). This row holds maternal + shared fetal context only.
+
+  additional_findings Json?
+  version             Int       @default(1)
+  updated_by_id       String?   @db.Uuid
+  updated_by          Profile?  @relation("VisitPregnancyRecordUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
+  is_deleted          Boolean   @default(false)
+  deleted_at          DateTime?
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
+
+  @@map("visit_pregnancy_records")
+}
+
+// Per-fetus surveillance within a single visit. A singleton pregnancy has one
+// row; twins/triplets add a row per fetus (fetus_index 0,1,2…). Fetal lie +
+// biometrics live here so multi-fetus is first-class. Maternal + shared fetal
+// context (cervix, fundal, amniotic, placenta) stay on VisitPregnancyRecord.
+model VisitFetalRecord {
+  id        String                     @id @default(uuid()) @db.Uuid
+  visit_id  String                     @db.Uuid
+  visit     Visit                      @relation(fields: [visit_id], references: [id], onDelete: Cascade)
+  revisions VisitFetalRecordRevision[]
+
+  fetus_index Int     @default(0)
+  fetus_label String?
+  gender      String?
 
   // Fetal Lie
   fetal_lie    String?
@@ -2038,13 +2255,104 @@ model VisitPregnancyRecord {
   additional_findings Json?
   version             Int       @default(1)
   updated_by_id       String?   @db.Uuid
-  updated_by          Profile?  @relation("VisitPregnancyRecordUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
+  updated_by          Profile?  @relation("VisitFetalRecordUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
   is_deleted          Boolean   @default(false)
   deleted_at          DateTime?
   created_at          DateTime  @default(now())
   updated_at          DateTime  @updatedAt
 
-  @@map("visit_pregnancy_records")
+  @@index([visit_id, is_deleted])
+  @@map("visit_fetal_records")
+}
+
+// ============================================================================
+// Surgical journey clinical surface — the second journey care path
+// (OBGYN_SURGICAL). Mirrors the pregnancy vertical: one record per journey /
+// episode / visit, each shadowed by a *_revisions table. Enum-like columns
+// (status, urgency, anesthesia_type) are stored as String, matching the
+// pregnancy records' convention.
+// ============================================================================
+
+model SurgicalJourneyRecord {
+  id                          String                          @id @default(uuid()) @db.Uuid
+  journey_id                  String                          @unique @db.Uuid
+  journey                     PatientJourney                  @relation(fields: [journey_id], references: [id], onDelete: Cascade)
+  revisions                   SurgicalJourneyRecordRevision[]
+  status                      String? // ACTIVE | CLOSED
+  // Surgery type — resolved against the Procedure catalog (no FK; free entry
+  // stays valid). procedure_name is the snapshot label shown on the surface.
+  procedure_id                String?                         @db.Uuid
+  procedure_code              String?
+  procedure_name              String?
+  indication                  String?
+  planned_date                DateTime?                       @db.Date
+  surgery_date                DateTime?                       @db.Date
+  anesthesia_type             String? // GENERAL | REGIONAL | LOCAL | SEDATION
+  urgency                     String? // ELECTIVE | URGENT | EMERGENCY
+  // Set when this surgical journey was opened by a cesarean handoff — points at
+  // the pregnancy journey that was closed, so the Summary can mirror it.
+  source_pregnancy_journey_id String?                         @db.Uuid
+  // Typed close outcome: { outcome_type, date, complications, notes }
+  outcome                     Json?
+  version                     Int                             @default(1)
+  updated_by_id               String?                         @db.Uuid
+  updated_by                  Profile?                        @relation("SurgicalJourneyRecordUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
+  is_deleted                  Boolean                         @default(false)
+  deleted_at                  DateTime?
+  created_at                  DateTime                        @default(now())
+  updated_at                  DateTime                        @updatedAt
+
+  @@map("surgical_journey_records")
+}
+
+model SurgicalEpisodeRecord {
+  id                String                          @id @default(uuid()) @db.Uuid
+  episode_id        String                          @unique @db.Uuid
+  episode           PatientEpisode                  @relation(fields: [episode_id], references: [id], onDelete: Cascade)
+  revisions         SurgicalEpisodeRecordRevision[]
+  // Phase summary blobs (one record covers the episode; the active episode
+  // drives which block the surface shows).
+  preop_assessment  Json? // ASA class, clearance, fasting, consent, pre-op labs
+  operative_summary Json?
+  postop_summary    Json?
+  version           Int                             @default(1)
+  updated_by_id     String?                         @db.Uuid
+  updated_by        Profile?                        @relation("SurgicalEpisodeRecordUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
+  is_deleted        Boolean                         @default(false)
+  deleted_at        DateTime?
+  created_at        DateTime                        @default(now())
+  updated_at        DateTime                        @updatedAt
+
+  @@map("surgical_episode_records")
+}
+
+model VisitSurgicalRecord {
+  id        String                        @id @default(uuid()) @db.Uuid
+  visit_id  String                        @unique @db.Uuid
+  visit     Visit                         @relation(fields: [visit_id], references: [id], onDelete: Cascade)
+  revisions VisitSurgicalRecordRevision[]
+
+  // Per-encounter operative note. On the surgery-day visit this is the operative
+  // record; on pre-op/post-op visits it captures assessment/recovery findings.
+  procedure_performed     String?
+  findings                Json?
+  estimated_blood_loss_ml Int?
+  duration_minutes        Int?
+  complications           Json?
+  wound_status            String?
+  drains                  String?
+  recovery_notes          String?
+  additional_findings     Json?
+
+  version       Int       @default(1)
+  updated_by_id String?   @db.Uuid
+  updated_by    Profile?  @relation("VisitSurgicalRecordUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
+  is_deleted    Boolean   @default(false)
+  deleted_at    DateTime?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  @@map("visit_surgical_records")
 }
 
 // ============================================================================
@@ -2189,6 +2497,70 @@ model VisitPregnancyRecordRevision {
 
   @@index([entity_id, version])
   @@map("visit_pregnancy_record_revisions")
+}
+
+model VisitFetalRecordRevision {
+  id              String           @id @default(uuid()) @db.Uuid
+  entity_id       String           @db.Uuid
+  entity          VisitFetalRecord @relation(fields: [entity_id], references: [id], onDelete: Cascade)
+  version         Int
+  snapshot        Json
+  changed_fields  Json
+  revised_by_id   String           @db.Uuid
+  revised_by      Profile          @relation("VisitFetalRecordRevisedBy", fields: [revised_by_id], references: [id], onDelete: Cascade)
+  revised_at      DateTime         @default(now())
+  revision_reason String?
+
+  @@index([entity_id, version])
+  @@map("visit_fetal_record_revisions")
+}
+
+model SurgicalJourneyRecordRevision {
+  id              String                @id @default(uuid()) @db.Uuid
+  entity_id       String                @db.Uuid
+  entity          SurgicalJourneyRecord @relation(fields: [entity_id], references: [id], onDelete: Cascade)
+  version         Int
+  snapshot        Json
+  changed_fields  Json
+  revised_by_id   String                @db.Uuid
+  revised_by      Profile               @relation("SurgicalJourneyRecordRevisedBy", fields: [revised_by_id], references: [id], onDelete: Cascade)
+  revised_at      DateTime              @default(now())
+  revision_reason String?
+
+  @@index([entity_id, version])
+  @@map("surgical_journey_record_revisions")
+}
+
+model SurgicalEpisodeRecordRevision {
+  id              String                @id @default(uuid()) @db.Uuid
+  entity_id       String                @db.Uuid
+  entity          SurgicalEpisodeRecord @relation(fields: [entity_id], references: [id], onDelete: Cascade)
+  version         Int
+  snapshot        Json
+  changed_fields  Json
+  revised_by_id   String                @db.Uuid
+  revised_by      Profile               @relation("SurgicalEpisodeRecordRevisedBy", fields: [revised_by_id], references: [id], onDelete: Cascade)
+  revised_at      DateTime              @default(now())
+  revision_reason String?
+
+  @@index([entity_id, version])
+  @@map("surgical_episode_record_revisions")
+}
+
+model VisitSurgicalRecordRevision {
+  id              String              @id @default(uuid()) @db.Uuid
+  entity_id       String              @db.Uuid
+  entity          VisitSurgicalRecord @relation(fields: [entity_id], references: [id], onDelete: Cascade)
+  version         Int
+  snapshot        Json
+  changed_fields  Json
+  revised_by_id   String              @db.Uuid
+  revised_by      Profile             @relation("VisitSurgicalRecordRevisedBy", fields: [revised_by_id], references: [id], onDelete: Cascade)
+  revised_at      DateTime            @default(now())
+  revision_reason String?
+
+  @@index([entity_id, version])
+  @@map("visit_surgical_record_revisions")
 }
 
 // ============================================================================

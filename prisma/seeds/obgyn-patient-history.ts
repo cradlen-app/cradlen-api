@@ -32,7 +32,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import type { Predicate } from '../../src/builder/rules/predicates.js';
 
 const TEMPLATE_CODE = 'obgyn_patient_history';
-const TEMPLATE_VERSION = 7;
+const TEMPLATE_VERSION = 8;
 
 export type FieldType = keyof typeof FIELD_TYPES;
 export type SectionConfig = { ui?: any; validation?: any; logic?: any };
@@ -702,30 +702,6 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
         },
         config: { ui: { placeholder: 'Ex : —', colSpan: 4 } },
       },
-      {
-        code: 'blood_group_rh',
-        label: 'Blood group / Rh',
-        type: 'SELECT',
-        binding: {
-          namespace: 'PATIENT_OBGYN_HISTORY',
-          path: 'blood_group_rh',
-        },
-        config: {
-          ui: { placeholder: 'Ex : O+', colSpan: 4 },
-          validation: {
-            options: [
-              opt('A_POS', 'A+'),
-              opt('A_NEG', 'A−'),
-              opt('B_POS', 'B+'),
-              opt('B_NEG', 'B−'),
-              opt('AB_POS', 'AB+'),
-              opt('AB_NEG', 'AB−'),
-              opt('O_POS', 'O+'),
-              opt('O_NEG', 'O−'),
-            ],
-          },
-        },
-      },
     ],
   },
   {
@@ -970,6 +946,40 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
           path: 'pregnancies.complications',
         },
         config: { ui: { placeholder: 'Ex : —', colSpan: 4 } },
+      },
+    ],
+  },
+  {
+    // Blood group is a patient-level medical constant — it belongs in Medical
+    // History, not Social History. It is the single source of truth read (read-
+    // only) by the pregnancy clinical surface.
+    code: 'general_medical',
+    name: 'General',
+    group: 'Medical History',
+    fields: [
+      {
+        code: 'blood_group_rh',
+        label: 'Blood group / Rh',
+        type: 'SELECT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'blood_group_rh',
+        },
+        config: {
+          ui: { placeholder: 'Ex : O+', colSpan: 4 },
+          validation: {
+            options: [
+              opt('A_POS', 'A+'),
+              opt('A_NEG', 'A−'),
+              opt('B_POS', 'B+'),
+              opt('B_NEG', 'B−'),
+              opt('AB_POS', 'AB+'),
+              opt('AB_NEG', 'AB−'),
+              opt('O_POS', 'O+'),
+              opt('O_NEG', 'O−'),
+            ],
+          },
+        },
       },
     ],
   },

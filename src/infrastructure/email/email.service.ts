@@ -82,6 +82,24 @@ export class EmailService {
     });
   }
 
+  async sendAdminInviteEmail(to: string, inviteUrl: string): Promise<void> {
+    await this.sendWithRetry(to, {
+      from: this.fromEmail,
+      to,
+      subject: 'You have been added as a Cradlen platform admin',
+      html: this.renderEmail({
+        title: 'Set your admin password',
+        bodyHtml: `
+          <p>You have been added as a platform admin on Cradlen. Click the button below to set your password and sign in.</p>
+          <a href="${inviteUrl}" style="display:inline-block;padding:12px 24px;background:#4f46e5;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold">
+            Set your password
+          </a>
+          <p style="color:#888;font-size:0.85rem;margin-top:1rem">This link expires in ${this.invitationExpireHours} hours. If you weren't expecting this, you can safely ignore it.</p>
+        `,
+      }),
+    });
+  }
+
   /** Shared responsive email shell. Keeps copy/markup consistent across emails. */
   private renderEmail(params: { title: string; bodyHtml: string }): string {
     return `

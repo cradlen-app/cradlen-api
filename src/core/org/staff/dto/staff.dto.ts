@@ -271,6 +271,16 @@ export class ListStaffQueryDto {
   limit?: number;
 
   @ApiPropertyOptional({
+    enum: ['active', 'inactive', 'all'],
+    default: 'active',
+    description:
+      'Activation state. Default "active" (occupies a seat). "inactive" lists deactivated members (for reactivation); "all" lists both.',
+  })
+  @IsOptional()
+  @IsIn(['active', 'inactive', 'all'])
+  status?: 'active' | 'inactive' | 'all';
+
+  @ApiPropertyOptional({
     description:
       'When true, filters to staff with at least one clinical job function (job_function.is_clinical = true). Includes nurses and assistants — for a doctor-only picker, use `doctors_only` instead.',
   })
@@ -412,6 +422,11 @@ class ScheduleSummaryDto {
 export class StaffResponseDto {
   @ApiProperty() profile_id!: string;
   @ApiProperty() user_id!: string;
+  @ApiProperty({
+    description:
+      'Whether the profile occupies a staff seat (counts to the cap)',
+  })
+  is_active!: boolean;
   @ApiProperty() first_name!: string;
   @ApiProperty() last_name!: string;
   @ApiProperty({ nullable: true }) email!: string | null;

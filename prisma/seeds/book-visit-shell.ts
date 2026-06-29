@@ -16,7 +16,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import type { Predicate } from '../../src/builder/rules/predicates.js';
 
 const TEMPLATE_CODE = 'book_visit';
-const TEMPLATE_VERSION = 19;
+const TEMPLATE_VERSION = 20;
 
 interface FieldSpec {
   code: string;
@@ -295,10 +295,12 @@ const SECTIONS: SectionSpec[] = [
               kind: 'patient',
               idTarget: 'patient_id',
               allowCreate: true,
-              // Patients are a shared cross-org identity — once an existing
-              // patient is picked, lock the prefilled identity fields so the
-              // booking clinic books against that identity without editing it.
-              lockFilled: true,
+              // Patients are a shared cross-org identity. Once an existing
+              // patient is picked, keep only `national_id` locked (it's
+              // immutable). The remaining demographics stay editable so the
+              // booking clinic can correct them; edits are written back to the
+              // patient record via PATCH /patients/:id on submit.
+              lockFilledFields: ['national_id'],
               fillFields: {
                 national_id: 'national_id',
                 phone_number: 'phone_number',

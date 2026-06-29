@@ -15,6 +15,19 @@ export class PatientDto {
   created_at!: Date;
 }
 
+/**
+ * Disambiguation-only shape returned by `GET /patients/search` (the cross-org
+ * global lookup). Intentionally excludes national id / DOB / address / full
+ * phone — full identity is revealed per-record via `GET /patients/:id/identity`
+ * (throttled + audited). `phone_last3` = last 3 digits, to tell apart same-name
+ * patients without exposing the number.
+ */
+export class PatientSearchResultDto {
+  id!: string;
+  full_name!: string;
+  phone_last3!: string | null;
+}
+
 export class EpisodeSummaryDto {
   id!: string;
   name!: string;

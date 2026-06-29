@@ -96,6 +96,20 @@ export const ENTITIES = {
     submitTargetNamespace: 'VISIT_DIAGNOSIS',
     submitTargetPath: 'code',
   },
+  procedure: {
+    kind: 'procedure',
+    // Surgery / procedure catalog search (e.g. CESAREAN_SECTION). The picked
+    // UUID lands on the surgical journey record's `procedure_id`; free text
+    // falls back to procedure_name on the surface PATCH.
+    searchEndpoint: '/v1/procedures?search=',
+    resultShape: {
+      idKey: 'id',
+      labelKeys: ['name'],
+      subtitleKeys: ['code'],
+    },
+    submitTargetNamespace: 'SURGICAL_JOURNEY',
+    submitTargetPath: 'procedure_id',
+  },
   lab_test: {
     kind: 'lab_test',
     // Lab-test / investigation catalog search. The picked UUID lands in the
