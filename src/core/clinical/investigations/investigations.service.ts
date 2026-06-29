@@ -9,10 +9,14 @@ import {
   type InvestigationReviewedEvent,
 } from '@core/clinical/events/events.public.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
+import type { PaginatedPayload } from '@common/dto/api-response.dto.js';
+import { paginated } from '@common/utils/pagination.utils.js';
 import {
+  InvestigationAttachmentsItemDto,
   InvestigationReviewDto,
   ReviewInvestigationDto,
 } from './dto/investigation-review.dto.js';
+import { ListInvestigationsQueryDto } from './dto/list-investigations.query.dto.js';
 
 /** Prisma `include`/`select` for the doctor review view of an investigation. */
 const investigationReviewSelect = {
@@ -50,6 +54,33 @@ type InvestigationReviewRow = Prisma.VisitInvestigationGetPayload<{
   select: typeof investigationReviewSelect;
 }>;
 
+/** Prisma `select` for one row of the patient attachments list. */
+const investigationAttachmentsSelect = {
+  id: true,
+  status: true,
+  test_category: true,
+  custom_test_name: true,
+  ordered_at: true,
+  visit_id: true,
+  lab_test: { select: { name: true } },
+  visit: { select: { scheduled_at: true } },
+  result_attachments: {
+    where: { is_deleted: false },
+    orderBy: { created_at: 'asc' },
+    select: {
+      id: true,
+      object_key: true,
+      content_type: true,
+      created_at: true,
+      source: true,
+    },
+  },
+} satisfies Prisma.VisitInvestigationSelect;
+
+type InvestigationAttachmentsRow = Prisma.VisitInvestigationGetPayload<{
+  select: typeof investigationAttachmentsSelect;
+}>;
+
 /**
  * Doctor-side investigation review: load a single investigation (with the
  * patient-uploaded result files, presigned) and record the doctor's review
@@ -65,6 +96,79 @@ export class InvestigationsService {
     private readonly patientAccess: PatientAccessService,
     private readonly eventBus: EventBus,
   ) {}
+
+  /**
+   * Lists a patient's investigations that carry result files, newest first,
+   * for the visit-workspace Overview "Attachments" section. Branch-gated record
+   * read (`assertPatientAccessible`) plus an org scope on the query. Clinic
+   * users see every non-deleted attachment (no REVIEWED gate). Cancelled orders
+   * are hidden unless explicitly requested.
+   */
+  async listForPatient(
+    query: ListInvestigationsQueryDto,
+    user: AuthContext,
+  ): Promise<PaginatedPayload<InvestigationAttachmentsItemDto>> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+
+    await this.patientAccess.assertPatientAccessible(query.patient_id, user);
+
+    const where: Prisma.VisitInvestigationWhereInput = {
+      is_deleted: false,
+      status: query.status ?? { not: 'CANCELLED' },
+      ...(query.type ? { test_category: query.type } : {}),
+      // Attachments section: only investigations that actually have files.
+      result_attachments: { some: { is_deleted: false } },
+      visit: {
+        is_deleted: false,
+        episode: {
+          journey: {
+            patient_id: query.patient_id,
+            organization_id: user.organizationId,
+          },
+        },
+      },
+    };
+
+    const [rows, total] = await this.prismaService.db.$transaction([
+      this.prismaService.db.visitInvestigation.findMany({
+        where,
+        orderBy: { ordered_at: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        select: investigationAttachmentsSelect,
+      }),
+      this.prismaService.db.visitInvestigation.count({ where }),
+    ]);
+
+    const items = await Promise.all(rows.map((row) => this.toListItem(row)));
+    return paginated(items, { page, limit, total });
+  }
+
+  private async toListItem(
+    inv: InvestigationAttachmentsRow,
+  ): Promise<InvestigationAttachmentsItemDto> {
+    const result_attachments = await Promise.all(
+      inv.result_attachments.map(async (a) => ({
+        id: a.id,
+        url: await this.storageService.createPresignedDownloadUrl(a.object_key),
+        content_type: a.content_type ?? null,
+        uploaded_at: a.created_at,
+        source: a.source,
+      })),
+    );
+
+    return {
+      id: inv.id,
+      test_name: inv.lab_test?.name ?? inv.custom_test_name ?? '',
+      type: inv.test_category ?? null,
+      status: inv.status,
+      ordered_at: inv.ordered_at,
+      visit_id: inv.visit_id,
+      visit_date: inv.visit.scheduled_at,
+      result_attachments,
+    };
+  }
 
   async getReview(
     id: string,

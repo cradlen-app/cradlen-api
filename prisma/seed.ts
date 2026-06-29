@@ -5,12 +5,15 @@ import { PrismaClient } from '@prisma/client';
 import { seedBookVisitTemplate } from './seeds/book-visit.js';
 import { seedObgynPatientHistoryTemplate } from './seeds/obgyn-patient-history.js';
 import { seedObgynExaminationTemplate } from './seeds/obgyn-examination.js';
+import { seedObgynPregnancyTemplate } from './seeds/obgyn-pregnancy.js';
+import { seedObgynSurgicalTemplate } from './seeds/obgyn-surgical.js';
 import { seedCarePathHistorySections } from './seeds/care-path-history-sections.js';
 import { seedCarePathClinicalSurfaces } from './seeds/care-path-clinical-surfaces.js';
 import { seedObgynDiagnosisCodes } from './seeds/diagnosis-codes-obgyn.js';
 import { seedObgynLabTests } from './seeds/lab-tests-obgyn.js';
 import { seedMedicalRepVisitTemplate } from './seeds/medical-rep-visit.js';
 import { seedPrescriptionDefaultTemplate } from './seeds/prescription-default-template.js';
+import { seedPlatformAdmin } from './seeds/platform-admin.js';
 
 config({ path: '.env' });
 config({
@@ -594,8 +597,11 @@ async function main() {
   await seedBookVisitTemplate(prisma);
   await seedObgynPatientHistoryTemplate(prisma);
   await seedObgynExaminationTemplate(prisma);
+  await seedObgynPregnancyTemplate(prisma);
+  await seedObgynSurgicalTemplate(prisma);
   await seedMedicalRepVisitTemplate(prisma);
   await seedPrescriptionDefaultTemplate(prisma);
+  await seedPlatformAdmin(prisma);
 
   console.log('Seed complete.');
 }

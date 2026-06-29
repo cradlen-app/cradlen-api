@@ -5,21 +5,40 @@ import {
   Param,
   ParseUUIDPipe,
   Patch,
+  Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@common/decorators/current-user.decorator.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
-import { ApiStandardResponse } from '@common/swagger/index.js';
 import {
+  ApiPaginatedResponse,
+  ApiStandardResponse,
+} from '@common/swagger/index.js';
+import {
+  InvestigationAttachmentsItemDto,
   InvestigationReviewDto,
   ReviewInvestigationDto,
 } from './dto/investigation-review.dto.js';
+import { ListInvestigationsQueryDto } from './dto/list-investigations.query.dto.js';
 import { InvestigationsService } from './investigations.service.js';
 
 @ApiTags('Investigations')
 @Controller({ path: 'investigations', version: '1' })
 export class InvestigationsController {
   constructor(private readonly investigationsService: InvestigationsService) {}
+
+  @Get()
+  @ApiOperation({
+    summary:
+      "List a patient's investigations that have result files (attachments)",
+  })
+  @ApiPaginatedResponse(InvestigationAttachmentsItemDto)
+  list(
+    @Query() query: ListInvestigationsQueryDto,
+    @CurrentUser() user: AuthContext,
+  ) {
+    return this.investigationsService.listForPatient(query, user);
+  }
 
   @Get(':id')
   @ApiOperation({

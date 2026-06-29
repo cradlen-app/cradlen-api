@@ -23,6 +23,9 @@ const mockDb = {
     count: jest.fn(),
     update: jest.fn(),
   },
+  subscriptionPaymentItem: {
+    findMany: jest.fn(),
+  },
   $transaction: jest.fn(),
 };
 const mockPrisma = { db: mockDb } as unknown as PrismaService;
@@ -31,8 +34,10 @@ const mockAuth = {
   assertCanAccessOrganization: jest.fn(),
 } as unknown as AuthorizationService;
 const activateMock = jest.fn();
+const assertUsageFitsPlanMock = jest.fn();
 const mockSubscriptions = {
   activate: activateMock,
+  assertUsageFitsPlan: assertUsageFitsPlanMock,
 } as unknown as SubscriptionsService;
 const mockInitiate = jest.fn();
 const mockFactory = {
@@ -330,6 +335,81 @@ describe('SubscriptionPaymentsService', () => {
       expect(publishMock).not.toHaveBeenCalledWith(
         'subscription.activated',
         expect.any(Object),
+      );
+    });
+
+    it('COMBINED: activates the plan AND grants each add-on, atomically', async () => {
+      mockDb.subscriptionPayment.findFirst.mockResolvedValue({
+        id: 'pay-3',
+        organization_id: ORG,
+        subscription_plan_id: 'plan-individual',
+        purpose: 'COMBINED',
+        billing_interval: 'YEARLY',
+        status: SubscriptionPaymentStatus.AWAITING_VERIFICATION,
+      });
+      mockDb.subscriptionPaymentItem.findMany.mockResolvedValue([
+        {
+          kind: 'PLAN',
+          subscription_plan_id: 'plan-individual',
+          add_on_id: null,
+          quantity: 1,
+        },
+        {
+          kind: 'ADD_ON',
+          subscription_plan_id: null,
+          add_on_id: 'seat',
+          quantity: 3,
+        },
+      ]);
+      activateMock.mockResolvedValue({
+        id: 'sub-1',
+        ends_at: new Date('2027-01-01T00:00:00Z'),
+      });
+      mockDb.subscriptionAddOn.upsert.mockResolvedValue({ id: 'sao-1' });
+      mockDb.subscriptionPayment.update.mockImplementation((args) =>
+        Promise.resolve({
+          id: 'pay-3',
+          organization_id: ORG,
+          subscription_plan_id: 'plan-individual',
+          purpose: 'COMBINED',
+          add_on_id: null,
+          quantity: 1,
+          provider: 'INSTAPAY',
+          billing_interval: 'YEARLY',
+          amount: new Prisma.Decimal('15500'),
+          currency: 'EGP',
+          created_at: new Date(),
+          verified_at: new Date(),
+          rejection_reason: null,
+          ...args.data,
+        }),
+      );
+
+      const result = await service.verifyPayment('pay-3', 'admin-1');
+
+      expect(assertUsageFitsPlanMock).toHaveBeenCalledWith(
+        ORG,
+        'plan-individual',
+        { cartAddOns: [{ addOnId: 'seat', quantity: 3 }] },
+        mockDb,
+      );
+      expect(activateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ subscriptionPlanId: 'plan-individual' }),
+        mockDb,
+      );
+      expect(mockDb.subscriptionAddOn.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({ quantity: { increment: 3 } }),
+        }),
+      );
+      expect(result.status).toBe(SubscriptionPaymentStatus.VERIFIED);
+      expect(publishMock).toHaveBeenCalledWith(
+        'subscription.activated',
+        expect.any(Object),
+      );
+      expect(publishMock).toHaveBeenCalledWith(
+        'subscription.addon.granted',
+        expect.objectContaining({ add_on_id: 'seat', quantity: 3 }),
       );
     });
 

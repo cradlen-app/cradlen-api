@@ -15,6 +15,12 @@ import { MessagingModule } from '@infrastructure/messaging/messaging.module';
 import { HealthModule } from '@core/health/health.module';
 import { AuthModule } from '@core/auth/auth.module';
 import { PatientAuthModule } from '@core/patient-portal/auth/patient-auth.module.js';
+import { AdminAuthModule } from '@core/platform-admin/auth/admin-auth.module.js';
+import { AdminReadModule } from '@core/platform-admin/read/admin-read.module.js';
+import { AdminWriteModule } from '@core/platform-admin/write/admin-write.module.js';
+import { AdminsModule } from '@core/platform-admin/admins/admins.module.js';
+import { AdminSettingsModule } from '@core/platform-admin/settings/admin-settings.module.js';
+import { AdminNotificationsModule } from '@core/platform-admin/notifications/admin-notifications.module.js';
 import { RolesModule } from '@core/org/roles/roles.module';
 import { OrganizationsModule } from '@core/org/organizations/organizations.module.js';
 import { BranchesModule } from '@core/org/branches/branches.module.js';
@@ -41,6 +47,8 @@ import { LabTestsModule } from '@core/clinical/lab-tests/lab-tests.module';
 import { CalendarModule } from '@core/calendar/calendar.module';
 import { ProceduresModule } from '@core/org/procedures/procedures.module';
 import { ObgynModule } from '@specialties/obgyn/obgyn.module';
+import { PregnancyModule } from '@specialties/obgyn/pregnancy/pregnancy.module';
+import { SurgicalModule } from '@specialties/obgyn/surgical/surgical.module';
 import { TemplatesModule } from '@builder/templates/templates.module.js';
 import { FinancialModule } from '@core/financial/financial.module.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -76,6 +84,12 @@ import { PermissionsModule } from '@common/authorization/permissions.module.js';
     HealthModule,
     AuthModule,
     PatientAuthModule,
+    AdminAuthModule,
+    AdminReadModule,
+    AdminWriteModule,
+    AdminsModule,
+    AdminSettingsModule,
+    AdminNotificationsModule,
     RolesModule,
     OrganizationsModule,
     ProfilesModule,
@@ -103,6 +117,8 @@ import { PermissionsModule } from '@common/authorization/permissions.module.js';
     CalendarModule,
     ProceduresModule,
     ObgynModule,
+    PregnancyModule,
+    SurgicalModule,
     TemplatesModule,
   ],
   controllers: [],

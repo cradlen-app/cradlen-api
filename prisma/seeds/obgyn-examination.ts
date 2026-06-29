@@ -34,7 +34,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import { buildHistorySections } from './obgyn-patient-history.js';
 
 const TEMPLATE_CODE = 'obgyn_examination';
-const TEMPLATE_VERSION = 12;
+const TEMPLATE_VERSION = 13;
 
 // Embedded patient-history sections carry a `history_` prefix so their codes
 // never collide with encounter sections (e.g. history `medications` vs the
@@ -271,7 +271,16 @@ const SECTIONS: SectionSpec[] = [
           namespace: 'VISIT_OBGYN_ENCOUNTER',
           path: 'menstrual_findings.lmp',
         },
-        config: { ui: { placeholder: '1 / 1 / 2026', colSpan: 4 } },
+        config: {
+          ui: { placeholder: '1 / 1 / 2026', colSpan: 4 },
+          // For a pregnancy, LMP is the journey dating anchor captured on the
+          // Pregnancy tab — hide the duplicate here (UI-only; server unaffected).
+          logic: {
+            predicates: [
+              { effect: 'visible', when: { ne: { case_path: 'OBGYN_PREGNANCY' } } },
+            ],
+          },
+        },
       },
       {
         code: 'cycle',

@@ -89,6 +89,12 @@ export const CLINICAL_EVENTS = {
     riskLevelChanged: 'pregnancy.risk_level.changed',
     closed: 'pregnancy.closed',
   },
+  surgical: {
+    /** A surgical journey was opened (the "Create surgical profile" drawer). */
+    booked: 'surgical.booked',
+    /** A surgical journey was closed with a typed outcome. */
+    closed: 'surgical.closed',
+  },
 } as const;
 
 // ---------- Payload contracts (subscribers should rely on these) ----------
@@ -132,6 +138,51 @@ export interface VisitPregnancyRecordUpdatedEvent {
   section: string;
   updated_by_id: string;
   version: number;
+}
+
+/**
+ * Payload for `pregnancy.closed`. Emitted when a pregnancy is closed (delivery
+ * recorded). The active journey is completed in the same transaction, freeing
+ * the single-active-journey slot for the next care path.
+ */
+export interface PregnancyClosedEvent {
+  journey_id: string;
+  patient_id: string;
+  /**
+   * How the pregnancy ended — LIVE_BIRTH | MISCARRIAGE | STILLBIRTH | ECTOPIC |
+   * TERMINATION | TRANSFERRED | LOST_TO_FOLLOWUP | OTHER. A pregnancy can close
+   * without a delivery.
+   */
+  outcome_type: string;
+  /** Full outcome snapshot (outcome_type, delivery_mode?, date?, notes?). */
+  outcome: Record<string, unknown>;
+  closed_by_id: string;
+}
+
+/**
+ * Payload for `surgical.booked`. Emitted when a surgical journey is opened via
+ * the activation drawer. `source_pregnancy_journey_id` is set when the surgical
+ * journey was opened by a cesarean handoff (the pregnancy was closed in the same
+ * transaction), else null.
+ */
+export interface SurgicalBookedEvent {
+  journey_id: string;
+  patient_id: string;
+  procedure_code: string | null;
+  procedure_name: string | null;
+  source_pregnancy_journey_id: string | null;
+}
+
+/**
+ * Payload for `surgical.closed`. Emitted when a surgical journey is closed with a
+ * typed outcome; the active journey is completed in the same transaction.
+ */
+export interface SurgicalClosedEvent {
+  journey_id: string;
+  patient_id: string;
+  outcome_type: string;
+  outcome: Record<string, unknown>;
+  closed_by_id: string;
 }
 
 /**

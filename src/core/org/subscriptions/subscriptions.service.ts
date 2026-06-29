@@ -207,29 +207,19 @@ export class SubscriptionsService {
     return updated;
   }
 
-  async assertBranchLimit(
+  /**
+   * Current resource usage that counts against the plan caps:
+   * - `staff` = active (non-deleted) profiles + PENDING invitations (a pending
+   *   invite is a reserved seat).
+   * - `branches` = non-deleted branches.
+   * Shared by `assertStaffLimit` / `assertBranchLimit` (add-time `>=` gate) and
+   * `assertUsageFitsPlan` (plan-change `>` gate).
+   */
+  private async countCurrentUsage(
     organizationId: string,
     client: Prisma.TransactionClient = this.prismaService.db,
-  ): Promise<void> {
-    const limits = await this.getEffectiveLimits(organizationId, client);
-    const current = await client.branch.count({
-      where: { organization_id: organizationId, is_deleted: false },
-    });
-    if (current >= limits.max_branches) {
-      throw new ForbiddenException({
-        code: ERROR_CODES.SUBSCRIPTION_LIMIT_REACHED,
-        message: `Branch limit reached (${limits.max_branches}). Upgrade your plan or add a branch add-on.`,
-        details: { resource: 'branches', limit: limits.max_branches, current },
-      });
-    }
-  }
-
-  async assertStaffLimit(
-    organizationId: string,
-    client: Prisma.TransactionClient = this.prismaService.db,
-  ): Promise<void> {
-    const limits = await this.getEffectiveLimits(organizationId, client);
-    const [activeStaff, pendingInvitations] = await Promise.all([
+  ): Promise<{ staff: number; branches: number }> {
+    const [activeStaff, pendingInvitations, branches] = await Promise.all([
       client.profile.count({
         where: {
           organization_id: organizationId,
@@ -244,8 +234,40 @@ export class SubscriptionsService {
           status: 'PENDING',
         },
       }),
+      client.branch.count({
+        where: { organization_id: organizationId, is_deleted: false },
+      }),
     ]);
-    const current = activeStaff + pendingInvitations;
+    return { staff: activeStaff + pendingInvitations, branches };
+  }
+
+  async assertBranchLimit(
+    organizationId: string,
+    client: Prisma.TransactionClient = this.prismaService.db,
+  ): Promise<void> {
+    const limits = await this.getEffectiveLimits(organizationId, client);
+    const { branches: current } = await this.countCurrentUsage(
+      organizationId,
+      client,
+    );
+    if (current >= limits.max_branches) {
+      throw new ForbiddenException({
+        code: ERROR_CODES.SUBSCRIPTION_LIMIT_REACHED,
+        message: `Branch limit reached (${limits.max_branches}). Upgrade your plan or add a branch add-on.`,
+        details: { resource: 'branches', limit: limits.max_branches, current },
+      });
+    }
+  }
+
+  async assertStaffLimit(
+    organizationId: string,
+    client: Prisma.TransactionClient = this.prismaService.db,
+  ): Promise<void> {
+    const limits = await this.getEffectiveLimits(organizationId, client);
+    const { staff: current } = await this.countCurrentUsage(
+      organizationId,
+      client,
+    );
     if (current >= limits.max_staff) {
       throw new ForbiddenException({
         code: ERROR_CODES.SUBSCRIPTION_LIMIT_REACHED,
@@ -366,5 +388,164 @@ export class SubscriptionsService {
       max_staff: maxStaff,
       max_organizations: sub.subscription_plan.max_organizations,
     };
+  }
+
+  /**
+   * Effective caps the org *would* have on a TARGET plan = the target plan's base
+   * limits + the org's currently-ACTIVE add-on deltas + any `cartAddOns` being
+   * purchased in the same checkout (combined plan+seats). Used by
+   * `assertUsageFitsPlan` to decide whether a plan change/purchase fits.
+   */
+  async getEffectiveLimitsForPlan(
+    targetPlanId: string,
+    organizationId: string,
+    client: Prisma.TransactionClient = this.prismaService.db,
+    cartAddOns: { addOnId: string; quantity: number }[] = [],
+  ): Promise<{ max_branches: number; max_staff: number }> {
+    const [plan, activeAddOns] = await Promise.all([
+      client.subscriptionPlan.findUnique({ where: { id: targetPlanId } }),
+      client.subscriptionAddOn.findMany({
+        where: {
+          subscription: { organization_id: organizationId, is_deleted: false },
+          is_deleted: false,
+          status: SubscriptionAddOnStatus.ACTIVE,
+          OR: [{ ends_at: null }, { ends_at: { gt: new Date() } }],
+        },
+        include: { add_on: true },
+      }),
+    ]);
+    if (!plan) {
+      throw new InternalServerErrorException('Target plan not found');
+    }
+
+    let maxBranches = plan.max_branches;
+    let maxStaff = plan.max_staff;
+    for (const owned of activeAddOns) {
+      maxBranches += owned.add_on.delta_branches * owned.quantity;
+      maxStaff += owned.add_on.delta_users * owned.quantity;
+    }
+    if (cartAddOns.length > 0) {
+      const cartRows = await client.addOn.findMany({
+        where: { id: { in: cartAddOns.map((c) => c.addOnId) } },
+      });
+      const byId = new Map(cartRows.map((r) => [r.id, r]));
+      for (const item of cartAddOns) {
+        const addOn = byId.get(item.addOnId);
+        if (!addOn) continue;
+        maxBranches += addOn.delta_branches * item.quantity;
+        maxStaff += addOn.delta_users * item.quantity;
+      }
+    }
+    return { max_branches: maxBranches, max_staff: maxStaff };
+  }
+
+  /**
+   * Guards a plan purchase/change: the org's current usage must fit the TARGET
+   * plan's effective caps (base + active add-ons + any `cartAddOns` bought in the
+   * same checkout). Unlike the add-time `>=` gate this uses strict `>` (exactly
+   * filling the plan is allowed). Throws `SUBSCRIPTION_LIMIT_REACHED` with
+   * `reason: 'PLAN_CHANGE_OVER_LIMIT'` and `suggested_add_ons` — the add-on set
+   * (branch bundles + extra seats) the FE can buy together with the plan to keep
+   * everything in one combined payment.
+   */
+  async assertUsageFitsPlan(
+    organizationId: string,
+    targetPlanId: string,
+    opts: { cartAddOns?: { addOnId: string; quantity: number }[] } = {},
+    client: Prisma.TransactionClient = this.prismaService.db,
+  ): Promise<void> {
+    const [limits, usage] = await Promise.all([
+      this.getEffectiveLimitsForPlan(
+        targetPlanId,
+        organizationId,
+        client,
+        opts.cartAddOns ?? [],
+      ),
+      this.countCurrentUsage(organizationId, client),
+    ]);
+
+    const over: {
+      resource: 'staff' | 'branches';
+      limit: number;
+      current: number;
+      excess: number;
+    }[] = [];
+    if (usage.staff > limits.max_staff) {
+      over.push({
+        resource: 'staff',
+        limit: limits.max_staff,
+        current: usage.staff,
+        excess: usage.staff - limits.max_staff,
+      });
+    }
+    if (usage.branches > limits.max_branches) {
+      over.push({
+        resource: 'branches',
+        limit: limits.max_branches,
+        current: usage.branches,
+        excess: usage.branches - limits.max_branches,
+      });
+    }
+    if (over.length === 0) return;
+
+    const staffOver = over.find((o) => o.resource === 'staff');
+    const branchOver = over.find((o) => o.resource === 'branches');
+
+    // Build the add-on set that would cover EVERY over-resource so the FE can
+    // offer a one-click "reduce plan + buy add-ons to keep everything". Branch
+    // bundles also bundle staff seats, so they're applied first and their
+    // bundled users offset the remaining staff overage.
+    const planAddOns = await client.addOn.findMany({
+      where: {
+        subscription_plan_id: targetPlanId,
+        is_active: true,
+        is_deleted: false,
+      },
+    });
+    const bundle = planAddOns.find((a) => a.kind === 'BRANCH_BUNDLE');
+    const extraUser = planAddOns.find((a) => a.kind === 'EXTRA_USER');
+
+    const suggestedAddOns: {
+      code: string;
+      quantity: number;
+      resource: 'branches' | 'staff';
+    }[] = [];
+    let bundledStaff = 0;
+    if (branchOver && bundle && bundle.delta_branches > 0) {
+      const bundleQty = Math.ceil(branchOver.excess / bundle.delta_branches);
+      bundledStaff = bundleQty * bundle.delta_users;
+      suggestedAddOns.push({
+        code: bundle.code,
+        quantity: bundleQty,
+        resource: 'branches',
+      });
+    }
+    if (staffOver && extraUser && extraUser.delta_users > 0) {
+      const residual = Math.max(0, staffOver.excess - bundledStaff);
+      if (residual > 0) {
+        suggestedAddOns.push({
+          code: extraUser.code,
+          quantity: Math.ceil(residual / extraUser.delta_users),
+          resource: 'staff',
+        });
+      }
+    }
+
+    const parts = over.map(
+      (o) => `${o.resource}: ${o.current}/${o.limit} (over by ${o.excess})`,
+    );
+    throw new ForbiddenException({
+      code: ERROR_CODES.SUBSCRIPTION_LIMIT_REACHED,
+      message: `This plan does not fit your current usage — ${parts.join(
+        '; ',
+      )}. Free up resources, add add-ons, or choose a larger plan.`,
+      details: {
+        reason: 'PLAN_CHANGE_OVER_LIMIT',
+        over,
+        ...(suggestedAddOns.length > 0
+          ? { suggested_add_ons: suggestedAddOns }
+          : {}),
+      },
+    });
   }
 }

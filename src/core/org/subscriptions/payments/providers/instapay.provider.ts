@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
 import { SubscriptionPaymentProvider } from '@prisma/client';
 import paymentsConfig from '@config/payments.config.js';
+import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import type { PaymentProvider } from './payment-provider.interface.js';
 import type {
   InitiatePaymentInput,
@@ -19,10 +20,13 @@ export class InstapayPaymentProvider implements PaymentProvider {
   constructor(
     @Inject(paymentsConfig.KEY)
     private readonly config: ConfigType<typeof paymentsConfig>,
+    private readonly prismaService: PrismaService,
   ) {}
 
-  initiate(input: InitiatePaymentInput): Promise<InitiatePaymentResult> {
-    const payTo = this.config.instapay.address;
+  async initiate(input: InitiatePaymentInput): Promise<InitiatePaymentResult> {
+    // Admin Settings (DB) is the source of truth; the env var is the fallback.
+    const row = await this.prismaService.db.platformSetting.findFirst();
+    const payTo = row?.instapay_handle?.trim() || this.config.instapay.address;
     return Promise.resolve({
       settlement_mode: this.settlementMode,
       requires_proof: this.requiresProof,

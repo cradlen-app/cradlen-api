@@ -52,6 +52,9 @@ function createTx(opts: {
         ),
     },
     patientJourney: { update: jest.fn() },
+    // Pregnancy/surgical care-path switch guards: no active scoped record here.
+    pregnancyJourneyRecord: { findFirst: jest.fn().mockResolvedValue(null) },
+    surgicalJourneyRecord: { findFirst: jest.fn().mockResolvedValue(null) },
   };
   return tx;
 }
@@ -86,6 +89,35 @@ describe('ObgynExaminationService — in-visit care path → journey', () => {
   it('updates the journey care_path and emits journey.care_path.set', async () => {
     const tx = createTx({
       currentCarePathCode: 'OBGYN_GENERAL',
+      resolvedCarePathId: 'cp-surgery',
+    });
+    const { service, eventBus } = makeService(tx);
+
+    await service.patch(
+      'visit-1',
+      { case_path: 'OBGYN_SURGERY' } as UpdateObgynExaminationDto,
+      USER,
+    );
+
+    expect(tx.patientJourney.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'journey-1' },
+        data: { care_path_id: 'cp-surgery' },
+      }),
+    );
+    expect(eventBus.publish).toHaveBeenCalledWith(
+      CLINICAL_EVENTS.journey.carePathSet,
+      expect.objectContaining({
+        journey_id: 'journey-1',
+        previous_care_path_code: 'OBGYN_GENERAL',
+        new_care_path_code: 'OBGYN_SURGERY',
+      }),
+    );
+  });
+
+  it('never flips a journey to pregnancy via the examination (activation-only)', async () => {
+    const tx = createTx({
+      currentCarePathCode: 'OBGYN_GENERAL',
       resolvedCarePathId: 'cp-pregnancy',
     });
     const { service, eventBus } = makeService(tx);
@@ -96,19 +128,11 @@ describe('ObgynExaminationService — in-visit care path → journey', () => {
       USER,
     );
 
-    expect(tx.patientJourney.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: 'journey-1' },
-        data: { care_path_id: 'cp-pregnancy' },
-      }),
-    );
-    expect(eventBus.publish).toHaveBeenCalledWith(
+    // Pregnancy is owned by the activation flow — the examination is a no-op.
+    expect(tx.patientJourney.update).not.toHaveBeenCalled();
+    expect(eventBus.publish).not.toHaveBeenCalledWith(
       CLINICAL_EVENTS.journey.carePathSet,
-      expect.objectContaining({
-        journey_id: 'journey-1',
-        previous_care_path_code: 'OBGYN_GENERAL',
-        new_care_path_code: 'OBGYN_PREGNANCY',
-      }),
+      expect.anything(),
     );
   });
 

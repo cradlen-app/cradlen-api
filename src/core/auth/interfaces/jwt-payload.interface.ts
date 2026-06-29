@@ -100,3 +100,23 @@ export interface JwtPatientRefreshPayload {
   iat?: number;
   exp?: number;
 }
+
+/**
+ * Access token for a platform admin (cross-tenant operator). Carries no
+ * profile/organization — the `admin-jwt` strategy validates `type` and loads an
+ * AdminAuthContext instead of a staff ProfileContext.
+ */
+export interface JwtAdminAccessPayload {
+  adminId: string;
+  type: 'admin_access';
+  iat?: number;
+  exp?: number;
+}
+
+export interface JwtAdminRefreshPayload {
+  adminId: string;
+  jti: string;
+  type: 'admin_refresh';
+  iat?: number;
+  exp?: number;
+}
