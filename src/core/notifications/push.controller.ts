@@ -17,7 +17,9 @@ export class PushController {
   constructor(private readonly push: PushService) {}
 
   @Post('subscribe')
-  @ApiOperation({ summary: 'Register a Web Push subscription for the current staff profile' })
+  @ApiOperation({
+    summary: 'Register a Web Push subscription for the current staff profile',
+  })
   async subscribe(
     @CurrentUser() user: AuthContext,
     @Body() dto: PushSubscribeDto,

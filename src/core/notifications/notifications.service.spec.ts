@@ -53,9 +53,7 @@ describe('NotificationsService', () => {
 
   describe('create', () => {
     it('persists the notification and fans it out to the profile push devices', async () => {
-      db.notification.create.mockResolvedValueOnce(
-        buildRow({ id: 'notif-7' }),
-      );
+      db.notification.create.mockResolvedValueOnce(buildRow({ id: 'notif-7' }));
 
       await service.create({
         profileId: 'profile-1',
