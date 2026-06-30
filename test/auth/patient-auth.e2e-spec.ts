@@ -161,7 +161,7 @@ describe('Patient self-signup and login (E2E)', () => {
       .send({ national_id: identity.national_id, password: 'WrongPass1!' })
       .expect(401);
 
-    // Refresh rotates the pair; the old refresh token is then rejected.
+    // Refresh rotates the pair into a new refresh token.
     const refreshed = await http()
       .post('/v1/patient-auth/refresh')
       .send({ refresh_token: refreshToken })
@@ -170,6 +170,21 @@ describe('Patient self-signup and login (E2E)', () => {
     const newRefresh = refreshed.body.data.refresh_token as string;
     expect(newRefresh).not.toBe(refreshToken);
 
+    // The just-rotated token, reused *within* the reuse-grace window, is
+    // honored (concurrent refreshes across instances must not kill an
+    // otherwise-valid session) and returns a fresh pair.
+    await http()
+      .post('/v1/patient-auth/refresh')
+      .send({ refresh_token: refreshToken })
+      .expect(200);
+
+    // Once the grace window has elapsed, reusing the rotated token is a replay
+    // and is rejected. Backdate the revoked rows past the window rather than
+    // waiting in real time.
+    await getTestPrisma().refreshToken.updateMany({
+      where: { patient_account_id: account.id, is_revoked: true },
+      data: { revoked_at: new Date(Date.now() - 60_000) },
+    });
     await http()
       .post('/v1/patient-auth/refresh')
       .send({ refresh_token: refreshToken })

@@ -404,6 +404,90 @@ describe('PatientSignupService', () => {
         service.refresh({ refresh_token: 'wrong-token' }),
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });
+
+    it('honors a token rotated within the grace window: re-issues WITHOUT revoking', async () => {
+      const { service, mocks } = createEnv();
+      mocks.decodePatientRefreshToken.mockReturnValue({ jti: 'jti-1' });
+      mocks.refreshTokenFindUnique.mockResolvedValue(
+        await storedRow({
+          is_revoked: true,
+          replaced_by_jti: 'jti-2',
+          revoked_at: new Date(), // just rotated → within grace
+        }),
+      );
+      mocks.issuePatientTokenPair.mockResolvedValue({ type: 'tokens' });
+
+      await service.refresh({ refresh_token: 'refresh-tok' });
+
+      // Fresh pair for the same subject, and NO revokeJti (the old jti is gone).
+      expect(mocks.issuePatientTokenPair).toHaveBeenCalledWith({
+        accountId: 'account-1',
+        patientId: 'patient-1',
+        guardianId: undefined,
+      });
+    });
+
+    it('rejects a token rotated BEYOND the grace window (401)', async () => {
+      const { service, mocks } = createEnv();
+      mocks.decodePatientRefreshToken.mockReturnValue({ jti: 'jti-1' });
+      mocks.refreshTokenFindUnique.mockResolvedValue(
+        await storedRow({
+          is_revoked: true,
+          replaced_by_jti: 'jti-2',
+          revoked_at: new Date(Date.now() - 60_000), // long ago → reuse
+        }),
+      );
+
+      await expect(
+        service.refresh({ refresh_token: 'refresh-tok' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(mocks.issuePatientTokenPair).not.toHaveBeenCalled();
+    });
+
+    it('rejects a logout/reset revocation within the window (no replaced_by_jti) (401)', async () => {
+      const { service, mocks } = createEnv();
+      mocks.decodePatientRefreshToken.mockReturnValue({ jti: 'jti-1' });
+      mocks.refreshTokenFindUnique.mockResolvedValue(
+        await storedRow({
+          is_revoked: true,
+          replaced_by_jti: null, // revoked by logout/reset, not rotation
+          revoked_at: new Date(),
+        }),
+      );
+
+      await expect(
+        service.refresh({ refresh_token: 'refresh-tok' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(mocks.issuePatientTokenPair).not.toHaveBeenCalled();
+    });
+
+    it('re-issues when the atomic rotation race is lost mid-request', async () => {
+      const { service, mocks } = createEnv();
+      mocks.decodePatientRefreshToken.mockReturnValue({ jti: 'jti-1' });
+      mocks.refreshTokenFindUnique.mockResolvedValue(await storedRow());
+      // First attempt rotates with revokeJti and loses the guarded updateMany;
+      // the retry re-issues a fresh pair without a revoke.
+      mocks.issuePatientTokenPair
+        .mockRejectedValueOnce(
+          new UnauthorizedException('Refresh token already rotated or revoked'),
+        )
+        .mockResolvedValueOnce({ type: 'tokens' });
+
+      await service.refresh({ refresh_token: 'refresh-tok' });
+
+      expect(mocks.issuePatientTokenPair).toHaveBeenCalledTimes(2);
+      expect(mocks.issuePatientTokenPair).toHaveBeenNthCalledWith(1, {
+        accountId: 'account-1',
+        patientId: 'patient-1',
+        guardianId: undefined,
+        revokeJti: 'jti-1',
+      });
+      expect(mocks.issuePatientTokenPair).toHaveBeenNthCalledWith(2, {
+        accountId: 'account-1',
+        patientId: 'patient-1',
+        guardianId: undefined,
+      });
+    });
   });
 
   describe('logout', () => {
