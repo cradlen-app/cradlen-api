@@ -718,6 +718,11 @@ model PatientAccount {
   patient                Patient?       @relation("PatientAccount", fields: [patient_id], references: [id], onDelete: SetNull)
   guardian               Guardian?      @relation("GuardianAccount", fields: [guardian_id], references: [id], onDelete: SetNull)
   refreshTokens          RefreshToken[]
+  // Stamped on every password reset so the patient JWT strategy can reject
+  // access tokens minted before the change — mirrors User.password_changed_at,
+  // making a credential reset invalidate outstanding access tokens immediately
+  // (refresh tokens are already revoked in the reset transaction).
+  password_changed_at    DateTime?
   // Last authenticated portal request, stamped at most once per UTC day by the
   // patient JWT strategy (patient accounts only). Powers the admin daily-active-
   // portals trend.
@@ -1574,6 +1579,13 @@ model Medication {
   // added via raw SQL in the `medications_code_partial_unique` migration —
   // enforces unique `code` per organization on live (is_deleted=false) rows.
   @@index([organization_id, is_deleted])
+  // pg_trgm GIN indexes backing type-ahead ILIKE search on name / generic_name
+  // / code. Created by the `add_trgm_search_indexes` migration; declared here
+  // (type: Gin + gin_trgm_ops) so schema.prisma matches the DB and the
+  // `migrate diff` drift gate stays clean.
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "medications_name_trgm_idx")
+  @@index([generic_name(ops: raw("gin_trgm_ops"))], type: Gin, map: "medications_generic_name_trgm_idx")
+  @@index([code(ops: raw("gin_trgm_ops"))], type: Gin, map: "medications_code_trgm_idx")
   @@map("medications")
 }
 
@@ -1597,6 +1609,12 @@ model LabTest {
   @@unique([organization_id, code])
   @@index([organization_id, is_deleted])
   @@index([specialty_id])
+  // pg_trgm GIN indexes backing type-ahead ILIKE search on name / code.
+  // Created by the `add_trgm_search_indexes` migration; declared here
+  // (type: Gin + gin_trgm_ops) so schema.prisma matches the DB and the
+  // `migrate diff` drift gate stays clean.
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "lab_tests_name_trgm_idx")
+  @@index([code(ops: raw("gin_trgm_ops"))], type: Gin, map: "lab_tests_code_trgm_idx")
   @@map("lab_tests")
 }
 
@@ -1782,6 +1800,13 @@ model DiagnosisCode {
 
   @@unique([code])
   @@index([specialty_code])
+  // pg_trgm GIN indexes backing type-ahead ILIKE search on code / description
+  // / keywords. Created by the `add_trgm_search_indexes` migration; declared
+  // here (type: Gin + gin_trgm_ops) so schema.prisma matches the DB and the
+  // `migrate diff` drift gate stays clean.
+  @@index([code(ops: raw("gin_trgm_ops"))], type: Gin, map: "diagnosis_codes_code_trgm_idx")
+  @@index([description(ops: raw("gin_trgm_ops"))], type: Gin, map: "diagnosis_codes_description_trgm_idx")
+  @@index([keywords(ops: raw("gin_trgm_ops"))], type: Gin, map: "diagnosis_codes_keywords_trgm_idx")
   @@map("diagnosis_codes")
 }
 

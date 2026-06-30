@@ -42,7 +42,7 @@ export class InvoiceBalanceService {
 
     const grossPaid = Money.sum(payments.map((p) => p.amount));
     const refundedTotal = Money.sum(refunds.map((r) => r.amount));
-    const paidAmount = Prisma.Decimal.max(
+    const paidAmount = Money.max(
       Money.zero(),
       Money.subtract(grossPaid, refundedTotal),
     );
@@ -57,7 +57,7 @@ export class InvoiceBalanceService {
       status = InvoiceStatus.REFUNDED;
     }
 
-    const balanceDue = Prisma.Decimal.max(
+    const balanceDue = Money.max(
       Money.zero(),
       Money.subtract(invoice.total_amount, paidAmount),
     );

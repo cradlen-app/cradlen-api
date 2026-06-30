@@ -13,7 +13,7 @@ import {
   JourneyCarePathSetEvent,
   PregnancyBookedEvent,
   PregnancyClosedEvent,
-} from '@core/clinical/events/clinical-events';
+} from '@core/clinical/events/events.public';
 import { PatientAccessService } from '@core/patient/patient-access/patient-access.public';
 import { buildRevision } from '../revisions.helper';
 import { PREGNANCY_CARE_PATH_CODE } from './pregnancy-care-path.guard';

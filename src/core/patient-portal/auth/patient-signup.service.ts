@@ -260,7 +260,9 @@ export class PatientSignupService {
     await this.prismaService.db.$transaction([
       this.prismaService.db.patientAccount.update({
         where: { id: account.id },
-        data: { password_hashed },
+        // Stamp password_changed_at so the patient JWT strategy rejects access
+        // tokens minted before this reset (refresh tokens revoked just below).
+        data: { password_hashed, password_changed_at: new Date() },
       }),
       this.prismaService.db.refreshToken.updateMany({
         where: { patient_account_id: account.id, is_revoked: false },

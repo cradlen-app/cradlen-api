@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+} from '@nestjs/common';
 import { InvoiceStatus } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { EventBus } from '@infrastructure/messaging/event-bus.js';
@@ -52,22 +56,35 @@ export class InvoiceLifecycleService {
     invoiceId: string,
     actorId: string,
   ) {
+    // Friendly 404 / early DRAFT validation; the authoritative gate is the
+    // conditional update below, which closes the issue/void TOCTOU race.
     const invoice = await this.composition.findOneOrThrow(
       organizationId,
       invoiceId,
     );
     this.composition.assertDraft(invoice);
 
-    const itemCount = await this.prismaService.db.invoiceItem.count({
-      where: { invoice_id: invoiceId },
-    });
-    if (itemCount === 0) {
-      throw new BadRequestException('Cannot issue an invoice with no items');
-    }
+    // Count + status-guarded transition in one transaction so a concurrent item
+    // removal can't leave the invoice ISSUED with zero items, and a concurrent
+    // issue/void can't double-transition.
+    const issued = await this.prismaService.db.$transaction(async (tx) => {
+      const itemCount = await tx.invoiceItem.count({
+        where: { invoice_id: invoiceId },
+      });
+      if (itemCount === 0) {
+        throw new BadRequestException('Cannot issue an invoice with no items');
+      }
 
-    const issued = await this.prismaService.db.invoice.update({
-      where: { id: invoiceId },
-      data: { status: InvoiceStatus.ISSUED, issued_at: new Date() },
+      const { count } = await tx.invoice.updateMany({
+        where: { id: invoiceId, status: InvoiceStatus.DRAFT },
+        data: { status: InvoiceStatus.ISSUED, issued_at: new Date() },
+      });
+      if (count !== 1) {
+        throw new ConflictException(
+          'Invoice is no longer in DRAFT status and cannot be issued',
+        );
+      }
+      return tx.invoice.findUniqueOrThrow({ where: { id: invoiceId } });
     });
 
     this.eventBus.publish<InvoiceIssuedEvent>(FINANCIAL_EVENTS.invoice.issued, {
@@ -101,9 +118,22 @@ export class InvoiceLifecycleService {
       );
     }
 
-    const voided = await this.prismaService.db.invoice.update({
-      where: { id: invoiceId },
+    // Status-guarded transition: the conditional updateMany is atomic, so a
+    // concurrent issue/void/payment can't race this into an invalid transition.
+    const { count } = await this.prismaService.db.invoice.updateMany({
+      where: {
+        id: invoiceId,
+        status: { in: [InvoiceStatus.DRAFT, InvoiceStatus.ISSUED] },
+      },
       data: { status: InvoiceStatus.VOID },
+    });
+    if (count !== 1) {
+      throw new ConflictException(
+        'Invoice can no longer be voided (its status changed)',
+      );
+    }
+    const voided = await this.prismaService.db.invoice.findUniqueOrThrow({
+      where: { id: invoiceId },
     });
     this.eventBus.publish(FINANCIAL_EVENTS.invoice.voided, {
       invoice_id: voided.id,

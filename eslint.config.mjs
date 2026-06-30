@@ -70,11 +70,12 @@ export default tseslint.config(
             // NOTE: A previous version restricted `plugins → core` and
             // `specialties → core` to `*.module.ts` / `*.public.ts` files only.
             // The `except` glob matching in eslint-plugin-import is unreliable
-            // across platforms (Windows backslash paths break minimatch globs),
-            // so the rule is enforced as a CONVENTION documented in CLAUDE.md
-            // and reviewed in code review rather than via lint. The layer
-            // direction (plugins/specialties cannot reach into infrastructure,
-            // builder, or each other) is still enforced below.
+            // across platforms (Windows backslash paths break minimatch globs).
+            // That rule is now enforced platform-independently by a unit test —
+            // src/architecture-boundaries.spec.ts (runs in `npm run test`) —
+            // which fails on any specialties/plugins import of a core internal.
+            // The layer direction (plugins/specialties cannot reach into
+            // infrastructure, builder, or each other) is still enforced below.
             // Specialty modules — OB/GYN, pediatric, physio, etc. — are first-class
             // domain code, not cross-cutting plugins. They live under src/specialties/
             // and follow the same import-boundary rule as plugins.
