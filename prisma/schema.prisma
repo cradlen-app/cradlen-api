@@ -1000,6 +1000,7 @@ model Profile {
   calendar_events                  CalendarEvent[]                  @relation("CalendarEventProfile")
   calendar_event_assists           CalendarEventAssistant[]         @relation("CalendarEventAssistantProfile")
   notifications                    Notification[]
+  push_subscriptions               PushSubscription[]
   // Financial back-relations
   services_created                 Service[]                        @relation("ServiceCreatedBy")
   service_categories_created       ServiceCategory[]                @relation("ServiceCategoryCreatedBy")
@@ -1243,6 +1244,24 @@ model Notification {
   @@index([profile_id, category, is_deleted])
   @@index([profile_id, code, is_deleted])
   @@map("notifications")
+}
+
+// Browser Web Push subscriptions for staff, scoped to a Profile (org membership)
+// — the same scoping as Notification, so a person with profiles in several orgs
+// subscribes per org. Mirrors AdminPushSubscription. `endpoint` is globally
+// unique, so a re-subscribe from the same browser upserts rather than duplicates.
+model PushSubscription {
+  id         String   @id @default(uuid()) @db.Uuid
+  profile_id String   @db.Uuid
+  profile    Profile  @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+  endpoint   String   @unique
+  p256dh     String
+  auth       String
+  user_agent String?
+  created_at DateTime @default(now())
+
+  @@index([profile_id])
+  @@map("push_subscriptions")
 }
 
 model WorkingSchedule {

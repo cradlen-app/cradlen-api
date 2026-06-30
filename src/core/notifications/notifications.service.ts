@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { paginated } from '@common/utils/pagination.utils.js';
 import { toNotificationResponse } from './notifications.mapper.js';
+import { PushService } from './push.service.js';
 
 interface CreateNotificationInput {
   profileId: string;
@@ -16,10 +17,13 @@ interface CreateNotificationInput {
 
 @Injectable()
 export class NotificationsService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly pushService: PushService,
+  ) {}
 
   async create(input: CreateNotificationInput) {
-    return this.prismaService.db.notification.create({
+    const notification = await this.prismaService.db.notification.create({
       data: {
         profile_id: input.profileId,
         code: input.code,
@@ -30,6 +34,20 @@ export class NotificationsService {
         metadata: input.metadata as Prisma.InputJsonValue | undefined,
       },
     });
+
+    // Single fan-out point: every notification created anywhere (see
+    // NotificationsListener) also pushes to the profile's subscribed browsers.
+    // Fire-and-forget and self-contained — never throws into the caller, and
+    // no-ops when push is disabled or the profile has no subscriptions. The
+    // notification id is the de-dupe tag so distinct messages don't collapse.
+    this.pushService.sendToProfile(input.profileId, {
+      title: input.title,
+      body: input.description,
+      navigate_to: input.navigateTo ?? null,
+      tag: notification.id,
+    });
+
+    return notification;
   }
 
   async list(
