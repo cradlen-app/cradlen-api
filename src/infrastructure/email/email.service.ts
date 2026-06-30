@@ -13,10 +13,24 @@ interface ResendErrorShape {
   message?: string;
 }
 
+export interface FeedbackEmailPayload {
+  category: string;
+  message: string;
+  displayName: string;
+  role: string;
+  organizationId: string;
+  branchId: string | null;
+  creditConsent: boolean;
+  pageUrl?: string | null;
+  appVersion?: string | null;
+  locale?: string | null;
+}
+
 @Injectable()
 export class EmailService {
   private readonly resend: Resend;
   private readonly fromEmail: string;
+  private readonly feedbackNotifyEmail: string;
   private readonly logger = new Logger(EmailService.name);
   private readonly maxSendAttempts = 3;
   private readonly otpTtlMinutes: number;
@@ -28,6 +42,7 @@ export class EmailService {
   ) {
     this.resend = new Resend(config.resend.apiKey);
     this.fromEmail = config.resend.fromEmail;
+    this.feedbackNotifyEmail = config.resend.feedbackNotifyEmail;
     this.otpTtlMinutes = config.verificationCodes.otpTtlMinutes;
     this.invitationExpireHours = config.invitationExpireHours;
   }
@@ -100,6 +115,43 @@ export class EmailService {
     });
   }
 
+  async sendFeedbackEmail(payload: FeedbackEmailPayload): Promise<void> {
+    const meta: Array<[string, string]> = [
+      ['Category', payload.category],
+      ['From', payload.displayName],
+      ['Role', payload.role],
+      ['Organization', payload.organizationId],
+      ['Branch', payload.branchId ?? '—'],
+      ['Credit consent', payload.creditConsent ? 'Yes' : 'No'],
+      ['Page', payload.pageUrl ?? '—'],
+      ['App version', payload.appVersion ?? '—'],
+      ['Locale', payload.locale ?? '—'],
+    ];
+    const metaHtml = meta
+      .map(
+        ([label, value]) =>
+          `<tr><td style="padding:4px 12px 4px 0;color:#888;white-space:nowrap;vertical-align:top">${this.escapeHtml(
+            label,
+          )}</td><td style="padding:4px 0">${this.escapeHtml(value)}</td></tr>`,
+      )
+      .join('');
+
+    await this.sendWithRetry(this.feedbackNotifyEmail, {
+      from: this.fromEmail,
+      to: this.feedbackNotifyEmail,
+      subject: `New Cradlen feedback: ${payload.category}`,
+      html: this.renderEmail({
+        title: 'New product feedback',
+        bodyHtml: `
+          <div style="white-space:pre-wrap;padding:1rem;background:#f5f5f5;border-radius:8px;margin-bottom:1rem">${this.escapeHtml(
+            payload.message,
+          )}</div>
+          <table style="font-size:0.9rem;border-collapse:collapse">${metaHtml}</table>
+        `,
+      }),
+    });
+  }
+
   /** Shared responsive email shell. Keeps copy/markup consistent across emails. */
   private renderEmail(params: { title: string; bodyHtml: string }): string {
     return `
@@ -108,6 +160,16 @@ export class EmailService {
         ${params.bodyHtml}
       </div>
     `;
+  }
+
+  /** Escape user-supplied text before embedding it in email HTML. */
+  private escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   private renderCode(code: string): string {

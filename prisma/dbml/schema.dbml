@@ -339,6 +339,24 @@ Table admin_audit_log {
   admin platform_admins [not null]
 }
 
+Table feature_suggestions {
+  id String [pk]
+  category FeedbackCategory [not null]
+  message String [not null]
+  status FeedbackStatus [not null, default: 'NEW']
+  credit_consent Boolean [not null, default: false]
+  display_name String [not null]
+  profile_id String
+  organization_id String
+  branch_id String
+  role String
+  page_url String
+  app_version String
+  locale String
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
 Table roles {
   id String [pk]
   code String [unique, not null]
@@ -2677,6 +2695,20 @@ Enum AdminNotificationType {
   SUBSCRIPTION_STARTED
   PLAN_CHANGED
   PAYMENT_SUBMITTED
+}
+
+Enum FeedbackCategory {
+  FEATURE
+  BUG
+  OTHER
+}
+
+Enum FeedbackStatus {
+  NEW
+  REVIEWING
+  PLANNED
+  SHIPPED
+  DECLINED
 }
 
 Enum DiagnosisCodeSource {
