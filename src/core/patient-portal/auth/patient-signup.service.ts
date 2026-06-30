@@ -312,7 +312,18 @@ export class PatientSignupService {
    * rotating the jti (old token is revoked atomically). The patient/guardian
    * subject is re-derived from the stored PatientAccount rather than trusting
    * the token.
+   *
+   * Concurrent-rotation grace: a client can fire two refreshes with the SAME
+   * token nearly simultaneously (commonly across serverless instances, where an
+   * in-process single-flight can't dedupe them). Strict rotation would 401 the
+   * loser and kill an otherwise-valid session. So a token that was *rotated*
+   * (replaced, not logged-out/reset) within {@link REFRESH_REUSE_GRACE_MS} is
+   * honored with a fresh pair instead of being rejected. Reuse after the window,
+   * or reuse of a token revoked by logout / password reset (no `replaced_by_jti`),
+   * is still rejected.
    */
+  private static readonly REFRESH_REUSE_GRACE_MS = 10_000;
+
   async refresh(dto: RefreshDto): Promise<AuthTokensDto> {
     const payload = this.tokensService.decodePatientRefreshToken(
       dto.refresh_token,
@@ -322,7 +333,7 @@ export class PatientSignupService {
       where: { jti: payload.jti },
       include: { patientAccount: true },
     });
-    if (!stored || stored.is_revoked || stored.expires_at < new Date()) {
+    if (!stored || stored.expires_at < new Date()) {
       throw new UnauthorizedException('Refresh token revoked or expired');
     }
     // A patient refresh row is owned by a PatientAccount, never a staff user.
@@ -338,12 +349,47 @@ export class PatientSignupService {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
-    return this.tokensService.issuePatientTokenPair({
+    const subject = {
       accountId: account.id,
       patientId: account.patient_id ?? undefined,
       guardianId: account.guardian_id ?? undefined,
-      revokeJti: stored.jti,
-    });
+    };
+
+    // Already rotated by a sibling request: honor within the grace window,
+    // otherwise treat as reuse of a dead token.
+    if (stored.is_revoked) {
+      if (this.isRecentlyRotated(stored.replaced_by_jti, stored.revoked_at)) {
+        return this.tokensService.issuePatientTokenPair(subject);
+      }
+      throw new UnauthorizedException('Refresh token revoked or expired');
+    }
+
+    try {
+      return await this.tokensService.issuePatientTokenPair({
+        ...subject,
+        revokeJti: stored.jti,
+      });
+    } catch (error) {
+      // Lost the atomic rotation race between findUnique and the guarded revoke:
+      // a sibling rotated this jti microseconds ago. Same concurrent case —
+      // re-issue a fresh pair rather than 401-ing the session.
+      if (error instanceof UnauthorizedException) {
+        return this.tokensService.issuePatientTokenPair(subject);
+      }
+      throw error;
+    }
+  }
+
+  /** True when a revoked row was *rotated* (replaced) within the reuse grace. */
+  private isRecentlyRotated(
+    replacedByJti: string | null,
+    revokedAt: Date | null,
+  ): boolean {
+    if (!replacedByJti || !revokedAt) return false;
+    return (
+      Date.now() - revokedAt.getTime() <=
+      PatientSignupService.REFRESH_REUSE_GRACE_MS
+    );
   }
 
   logout(refreshToken: string): Promise<void> {
