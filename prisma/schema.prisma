@@ -841,6 +841,47 @@ model AdminAuditLog {
   @@map("admin_audit_log")
 }
 
+enum FeedbackCategory {
+  FEATURE
+  BUG
+  OTHER
+}
+
+enum FeedbackStatus {
+  NEW
+  REVIEWING
+  PLANNED
+  SHIPPED
+  DECLINED
+}
+
+// In-app "Help us improve Cradlen" suggestions submitted by staff/doctors from
+// the dashboard sidebar. Persisted (not just emailed) so a future public
+// Features/Roadmap page can showcase shipped items and credit the submitter —
+// but only when `credit_consent` is true. Submitter identity/context is
+// snapshotted at submit time, so the row carries no FK to Profile/Organization
+// and survives profile edits or deletion.
+model FeatureSuggestion {
+  id              String           @id @default(uuid()) @db.Uuid
+  category        FeedbackCategory
+  message         String
+  status          FeedbackStatus   @default(NEW)
+  credit_consent  Boolean          @default(false)
+  display_name    String
+  profile_id      String?          @db.Uuid
+  organization_id String?          @db.Uuid
+  branch_id       String?          @db.Uuid
+  role            String?
+  page_url        String?
+  app_version     String?
+  locale          String?
+  created_at      DateTime         @default(now())
+  updated_at      DateTime         @updatedAt
+
+  @@index([status, created_at])
+  @@map("feature_suggestions")
+}
+
 model Role {
   id          String       @id @default(uuid()) @db.Uuid
   code        String       @unique

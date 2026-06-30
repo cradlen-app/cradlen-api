@@ -29,6 +29,7 @@ import { InvitationsModule } from '@core/org/invitations/invitations.module.js';
 import { StaffModule } from '@core/org/staff/staff.module.js';
 import { SubscriptionsModule } from '@core/org/subscriptions/subscriptions.module.js';
 import { NotificationsModule } from '@core/notifications/notifications.module.js';
+import { FeedbackModule } from '@core/feedback/feedback.module.js';
 import { SpecialtyCatalogModule } from '@core/org/specialty-catalog/specialty-catalog.module';
 import { JobFunctionsModule } from '@core/org/job-functions/job-functions.module';
 import { PatientsModule } from '@core/patient/patients/patients.module';
@@ -98,6 +99,7 @@ import { PermissionsModule } from '@common/authorization/permissions.module.js';
     StaffModule,
     SubscriptionsModule,
     NotificationsModule,
+    FeedbackModule,
     FinancialModule,
     SpecialtyCatalogModule,
     JobFunctionsModule,
