@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
+import { randomUUID } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
 import { createTestApp } from '../../helpers/app-factory';
 import { cleanDatabase } from '../../helpers/db-cleaner';
@@ -86,7 +87,14 @@ describe('Patient portal — cross-account IDOR (integration)', () => {
     });
     const accA = await createPatientAccount(prisma, a.patientId);
     const accB = await createPatientAccount(prisma, b.patientId);
-    return { a, b, bInvestigation, accA, accB };
+    return {
+      a,
+      b,
+      bInvestigation,
+      accA,
+      accB,
+      ownerProfileId: clinic.ownerProfileId,
+    };
   }
 
   const auth = (req: request.Test, token: string) =>
@@ -121,6 +129,45 @@ describe('Patient portal — cross-account IDOR (integration)', () => {
       accA.token,
     )
       .send({ content_type: 'application/pdf', size_bytes: 1024 })
+      .expect(404);
+  });
+
+  it('rejects confirming a result whose key is not prefixed for this investigation (400)', async () => {
+    const { a, accA, ownerProfileId } = await setup();
+    // A's OWN investigation, so the access gate passes — the only thing that can
+    // reject is the server-side key-prefix check. A forged key pointing at a
+    // different investigation's prefix (or any arbitrary object) must be refused,
+    // so a patient cannot attach someone else's / an arbitrary R2 object to their
+    // record.
+    const aInvestigation = await prisma.visitInvestigation.create({
+      data: {
+        visit_id: a.visitId,
+        ordered_by_id: ownerProfileId,
+        custom_test_name: 'CBC',
+        status: 'ORDERED',
+      },
+    });
+    await auth(
+      request(app.getHttpServer()).post(
+        `/v1/patient-portal/investigations/${aInvestigation.id}/result`,
+      ),
+      accA.token,
+    )
+      .send({ key: `investigations/${randomUUID()}/results/evil.pdf` })
+      .expect(400);
+  });
+
+  it("rejects confirming a result on another patient's investigation (404)", async () => {
+    const { bInvestigation, accA } = await setup();
+    await auth(
+      request(app.getHttpServer()).post(
+        `/v1/patient-portal/investigations/${bInvestigation.id}/result`,
+      ),
+      accA.token,
+    )
+      .send({
+        key: `investigations/${bInvestigation.id}/results/${randomUUID()}.pdf`,
+      })
       .expect(404);
   });
 

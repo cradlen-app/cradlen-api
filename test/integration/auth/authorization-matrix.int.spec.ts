@@ -56,6 +56,18 @@ describe('Auth — authorization matrix (integration)', () => {
         is_main: true,
       },
     });
+    // A second branch only the OWNER can reach — used to prove a STAFF member
+    // cannot switch to a branch they are not assigned to.
+    const branch2 = await prisma.branch.create({
+      data: {
+        organization_id: org.id,
+        name: 'Branch Two',
+        address: '2 St',
+        city: 'Cairo',
+        governorate: 'Cairo',
+        is_main: false,
+      },
+    });
     await prisma.subscription.create({
       data: {
         organization_id: org.id,
@@ -124,7 +136,7 @@ describe('Auth — authorization matrix (integration)', () => {
       roleCode: 'STAFF',
       assignToBranch: false,
     });
-    return { org, branch, ownerMember, staffOnBranch, staffOffBranch };
+    return { org, branch, branch2, ownerMember, staffOnBranch, staffOffBranch };
   }
 
   async function loginAs(
@@ -188,10 +200,9 @@ describe('Auth — authorization matrix (integration)', () => {
     expect(branches.map((b) => b.id)).toContain(branch.id);
   });
 
-  it('A STAFF profile assigned to a branch sees that branch in /auth/me; one without an assignment sees no branches', async () => {
+  it('a STAFF profile assigned to a branch sees only that branch in /auth/me', async () => {
     const { branch } = await seedScenario();
     const onBranch = await loginAs('staff-here@example.com');
-    const offBranch = await loginAs('staff-elsewhere@example.com');
 
     const meOn = await request(app.getHttpServer())
       .get('/v1/auth/me')
@@ -202,32 +213,56 @@ describe('Auth — authorization matrix (integration)', () => {
         (b) => b.id,
       ),
     ).toEqual([branch.id]);
+  });
 
-    const meOff = await request(app.getHttpServer())
-      .get('/v1/auth/me')
-      .set('Authorization', `Bearer ${offBranch.access}`)
+  it('a STAFF profile with no branch assignment cannot complete profile selection (400)', async () => {
+    await seedScenario();
+    const http = app.getHttpServer();
+
+    // A branchless member can authenticate (login returns the profile) but
+    // cannot mint a session: profiles/select requires an active branch context,
+    // and with zero assigned branches there is none to default to.
+    const login = await request(http)
+      .post('/v1/auth/login')
+      .send({ email: 'staff-elsewhere@example.com', password: PASSWORD })
       .expect(200);
-    expect(meOff.body.data.profiles[0].branches).toEqual([]);
+    const profile = login.body.data.profiles[0];
+    expect(profile.branches).toEqual([]);
+
+    await request(http)
+      .post('/v1/auth/profiles/select')
+      .send({
+        selection_token: login.body.data.selection_token,
+        profile_id: profile.profile_id,
+      })
+      .expect(400);
   });
 
   it('switching to a branch the caller cannot access is rejected with 403; switching to an allowed one issues new tokens', async () => {
-    const { branch } = await seedScenario();
+    const { branch, branch2 } = await seedScenario();
     const http = app.getHttpServer();
 
     const owner = await loginAs('owner@example.com');
-    // OWNER can switch to the main branch (sees it via role short-circuit).
+    // OWNER can switch to any branch in the org (sees all via role short-circuit).
     await request(http)
       .post('/v1/auth/branches/switch')
       .set('Authorization', `Bearer ${owner.access}`)
-      .send({ branch_id: branch.id })
+      .send({ branch_id: branch2.id })
       .expect(200);
 
-    // A staff member NOT assigned to the branch cannot switch to it.
-    const offBranch = await loginAs('staff-elsewhere@example.com');
+    // A staff member assigned to `branch` (Main) cannot switch to `branch2`.
+    const onBranch = await loginAs('staff-here@example.com');
     await request(http)
       .post('/v1/auth/branches/switch')
-      .set('Authorization', `Bearer ${offBranch.access}`)
-      .send({ branch_id: branch.id })
+      .set('Authorization', `Bearer ${onBranch.access}`)
+      .send({ branch_id: branch2.id })
       .expect(403);
+
+    // …but can switch to the branch they ARE assigned to.
+    await request(http)
+      .post('/v1/auth/branches/switch')
+      .set('Authorization', `Bearer ${onBranch.access}`)
+      .send({ branch_id: branch.id })
+      .expect(200);
   });
 });
