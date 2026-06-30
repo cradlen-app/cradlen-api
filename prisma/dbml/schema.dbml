@@ -292,6 +292,7 @@ Table platform_admins {
   refreshTokens refresh_tokens [not null]
   auditLogs admin_audit_log [not null]
   verificationCodes verification_codes [not null]
+  pushSubscriptions admin_push_subscriptions [not null]
 }
 
 Table platform_settings {
@@ -327,6 +328,17 @@ Table admin_notifications {
   created_at DateTime [default: `now()`, not null]
 }
 
+Table admin_push_subscriptions {
+  id String [pk]
+  admin_id String [not null]
+  admin platform_admins [not null]
+  endpoint String [unique, not null]
+  p256dh String [not null]
+  auth String [not null]
+  user_agent String
+  created_at DateTime [default: `now()`, not null]
+}
+
 Table admin_audit_log {
   id String [pk]
   admin_id String [not null]
@@ -337,6 +349,24 @@ Table admin_audit_log {
   after Json
   created_at DateTime [default: `now()`, not null]
   admin platform_admins [not null]
+}
+
+Table feature_suggestions {
+  id String [pk]
+  category FeedbackCategory [not null]
+  message String [not null]
+  status FeedbackStatus [not null, default: 'NEW']
+  credit_consent Boolean [not null, default: false]
+  display_name String [not null]
+  profile_id String
+  organization_id String
+  branch_id String
+  role String
+  page_url String
+  app_version String
+  locale String
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
 }
 
 Table roles {
@@ -2679,6 +2709,20 @@ Enum AdminNotificationType {
   PAYMENT_SUBMITTED
 }
 
+Enum FeedbackCategory {
+  FEATURE
+  BUG
+  OTHER
+}
+
+Enum FeedbackStatus {
+  NEW
+  REVIEWING
+  PLANNED
+  SHIPPED
+  DECLINED
+}
+
 Enum DiagnosisCodeSource {
   SYSTEM
   USER
@@ -2742,6 +2786,8 @@ Ref: branches.organization_id > organizations.id [delete: Cascade]
 Ref: patient_accounts.patient_id - patients.id [delete: Set Null]
 
 Ref: patient_accounts.guardian_id - guardians.id [delete: Set Null]
+
+Ref: admin_push_subscriptions.admin_id > platform_admins.id [delete: Cascade]
 
 Ref: admin_audit_log.admin_id > platform_admins.id [delete: Cascade]
 

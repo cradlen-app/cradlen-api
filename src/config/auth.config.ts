@@ -14,6 +14,8 @@ export interface AuthConfig {
   resend: {
     apiKey: string;
     fromEmail: string;
+    fromName: string;
+    feedbackNotifyEmail: string;
   };
   verificationCodes: {
     otpTtlMinutes: number;
@@ -41,6 +43,9 @@ export default registerAs(
     resend: {
       apiKey: requireEnv('RESEND_API_KEY'),
       fromEmail: process.env.RESEND_FROM_EMAIL ?? 'noreply@example.com',
+      fromName: process.env.RESEND_FROM_NAME ?? 'Cradlen',
+      feedbackNotifyEmail:
+        process.env.FEEDBACK_NOTIFY_EMAIL ?? 'cradlen.app@gmail.com',
     },
     verificationCodes: {
       otpTtlMinutes: parsePositiveInt('OTP_TTL_MINUTES', '15'),

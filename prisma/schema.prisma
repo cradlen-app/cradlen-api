@@ -752,6 +752,7 @@ model PlatformAdmin {
   refreshTokens     RefreshToken[]
   auditLogs         AdminAuditLog[]
   verificationCodes VerificationCode[]
+  pushSubscriptions AdminPushSubscription[]
 
   @@map("platform_admins")
 }
@@ -822,6 +823,24 @@ model AdminNotification {
   @@map("admin_notifications")
 }
 
+// A browser Web Push subscription belonging to one platform admin. Admins may
+// have several (one per device/browser). `endpoint` is globally unique, so a
+// re-subscribe upserts rather than duplicating. Push delivery prunes rows the
+// push service reports as gone (404/410).
+model AdminPushSubscription {
+  id         String        @id @default(uuid()) @db.Uuid
+  admin_id   String        @db.Uuid
+  admin      PlatformAdmin @relation(fields: [admin_id], references: [id], onDelete: Cascade)
+  endpoint   String        @unique
+  p256dh     String
+  auth       String
+  user_agent String?
+  created_at DateTime      @default(now())
+
+  @@index([admin_id])
+  @@map("admin_push_subscriptions")
+}
+
 // Append-only audit trail for every platform-admin WRITE action. Written inside
 // the same transaction as the mutation it records, so the action and its log are
 // atomic. before/after hold the relevant snapshot of the mutated entity.
@@ -839,6 +858,47 @@ model AdminAuditLog {
   @@index([admin_id, created_at])
   @@index([target_type, target_id])
   @@map("admin_audit_log")
+}
+
+enum FeedbackCategory {
+  FEATURE
+  BUG
+  OTHER
+}
+
+enum FeedbackStatus {
+  NEW
+  REVIEWING
+  PLANNED
+  SHIPPED
+  DECLINED
+}
+
+// In-app "Help us improve Cradlen" suggestions submitted by staff/doctors from
+// the dashboard sidebar. Persisted (not just emailed) so a future public
+// Features/Roadmap page can showcase shipped items and credit the submitter —
+// but only when `credit_consent` is true. Submitter identity/context is
+// snapshotted at submit time, so the row carries no FK to Profile/Organization
+// and survives profile edits or deletion.
+model FeatureSuggestion {
+  id              String           @id @default(uuid()) @db.Uuid
+  category        FeedbackCategory
+  message         String
+  status          FeedbackStatus   @default(NEW)
+  credit_consent  Boolean          @default(false)
+  display_name    String
+  profile_id      String?          @db.Uuid
+  organization_id String?          @db.Uuid
+  branch_id       String?          @db.Uuid
+  role            String?
+  page_url        String?
+  app_version     String?
+  locale          String?
+  created_at      DateTime         @default(now())
+  updated_at      DateTime         @updatedAt
+
+  @@index([status, created_at])
+  @@map("feature_suggestions")
 }
 
 model Role {
