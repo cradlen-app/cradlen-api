@@ -292,6 +292,7 @@ Table platform_admins {
   refreshTokens refresh_tokens [not null]
   auditLogs admin_audit_log [not null]
   verificationCodes verification_codes [not null]
+  pushSubscriptions admin_push_subscriptions [not null]
 }
 
 Table platform_settings {
@@ -324,6 +325,17 @@ Table admin_notifications {
   organization_id String
   related_id String
   is_read Boolean [not null, default: false]
+  created_at DateTime [default: `now()`, not null]
+}
+
+Table admin_push_subscriptions {
+  id String [pk]
+  admin_id String [not null]
+  admin platform_admins [not null]
+  endpoint String [unique, not null]
+  p256dh String [not null]
+  auth String [not null]
+  user_agent String
   created_at DateTime [default: `now()`, not null]
 }
 
@@ -2774,6 +2786,8 @@ Ref: branches.organization_id > organizations.id [delete: Cascade]
 Ref: patient_accounts.patient_id - patients.id [delete: Set Null]
 
 Ref: patient_accounts.guardian_id - guardians.id [delete: Set Null]
+
+Ref: admin_push_subscriptions.admin_id > platform_admins.id [delete: Cascade]
 
 Ref: admin_audit_log.admin_id > platform_admins.id [delete: Cascade]
 

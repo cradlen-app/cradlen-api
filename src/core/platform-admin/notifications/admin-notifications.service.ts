@@ -1,7 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { AdminNotificationType, Prisma } from '@prisma/client';
+import {
+  AdminNotification,
+  AdminNotificationType,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { paginated } from '@common/utils/pagination.utils.js';
+import { AdminPushService } from '../push/admin-push.service.js';
 import type { AdminNotificationsQueryDto } from './dto/admin-notification.dto.js';
 
 export interface CreateAdminNotificationInput {
@@ -19,10 +24,13 @@ export interface CreateAdminNotificationInput {
  */
 @Injectable()
 export class AdminNotificationsService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly push: AdminPushService,
+  ) {}
 
-  create(input: CreateAdminNotificationInput) {
-    return this.prismaService.db.adminNotification.create({
+  async create(input: CreateAdminNotificationInput) {
+    const notification = await this.prismaService.db.adminNotification.create({
       data: {
         type: input.type,
         title: input.title,
@@ -31,6 +39,31 @@ export class AdminNotificationsService {
         related_id: input.related_id ?? null,
       },
     });
+
+    // Fan out to subscribed admin devices. Fire-and-forget: push failures must
+    // never affect the notification write (the listener also swallows errors).
+    this.push.sendToAllAdmins({
+      title: notification.title,
+      body: notification.body,
+      url: this.deepLink(notification),
+    });
+
+    return notification;
+  }
+
+  /**
+   * Where a push notification should land when tapped. Mirrors the admin app's
+   * client-side routing: payments have a detail page keyed by `related_id`,
+   * everything else opens the originating organization.
+   */
+  private deepLink(n: AdminNotification): string {
+    if (n.type === AdminNotificationType.PAYMENT_SUBMITTED && n.related_id) {
+      return `/payments/${n.related_id}`;
+    }
+    if (n.organization_id) {
+      return `/organizations/${n.organization_id}`;
+    }
+    return '/';
   }
 
   async list(query: AdminNotificationsQueryDto) {

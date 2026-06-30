@@ -9,6 +9,7 @@ import databaseConfig from './config/database.config';
 import authConfig from './config/auth.config';
 import storageConfig from './config/storage.config';
 import paymentsConfig from './config/payments.config';
+import pushConfig from './config/push.config';
 import { DatabaseModule } from '@infrastructure/database/database.module';
 import { StorageModule } from '@infrastructure/storage/storage.module.js';
 import { MessagingModule } from '@infrastructure/messaging/messaging.module';
@@ -21,6 +22,7 @@ import { AdminWriteModule } from '@core/platform-admin/write/admin-write.module.
 import { AdminsModule } from '@core/platform-admin/admins/admins.module.js';
 import { AdminSettingsModule } from '@core/platform-admin/settings/admin-settings.module.js';
 import { AdminNotificationsModule } from '@core/platform-admin/notifications/admin-notifications.module.js';
+import { AdminPushModule } from '@core/platform-admin/push/admin-push.module.js';
 import { RolesModule } from '@core/org/roles/roles.module';
 import { OrganizationsModule } from '@core/org/organizations/organizations.module.js';
 import { BranchesModule } from '@core/org/branches/branches.module.js';
@@ -71,6 +73,7 @@ import { PermissionsModule } from '@common/authorization/permissions.module.js';
         authConfig,
         storageConfig,
         paymentsConfig,
+        pushConfig,
       ],
     }),
     ThrottlerModule.forRootAsync({
@@ -91,6 +94,7 @@ import { PermissionsModule } from '@common/authorization/permissions.module.js';
     AdminsModule,
     AdminSettingsModule,
     AdminNotificationsModule,
+    AdminPushModule,
     RolesModule,
     OrganizationsModule,
     ProfilesModule,
