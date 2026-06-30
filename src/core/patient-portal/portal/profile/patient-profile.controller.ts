@@ -18,6 +18,7 @@ import type { PatientAuthContext } from '@common/interfaces/patient-auth-context
 import { PatientProfileService } from './patient-profile.service.js';
 import {
   PatientProfileDto,
+  UpdateNationalIdDto,
   UpdatePatientProfileDto,
 } from './dto/patient-profile.dto.js';
 import {
@@ -60,6 +61,23 @@ export class PatientProfileController {
     patientId?: string,
   ) {
     return this.profileService.updateProfile(patient, patientId, dto);
+  }
+
+  @Patch('national-id')
+  @Public()
+  @UseGuards(PatientJwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: "Change the patient's national ID (requires current password)",
+  })
+  @ApiStandardResponse(PatientProfileDto)
+  updateNationalId(
+    @CurrentPatient() patient: PatientAuthContext,
+    @Body() dto: UpdateNationalIdDto,
+    @Query('patient_id', new ParseUUIDPipe({ optional: true }))
+    patientId?: string,
+  ) {
+    return this.profileService.updateNationalId(patient, patientId, dto);
   }
 
   @Post('image-upload-url')

@@ -3,8 +3,10 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import * as bcrypt from 'bcryptjs';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { StorageService } from '@infrastructure/storage/storage.service.js';
@@ -12,6 +14,7 @@ import type { PatientAuthContext } from '@common/interfaces/patient-auth-context
 import { resolveAccessiblePatientIds } from '../accessible-patients.util.js';
 import {
   PatientProfileDto,
+  UpdateNationalIdDto,
   UpdatePatientProfileDto,
 } from './dto/patient-profile.dto.js';
 import {
@@ -126,6 +129,41 @@ export class PatientProfileService {
     const updated = await this.prismaService.db.patient.update({
       where: { id: patient.id },
       data: patientData,
+      select: patientProfileSelect,
+    });
+
+    return this.toDto(updated);
+  }
+
+  /**
+   * Changes the target patient's national ID. National ID is the login
+   * credential (login resolves an account by `Patient.national_id`), so the
+   * caller's current password is re-verified against their own account before
+   * the write — a hijacked session can't silently swap the identity key. A
+   * duplicate raises Prisma P2002, mapped to a 409 by the global filter.
+   */
+  async updateNationalId(
+    ctx: PatientAuthContext,
+    patientId: string | undefined,
+    dto: UpdateNationalIdDto,
+  ): Promise<PatientProfileDto> {
+    const patient = await this.loadPatient(ctx, patientId);
+
+    const account = await this.prismaService.db.patientAccount.findFirst({
+      where: { id: ctx.accountId, is_active: true, is_deleted: false },
+      select: { password_hashed: true },
+    });
+    if (!account?.password_hashed) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    const ok = await bcrypt.compare(dto.current_password, account.password_hashed);
+    if (!ok) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const updated = await this.prismaService.db.patient.update({
+      where: { id: patient.id },
+      data: { national_id: dto.national_id },
       select: patientProfileSelect,
     });
 

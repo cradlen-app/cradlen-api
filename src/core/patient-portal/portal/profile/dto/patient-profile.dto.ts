@@ -1,6 +1,17 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { MaritalStatus } from '@prisma/client';
-import { IsDateString, IsEnum, IsOptional, IsString } from 'class-validator';
+import {
+  IsDateString,
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Matches,
+} from 'class-validator';
+import {
+  NATIONAL_ID_MESSAGE,
+  NATIONAL_ID_REGEX,
+} from '../../../auth/dto/national-id.constant.js';
 
 /**
  * Patient-editable demographics. All fields optional (PATCH semantics).
@@ -35,6 +46,24 @@ export class UpdatePatientProfileDto {
   @IsEnum(MaritalStatus)
   @IsOptional()
   marital_status?: MaritalStatus;
+}
+
+/**
+ * Patient self-service national-ID change. National ID is the login credential,
+ * so the current password is re-verified before it is written. The format rule
+ * is the shared 14-digit Egyptian one used by signup/login. Uniqueness is
+ * enforced by the DB (`@unique`) and surfaces as a 409 via the global filter.
+ */
+export class UpdateNationalIdDto {
+  @ApiProperty({ description: 'New national ID — exactly 14 digits' })
+  @IsString()
+  @Matches(NATIONAL_ID_REGEX, { message: NATIONAL_ID_MESSAGE })
+  national_id!: string;
+
+  @ApiProperty({ description: 'Current account password (re-authentication)' })
+  @IsString()
+  @IsNotEmpty()
+  current_password!: string;
 }
 
 export class PatientProfileDto {
