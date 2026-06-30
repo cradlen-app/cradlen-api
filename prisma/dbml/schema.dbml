@@ -458,6 +458,7 @@ Table profiles {
   calendar_events calendar_events [not null]
   calendar_event_assists calendar_event_assistants [not null]
   notifications notifications [not null]
+  push_subscriptions push_subscriptions [not null]
   services_created services [not null]
   service_categories_created service_categories [not null]
   price_lists_created price_lists [not null]
@@ -635,6 +636,17 @@ Table notifications {
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   profile profiles [not null]
+}
+
+Table push_subscriptions {
+  id String [pk]
+  profile_id String [not null]
+  profile profiles [not null]
+  endpoint String [unique, not null]
+  p256dh String [not null]
+  auth String [not null]
+  user_agent String
+  created_at DateTime [default: `now()`, not null]
 }
 
 Table working_schedules {
@@ -2838,6 +2850,8 @@ Ref: invitation_branches.invitation_id > invitations.id [delete: Cascade]
 Ref: invitation_branches.(branch_id, organization_id) > branches.(id, organization_id) [delete: Cascade]
 
 Ref: notifications.profile_id > profiles.id [delete: Cascade]
+
+Ref: push_subscriptions.profile_id > profiles.id [delete: Cascade]
 
 Ref: working_schedules.profile_id > profiles.id [delete: Cascade]
 

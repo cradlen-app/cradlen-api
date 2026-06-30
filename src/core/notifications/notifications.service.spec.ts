@@ -2,11 +2,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { PrismaService } from '@infrastructure/database/prisma.service';
+import { PushService } from './push.service';
 
 describe('NotificationsService', () => {
   let service: NotificationsService;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let db: any;
+  let pushService: { sendToProfile: jest.Mock };
 
   const buildRow = (overrides: Record<string, unknown> = {}) => ({
     id: 'notif-1',
@@ -36,15 +38,40 @@ describe('NotificationsService', () => {
         updateMany: jest.fn(),
       },
     };
+    pushService = { sendToProfile: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         NotificationsService,
         { provide: PrismaService, useValue: { db } },
+        { provide: PushService, useValue: pushService },
       ],
     }).compile();
 
     service = module.get(NotificationsService);
+  });
+
+  describe('create', () => {
+    it('persists the notification and fans it out to the profile push devices', async () => {
+      db.notification.create.mockResolvedValueOnce(buildRow({ id: 'notif-7' }));
+
+      await service.create({
+        profileId: 'profile-1',
+        code: 'invitation.accepted',
+        category: 'staff',
+        title: 'Invitation Accepted',
+        description: 'Sara accepted your invitation.',
+        navigateTo: '/org-1/branch-1/dashboard/staff/invitations/inv-1',
+      });
+
+      // The created notification id is the de-dupe tag so messages don't collapse.
+      expect(pushService.sendToProfile).toHaveBeenCalledWith('profile-1', {
+        title: 'Invitation Accepted',
+        body: 'Sara accepted your invitation.',
+        navigate_to: '/org-1/branch-1/dashboard/staff/invitations/inv-1',
+        tag: 'notif-7',
+      });
+    });
   });
 
   describe('list', () => {
