@@ -718,6 +718,11 @@ model PatientAccount {
   patient                Patient?       @relation("PatientAccount", fields: [patient_id], references: [id], onDelete: SetNull)
   guardian               Guardian?      @relation("GuardianAccount", fields: [guardian_id], references: [id], onDelete: SetNull)
   refreshTokens          RefreshToken[]
+  // Stamped on every password reset so the patient JWT strategy can reject
+  // access tokens minted before the change — mirrors User.password_changed_at,
+  // making a credential reset invalidate outstanding access tokens immediately
+  // (refresh tokens are already revoked in the reset transaction).
+  password_changed_at    DateTime?
   // Last authenticated portal request, stamped at most once per UTC day by the
   // patient JWT strategy (patient accounts only). Powers the admin daily-active-
   // portals trend.

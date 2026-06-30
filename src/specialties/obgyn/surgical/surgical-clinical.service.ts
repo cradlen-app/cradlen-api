@@ -11,7 +11,7 @@ import { EventBus } from '@infrastructure/messaging/event-bus';
 import {
   CLINICAL_EVENTS,
   JourneyClinicalUpdatedEvent,
-} from '@core/clinical/events/clinical-events';
+} from '@core/clinical/events/events.public';
 import { PatientAccessService } from '@core/patient/patient-access/patient-access.public';
 import { TemplateValidator } from '@builder/validator/template.validator';
 import { buildRevision } from '../revisions.helper';

@@ -15,7 +15,7 @@ import {
   PregnancyClosedEvent,
   SurgicalBookedEvent,
   SurgicalClosedEvent,
-} from '@core/clinical/events/clinical-events';
+} from '@core/clinical/events/events.public';
 import { PatientAccessService } from '@core/patient/patient-access/patient-access.public';
 import { buildRevision } from '../revisions.helper';
 import { SURGICAL_CARE_PATH_CODE } from './surgical-care-path.guard';

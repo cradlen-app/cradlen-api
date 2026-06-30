@@ -42,12 +42,19 @@ export class SubscriptionGuard implements CanActivate {
 
     if (SubscriptionGuard.SAFE_METHODS.has(request.method)) return true;
 
-    // Gate the organization actually being mutated: prefer the route's :orgId
-    // over the caller's token org, so the subscription of the *target* org is
-    // enforced (the token org and route org can differ). Fall back to the token
-    // org for routes that carry no :orgId param.
+    // Enforce the subscription of the org the caller actually belongs to. A
+    // staff access token is scoped to a single organization, so a route :orgId
+    // that differs from the token org is a cross-tenant attempt — the
+    // service-layer authz rejects it. Don't probe a foreign org's subscription
+    // here (that would both mis-gate and leak another org's billing state);
+    // defer to downstream authz instead.
     const params = request.params as Record<string, string | undefined>;
-    const organizationId = params?.orgId ?? request.user?.organizationId;
+    const routeOrgId = params?.orgId;
+    const tokenOrgId = request.user?.organizationId;
+    if (routeOrgId && tokenOrgId && routeOrgId !== tokenOrgId) {
+      return true;
+    }
+    const organizationId = routeOrgId ?? tokenOrgId;
     if (!organizationId) return true; // public / unauthenticated route
 
     const active = await this.subscriptionsService.isOrgActive(organizationId);

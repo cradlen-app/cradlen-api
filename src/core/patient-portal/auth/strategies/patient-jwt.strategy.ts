@@ -33,6 +33,7 @@ export class PatientJwtStrategy extends PassportStrategy(
     payload: JwtPatientAccessPayload & {
       aud?: string | string[];
       iss?: string;
+      iat?: number;
     },
   ): Promise<PatientAuthContext> {
     if (payload.type !== 'patient_access') {
@@ -53,9 +54,27 @@ export class PatientJwtStrategy extends PassportStrategy(
 
     const account = await this.prismaService.db.patientAccount.findFirst({
       where: { id: payload.accountId, is_active: true, is_deleted: false },
-      select: { id: true, patient_id: true, guardian_id: true },
+      select: {
+        id: true,
+        patient_id: true,
+        guardian_id: true,
+        password_changed_at: true,
+      },
     });
     if (!account) throw new UnauthorizedException('Invalid auth context');
+
+    // Reject an access token minted before the account's last password change so
+    // a reset invalidates outstanding access tokens immediately (not just refresh
+    // tokens). `iat` is epoch-seconds; compare against the change instant floored
+    // to seconds so a token issued in the same second is kept. Mirrors JwtStrategy.
+    const changedAt = account.password_changed_at;
+    if (
+      payload.iat !== undefined &&
+      changedAt &&
+      payload.iat < Math.floor(changedAt.getTime() / 1000)
+    ) {
+      throw new UnauthorizedException('Token issued before password change');
+    }
 
     // Fire-and-forget daily-active heartbeat for patient portals only
     // (guardians are proxies, excluded from portal-adoption metrics).
