@@ -605,18 +605,28 @@ export class VisitsService {
           'A patient with this national_id already exists',
         );
       }
-      patient = await tx.patient.create({
-        data: {
-          full_name: dto.full_name!,
-          national_id: dto.national_id!,
-          date_of_birth: new Date(dto.date_of_birth!),
-          phone_number: dto.phone_number!,
-          address: dto.address!,
-          ...(resolvedMaritalStatus
-            ? { marital_status: resolvedMaritalStatus }
-            : {}),
-        },
-      });
+      const data = {
+        full_name: dto.full_name!,
+        national_id: dto.national_id!,
+        date_of_birth: new Date(dto.date_of_birth!),
+        phone_number: dto.phone_number!,
+        address: dto.address!,
+        ...(resolvedMaritalStatus
+          ? { marital_status: resolvedMaritalStatus }
+          : {}),
+      };
+      if (existing) {
+        // existing && is_deleted: revive the tombstoned record instead of
+        // creating a second row. national_id is a full unique, so a fresh
+        // create would hit P2002; reviving also preserves the patient's id
+        // and journey history across a data-privacy delete + re-registration.
+        patient = await tx.patient.update({
+          where: { id: existing.id },
+          data: { ...data, is_deleted: false, deleted_at: null },
+        });
+      } else {
+        patient = await tx.patient.create({ data });
+      }
       patientWasJustCreated = true;
     }
 

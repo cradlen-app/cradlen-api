@@ -1573,6 +1573,8 @@ model Medication {
   // Partial unique index `medications_organization_id_code_live_unique`
   // added via raw SQL in the `medications_code_partial_unique` migration —
   // enforces unique `code` per organization on live (is_deleted=false) rows.
+  // pg_trgm GIN indexes on name / generic_name / code (raw SQL,
+  // `add_trgm_search_indexes` migration) back the type-ahead ILIKE search.
   @@index([organization_id, is_deleted])
   @@map("medications")
 }
@@ -1595,6 +1597,8 @@ model LabTest {
   updated_at      DateTime             @updatedAt
 
   @@unique([organization_id, code])
+  // pg_trgm GIN indexes on name / code (raw SQL, `add_trgm_search_indexes`
+  // migration) back the type-ahead ILIKE search.
   @@index([organization_id, is_deleted])
   @@index([specialty_id])
   @@map("lab_tests")
@@ -1781,6 +1785,8 @@ model DiagnosisCode {
   updated_at     DateTime            @updatedAt
 
   @@unique([code])
+  // pg_trgm GIN indexes on code / description / keywords (raw SQL,
+  // `add_trgm_search_indexes` migration) back the type-ahead ILIKE search.
   @@index([specialty_code])
   @@map("diagnosis_codes")
 }
