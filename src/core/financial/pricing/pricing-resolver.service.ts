@@ -239,6 +239,6 @@ export class PricingResolverService {
             Money.multiply(base, discount.discount_value).dividedBy(100),
           )
         : discount.discount_value;
-    return Prisma.Decimal.max(Money.zero(), Money.subtract(base, amount));
+    return Money.max(Money.zero(), Money.subtract(base, amount));
   }
 }

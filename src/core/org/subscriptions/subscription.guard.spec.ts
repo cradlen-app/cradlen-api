@@ -77,14 +77,26 @@ describe('SubscriptionGuard', () => {
     );
   });
 
-  it('gates the route :orgId (target org), not the caller token org', async () => {
+  it('gates the route :orgId when it matches the caller token org', async () => {
     subscriptions.isOrgActive.mockResolvedValue(true);
+    const ctx = buildContext({
+      method: 'POST',
+      user: { organizationId: 'o1' },
+      params: { orgId: 'o1' },
+    });
+    await guard.canActivate(ctx);
+    expect(subscriptions.isOrgActive).toHaveBeenCalledWith('o1');
+  });
+
+  it('defers (does not probe) when route :orgId differs from the token org', async () => {
     const ctx = buildContext({
       method: 'POST',
       user: { organizationId: 'token-org' },
       params: { orgId: 'route-org' },
     });
-    await guard.canActivate(ctx);
-    expect(subscriptions.isOrgActive).toHaveBeenCalledWith('route-org');
+    // A cross-tenant attempt: the guard must not reveal the foreign org's
+    // subscription state — it returns true and leaves rejection to service authz.
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    expect(subscriptions.isOrgActive).not.toHaveBeenCalled();
   });
 });

@@ -655,6 +655,36 @@ describe('Financial RCM — lifecycle + cross-tenant (integration)', () => {
     expect(money(pay3.body.data.invoice.balance_due)).toBe(0);
   });
 
+  it('rejects re-issuing an already-issued invoice and re-voiding a voided one', async () => {
+    const a = await seedOrg('Org A', 'owner.a@example.com');
+    const patientId = await createPatient(a.org.id, a.ownerProfileId);
+    const auth = bearer(await loginAs(a.ownerEmail));
+    const http = app.getHttpServer();
+    const base = `/v1/organizations/${a.org.id}`;
+
+    const { invoiceId } = await chargeAndIssue(
+      base,
+      auth,
+      a.branch.id,
+      patientId,
+      a.ownerProfileId,
+      { unit_price: 200 },
+    );
+
+    // Already ISSUED → a second issue is a guarded invalid transition.
+    await auth(
+      request(http).post(`${base}/invoices/${invoiceId}/issue`),
+    ).expect(400);
+
+    // Void it, then a second void must be rejected (terminal status).
+    await auth(request(http).post(`${base}/invoices/${invoiceId}/void`)).expect(
+      201,
+    );
+    await auth(request(http).post(`${base}/invoices/${invoiceId}/void`)).expect(
+      400,
+    );
+  });
+
   it('rejects appending charges to a voided invoice', async () => {
     const a = await seedOrg('Org A', 'owner.a@example.com');
     const patientId = await createPatient(a.org.id, a.ownerProfileId);

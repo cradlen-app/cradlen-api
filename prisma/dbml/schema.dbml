@@ -272,6 +272,7 @@ Table patient_accounts {
   patient patients
   guardian guardians
   refreshTokens refresh_tokens [not null]
+  password_changed_at DateTime
   last_active_at DateTime
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]

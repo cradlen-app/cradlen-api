@@ -15,6 +15,7 @@ import {
   signWithWrongSecret,
 } from '../../helpers/jwt-factory';
 import { signupOwner } from '../../helpers/auth-helpers';
+import { patientToken } from '../../helpers/patient-portal-helpers';
 
 /**
  * Security coverage for the JWT verification + audience rules that the global
@@ -104,6 +105,46 @@ describe('Auth — token security (integration)', () => {
     const owner = await signupOwner(app, mailMock);
     await request(app.getHttpServer())
       .get('/v1/patient-auth/me')
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .expect(401);
+  });
+
+  // Cross-audience completeness: the three audiences (staff `access`, patient
+  // `patient_access`, admin `admin_access`) share one signing secret and are
+  // separated only by the `type` claim + each guard's strategy. Every guard must
+  // reject a validly-signed token minted for another audience. (staff -> patient
+  // is covered above; the remaining directions are exercised here.)
+
+  it('rejects a patient access token on a staff route (cross-audience)', async () => {
+    // A correctly-signed patient_access token (the staff guard rejects on `type`
+    // before any DB lookup, so a randomly-scoped account id is sufficient).
+    const token = patientToken(randomUUID(), randomUUID());
+    await request(app.getHttpServer())
+      .get('/v1/auth/me')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(401);
+  });
+
+  it('rejects an admin access token on a staff route (cross-audience)', async () => {
+    const token = signWithType(fakePayload(), 'admin_access');
+    await request(app.getHttpServer())
+      .get('/v1/auth/me')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(401);
+  });
+
+  it('rejects an admin access token on a patient-portal route (cross-audience)', async () => {
+    const token = signWithType(fakePayload(), 'admin_access');
+    await request(app.getHttpServer())
+      .get('/v1/patient-auth/me')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(401);
+  });
+
+  it('rejects a staff access token on an admin route (cross-audience)', async () => {
+    const owner = await signupOwner(app, mailMock);
+    await request(app.getHttpServer())
+      .get('/v1/admin/auth/me')
       .set('Authorization', `Bearer ${owner.accessToken}`)
       .expect(401);
   });
