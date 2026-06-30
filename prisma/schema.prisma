@@ -1578,9 +1578,14 @@ model Medication {
   // Partial unique index `medications_organization_id_code_live_unique`
   // added via raw SQL in the `medications_code_partial_unique` migration —
   // enforces unique `code` per organization on live (is_deleted=false) rows.
-  // pg_trgm GIN indexes on name / generic_name / code (raw SQL,
-  // `add_trgm_search_indexes` migration) back the type-ahead ILIKE search.
   @@index([organization_id, is_deleted])
+  // pg_trgm GIN indexes backing type-ahead ILIKE search on name / generic_name
+  // / code. Created by the `add_trgm_search_indexes` migration; declared here
+  // (type: Gin + gin_trgm_ops) so schema.prisma matches the DB and the
+  // `migrate diff` drift gate stays clean.
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "medications_name_trgm_idx")
+  @@index([generic_name(ops: raw("gin_trgm_ops"))], type: Gin, map: "medications_generic_name_trgm_idx")
+  @@index([code(ops: raw("gin_trgm_ops"))], type: Gin, map: "medications_code_trgm_idx")
   @@map("medications")
 }
 
@@ -1602,10 +1607,14 @@ model LabTest {
   updated_at      DateTime             @updatedAt
 
   @@unique([organization_id, code])
-  // pg_trgm GIN indexes on name / code (raw SQL, `add_trgm_search_indexes`
-  // migration) back the type-ahead ILIKE search.
   @@index([organization_id, is_deleted])
   @@index([specialty_id])
+  // pg_trgm GIN indexes backing type-ahead ILIKE search on name / code.
+  // Created by the `add_trgm_search_indexes` migration; declared here
+  // (type: Gin + gin_trgm_ops) so schema.prisma matches the DB and the
+  // `migrate diff` drift gate stays clean.
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "lab_tests_name_trgm_idx")
+  @@index([code(ops: raw("gin_trgm_ops"))], type: Gin, map: "lab_tests_code_trgm_idx")
   @@map("lab_tests")
 }
 
@@ -1790,9 +1799,14 @@ model DiagnosisCode {
   updated_at     DateTime            @updatedAt
 
   @@unique([code])
-  // pg_trgm GIN indexes on code / description / keywords (raw SQL,
-  // `add_trgm_search_indexes` migration) back the type-ahead ILIKE search.
   @@index([specialty_code])
+  // pg_trgm GIN indexes backing type-ahead ILIKE search on code / description
+  // / keywords. Created by the `add_trgm_search_indexes` migration; declared
+  // here (type: Gin + gin_trgm_ops) so schema.prisma matches the DB and the
+  // `migrate diff` drift gate stays clean.
+  @@index([code(ops: raw("gin_trgm_ops"))], type: Gin, map: "diagnosis_codes_code_trgm_idx")
+  @@index([description(ops: raw("gin_trgm_ops"))], type: Gin, map: "diagnosis_codes_description_trgm_idx")
+  @@index([keywords(ops: raw("gin_trgm_ops"))], type: Gin, map: "diagnosis_codes_keywords_trgm_idx")
   @@map("diagnosis_codes")
 }
 
