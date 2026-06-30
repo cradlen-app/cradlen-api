@@ -29,7 +29,8 @@ export interface FeedbackEmailPayload {
 @Injectable()
 export class EmailService {
   private readonly resend: Resend;
-  private readonly fromEmail: string;
+  /** Composed sender: `Name <address>` so clients show "Cradlen", not "noreply". */
+  private readonly from: string;
   private readonly feedbackNotifyEmail: string;
   private readonly logger = new Logger(EmailService.name);
   private readonly maxSendAttempts = 3;
@@ -41,7 +42,10 @@ export class EmailService {
     config: ConfigType<typeof authConfig>,
   ) {
     this.resend = new Resend(config.resend.apiKey);
-    this.fromEmail = config.resend.fromEmail;
+    const fromName = config.resend.fromName;
+    this.from = fromName
+      ? `${fromName} <${config.resend.fromEmail}>`
+      : config.resend.fromEmail;
     this.feedbackNotifyEmail = config.resend.feedbackNotifyEmail;
     this.otpTtlMinutes = config.verificationCodes.otpTtlMinutes;
     this.invitationExpireHours = config.invitationExpireHours;
@@ -49,7 +53,7 @@ export class EmailService {
 
   async sendVerificationEmail(to: string, code: string): Promise<void> {
     await this.sendWithRetry(to, {
-      from: this.fromEmail,
+      from: this.from,
       to,
       subject: 'Your verification code',
       html: this.renderEmail({
@@ -65,7 +69,7 @@ export class EmailService {
 
   async sendPasswordResetEmail(to: string, code: string): Promise<void> {
     await this.sendWithRetry(to, {
-      from: this.fromEmail,
+      from: this.from,
       to,
       subject: 'Reset your password',
       html: this.renderEmail({
@@ -81,7 +85,7 @@ export class EmailService {
 
   async sendStaffInvitationEmail(to: string, inviteUrl: string): Promise<void> {
     await this.sendWithRetry(to, {
-      from: this.fromEmail,
+      from: this.from,
       to,
       subject: 'You have been invited to join an organization',
       html: this.renderEmail({
@@ -99,7 +103,7 @@ export class EmailService {
 
   async sendAdminInviteEmail(to: string, inviteUrl: string): Promise<void> {
     await this.sendWithRetry(to, {
-      from: this.fromEmail,
+      from: this.from,
       to,
       subject: 'You have been added as a Cradlen platform admin',
       html: this.renderEmail({
@@ -137,7 +141,7 @@ export class EmailService {
       .join('');
 
     await this.sendWithRetry(this.feedbackNotifyEmail, {
-      from: this.fromEmail,
+      from: this.from,
       to: this.feedbackNotifyEmail,
       subject: `New Cradlen feedback: ${payload.category}`,
       html: this.renderEmail({
