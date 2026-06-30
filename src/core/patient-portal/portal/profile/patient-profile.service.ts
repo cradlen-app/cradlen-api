@@ -156,7 +156,10 @@ export class PatientProfileService {
     if (!account?.password_hashed) {
       throw new UnauthorizedException('Invalid credentials');
     }
-    const ok = await bcrypt.compare(dto.current_password, account.password_hashed);
+    const ok = await bcrypt.compare(
+      dto.current_password,
+      account.password_hashed,
+    );
     if (!ok) {
       throw new UnauthorizedException('Invalid credentials');
     }
