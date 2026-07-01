@@ -31,6 +31,12 @@ const enabledConfig: PushConfig = {
 // assert on it. sendToProfile returns void and schedules dispatch off-thread.
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
+// web-push rejects with an Error carrying the HTTP statusCode; mirror that so the
+// service's `error.statusCode` prune-vs-keep branch is exercised faithfully.
+function webPushError(statusCode: number): Error {
+  return Object.assign(new Error(`web-push ${statusCode}`), { statusCode });
+}
+
 function makePrisma(overrides?: {
   findMany?: jest.Mock;
   deleteMany?: jest.Mock;
@@ -103,10 +109,9 @@ describe('PushService', () => {
         findMany: jest.fn().mockResolvedValue(subs),
       });
       mockSendNotification.mockImplementation((sub: { endpoint: string }) => {
-        if (sub.endpoint === 'e-gone')
-          return Promise.reject({ statusCode: 410 });
+        if (sub.endpoint === 'e-gone') return Promise.reject(webPushError(410));
         if (sub.endpoint === 'e-missing')
-          return Promise.reject({ statusCode: 404 });
+          return Promise.reject(webPushError(404));
         return Promise.resolve();
       });
       const service = new PushService(enabledConfig, prisma);
@@ -127,7 +132,7 @@ describe('PushService', () => {
           .fn()
           .mockResolvedValue([{ endpoint: 'e-1', p256dh: 'a', auth: 'b' }]),
       });
-      mockSendNotification.mockRejectedValue({ statusCode: 500 });
+      mockSendNotification.mockRejectedValue(webPushError(500));
       const service = new PushService(enabledConfig, prisma);
       service.onModuleInit();
 
