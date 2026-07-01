@@ -37,6 +37,7 @@ import { JobFunctionsModule } from '@core/org/job-functions/job-functions.module
 import { PatientsModule } from '@core/patient/patients/patients.module';
 import { PatientPortalModule } from '@core/patient-portal/portal/patient-portal.module.js';
 import { PatientNotificationsModule } from '@core/patient-portal/notifications/patient-notifications.module.js';
+import { PatientPushModule } from '@core/patient-portal/push/patient-push.module.js';
 import { GuardiansModule } from '@core/patient/guardians/guardians.module';
 import { VisitsModule } from '@core/clinical/visits/visits.module';
 import { MedicalRepModule } from '@core/clinical/medical-rep/medical-rep.module';
@@ -110,6 +111,7 @@ import { PermissionsModule } from '@common/authorization/permissions.module.js';
     PatientsModule,
     PatientPortalModule,
     PatientNotificationsModule,
+    PatientPushModule,
     GuardiansModule,
     VisitsModule,
     MedicalRepModule,
