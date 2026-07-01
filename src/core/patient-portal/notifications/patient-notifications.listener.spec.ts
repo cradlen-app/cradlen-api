@@ -139,13 +139,15 @@ function makeDeps(created: {
   id: string;
 }) {
   const prisma = {} as unknown as PrismaService;
+  const create = jest.fn().mockResolvedValue(created);
   const notifications = {
-    create: jest.fn().mockResolvedValue(created),
+    create,
   } as unknown as PatientNotificationsService;
+  const sendToPatient = jest.fn();
   const push = {
-    sendToPatient: jest.fn(),
+    sendToPatient,
   } as unknown as PatientPushService;
-  return { prisma, notifications, push };
+  return { prisma, notifications, push, create, sendToPatient };
 }
 
 const reviewedEvent = {
@@ -165,7 +167,7 @@ describe('PatientNotificationsListener push dispatch', () => {
       description: 'Your CBC result has been reviewed.',
       navigate_to: '/tests',
     };
-    const { prisma, notifications, push } = makeDeps(created);
+    const { prisma, notifications, push, sendToPatient } = makeDeps(created);
     const listener = new PatientNotificationsListener(
       prisma,
       notifications,
@@ -174,7 +176,7 @@ describe('PatientNotificationsListener push dispatch', () => {
 
     await listener.handleInvestigationReviewed(reviewedEvent);
 
-    expect(push.sendToPatient).toHaveBeenCalledWith('patient-1', {
+    expect(sendToPatient).toHaveBeenCalledWith('patient-1', {
       title: created.title,
       body: created.description,
       navigate_to: created.navigate_to,
@@ -187,7 +189,8 @@ describe('PatientNotificationsListener push dispatch', () => {
     const notifications = {
       create: jest.fn().mockRejectedValue(new Error('db down')),
     } as unknown as PatientNotificationsService;
-    const push = { sendToPatient: jest.fn() } as unknown as PatientPushService;
+    const sendToPatient = jest.fn();
+    const push = { sendToPatient } as unknown as PatientPushService;
     const listener = new PatientNotificationsListener(
       prisma,
       notifications,
@@ -197,6 +200,6 @@ describe('PatientNotificationsListener push dispatch', () => {
     await expect(
       listener.handleInvestigationReviewed(reviewedEvent),
     ).resolves.toBeUndefined();
-    expect(push.sendToPatient).not.toHaveBeenCalled();
+    expect(sendToPatient).not.toHaveBeenCalled();
   });
 });
