@@ -37,15 +37,27 @@ export class PushService implements OnModuleInit {
 
   onModuleInit(): void {
     if (!this.config.enabled) {
-      this.logger.warn('Web Push disabled: VAPID keys are not configured.');
+      this.logger.warn(
+        'Web Push disabled: VAPID keys are missing or the subject is invalid.',
+      );
       return;
     }
-    webpush.setVapidDetails(
-      this.config.subject,
-      this.config.publicKey,
-      this.config.privateKey,
-    );
-    this.enabled = true;
+    // Final safety net: even with a validated config, a malformed key can make
+    // setVapidDetails throw. Never let an optional feature crash API startup.
+    try {
+      webpush.setVapidDetails(
+        this.config.subject,
+        this.config.publicKey,
+        this.config.privateKey,
+      );
+      this.enabled = true;
+    } catch (error) {
+      this.logger.error(
+        `Web Push disabled: failed to configure VAPID details (subject "${this.config.subject}"). ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   /** Register (or refresh) a subscription. Endpoint is unique, so re-subscribe upserts. */
