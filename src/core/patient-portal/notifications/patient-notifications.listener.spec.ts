@@ -1,5 +1,7 @@
 import type { PrismaService } from '@infrastructure/database/prisma.service.js';
 import type { PatientNotificationsService } from './patient-notifications.service.js';
+import type { PatientPushService } from '@core/patient-portal/push/patient-push.service.js';
+import type { InvestigationReviewedEvent } from '@core/clinical/events/events.public.js';
 import { PatientNotificationsListener } from './patient-notifications.listener.js';
 import { PATIENT_NOTIFICATION_CODES } from './patient-notification-codes.js';
 
@@ -7,6 +9,7 @@ describe('PatientNotificationsListener', () => {
   let listener: PatientNotificationsListener;
   let findUnique: jest.Mock;
   let create: jest.Mock;
+  let sendToPatient: jest.Mock;
 
   const journey = { patient_id: 'p1', organization_id: 'org-1' };
   const visitWith = (over: Record<string, unknown>) => ({
@@ -19,13 +22,22 @@ describe('PatientNotificationsListener', () => {
 
   beforeEach(() => {
     findUnique = jest.fn();
-    create = jest.fn().mockResolvedValue(undefined);
+    create = jest.fn().mockResolvedValue({
+      id: 'notif-x',
+      patient_id: 'p1',
+      title: 'Title',
+      description: 'Description',
+      navigate_to: '/x',
+    });
+    sendToPatient = jest.fn();
     const prisma = {
       db: { visit: { findUnique } },
     } as unknown as PrismaService;
-    listener = new PatientNotificationsListener(prisma, {
-      create,
-    } as unknown as PatientNotificationsService);
+    listener = new PatientNotificationsListener(
+      prisma,
+      { create } as unknown as PatientNotificationsService,
+      { sendToPatient } as unknown as PatientPushService,
+    );
   });
 
   it('ignores non-COMPLETED status transitions', async () => {
@@ -116,5 +128,75 @@ describe('PatientNotificationsListener', () => {
     });
     await listener.handleVisitStatusUpdated(completed);
     expect(create).not.toHaveBeenCalled();
+  });
+});
+
+function makeDeps(created: {
+  patient_id: string;
+  title: string;
+  description: string;
+  navigate_to: string | null;
+  id: string;
+}) {
+  const prisma = {} as unknown as PrismaService;
+  const notifications = {
+    create: jest.fn().mockResolvedValue(created),
+  } as unknown as PatientNotificationsService;
+  const push = {
+    sendToPatient: jest.fn(),
+  } as unknown as PatientPushService;
+  return { prisma, notifications, push };
+}
+
+const reviewedEvent = {
+  patient_id: 'patient-1',
+  organization_id: 'org-1',
+  investigation_id: 'inv-1',
+  visit_id: 'visit-1',
+  test_name: 'CBC',
+} as unknown as InvestigationReviewedEvent;
+
+describe('PatientNotificationsListener push dispatch', () => {
+  it('pushes to the patient after creating an investigation-reviewed notification', async () => {
+    const created = {
+      id: 'notif-1',
+      patient_id: 'patient-1',
+      title: 'Result reviewed',
+      description: 'Your CBC result has been reviewed.',
+      navigate_to: '/tests',
+    };
+    const { prisma, notifications, push } = makeDeps(created);
+    const listener = new PatientNotificationsListener(
+      prisma,
+      notifications,
+      push,
+    );
+
+    await listener.handleInvestigationReviewed(reviewedEvent);
+
+    expect(push.sendToPatient).toHaveBeenCalledWith('patient-1', {
+      title: created.title,
+      body: created.description,
+      navigate_to: created.navigate_to,
+      tag: created.id,
+    });
+  });
+
+  it('does not throw out of the handler when create fails', async () => {
+    const prisma = {} as unknown as PrismaService;
+    const notifications = {
+      create: jest.fn().mockRejectedValue(new Error('db down')),
+    } as unknown as PatientNotificationsService;
+    const push = { sendToPatient: jest.fn() } as unknown as PatientPushService;
+    const listener = new PatientNotificationsListener(
+      prisma,
+      notifications,
+      push,
+    );
+
+    await expect(
+      listener.handleInvestigationReviewed(reviewedEvent),
+    ).resolves.toBeUndefined();
+    expect(push.sendToPatient).not.toHaveBeenCalled();
   });
 });
