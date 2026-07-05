@@ -99,7 +99,11 @@ export class ReportingService {
     scope: ReportScope,
     user: AuthContext,
   ) {
-    const doctorId = await this.resolveDoctorScope(organizationId, scope, user);
+    const doctorId = await this.resolveBillingBranchScope(
+      organizationId,
+      scope,
+      user,
+    );
 
     const now = new Date();
     const base: Prisma.InvoiceWhereInput = {
@@ -737,6 +741,63 @@ export class ReportingService {
       throw new ForbiddenException('Financial reports access denied');
     }
     return user.profileId;
+  }
+
+  /**
+   * Scope resolver for the operational invoice-stats rollup (unlike
+   * `resolveDoctorScope`, which is for the analytics reports). Front-desk billing
+   * staff — reception — legitimately see their whole branch's rollup here, so
+   * this does NOT force a non-manager to be clinical + own-provider only.
+   *
+   * - Manager (owner / branch manager / accountant): a branch request is gated by
+   *   branch access; an org-wide (no branch) request is owner-only. Their optional
+   *   `doctorId` is honored as a drill-down.
+   * - Non-manager: must name an accessible branch. A clinician (doctor) is still
+   *   restricted to their own revenue; a non-clinical front-desk user (reception)
+   *   sees the whole branch (no doctor filter).
+   */
+  private async resolveBillingBranchScope(
+    organizationId: string,
+    scope: ReportScope,
+    user: AuthContext,
+  ): Promise<string | undefined> {
+    const isManager =
+      (await this.authorizationService.canViewAllFinancials(
+        user.profileId,
+        organizationId,
+      )) || user.jobFunction === 'ACCOUNTANT';
+
+    if (isManager) {
+      if (scope.branchId) {
+        await this.authorizationService.assertCanAccessBranch(
+          user.profileId,
+          organizationId,
+          scope.branchId,
+        );
+      } else {
+        await this.authorizationService.assertCanManageOrganization(
+          user.profileId,
+          organizationId,
+        );
+      }
+      return scope.doctorId;
+    }
+
+    // Non-manager: always scoped to a branch they can access.
+    if (!scope.branchId) {
+      throw new ForbiddenException('Branch scope required');
+    }
+    await this.authorizationService.assertCanAccessBranch(
+      user.profileId,
+      organizationId,
+      scope.branchId,
+    );
+    // A clinician sees only their own revenue; front-desk staff (reception) see
+    // the whole branch.
+    if (await this.authorizationService.isClinical(user.profileId)) {
+      return user.profileId;
+    }
+    return undefined;
   }
 
   private dateRange(
