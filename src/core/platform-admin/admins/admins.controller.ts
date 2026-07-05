@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -89,5 +90,16 @@ export class AdminsController {
     @Param('id') id: string,
   ): Promise<AdminResponseDto> {
     return this.admins.resendInvite(actor.adminId, id);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Cancel a pending invite (removes the admin)' })
+  @ApiStandardResponse(AdminResponseDto)
+  cancelInvite(
+    @CurrentAdmin() actor: AdminAuthContext,
+    @Param('id') id: string,
+  ): Promise<AdminResponseDto> {
+    return this.admins.cancelInvite(actor.adminId, id);
   }
 }
