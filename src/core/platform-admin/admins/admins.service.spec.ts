@@ -8,12 +8,16 @@ const mockDb = {
     findMany: jest.fn(),
     count: jest.fn(),
     create: jest.fn(),
+    findUnique: jest.fn(),
     findFirst: jest.fn(),
     update: jest.fn(),
   },
 };
 const mockPrisma = { db: mockDb } as unknown as PrismaService;
-const mockVerification = { sendSetPasswordInvite: jest.fn() };
+const mockVerification = {
+  sendSetPasswordInvite: jest.fn(),
+  revokeSetPasswordInvite: jest.fn(),
+};
 const mockAudit = { record: jest.fn() };
 
 const row = (over: Record<string, unknown> = {}) => ({
@@ -78,6 +82,72 @@ describe('AdminsService', () => {
         }),
       );
       expect(res.status).toBe('PENDING');
+    });
+
+    it('revives a cancelled (soft-deleted) same-email invite instead of failing', async () => {
+      mockDb.platformAdmin.findUnique.mockResolvedValue({
+        id: 'old',
+        is_deleted: true,
+      });
+      mockDb.platformAdmin.update.mockResolvedValue(
+        row({ id: 'old', password_hashed: null, is_active: true }),
+      );
+
+      const res = await service.create('actor-1', {
+        email: 'ops@cradlen.com',
+        full_name: 'Ops',
+      });
+
+      expect(mockDb.platformAdmin.create).not.toHaveBeenCalled();
+      expect(mockDb.platformAdmin.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'old' },
+          data: expect.objectContaining({
+            is_deleted: false,
+            deleted_at: null,
+          }),
+        }),
+      );
+      expect(mockVerification.sendSetPasswordInvite).toHaveBeenCalledWith(
+        'old',
+        'ops@cradlen.com',
+      );
+      expect(res.status).toBe('PENDING');
+    });
+  });
+
+  describe('cancelInvite', () => {
+    it('rejects cancelling an admin who has set a password', async () => {
+      mockDb.platformAdmin.findFirst.mockResolvedValue(
+        row({ id: 'a2', password_hashed: 'h' }),
+      );
+      await expect(service.cancelInvite('a1', 'a2')).rejects.toMatchObject({
+        status: 400,
+      });
+    });
+
+    it('soft-deletes the pending admin, revokes the invite, and audits', async () => {
+      mockDb.platformAdmin.findFirst.mockResolvedValue(
+        row({ id: 'a2', password_hashed: null }),
+      );
+      mockDb.platformAdmin.update.mockResolvedValue(
+        row({ id: 'a2', password_hashed: null }),
+      );
+
+      await service.cancelInvite('a1', 'a2');
+
+      expect(mockDb.platformAdmin.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'a2' },
+          data: expect.objectContaining({ is_deleted: true }),
+        }),
+      );
+      expect(mockVerification.revokeSetPasswordInvite).toHaveBeenCalledWith(
+        'a2',
+      );
+      expect(mockAudit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'admin.invite_cancel' }),
+      );
     });
   });
 
