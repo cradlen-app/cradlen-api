@@ -8,6 +8,7 @@ import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { EventBus } from '@infrastructure/messaging/event-bus.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
+import { FinancialAccessService } from '../shared/access/financial-access.service.js';
 import { InvoiceBalanceService } from '../invoicing/invoice-balance.service.js';
 import { Money } from '../shared/money/money.js';
 import {
@@ -27,6 +28,7 @@ export class RefundsService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly authorizationService: AuthorizationService,
+    private readonly access: FinancialAccessService,
     private readonly balanceService: InvoiceBalanceService,
     private readonly eventBus: EventBus,
   ) {}
@@ -57,6 +59,19 @@ export class RefundsService {
       organizationId,
       payment.invoice.branch_id,
     );
+
+    // Refunds pay cash back out, so the cashier must hold an open drawer at the
+    // invoice's branch — same precondition as recording a payment.
+    const openSession = await this.access.findOpenCashSession(
+      organizationId,
+      payment.invoice.branch_id,
+      user.profileId,
+    );
+    if (!openSession) {
+      throw new BadRequestException(
+        'Open a cash session at this branch before issuing a refund',
+      );
+    }
 
     if (payment.status !== PaymentStatus.COMPLETED) {
       throw new BadRequestException('Only completed payments can be refunded');

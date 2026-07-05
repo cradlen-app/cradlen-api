@@ -118,6 +118,41 @@ describe('ReportingService', () => {
       );
       expect(mockAuth.assertCanManageOrganization).not.toHaveBeenCalled();
     });
+
+    // A date-only `dateTo` is inclusive of the whole day: the filter is
+    // `issued_at < (dateTo + 1 day)`, so records issued during dateTo count.
+    // This is what lets the dashboard (date_to = today) show today's revenue.
+    it('makes date_to inclusive of the whole day (< next-day midnight)', async () => {
+      mockDb.invoice.aggregate.mockResolvedValue({
+        _sum: { total_amount: null, paid_amount: null },
+        _count: 0,
+      });
+
+      await service.revenueSummary(
+        ORG,
+        { dateFrom: '2026-07-01', dateTo: '2026-07-05' },
+        USER,
+      );
+
+      const where = mockDb.invoice.aggregate.mock.calls[0][0].where;
+      expect(where.issued_at.gte).toEqual(new Date('2026-07-01T00:00:00.000Z'));
+      // Upper bound excludes only from the *next* day, so an invoice at
+      // 2026-07-05T12:00:00Z (< 2026-07-06) is still counted.
+      expect(where.issued_at.lte).toBeUndefined();
+      expect(where.issued_at.lt).toEqual(new Date('2026-07-06T00:00:00.000Z'));
+    });
+
+    it('omits the date filter entirely when no range is given', async () => {
+      mockDb.invoice.aggregate.mockResolvedValue({
+        _sum: { total_amount: null, paid_amount: null },
+        _count: 0,
+      });
+
+      await service.revenueSummary(ORG, { branchId: 'br-1' }, USER);
+
+      const where = mockDb.invoice.aggregate.mock.calls[0][0].where;
+      expect(where.issued_at).toBeUndefined();
+    });
   });
 
   describe('invoiceStats', () => {
