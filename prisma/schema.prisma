@@ -718,6 +718,7 @@ model PatientAccount {
   patient                Patient?       @relation("PatientAccount", fields: [patient_id], references: [id], onDelete: SetNull)
   guardian               Guardian?      @relation("GuardianAccount", fields: [guardian_id], references: [id], onDelete: SetNull)
   refreshTokens          RefreshToken[]
+  push_subscriptions     PatientPushSubscription[]
   // Stamped on every password reset so the patient JWT strategy can reject
   // access tokens minted before the change — mirrors User.password_changed_at,
   // making a credential reset invalidate outstanding access tokens immediately
@@ -839,6 +840,21 @@ model AdminPushSubscription {
 
   @@index([admin_id])
   @@map("admin_push_subscriptions")
+}
+
+model PatientPushSubscription {
+  id         String         @id @default(uuid()) @db.Uuid
+  account_id String         @db.Uuid
+  account    PatientAccount @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  endpoint   String         @unique
+  p256dh     String
+  auth       String
+  user_agent String?
+  created_at DateTime       @default(now())
+  updated_at DateTime       @updatedAt
+
+  @@index([account_id])
+  @@map("patient_push_subscriptions")
 }
 
 // Append-only audit trail for every platform-admin WRITE action. Written inside
