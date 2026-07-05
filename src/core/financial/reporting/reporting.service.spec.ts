@@ -54,6 +54,16 @@ const ACCOUNTANT: AuthContext = {
   branchIds: ['br-1'],
 };
 
+/** A front-desk receptionist: non-manager, non-clinical — sees the whole branch. */
+const RECEPTION: AuthContext = {
+  userId: 'u4',
+  profileId: 'rec-1',
+  organizationId: ORG,
+  role: 'STAFF',
+  jobFunction: 'RECEPTIONIST',
+  branchIds: ['br-1'],
+};
+
 describe('ReportingService', () => {
   let service: ReportingService;
 
@@ -150,6 +160,52 @@ describe('ReportingService', () => {
       expect(result.overdue.amount.toFixed(2)).toBe('250.00');
       expect(result.unpaid.count).toBe(0);
       expect(result.unpaid.amount.toFixed(2)).toBe('0.00');
+    });
+
+    // invoice-stats has its own scope resolver (resolveBillingBranchScope) so
+    // front-desk billing staff can see the operational rollup — unlike the
+    // analytics reports, which stay clinician/manager-only.
+    describe('front-desk (reception) scope', () => {
+      const emptyStat = { _sum: {}, _count: 0 };
+
+      it('gives a non-clinical receptionist the whole branch (no doctor filter)', async () => {
+        mockAuth.canViewAllFinancials.mockResolvedValue(false);
+        mockAuth.isClinical.mockResolvedValue(false);
+        mockDb.invoice.aggregate.mockResolvedValue(emptyStat);
+
+        await service.invoiceStats(ORG, { branchId: 'br-1' }, RECEPTION);
+
+        expect(mockAuth.assertCanAccessBranch).toHaveBeenCalledWith(
+          'rec-1',
+          ORG,
+          'br-1',
+        );
+        // Whole branch: every aggregate is unfiltered by doctor.
+        for (const call of mockDb.invoice.aggregate.mock.calls) {
+          expect(call[0].where.assigned_doctor_id).toBeUndefined();
+        }
+      });
+
+      it('rejects a receptionist with no branch scope', async () => {
+        mockAuth.canViewAllFinancials.mockResolvedValue(false);
+        mockAuth.isClinical.mockResolvedValue(false);
+
+        await expect(service.invoiceStats(ORG, {}, RECEPTION)).rejects.toThrow(
+          'Branch scope required',
+        );
+      });
+
+      it('still scopes a non-manager clinician (doctor) to their own revenue', async () => {
+        mockAuth.canViewAllFinancials.mockResolvedValue(false);
+        mockAuth.isClinical.mockResolvedValue(true);
+        mockDb.invoice.aggregate.mockResolvedValue(emptyStat);
+
+        await service.invoiceStats(ORG, { branchId: 'br-1' }, DOCTOR);
+
+        for (const call of mockDb.invoice.aggregate.mock.calls) {
+          expect(call[0].where.assigned_doctor_id).toBe('doc-self');
+        }
+      });
     });
   });
 
