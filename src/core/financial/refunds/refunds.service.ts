@@ -52,7 +52,7 @@ export class RefundsService {
     });
     if (!payment) throw new NotFoundException('Payment not found');
 
-    await this.authorizationService.assertCanManageBranch(
+    await this.authorizationService.assertCanAccessBranch(
       user.profileId,
       organizationId,
       payment.invoice.branch_id,
@@ -120,7 +120,7 @@ export class RefundsService {
     });
     if (!refund) throw new NotFoundException('Refund not found');
 
-    await this.authorizationService.assertCanManageBranch(
+    await this.authorizationService.assertCanAccessBranch(
       user.profileId,
       organizationId,
       refund.payment.invoice.branch_id,
