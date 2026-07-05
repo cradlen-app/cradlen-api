@@ -88,8 +88,14 @@ export class ChargingService {
     organizationId: string,
     dto: CaptureChargeDto,
     user: AuthContext,
+    referenceDate?: Date,
   ): Promise<Charge> {
-    const data = await this.resolveChargeData(organizationId, dto, user);
+    const data = await this.resolveChargeData(
+      organizationId,
+      dto,
+      user,
+      referenceDate,
+    );
     return tx.charge.create({ data });
   }
 
@@ -128,6 +134,7 @@ export class ChargingService {
     organizationId: string,
     dto: CaptureChargeDto,
     user: AuthContext,
+    referenceDate?: Date,
   ): Promise<Prisma.ChargeUncheckedCreateInput> {
     let description = dto.description;
     if (dto.service_id) {
@@ -162,6 +169,7 @@ export class ChargingService {
         serviceId: dto.service_id,
         profileId: dto.profile_id,
         quantity: dto.quantity ?? 1,
+        referenceDate,
       });
       if (!resolved) {
         throw new BadRequestException(

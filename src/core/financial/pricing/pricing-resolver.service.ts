@@ -10,6 +10,12 @@ export interface ResolvePriceParams {
   profileId?: string;
   /** Quantity being priced — selects the matching quantity-break tier. */
   quantity?: number;
+  /**
+   * Date the price applies to (the visit's scheduled date at booking). Promo
+   * price-list windows and provider-override windows are matched against it.
+   * Defaults to now for ad-hoc charges that carry no service date.
+   */
+  referenceDate?: Date;
 }
 
 export interface ResolvedPrice {
@@ -28,6 +34,13 @@ interface DiscountSource {
   discount_value: Prisma.Decimal | null;
 }
 
+const PRICE_LIST_ITEM_INCLUDE = {
+  tiers: true,
+  price_list: {
+    select: { currency: true, discount_type: true, discount_value: true },
+  },
+} satisfies Prisma.PriceListItemInclude;
+
 @Injectable()
 export class PricingResolverService {
   constructor(private readonly prismaService: PrismaService) {}
@@ -37,7 +50,7 @@ export class PricingResolverService {
   ): Promise<ResolvedPrice | null> {
     const { organizationId, branchId, serviceId, profileId } = params;
     const quantity = params.quantity ?? 1;
-    const now = new Date();
+    const referenceDate = params.referenceDate ?? new Date();
 
     // 1. Provider (doctor) price override — flat, explicit, branch-aware, and
     // only when the provider is authorized for the service.
@@ -47,77 +60,134 @@ export class PricingResolverService {
         serviceId,
         organizationId,
         branchId,
-        now,
+        referenceDate,
       );
       if (override) return override;
     }
 
-    // 2. Branch default price list
-    const branchItem = await this.prismaService.db.priceListItem.findFirst({
-      where: {
-        service_id: serviceId,
-        is_active: true,
-        is_deleted: false,
-        price_list: {
-          branch_id: branchId,
-          is_default: true,
-          is_active: true,
-          is_deleted: false,
-        },
-      },
-      include: {
-        tiers: true,
-        price_list: {
-          select: {
-            currency: true,
-            discount_type: true,
-            discount_value: true,
-          },
-        },
-      },
-    });
-    if (branchItem) {
+    // Price-list resolution, most specific first. Within a scope a currently
+    // in-window promotional list (non-default, date-bounded) beats the default
+    // list; and the branch scope beats the org scope.
+    const branchScope: Prisma.PriceListWhereInput = {
+      branch_id: branchId,
+      is_active: true,
+      is_deleted: false,
+    };
+    const orgScope: Prisma.PriceListWhereInput = {
+      organization_id: organizationId,
+      branch_id: null,
+      is_active: true,
+      is_deleted: false,
+    };
+
+    // 2. Branch promotional (offer) list
+    const branchOffer = await this.findOfferItem(
+      branchScope,
+      serviceId,
+      referenceDate,
+    );
+    if (branchOffer) {
       return this.resolveFromItem(
-        branchItem,
+        branchOffer,
         PricingSource.BRANCH_OVERRIDE,
         quantity,
       );
     }
 
-    // 3. Org default price list
-    const orgItem = await this.prismaService.db.priceListItem.findFirst({
-      where: {
-        service_id: serviceId,
-        is_active: true,
-        is_deleted: false,
-        price_list: {
-          organization_id: organizationId,
-          branch_id: null,
-          is_default: true,
-          is_active: true,
-          is_deleted: false,
-        },
-      },
-      include: {
-        tiers: true,
-        price_list: {
-          select: {
-            currency: true,
-            discount_type: true,
-            discount_value: true,
-          },
-        },
-      },
-    });
-    if (orgItem) {
+    // 3. Branch default list
+    const branchDefault = await this.findDefaultItem(branchScope, serviceId);
+    if (branchDefault) {
       return this.resolveFromItem(
-        orgItem,
+        branchDefault,
+        PricingSource.BRANCH_OVERRIDE,
+        quantity,
+      );
+    }
+
+    // 4. Org promotional (offer) list
+    const orgOffer = await this.findOfferItem(
+      orgScope,
+      serviceId,
+      referenceDate,
+    );
+    if (orgOffer) {
+      return this.resolveFromItem(
+        orgOffer,
+        PricingSource.ORG_PRICE_LIST,
+        quantity,
+      );
+    }
+
+    // 5. Org default list
+    const orgDefault = await this.findDefaultItem(orgScope, serviceId);
+    if (orgDefault) {
+      return this.resolveFromItem(
+        orgDefault,
         PricingSource.ORG_PRICE_LIST,
         quantity,
       );
     }
 
     return null;
+  }
+
+  /**
+   * The scope's default price list item for the service, or null. The default
+   * is the always-on baseline (typically no date window); it is not date-filtered
+   * so it keeps applying whenever no promo is in effect.
+   */
+  private findDefaultItem(
+    scope: Prisma.PriceListWhereInput,
+    serviceId: string,
+  ) {
+    return this.prismaService.db.priceListItem.findFirst({
+      where: {
+        service_id: serviceId,
+        is_active: true,
+        is_deleted: false,
+        price_list: { ...scope, is_default: true },
+      },
+      include: PRICE_LIST_ITEM_INCLUDE,
+    });
+  }
+
+  /**
+   * A currently-in-window promotional list item for the service, or null. A
+   * promo is a non-default, date-bounded list (`valid_from` and/or `valid_to`
+   * set) whose window covers `referenceDate`. The date guard keeps a plain
+   * secondary list (no dates) from ever overriding the default. When windows
+   * overlap the most-recently-started offer wins.
+   */
+  private findOfferItem(
+    scope: Prisma.PriceListWhereInput,
+    serviceId: string,
+    referenceDate: Date,
+  ) {
+    return this.prismaService.db.priceListItem.findFirst({
+      where: {
+        service_id: serviceId,
+        is_active: true,
+        is_deleted: false,
+        price_list: {
+          ...scope,
+          is_default: false,
+          // Must be a dated (promotional) list, not a plain secondary list.
+          OR: [{ valid_from: { not: null } }, { valid_to: { not: null } }],
+          // Reference date within the window (open-ended nulls allowed).
+          AND: [
+            {
+              OR: [
+                { valid_from: null },
+                { valid_from: { lte: referenceDate } },
+              ],
+            },
+            { OR: [{ valid_to: null }, { valid_to: { gte: referenceDate } }] },
+          ],
+        },
+      },
+      include: PRICE_LIST_ITEM_INCLUDE,
+      orderBy: [{ price_list: { valid_from: 'desc' } }, { created_at: 'desc' }],
+    });
   }
 
   /**
@@ -131,7 +201,7 @@ export class PricingResolverService {
     serviceId: string,
     organizationId: string,
     branchId: string,
-    now: Date,
+    referenceDate: Date,
   ): Promise<ResolvedPrice | null> {
     const authorized = await this.prismaService.db.providerService.findFirst({
       where: {
@@ -153,8 +223,8 @@ export class PricingResolverService {
       is_active: true,
       is_deleted: false,
       AND: [
-        { OR: [{ valid_from: null }, { valid_from: { lte: now } }] },
-        { OR: [{ valid_to: null }, { valid_to: { gte: now } }] },
+        { OR: [{ valid_from: null }, { valid_from: { lte: referenceDate } }] },
+        { OR: [{ valid_to: null }, { valid_to: { gte: referenceDate } }] },
       ],
     };
 

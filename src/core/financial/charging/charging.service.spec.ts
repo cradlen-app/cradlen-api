@@ -132,6 +132,51 @@ describe('ChargingService', () => {
       // charge.captured and InvoiceAccrualListener bills the case invoice.
     });
 
+    it('forwards referenceDate to price resolution in captureInTx', async () => {
+      mockDb.service.findFirst.mockResolvedValue({ name: 'Consultation' });
+      mockResolver.resolvePrice.mockResolvedValue({
+        price: new Prisma.Decimal('100.00'),
+        currency: 'EGP',
+        source: PricingSource.ORG_PRICE_LIST,
+      });
+      const tx = {
+        charge: { create: jest.fn().mockResolvedValue({ id: 'chg-tx' }) },
+      };
+      const refDate = new Date('2026-07-05T00:00:00.000Z');
+
+      await service.captureInTx(
+        tx as never,
+        ORG,
+        { ...baseDto, service_id: 'svc-1', quantity: 1 },
+        USER,
+        refDate,
+      );
+
+      expect(mockResolver.resolvePrice).toHaveBeenCalledWith(
+        expect.objectContaining({ referenceDate: refDate }),
+      );
+    });
+
+    it('resolves ad-hoc capture() with no referenceDate (defaults to now)', async () => {
+      mockDb.service.findFirst.mockResolvedValue({ name: 'Consultation' });
+      mockResolver.resolvePrice.mockResolvedValue({
+        price: new Prisma.Decimal('150.00'),
+        currency: 'EGP',
+        source: PricingSource.ORG_PRICE_LIST,
+      });
+      mockDb.charge.create.mockResolvedValue({
+        id: 'chg-adhoc',
+        unit_price: new Prisma.Decimal('150.00'),
+        quantity: 1,
+      });
+
+      await service.capture(ORG, { ...baseDto, service_id: 'svc-1' }, USER);
+
+      expect(mockResolver.resolvePrice).toHaveBeenCalledWith(
+        expect.objectContaining({ referenceDate: undefined }),
+      );
+    });
+
     it('uses an explicit unit_price as CUSTOM and skips resolution', async () => {
       mockDb.charge.create.mockResolvedValue({
         id: 'chg-2',
