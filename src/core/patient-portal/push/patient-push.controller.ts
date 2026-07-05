@@ -5,7 +5,10 @@ import { CurrentPatient } from '@common/decorators/current-patient.decorator.js'
 import { PatientJwtAuthGuard } from '@common/guards/patient-jwt-auth.guard.js';
 import type { PatientAuthContext } from '@common/interfaces/patient-auth-context.interface.js';
 import { PatientPushService } from './patient-push.service.js';
-import { PushSubscribeDto, PushUnsubscribeDto } from './dto/patient-push.dto.js';
+import {
+  PushSubscribeDto,
+  PushUnsubscribeDto,
+} from './dto/patient-push.dto.js';
 
 /**
  * Web Push subscription management for the patient portal. `@Public()` to skip
@@ -22,7 +25,9 @@ export class PatientPushController {
   constructor(private readonly push: PatientPushService) {}
 
   @Post('subscribe')
-  @ApiOperation({ summary: 'Register a Web Push subscription for this account' })
+  @ApiOperation({
+    summary: 'Register a Web Push subscription for this account',
+  })
   async subscribe(
     @CurrentPatient() patient: PatientAuthContext,
     @Body() dto: PushSubscribeDto,

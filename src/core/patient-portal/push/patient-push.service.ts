@@ -131,10 +131,11 @@ export class PatientPushService implements OnModuleInit {
       if (accountIds.length === 0) return;
 
       // 2. Load their subscriptions and push.
-      const subs =
-        await this.prismaService.db.patientPushSubscription.findMany({
+      const subs = await this.prismaService.db.patientPushSubscription.findMany(
+        {
           where: { account_id: { in: accountIds } },
-        });
+        },
+      );
       if (subs.length === 0) return;
 
       const body = JSON.stringify(payload);
