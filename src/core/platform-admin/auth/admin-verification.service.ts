@@ -101,6 +101,18 @@ export class AdminVerificationService {
     await this.mailService.sendAdminInviteEmail(target, inviteUrl);
   }
 
+  /** Consumes any pending set-password invite so its link can no longer be used. */
+  async revokeSetPasswordInvite(adminId: string): Promise<void> {
+    await this.prismaService.db.verificationCode.updateMany({
+      where: {
+        admin_id: adminId,
+        purpose: 'ADMIN_SET_PASSWORD',
+        consumed_at: null,
+      },
+      data: { consumed_at: new Date() },
+    });
+  }
+
   /** Validates the newest unconsumed login OTP, enforcing expiry + attempt cap. */
   consume(adminId: string, code: string): Promise<void> {
     return this.consumeByPurpose(adminId, code, 'ADMIN_LOGIN');

@@ -84,11 +84,28 @@ export class AdminsService {
     actorId: string,
     dto: CreateAdminDto,
   ): Promise<AdminResponseDto> {
-    // A duplicate email surfaces as Prisma P2002 → 409 via the global filter.
-    const admin = await this.prismaService.db.platformAdmin.create({
-      data: { email: dto.email, full_name: dto.full_name },
-      select: SELECT,
+    // A previously-cancelled invite leaves a soft-deleted row holding the unique
+    // email; revive it instead of failing on the P2002 that a fresh create would
+    // raise. An existing *live* email still surfaces as P2002 → 409.
+    const existing = await this.prismaService.db.platformAdmin.findUnique({
+      where: { email: dto.email },
+      select: { id: true, is_deleted: true },
     });
+    const admin = existing?.is_deleted
+      ? await this.prismaService.db.platformAdmin.update({
+          where: { id: existing.id },
+          data: {
+            full_name: dto.full_name,
+            is_active: true,
+            is_deleted: false,
+            deleted_at: null,
+          },
+          select: SELECT,
+        })
+      : await this.prismaService.db.platformAdmin.create({
+          data: { email: dto.email, full_name: dto.full_name },
+          select: SELECT,
+        });
 
     await this.verification.sendSetPasswordInvite(admin.id, admin.email);
     await this.audit.record({
@@ -136,6 +153,32 @@ export class AdminsService {
       targetId: admin.id,
     });
     return this.toDto(admin);
+  }
+
+  /**
+   * Cancels a pending invite: soft-deletes the passwordless admin (removing it
+   * from the team list) and revokes the outstanding set-password link. Only an
+   * admin who has not set a password can be cancelled.
+   */
+  async cancelInvite(actorId: string, id: string): Promise<AdminResponseDto> {
+    const admin = await this.requireAdmin(id);
+    if (admin.password_hashed) {
+      throw new BadRequestException('Only pending invitations can be cancelled');
+    }
+    const updated = await this.prismaService.db.platformAdmin.update({
+      where: { id },
+      data: { is_deleted: true, deleted_at: new Date() },
+      select: SELECT,
+    });
+    await this.verification.revokeSetPasswordInvite(id);
+    await this.audit.record({
+      adminId: actorId,
+      action: 'admin.invite_cancel',
+      targetType: 'platform_admin',
+      targetId: id,
+      before: { email: admin.email, full_name: admin.full_name },
+    });
+    return this.toDto(updated);
   }
 
   private async setActive(
