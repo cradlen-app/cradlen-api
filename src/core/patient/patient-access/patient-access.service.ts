@@ -9,10 +9,11 @@ import { AuthContext } from '@common/interfaces/auth-context.interface';
  *
  * Org-level access is granted iff the caller's organization owns the relevant
  * `PatientJourney`. Branch-gated access (for non-OWNERs) additionally requires
- * the patient to have a checked-in visit at a branch the caller is assigned to
- * — the patient record is org-scoped, but branch staff only reach patients
- * they've actually seen. All checks throw `404 NotFound` (not `403`) to avoid
- * leaking entity existence across orgs/branches.
+ * the patient to have a visit at a branch the caller is assigned to that is
+ * either scheduled or has been checked in — the patient record is org-scoped,
+ * but branch staff only reach patients they've booked or seen. All checks throw
+ * `404 NotFound` (not `403`) to avoid leaking entity existence across
+ * orgs/branches.
  */
 @Injectable()
 export class PatientAccessService {
@@ -23,10 +24,11 @@ export class PatientAccessService {
 
   /**
    * Branch-gated patient access. OWNER reaches any patient in the org;
-   * BRANCH_MANAGER/STAFF reach a patient only if they have a checked-in visit
-   * at a branch the caller is assigned to. Use this for record-level reads
-   * (detail, history) and writes; use {@link assertPatientInOrg} only where
-   * org-level visibility is intentional (e.g. booking identity lookup).
+   * BRANCH_MANAGER/STAFF reach a patient only if they have a scheduled or
+   * checked-in visit at a branch the caller is assigned to. Use this for
+   * record-level reads (detail, history) and writes; use
+   * {@link assertPatientInOrg} only where org-level visibility is intentional
+   * (e.g. booking identity lookup).
    */
   async assertPatientAccessible(patientId: string, user: AuthContext) {
     if (
@@ -58,8 +60,11 @@ export class PatientAccessService {
                     visits: {
                       some: {
                         branch_id: { in: branchIds },
-                        checked_in_at: { not: null },
                         is_deleted: false,
+                        OR: [
+                          { checked_in_at: { not: null } },
+                          { status: 'SCHEDULED' },
+                        ],
                       },
                     },
                   },
