@@ -81,7 +81,7 @@ describe('RefundsService', () => {
         USER,
       );
 
-      expect(mockAuth.assertCanManageBranch).toHaveBeenCalledWith(
+      expect(mockAuth.assertCanAccessBranch).toHaveBeenCalledWith(
         'p1',
         ORG,
         'br-1',
@@ -152,7 +152,7 @@ describe('RefundsService', () => {
 
       await service.voidRefund(ORG, 'ref-1', USER);
 
-      expect(mockAuth.assertCanManageBranch).toHaveBeenCalledWith(
+      expect(mockAuth.assertCanAccessBranch).toHaveBeenCalledWith(
         'p1',
         ORG,
         'br-1',
