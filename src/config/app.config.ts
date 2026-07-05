@@ -33,7 +33,7 @@ export default registerAs(
     env: process.env.NODE_ENV ?? 'development',
     port: parsePositiveInt('PORT', '3000'),
     appUrl: requireEnv('APP_URL'),
-    adminAppUrl: process.env.ADMIN_APP_URL ?? 'http://localhost:3100',
+    adminAppUrl: requireEnv('ADMIN_APP_URL'),
     versioning: {
       prefix: 'v',
       defaultVersion: process.env.API_DEFAULT_VERSION ?? '1',
