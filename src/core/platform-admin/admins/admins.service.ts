@@ -163,7 +163,9 @@ export class AdminsService {
   async cancelInvite(actorId: string, id: string): Promise<AdminResponseDto> {
     const admin = await this.requireAdmin(id);
     if (admin.password_hashed) {
-      throw new BadRequestException('Only pending invitations can be cancelled');
+      throw new BadRequestException(
+        'Only pending invitations can be cancelled',
+      );
     }
     const updated = await this.prismaService.db.platformAdmin.update({
       where: { id },

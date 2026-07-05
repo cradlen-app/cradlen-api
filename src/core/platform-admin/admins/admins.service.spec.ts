@@ -102,7 +102,10 @@ describe('AdminsService', () => {
       expect(mockDb.platformAdmin.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'old' },
-          data: expect.objectContaining({ is_deleted: false, deleted_at: null }),
+          data: expect.objectContaining({
+            is_deleted: false,
+            deleted_at: null,
+          }),
         }),
       );
       expect(mockVerification.sendSetPasswordInvite).toHaveBeenCalledWith(
@@ -139,7 +142,9 @@ describe('AdminsService', () => {
           data: expect.objectContaining({ is_deleted: true }),
         }),
       );
-      expect(mockVerification.revokeSetPasswordInvite).toHaveBeenCalledWith('a2');
+      expect(mockVerification.revokeSetPasswordInvite).toHaveBeenCalledWith(
+        'a2',
+      );
       expect(mockAudit.record).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'admin.invite_cancel' }),
       );
