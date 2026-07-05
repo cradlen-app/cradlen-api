@@ -9,6 +9,7 @@ const mockDb = {
   subscription: {
     findFirst: jest.fn(),
     update: jest.fn(),
+    count: jest.fn(),
   },
   subscriptionAddOn: {
     updateMany: jest.fn(),
@@ -21,8 +22,12 @@ const mockDb = {
     findMany: jest.fn(),
     findFirst: jest.fn(),
   },
+  role: {
+    findUnique: jest.fn(),
+  },
   profile: {
     count: jest.fn(),
+    findMany: jest.fn(),
   },
   invitation: {
     count: jest.fn(),
@@ -328,6 +333,67 @@ describe('SubscriptionsService', () => {
       ).rejects.toMatchObject({
         response: { code: 'SUBSCRIPTION_LIMIT_REACHED' },
       });
+    });
+  });
+
+  describe('assertOrganizationLimit', () => {
+    beforeEach(() => {
+      mockDb.role.findUnique.mockResolvedValue({ id: 'role-owner' });
+    });
+
+    /** Owned-org rows returned by profile.findMany, plus the trial-sub count. */
+    function mockOwnership(ownedOrgIds: string[], trialCount: number) {
+      mockDb.profile.findMany.mockResolvedValue(
+        ownedOrgIds.map((organization_id) => ({ organization_id })),
+      );
+      mockDb.subscription.count.mockResolvedValue(trialCount);
+    }
+
+    it('allows the first org (user owns none yet) without counting trials', async () => {
+      mockOwnership([], 0);
+      await expect(
+        service.assertOrganizationLimit('user-1'),
+      ).resolves.toBeUndefined();
+      expect(mockDb.subscription.count).not.toHaveBeenCalled();
+    });
+
+    it('allows creating another org below the trial cap', async () => {
+      mockOwnership(['org-1', 'org-2'], 2);
+      await expect(
+        service.assertOrganizationLimit('user-1'),
+      ).resolves.toBeUndefined();
+    });
+
+    it('blocks a new org once the free-trial cap is reached', async () => {
+      mockOwnership(['org-1', 'org-2', 'org-3'], 3);
+      await expect(
+        service.assertOrganizationLimit('user-1'),
+      ).rejects.toMatchObject({
+        response: {
+          code: 'SUBSCRIPTION_LIMIT_REACHED',
+          details: {
+            resource: 'trial_organizations',
+            limit: 3,
+            current: 3,
+          },
+        },
+      });
+    });
+
+    it('does not count paid orgs against the trial cap', async () => {
+      // Owns 3 orgs but none are on free_trial → trial count 0.
+      mockOwnership(['org-1', 'org-2', 'org-3'], 0);
+      await expect(
+        service.assertOrganizationLimit('user-1'),
+      ).resolves.toBeUndefined();
+    });
+
+    it('allows a new org when only some owned orgs are still on trial', async () => {
+      // 5 owned orgs, only 2 still on free_trial → under the cap.
+      mockOwnership(['o1', 'o2', 'o3', 'o4', 'o5'], 2);
+      await expect(
+        service.assertOrganizationLimit('user-1'),
+      ).resolves.toBeUndefined();
     });
   });
 

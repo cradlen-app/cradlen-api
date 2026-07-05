@@ -17,6 +17,21 @@ const ACTIVE_STATUSES: SubscriptionStatus[] = [
   SubscriptionStatus.ACTIVE,
 ];
 
+/**
+ * Anti-abuse cap on how many organizations one user may hold while those orgs
+ * are still on the free-trial plan. Orgs converted to a paid plan don't count,
+ * so genuine multi-tenant owners are unlimited. This replaces the old
+ * per-plan `max_organizations` gate (that column is now informational only).
+ */
+export const MAX_TRIAL_ORGANIZATIONS_PER_USER = 3;
+
+/**
+ * SubscriptionPlan.plan value for the free-trial plan. Duplicated here (rather
+ * than imported from `@core/org/organizations`) so subscriptions doesn't take a
+ * dependency on the organizations module, which already depends on it.
+ */
+const FREE_TRIAL_PLAN = 'free_trial';
+
 /** Adds one billing interval to a base date (returns a new Date). */
 export function addBillingInterval(
   base: Date,
@@ -277,6 +292,14 @@ export class SubscriptionsService {
     }
   }
 
+  /**
+   * A user may own any number of organizations, but only
+   * `MAX_TRIAL_ORGANIZATIONS_PER_USER` of them may be on the free-trial plan at
+   * once (anti-abuse: stops one account from farming unlimited free trials).
+   * Orgs that have converted to a paid plan don't count, so genuine
+   * multi-tenant owners can keep growing. Called before every org creation,
+   * which always provisions a fresh free-trial subscription.
+   */
   async assertOrganizationLimit(
     userId: string,
     client: Prisma.TransactionClient = this.prismaService.db,
@@ -298,38 +321,29 @@ export class SubscriptionsService {
       select: { organization_id: true },
     });
     const ownedOrganizationIds = ownedRows.map((r) => r.organization_id);
-    const current = ownedOrganizationIds.length;
+    // First org is always allowed; nothing to count against the cap yet.
+    if (ownedOrganizationIds.length === 0) return;
 
-    // Cap = highest `max_organizations` among the active plans of orgs this
-    // user already owns. A new owner with no orgs gets the free-trial allowance.
-    let maxAllowed: number;
-    if (ownedOrganizationIds.length > 0) {
-      const subs = await client.subscription.findMany({
-        where: {
-          organization_id: { in: ownedOrganizationIds },
-          is_deleted: false,
-          status: { in: ACTIVE_STATUSES },
-        },
-        select: { subscription_plan: { select: { max_organizations: true } } },
-      });
-      maxAllowed = Math.max(
-        ...subs.map((s) => s.subscription_plan.max_organizations),
-        0,
-      );
-    } else {
-      const freePlan = await client.subscriptionPlan.findUnique({
-        where: { plan: 'free_trial' },
-      });
-      if (!freePlan)
-        throw new InternalServerErrorException('Free trial plan not seeded');
-      maxAllowed = freePlan.max_organizations;
-    }
+    // Only orgs still on the free-trial plan count against the cap; paid orgs
+    // are unlimited.
+    const trialOrganizationCount = await client.subscription.count({
+      where: {
+        organization_id: { in: ownedOrganizationIds },
+        is_deleted: false,
+        status: { in: ACTIVE_STATUSES },
+        subscription_plan: { plan: FREE_TRIAL_PLAN },
+      },
+    });
 
-    if (current >= maxAllowed) {
+    if (trialOrganizationCount >= MAX_TRIAL_ORGANIZATIONS_PER_USER) {
       throw new ForbiddenException({
         code: ERROR_CODES.SUBSCRIPTION_LIMIT_REACHED,
-        message: `Organization limit reached (${maxAllowed}). Upgrade your plan.`,
-        details: { resource: 'organizations', limit: maxAllowed, current },
+        message: `Free-trial organization limit reached (${MAX_TRIAL_ORGANIZATIONS_PER_USER}). Upgrade an existing organization to a paid plan before starting another trial.`,
+        details: {
+          resource: 'trial_organizations',
+          limit: MAX_TRIAL_ORGANIZATIONS_PER_USER,
+          current: trialOrganizationCount,
+        },
       });
     }
   }
