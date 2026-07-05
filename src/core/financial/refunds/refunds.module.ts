@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
 import { AuthorizationModule } from '@core/auth/authorization/authorization.module.js';
+import { FinancialAccessModule } from '../shared/access/financial-access.module.js';
 import { InvoicingModule } from '../invoicing/invoicing.module.js';
 import { RefundsController } from './refunds.controller.js';
 import { RefundsService } from './refunds.service.js';
 
 @Module({
-  imports: [AuthorizationModule, InvoicingModule],
+  imports: [AuthorizationModule, FinancialAccessModule, InvoicingModule],
   controllers: [RefundsController],
   providers: [RefundsService],
   exports: [RefundsService],

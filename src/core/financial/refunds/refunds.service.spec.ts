@@ -5,6 +5,7 @@ import { RefundsService } from './refunds.service.js';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { EventBus } from '@infrastructure/messaging/event-bus.js';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service.js';
+import { FinancialAccessService } from '../shared/access/financial-access.service.js';
 import { InvoiceBalanceService } from '../invoicing/invoice-balance.service.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 
@@ -24,6 +25,7 @@ const mockAuth = {
   assertCanManageBranch: jest.fn(),
   assertCanAccessBranch: jest.fn(),
 };
+const mockAccess = { findOpenCashSession: jest.fn() };
 const mockBalance = { recompute: jest.fn() };
 const mockEventBus = { publish: jest.fn() };
 
@@ -45,6 +47,7 @@ describe('RefundsService', () => {
         RefundsService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuthorizationService, useValue: mockAuth },
+        { provide: FinancialAccessService, useValue: mockAccess },
         { provide: InvoiceBalanceService, useValue: mockBalance },
         { provide: EventBus, useValue: mockEventBus },
       ],
@@ -52,6 +55,7 @@ describe('RefundsService', () => {
 
     service = module.get(RefundsService);
     jest.clearAllMocks();
+    mockAccess.findOpenCashSession.mockResolvedValue({ id: 'sess-1' });
     mockDb.$transaction.mockImplementation(
       (fn: (tx: typeof mockDb) => unknown) => fn(mockDb),
     );
@@ -130,6 +134,20 @@ describe('RefundsService', () => {
           USER,
         ),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    it('rejects a refund when no cash session is open', async () => {
+      mockDb.payment.findFirst.mockResolvedValue(completedPayment());
+      mockAccess.findOpenCashSession.mockResolvedValue(null);
+
+      await expect(
+        service.create(
+          ORG,
+          { payment_id: 'pay-1', amount: 50, reason: 'overcharge' },
+          USER,
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockDb.refund.create).not.toHaveBeenCalled();
     });
   });
 

@@ -8,6 +8,7 @@ const mockDb = {
   profile: { findFirst: jest.fn() },
   providerService: { findMany: jest.fn() },
   service: { findMany: jest.fn() },
+  cashSession: { findFirst: jest.fn() },
 };
 const mockPrisma = { db: mockDb };
 
@@ -143,6 +144,35 @@ describe('FinancialAccessService', () => {
         where: { id: { in: ['svc-b'] } },
         select: { name: true, code: true },
       });
+    });
+  });
+
+  describe('findOpenCashSession', () => {
+    it('returns the cashier’s OPEN drawer at the branch', async () => {
+      mockDb.cashSession.findFirst.mockResolvedValue({ id: 'sess-1' });
+
+      await expect(
+        service.findOpenCashSession(ORG, 'br-1', 'p1'),
+      ).resolves.toEqual({ id: 'sess-1' });
+
+      expect(mockDb.cashSession.findFirst).toHaveBeenCalledWith({
+        where: {
+          organization_id: ORG,
+          branch_id: 'br-1',
+          profile_id: 'p1',
+          status: 'OPEN',
+          is_deleted: false,
+        },
+        select: { id: true },
+      });
+    });
+
+    it('returns null when the cashier has no open drawer at the branch', async () => {
+      mockDb.cashSession.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.findOpenCashSession(ORG, 'br-1', 'p1'),
+      ).resolves.toBeNull();
     });
   });
 });
