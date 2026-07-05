@@ -272,6 +272,7 @@ Table patient_accounts {
   patient patients
   guardian guardians
   refreshTokens refresh_tokens [not null]
+  push_subscriptions patient_push_subscriptions [not null]
   password_changed_at DateTime
   last_active_at DateTime
   created_at DateTime [default: `now()`, not null]
@@ -337,6 +338,18 @@ Table admin_push_subscriptions {
   auth String [not null]
   user_agent String
   created_at DateTime [default: `now()`, not null]
+}
+
+Table patient_push_subscriptions {
+  id String [pk]
+  account_id String [not null]
+  account patient_accounts [not null]
+  endpoint String [unique, not null]
+  p256dh String [not null]
+  auth String [not null]
+  user_agent String
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
 }
 
 Table admin_audit_log {
@@ -2800,6 +2813,8 @@ Ref: patient_accounts.patient_id - patients.id [delete: Set Null]
 Ref: patient_accounts.guardian_id - guardians.id [delete: Set Null]
 
 Ref: admin_push_subscriptions.admin_id > platform_admins.id [delete: Cascade]
+
+Ref: patient_push_subscriptions.account_id > patient_accounts.id [delete: Cascade]
 
 Ref: admin_audit_log.admin_id > platform_admins.id [delete: Cascade]
 
