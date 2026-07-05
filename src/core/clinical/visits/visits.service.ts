@@ -313,6 +313,13 @@ export class VisitsService {
 
   async bookVisit(dto: BookVisitDto, user: AuthContext) {
     assertReceptionAction(user, 'Only reception can book visits');
+    // Defense-in-depth: this path captures a billable charge, so it must only
+    // ever book PATIENT visits. Medical-rep visits are non-billable and go
+    // through MedicalRepVisitService. Redundant with the DTO's @Equals('PATIENT')
+    // today, kept so the invariant survives a future DTO change.
+    if (dto.visitor_type !== 'PATIENT') {
+      throw new BadRequestException('Only PATIENT visits can be booked here');
+    }
     await this.assertTemplateValid(dto as unknown as Record<string, unknown>, {
       extensionKey: dto.specialty_code,
     });

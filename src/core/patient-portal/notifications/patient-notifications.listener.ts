@@ -7,6 +7,7 @@ import {
 } from '@core/clinical/events/events.public.js';
 import { PatientNotificationsService } from './patient-notifications.service.js';
 import { PATIENT_NOTIFICATION_CODES } from './patient-notification-codes.js';
+import { PatientPushService } from '@core/patient-portal/push/patient-push.service.js';
 
 /**
  * Shape of the `visit.status_updated` event published by `visits.service`.
@@ -24,6 +25,7 @@ export class PatientNotificationsListener {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly patientNotifications: PatientNotificationsService,
+    private readonly patientPush: PatientPushService,
   ) {}
 
   /**
@@ -72,7 +74,7 @@ export class PatientNotificationsListener {
       const hasInvestigations = visit.investigations.length > 0;
 
       if (hasPrescription) {
-        await this.patientNotifications.create({
+        const notification = await this.patientNotifications.create({
           patientId: journey.patient_id,
           organizationId: journey.organization_id,
           code: PATIENT_NOTIFICATION_CODES.VISIT_PRESCRIPTION_ISSUED.code,
@@ -84,10 +86,16 @@ export class PatientNotificationsListener {
           navigateTo: '/medications',
           metadata: { visitId },
         });
+        this.patientPush.sendToPatient(notification.patient_id, {
+          title: notification.title,
+          body: notification.description,
+          navigate_to: notification.navigate_to,
+          tag: notification.id,
+        });
       }
 
       if (hasInvestigations) {
-        await this.patientNotifications.create({
+        const notification = await this.patientNotifications.create({
           patientId: journey.patient_id,
           organizationId: journey.organization_id,
           code: PATIENT_NOTIFICATION_CODES.VISIT_INVESTIGATION_ORDERED.code,
@@ -98,6 +106,12 @@ export class PatientNotificationsListener {
           description: 'Your doctor ordered new tests for you.',
           navigateTo: '/tests',
           metadata: { visitId },
+        });
+        this.patientPush.sendToPatient(notification.patient_id, {
+          title: notification.title,
+          body: notification.description,
+          navigate_to: notification.navigate_to,
+          tag: notification.id,
         });
       }
     } catch (err) {
@@ -116,7 +130,7 @@ export class PatientNotificationsListener {
   @OnEvent(CLINICAL_EVENTS.investigation.reviewed)
   async handleInvestigationReviewed(event: InvestigationReviewedEvent) {
     try {
-      await this.patientNotifications.create({
+      const notification = await this.patientNotifications.create({
         patientId: event.patient_id,
         organizationId: event.organization_id,
         code: PATIENT_NOTIFICATION_CODES.INVESTIGATION_REVIEWED.code,
@@ -128,6 +142,12 @@ export class PatientNotificationsListener {
           investigationId: event.investigation_id,
           visitId: event.visit_id,
         },
+      });
+      this.patientPush.sendToPatient(notification.patient_id, {
+        title: notification.title,
+        body: notification.description,
+        navigate_to: notification.navigate_to,
+        tag: notification.id,
       });
     } catch (err) {
       this.logger.error(

@@ -1314,10 +1314,24 @@ describe('VisitsService', () => {
       // visit; the post-commit finalize never runs.
       expect(chargingServiceMock.finalizeCapture).not.toHaveBeenCalled();
     });
+
+    it('rejects a MEDICAL_REP visitor_type before capturing any charge (reps are non-billable)', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const repDto = { ...baseDto, visitor_type: 'MEDICAL_REP' as any };
+
+      await expect(service.bookVisit(repDto, mockUser)).rejects.toThrow(
+        BadRequestException,
+      );
+      // Guard fires before the billing path — no charge is ever captured.
+      expect(chargingServiceMock.captureInTx).not.toHaveBeenCalled();
+      expect(db.visit.create).not.toHaveBeenCalled();
+    });
   });
 
   describe('bookVisit enrollment', () => {
     const bookDto = {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      visitor_type: 'PATIENT' as any,
       patient_id: 'patient-uuid',
       assigned_doctor_id: 'doctor-uuid',
       service_id: 'service-uuid',
