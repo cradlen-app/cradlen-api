@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { CashSessionStatus } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import type { AuthContext } from '@common/interfaces/auth-context.interface.js';
 
@@ -48,6 +49,24 @@ export class FinancialAccessService {
         'Only RECEPTIONISTs, ACCOUNTANTs, or OWNERs can perform this action',
       );
     }
+  }
+
+  /** The cashier's own OPEN drawer at the given branch, or null. */
+  async findOpenCashSession(
+    organizationId: string,
+    branchId: string,
+    profileId: string,
+  ): Promise<{ id: string } | null> {
+    return this.prismaService.db.cashSession.findFirst({
+      where: {
+        organization_id: organizationId,
+        branch_id: branchId,
+        profile_id: profileId,
+        status: CashSessionStatus.OPEN,
+        is_deleted: false,
+      },
+      select: { id: true },
+    });
   }
 
   /**
