@@ -41,18 +41,23 @@ describe('PatientAccessService.assertPatientAccessible', () => {
     expect(where.journeys.some).not.toHaveProperty('episodes');
   });
 
-  it('non-owner reaches a patient with a checked-in visit at an assigned branch', async () => {
+  it('non-owner reaches a patient with a scheduled or checked-in visit at an assigned branch', async () => {
     findFirst.mockResolvedValue({ id: 'patient-1' });
 
     await expect(
       service.assertPatientAccessible('patient-1', user),
     ).resolves.toBeUndefined();
 
-    const where = findFirst.mock.calls[0][0].where;
-    expect(where.journeys.some.episodes.some.visits.some).toMatchObject({
+    const visitFilter =
+      findFirst.mock.calls[0][0].where.journeys.some.episodes.some.visits.some;
+    expect(visitFilter).toMatchObject({
       branch_id: { in: ['branch-a'] },
-      checked_in_at: { not: null },
+      is_deleted: false,
+      OR: [{ checked_in_at: { not: null } }, { status: 'SCHEDULED' }],
     });
+    // Access no longer requires a check-in timestamp at the top level; a
+    // scheduled visit (checked_in_at null) is enough for booking-time edits.
+    expect(visitFilter).not.toHaveProperty('checked_in_at');
   });
 
   it('non-owner is denied when no accessible patient matches', async () => {

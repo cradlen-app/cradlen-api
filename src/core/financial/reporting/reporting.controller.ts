@@ -45,6 +45,11 @@ export class ReportingController {
   }
 
   @Get('invoice-stats')
+  // Operational front-desk rollup (branch-scoped Paid/Unpaid/Pending/Overdue),
+  // not org analytics — override the controller's reports gate so reception and
+  // other billing staff (financial.read) can see it. The service-layer
+  // `resolveBillingBranchScope` still enforces branch access and scoping.
+  @RequirePermission(PERMISSIONS.financialRead)
   @ApiStandardResponse(InvoiceStatsReportDto)
   invoiceStats(
     @Param('orgId', ParseUUIDPipe) orgId: string,
