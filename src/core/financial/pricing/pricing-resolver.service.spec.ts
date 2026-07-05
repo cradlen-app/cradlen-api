@@ -109,7 +109,10 @@ describe('PricingResolverService', () => {
       mockDb.providerPriceOverride.findFirst
         .mockResolvedValueOnce(null) // no override at this branch
         .mockResolvedValueOnce(null); // no org-wide override
-      mockDb.priceListItem.findFirst.mockResolvedValueOnce(item());
+      // Price-list lookups run in order: branch offer, branch default, ...
+      mockDb.priceListItem.findFirst
+        .mockResolvedValueOnce(null) // no in-window branch offer
+        .mockResolvedValueOnce(item()); // branch default
 
       const result = await resolver.resolvePrice({
         ...base,
@@ -122,7 +125,9 @@ describe('PricingResolverService', () => {
 
   it('falls through to BRANCH_OVERRIDE', async () => {
     mockDb.providerPriceOverride.findFirst.mockResolvedValue(null);
-    mockDb.priceListItem.findFirst.mockResolvedValueOnce(item());
+    mockDb.priceListItem.findFirst
+      .mockResolvedValueOnce(null) // no in-window branch offer
+      .mockResolvedValueOnce(item()); // branch default
 
     const result = await resolver.resolvePrice({ ...base, profileId: 'doc-1' });
 
@@ -133,8 +138,10 @@ describe('PricingResolverService', () => {
   it('falls through to ORG_PRICE_LIST', async () => {
     mockDb.providerPriceOverride.findFirst.mockResolvedValue(null);
     mockDb.priceListItem.findFirst
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(item({ unit_price: d('100.00') }));
+      .mockResolvedValueOnce(null) // no branch offer
+      .mockResolvedValueOnce(null) // no branch default
+      .mockResolvedValueOnce(null) // no org offer
+      .mockResolvedValueOnce(item({ unit_price: d('100.00') })); // org default
 
     const result = await resolver.resolvePrice({ ...base, profileId: 'doc-1' });
 
@@ -230,6 +237,73 @@ describe('PricingResolverService', () => {
       const result = await resolver.resolvePrice({ ...base, quantity: 10 });
       // tier base 100, 15% off → 85
       expect(result?.price.toFixed(2)).toBe('85.00');
+    });
+  });
+
+  describe('promotional (offer) price lists', () => {
+    beforeEach(() => {
+      mockDb.providerPriceOverride.findFirst.mockResolvedValue(null);
+    });
+
+    it('prefers an in-window branch offer over the branch default', async () => {
+      // The offer lookup (first call) hits, so no default lookup is needed.
+      mockDb.priceListItem.findFirst.mockResolvedValueOnce(
+        item({ unit_price: d('100.00') }),
+      );
+
+      const result = await resolver.resolvePrice(base);
+
+      expect(result?.source).toBe(PricingSource.BRANCH_OVERRIDE);
+      expect(result?.price.toFixed(2)).toBe('100.00');
+      expect(mockDb.priceListItem.findFirst).toHaveBeenCalledTimes(1);
+      // The first pass targets a non-default (offer) list.
+      const offerWhere =
+        mockDb.priceListItem.findFirst.mock.calls[0][0].where.price_list;
+      expect(offerWhere.is_default).toBe(false);
+    });
+
+    it('falls back to the default when no offer is in window', async () => {
+      mockDb.priceListItem.findFirst
+        .mockResolvedValueOnce(null) // branch offer out of window
+        .mockResolvedValueOnce(item({ unit_price: d('250.00') })); // branch default
+
+      const result = await resolver.resolvePrice(base);
+
+      expect(result?.source).toBe(PricingSource.BRANCH_OVERRIDE);
+      expect(result?.price.toFixed(2)).toBe('250.00');
+    });
+
+    it('resolves an org-scoped offer to ORG_PRICE_LIST', async () => {
+      mockDb.priceListItem.findFirst
+        .mockResolvedValueOnce(null) // branch offer
+        .mockResolvedValueOnce(null) // branch default
+        .mockResolvedValueOnce(item({ unit_price: d('100.00') })); // org offer
+
+      const result = await resolver.resolvePrice(base);
+
+      expect(result?.source).toBe(PricingSource.ORG_PRICE_LIST);
+      expect(result?.price.toFixed(2)).toBe('100.00');
+      const orgOfferWhere =
+        mockDb.priceListItem.findFirst.mock.calls[2][0].where.price_list;
+      expect(orgOfferWhere.is_default).toBe(false);
+      expect(orgOfferWhere.branch_id).toBeNull();
+    });
+
+    it('only treats date-bounded lists as offers and matches referenceDate', async () => {
+      mockDb.priceListItem.findFirst.mockResolvedValue(null);
+      const refDate = new Date('2026-07-05T00:00:00.000Z');
+
+      await resolver.resolvePrice({ ...base, referenceDate: refDate });
+
+      const offerWhere =
+        mockDb.priceListItem.findFirst.mock.calls[0][0].where.price_list;
+      // Must be a dated (promotional) list, not a plain secondary list.
+      expect(offerWhere.OR).toEqual([
+        { valid_from: { not: null } },
+        { valid_to: { not: null } },
+      ]);
+      // The window is matched against the supplied referenceDate.
+      expect(JSON.stringify(offerWhere.AND)).toContain(refDate.toISOString());
     });
   });
 });

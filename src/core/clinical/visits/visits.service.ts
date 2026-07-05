@@ -456,6 +456,9 @@ export class VisitsService {
           quantity: 1,
         },
         user,
+        // Price against the visit's service date so a promo price list that is
+        // in effect on that date applies, even when booked ahead of the window.
+        scheduledAt,
       );
 
       // Enroll the patient in the org, atomically with the booking. createMany
