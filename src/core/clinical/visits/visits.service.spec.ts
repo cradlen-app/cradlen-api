@@ -1283,6 +1283,9 @@ describe('VisitsService', () => {
           quantity: 1,
         }),
         mockUser,
+        // Priced against the visit's scheduled date so a promo list in effect
+        // on that date applies.
+        expect.any(Date),
       );
       // Side effects (auto-bill + fan-out) run after the transaction commits.
       expect(chargingServiceMock.finalizeCapture).toHaveBeenCalledWith({
