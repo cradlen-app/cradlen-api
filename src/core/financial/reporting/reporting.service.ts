@@ -805,10 +805,20 @@ export class ReportingService {
     scope: ReportScope,
   ): Record<string, Prisma.DateTimeFilter> | Record<string, never> {
     if (!scope.dateFrom && !scope.dateTo) return {};
+
+    // A date-only `dateTo` (e.g. "2026-07-05") parses to UTC midnight, so an
+    // `lte` bound would exclude everything that happened during that day. Make
+    // the upper bound inclusive of the whole day: `< (dateTo + 1 day)`.
+    let upper: Date | undefined;
+    if (scope.dateTo) {
+      upper = new Date(scope.dateTo);
+      upper.setUTCDate(upper.getUTCDate() + 1);
+    }
+
     return {
       [field]: {
         ...(scope.dateFrom && { gte: new Date(scope.dateFrom) }),
-        ...(scope.dateTo && { lte: new Date(scope.dateTo) }),
+        ...(upper && { lt: upper }),
       },
     };
   }
