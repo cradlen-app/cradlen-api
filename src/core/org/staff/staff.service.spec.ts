@@ -296,6 +296,7 @@ describe('StaffService.removeStaffFromBranch', () => {
       count: jest.Mock;
     };
     workingSchedule: { deleteMany: jest.Mock };
+    refreshToken: { updateMany: jest.Mock };
     $transaction: jest.Mock;
   };
   let authMock: { assertCanManageStaffOnBranches: jest.Mock };
@@ -303,7 +304,9 @@ describe('StaffService.removeStaffFromBranch', () => {
   beforeEach(async () => {
     db = {
       profile: {
-        findFirst: jest.fn().mockResolvedValue({ id: 'prof-uuid' }),
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ id: 'prof-uuid', user_id: 'user-uuid' }),
         update: jest.fn().mockResolvedValue({}),
       },
       profileBranch: {
@@ -312,6 +315,7 @@ describe('StaffService.removeStaffFromBranch', () => {
         count: jest.fn().mockResolvedValue(2),
       },
       workingSchedule: { deleteMany: jest.fn().mockResolvedValue({}) },
+      refreshToken: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
       // Run the transaction callback against the same db mock.
       $transaction: jest.fn().mockImplementation((cb) => cb(db)),
     };
@@ -373,6 +377,8 @@ describe('StaffService.removeStaffFromBranch', () => {
       where: { profile_id: 'prof-uuid', branch_id: BRANCH },
     });
     expect(db.profile.update).not.toHaveBeenCalled();
+    // Profile stays active, so their sessions must NOT be revoked.
+    expect(db.refreshToken.updateMany).not.toHaveBeenCalled();
   });
 
   it('soft-deletes the profile when removing the last branch', async () => {
@@ -387,6 +393,16 @@ describe('StaffService.removeStaffFromBranch', () => {
     expect(db.profile.update).toHaveBeenCalledWith({
       where: { id: 'prof-uuid' },
       data: expect.objectContaining({ is_deleted: true }),
+    });
+    // Last-branch removal soft-deletes the profile → revoke this user's live
+    // sessions, scoped to this org so other-org sessions survive.
+    expect(db.refreshToken.updateMany).toHaveBeenCalledWith({
+      where: {
+        user_id: 'user-uuid',
+        organization_id: ORG,
+        is_revoked: false,
+      },
+      data: expect.objectContaining({ is_revoked: true }),
     });
   });
 
