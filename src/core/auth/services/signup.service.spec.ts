@@ -458,6 +458,7 @@ describe('SignupService', () => {
       email: 'sara@example.com',
       is_deleted: false,
       registration_status: 'ACTIVE',
+      onboarding_completed: true,
     });
     mocks.profileCount.mockResolvedValue(0);
 
@@ -484,8 +485,35 @@ describe('SignupService', () => {
       email: 'sara@example.com',
       is_deleted: false,
       registration_status: 'ACTIVE',
+      onboarding_completed: true,
     });
     mocks.profileCount.mockResolvedValue(1);
+
+    await expect(
+      signupService.start({
+        first_name: 'Sara',
+        last_name: 'Ali',
+        email: 'sara@example.com',
+        password: 'Password1!',
+        confirm_password: 'Password1!',
+      }),
+    ).rejects.toThrow(ConflictException);
+    expect(mocks.userCreate).not.toHaveBeenCalled();
+  });
+
+  it('still rejects signup start for a verified-but-not-yet-onboarded user (no org yet)', async () => {
+    const { signupService, mocks } = createAuthTestEnv();
+    // ACTIVE + verified but onboarding never completed → also profileless, but
+    // this is a mid-signup identity, NOT a removed-staff one. It must still
+    // conflict; the user resumes via login's COMPLETE_ONBOARDING path.
+    mocks.userFindFirst.mockResolvedValue({
+      id: 'verified-not-onboarded',
+      email: 'sara@example.com',
+      is_deleted: false,
+      registration_status: 'ACTIVE',
+      onboarding_completed: false,
+    });
+    mocks.profileCount.mockResolvedValue(0);
 
     await expect(
       signupService.start({
