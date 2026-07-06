@@ -90,14 +90,7 @@ export class SignupService {
         !existing.is_deleted &&
         existing.registration_status === 'ACTIVE' &&
         existing.onboarding_completed === true &&
-        (await this.prismaService.db.profile.count({
-          where: {
-            user_id: existing.id,
-            is_deleted: false,
-            is_active: true,
-            organization: { is_deleted: false, status: 'ACTIVE' },
-          },
-        })) === 0;
+        (await this.countActiveMemberships(existing.id)) === 0;
       if (emailMatches && (existing.is_deleted || isRemovedFromAllOrgs)) {
         const password_hashed = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
         // user.update + verificationCode.create commit together. The
@@ -330,7 +323,7 @@ export class SignupService {
       });
       if (!user) return { step: 'NONE' };
       return {
-        step: this.resolveRegistrationStep(user),
+        step: await this.resolveStepForUser(user),
         ...(user.email ? { email: user.email } : {}),
       };
     }
@@ -346,7 +339,7 @@ export class SignupService {
       where: { email: input.email, is_deleted: false },
     });
     if (!user) return { step: 'NONE' };
-    return { step: this.resolveRegistrationStep(user) };
+    return { step: await this.resolveStepForUser(user) };
   }
 
   private resolveRegistrationStep(
@@ -355,6 +348,37 @@ export class SignupService {
     if (user.onboarding_completed) return 'DONE';
     if (user.registration_status === 'PENDING') return 'VERIFY_OTP';
     return 'COMPLETE_ONBOARDING';
+  }
+
+  /**
+   * Membership-aware step. A user who onboarded before but has since been
+   * removed from all their organizations (0 active profiles) reports `DONE` by
+   * the pure rule above, yet still needs to create a new org — mirror the login
+   * funnel (`sessions.service.buildLoginResponse`) so `registration/status`,
+   * login, and `signup/start` agree, and the FE step-3 guard keeps them on
+   * `/sign-up/complete` instead of bouncing them to `/sign-in`.
+   */
+  private async resolveStepForUser(
+    user: Pick<User, 'id' | 'registration_status' | 'onboarding_completed'>,
+  ): Promise<RegistrationStep> {
+    const base = this.resolveRegistrationStep(user);
+    if (base !== 'DONE') return base;
+    const active = await this.countActiveMemberships(user.id);
+    return active === 0 ? 'COMPLETE_ONBOARDING' : 'DONE';
+  }
+
+  /** Count of the user's live memberships (active profile in a live, active
+   * org) — the shared "does this user still belong anywhere" predicate used by
+   * both `start()` and `resolveStepForUser`. */
+  private countActiveMemberships(userId: string): Promise<number> {
+    return this.prismaService.db.profile.count({
+      where: {
+        user_id: userId,
+        is_deleted: false,
+        is_active: true,
+        organization: { is_deleted: false, status: 'ACTIVE' },
+      },
+    });
   }
 
   private async resolveJobFunctions(codes: string[]): Promise<JobFunction[]> {
