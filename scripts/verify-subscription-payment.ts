@@ -51,7 +51,10 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const prisma = new PrismaService({ url: databaseUrl } as never);
+  const prisma = new PrismaService(
+    { url: databaseUrl } as never,
+    { fieldEncryptionKey: undefined } as never,
+  );
   const eventBus = new EventBus(new EventEmitter2());
   const subscriptions = new SubscriptionsService(prisma);
   const payments = new SubscriptionPaymentsService(

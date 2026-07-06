@@ -4,6 +4,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseUUIDPipe,
   Post,
   UseGuards,
 } from '@nestjs/common';
@@ -13,6 +14,7 @@ import { CurrentAdmin } from '@common/decorators/current-admin.decorator.js';
 import { AdminJwtAuthGuard } from '@common/guards/admin-jwt-auth.guard.js';
 import type { AdminAuthContext } from '@common/interfaces/admin-auth-context.interface.js';
 import { AdminWriteService } from './admin-write.service.js';
+import { AnonymizePatientDto } from '@core/compliance/erasure/dto/anonymize-patient.dto.js';
 import {
   ChangePlanDto,
   ExtendSubscriptionDto,
@@ -181,5 +183,20 @@ export class AdminWriteController {
       id,
       dto.new_password,
     );
+  }
+
+  // Patients — right-to-erasure (last-org-standing, on controller instruction)
+  @Post('patients/:id/anonymize')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      "Anonymize a patient on a controller's documented erasure instruction",
+  })
+  anonymizePatient(
+    @CurrentAdmin() admin: AdminAuthContext,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AnonymizePatientDto,
+  ) {
+    return this.writeService.anonymizePatient(admin.adminId, id, dto);
   }
 }

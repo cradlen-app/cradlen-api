@@ -621,6 +621,7 @@ model Organization {
   charges                 Charge[]                @relation("OrgCharges")
   cash_sessions           CashSession[]           @relation("OrgCashSessions")
   subscription_payments   SubscriptionPayment[]   @relation("OrgSubscriptionPayments")
+  patient_consents        PatientConsent[]
 
   @@index([status, is_deleted])
   @@map("organizations")
@@ -1133,6 +1134,37 @@ model AuthAuditLog {
   @@map("auth_audit_log")
 }
 
+// Durable, attributable audit trail of PHI *reads* (who viewed which patient),
+// distinct from the *_revisions write history. Required by HIPAA §164.312(b).
+// Intentionally FK-free: an access record must survive patient erasure /
+// anonymization rather than cascade away with it. `subject_type` is PATIENT or
+// VISIT; `patient_id` is resolved when known (== subject_id for PATIENT rows,
+// null for VISIT rows, joined to the patient at report time). Append-only.
+model PhiAccessLog {
+  id                 String   @id @default(uuid()) @db.Uuid
+  actor_type         String // STAFF | PATIENT | ADMIN | SYSTEM
+  user_id            String?  @db.Uuid
+  profile_id         String?  @db.Uuid
+  patient_account_id String?  @db.Uuid
+  organization_id    String?  @db.Uuid
+  subject_type       String // PATIENT | VISIT
+  subject_id         String   @db.Uuid
+  patient_id         String?  @db.Uuid
+  action             String   @default("VIEW")
+  resource           String
+  route              String
+  purpose            String?
+  request_id         String?
+  ip                 String?
+  at                 DateTime @default(now())
+
+  @@index([patient_id, at])
+  @@index([subject_type, subject_id, at])
+  @@index([organization_id, at])
+  @@index([user_id, at])
+  @@map("phi_access_log")
+}
+
 // Tracks reset tokens AFTER the verify step issues a verified token.
 // PasswordResetService.verify writes one row; reset() looks the row up by
 // jti and rejects re-use via consumed_at. Forgot-password.start does NOT
@@ -1462,9 +1494,14 @@ model EpisodeTemplate {
 }
 
 model Patient {
-  id             String        @id @default(uuid()) @db.Uuid
-  national_id    String        @unique
-  full_name      String
+  id          String  @id @default(uuid()) @db.Uuid
+  // Encrypted at the Prisma client layer (national-id.extension) when
+  // FIELD_ENCRYPTION_KEY is set: `national_id` holds ciphertext and
+  // `national_id_bidx` (a deterministic blind index) carries uniqueness + exact
+  // lookup. Plaintext until backfilled. See docs/security/field-encryption-rollout.md.
+  national_id      String
+  national_id_bidx String? @unique
+  full_name        String
   date_of_birth  DateTime      @db.Date
   phone_number   String
   address        String
@@ -1491,6 +1528,7 @@ model Patient {
   receipts        Receipt[]              @relation("PatientReceipts")
   charges         Charge[]               @relation("PatientCharges")
   notifications   PatientNotification[]
+  consents        PatientConsent[]
 
   created_at DateTime  @default(now())
   updated_at DateTime  @updatedAt
@@ -1498,6 +1536,47 @@ model Patient {
   deleted_at DateTime?
 
   @@map("patients")
+}
+
+enum ConsentType {
+  TREATMENT
+  DATA_PROCESSING
+  COMMUNICATIONS
+}
+
+enum ConsentStatus {
+  GRANTED
+  WITHDRAWN
+}
+
+// Patient consent captured BY a controlling Organization (clinic) — treatment,
+// data-processing, or communications consent, versioned to the consent text
+// presented at capture. This is controller tooling: Cradlen (the processor)
+// records what the clinic captured; it does not itself obtain patient consent.
+// Org-scoped (consent is given to a specific controller), unlike the global
+// Patient master row.
+model PatientConsent {
+  id              String        @id @default(uuid()) @db.Uuid
+  patient_id      String        @db.Uuid
+  organization_id String        @db.Uuid
+  type            ConsentType
+  status          ConsentStatus @default(GRANTED)
+  consent_version String
+  captured_by_id  String        @db.Uuid
+  granted_at      DateTime      @default(now())
+  withdrawn_at    DateTime?
+  withdrawn_by_id String?       @db.Uuid
+  note            String?
+  is_deleted      Boolean       @default(false)
+  deleted_at      DateTime?
+  created_at      DateTime      @default(now())
+  updated_at      DateTime      @updatedAt
+
+  patient      Patient      @relation(fields: [patient_id], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@index([patient_id, organization_id, type])
+  @@map("patient_consents")
 }
 
 // In-app notifications addressed to a Patient (portal recipient) — distinct from

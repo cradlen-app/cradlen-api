@@ -1,7 +1,7 @@
 import { Controller, Get, Param, ParseUUIDPipe } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { ApiStandardResponse } from '@common/swagger';
-import { CurrentUser } from '@common/decorators';
+import { AuditsPhiAccess, CurrentUser } from '@common/decorators';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { HistorySummaryService } from './history-summary.service';
 import { ObgynHistorySummaryDto } from './dto/obgyn-history-summary.dto';
@@ -12,6 +12,10 @@ export class HistorySummaryController {
   constructor(private readonly service: HistorySummaryService) {}
 
   @Get()
+  @AuditsPhiAccess({
+    resource: 'patient.history_summary',
+    purpose: 'treatment',
+  })
   @ApiStandardResponse(ObgynHistorySummaryDto)
   getHistorySummary(
     @Param('id', ParseUUIDPipe) patientId: string,

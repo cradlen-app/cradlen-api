@@ -607,7 +607,10 @@ export class VisitsService {
       if (!patient)
         throw new NotFoundException(`Patient ${dto.patient_id} not found`);
     } else {
-      const existing = await tx.patient.findUnique({
+      // national_id uniqueness now lives on the blind index, so this is no
+      // longer a unique locator — findFirst. The client extension rewrites the
+      // `national_id` filter to `national_id_bidx`.
+      const existing = await tx.patient.findFirst({
         where: { national_id: dto.national_id! },
       });
       if (existing && !existing.is_deleted) {

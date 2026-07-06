@@ -26,6 +26,7 @@ import {
 import { PatientStatsDto } from './dto/patient-stats.dto.js';
 import { ApiStandardResponse, ApiPaginatedResponse } from '@common/swagger';
 import { CurrentUser } from '@common/decorators/current-user.decorator.js';
+import { AuditsPhiAccess } from '@common/decorators/audits-phi-access.decorator.js';
 import { AuthContext } from '@common/interfaces/auth-context.interface.js';
 
 @ApiTags('Patients')
@@ -76,6 +77,7 @@ export class PatientsController {
   // chained back into bulk PII harvesting. Declared before `/patients/:id`.
   @Get('/patients/:id/identity')
   @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @AuditsPhiAccess({ resource: 'patient.identity', purpose: 'treatment' })
   @ApiStandardResponse(PatientDto)
   resolveIdentity(
     @Param('id', ParseUUIDPipe) id: string,
@@ -92,6 +94,7 @@ export class PatientsController {
   }
 
   @Get('/patients/:id')
+  @AuditsPhiAccess({ resource: 'patient.detail', purpose: 'treatment' })
   @ApiStandardResponse(PatientDto)
   findOne(
     @Param('id', ParseUUIDPipe) id: string,

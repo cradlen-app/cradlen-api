@@ -12,6 +12,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '@common/decorators/public.decorator.js';
 import { CurrentPatient } from '@common/decorators/current-patient.decorator.js';
+import { AuditsPhiAccess } from '@common/decorators/audits-phi-access.decorator.js';
 import { PatientJwtAuthGuard } from '@common/guards/patient-jwt-auth.guard.js';
 import {
   ApiPaginatedResponse,
@@ -44,6 +45,11 @@ export class PatientInvestigationsController {
     summary: "List the patient's investigations (lab tests & imaging)",
   })
   @ApiPaginatedResponse(PatientInvestigationItemDto)
+  @AuditsPhiAccess({
+    resource: 'portal.investigations',
+    purpose: 'patient_self',
+    subject: 'self',
+  })
   investigations(
     @CurrentPatient() patient: PatientAuthContext,
     @Query() query: ListPatientInvestigationsQueryDto,

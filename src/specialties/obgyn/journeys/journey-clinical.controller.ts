@@ -9,7 +9,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { CurrentUser, LocksOnClosedVisit } from '@common/decorators';
+import {
+  AuditsPhiAccess,
+  CurrentUser,
+  LocksOnClosedVisit,
+} from '@common/decorators';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { EncounterMutationGuard } from '@core/clinical/visits/visits.public';
@@ -34,6 +38,12 @@ export class JourneyClinicalController {
   ) {}
 
   @Get()
+  @AuditsPhiAccess({
+    resource: 'visit.journey_clinical',
+    param: 'visitId',
+    subjectType: 'VISIT',
+    purpose: 'treatment',
+  })
   async get(
     @Param('visitId', ParseUUIDPipe) visitId: string,
     @Param('journeyId', ParseUUIDPipe) journeyId: string,

@@ -42,6 +42,7 @@ import {
   ApiPaginatedResponse,
 } from '@common/swagger';
 import { CurrentUser } from '@common/decorators/current-user.decorator';
+import { AuditsPhiAccess } from '@common/decorators/audits-phi-access.decorator';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 
 @ApiTags('Visits')
@@ -98,6 +99,12 @@ export class VisitsController {
   }
 
   @Get('visits/:id')
+  @AuditsPhiAccess({
+    resource: 'visit.detail',
+    param: 'id',
+    subjectType: 'VISIT',
+    purpose: 'treatment',
+  })
   @ApiStandardResponse(VisitDto)
   findOne(@Param('id') id: string, @CurrentUser() user: AuthContext) {
     return this.visitsService.findOne(id, user);
@@ -107,6 +114,11 @@ export class VisitsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Paginated completed visit history for a patient' })
   @ApiPaginatedResponse(VisitHistorySummaryDto)
+  @AuditsPhiAccess({
+    resource: 'patient.visit_history',
+    param: 'patientId',
+    purpose: 'treatment',
+  })
   findPatientVisitHistory(
     @Param('patientId', ParseUUIDPipe) patientId: string,
     @Query() query: VisitHistoryQueryDto,
@@ -131,6 +143,11 @@ export class VisitsController {
       'Patient journey timeline: journeys → episodes → completed visits (paginated by journey)',
   })
   @ApiPaginatedResponse(JourneyTimelineDto)
+  @AuditsPhiAccess({
+    resource: 'patient.journey_timeline',
+    param: 'patientId',
+    purpose: 'treatment',
+  })
   findPatientJourneyTimeline(
     @Param('patientId', ParseUUIDPipe) patientId: string,
     @Query() query: JourneyTimelineQueryDto,
@@ -154,6 +171,11 @@ export class VisitsController {
     summary: 'Full vitals trend series for BP and Weight/BMI charts',
   })
   @ApiStandardResponse(VitalsTrendPointDto)
+  @AuditsPhiAccess({
+    resource: 'patient.vitals_trend',
+    param: 'patientId',
+    purpose: 'treatment',
+  })
   findPatientVitalsTrend(
     @Param('patientId', ParseUUIDPipe) patientId: string,
     @Query() query: VitalsTrendQueryDto,

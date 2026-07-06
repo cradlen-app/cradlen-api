@@ -69,6 +69,24 @@ export const REDACTION_PATHS = [
   'reset_token',
   'signup_token',
   'selection_token',
+  // Patient PHI / direct identifiers. Redacted so an accidentally-logged
+  // patient or guardian DTO never leaks personal data to stdout or Sentry.
+  // Top-level, request-body, and one-level-nested (`*.field`) coverage.
+  'req.body.national_id',
+  'req.body.full_name',
+  'req.body.phone_number',
+  'req.body.address',
+  'req.body.date_of_birth',
+  'national_id',
+  'full_name',
+  'phone_number',
+  'address',
+  'date_of_birth',
+  '*.national_id',
+  '*.full_name',
+  '*.phone_number',
+  '*.address',
+  '*.date_of_birth',
 ];
 
 export const logger = pino(

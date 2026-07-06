@@ -1009,6 +1009,10 @@ describe('VisitsService', () => {
       };
       // enrollment is created in-transaction via createMany + skipDuplicates.
       db.patientOrgEnrollment.createMany.mockResolvedValue({ count: 1 });
+      // The new-patient path now dedups national_id via findFirst (uniqueness
+      // moved to the blind index); the patient_id path still uses findUnique(id).
+      // No single test exercises both, so alias them to one mock.
+      db.patient.findFirst = db.patient.findUnique;
     });
 
     it('throws BadRequestException when patient_id absent and required patient fields missing', async () => {
