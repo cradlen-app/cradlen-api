@@ -72,7 +72,33 @@ export class SignupService {
       // Reactivate a previously deleted user so they can re-join with a new
       // organization. Only when the email matches — a phone-only collision
       // must not reactivate a foreign identity or email someone else's OTP.
-      if (existing.is_deleted && existing.email === dto.email) {
+      //
+      // Same treatment for a LIVE user with zero active memberships (e.g.
+      // removed from their only org): they can neither sign in (empty profile
+      // list) nor sign up (email conflict) otherwise. Reusing the User here
+      // lets them re-onboard a fresh org. Gated by OTP just like reactivation,
+      // so it opens no takeover vector a deleted-user reactivation didn't.
+      const emailMatches = existing.email === dto.email;
+      // A live, already-onboarded user with zero active memberships (e.g.
+      // removed from their only org) is reused rather than 409'd. Guarded on
+      // onboarding_completed so a verified-but-not-yet-onboarded user (mid
+      // signup, no org yet — also profileless) still conflicts and resumes via
+      // the login COMPLETE_ONBOARDING path. PENDING users keep their resume
+      // path below; deleted users already take this branch.
+      const isRemovedFromAllOrgs =
+        emailMatches &&
+        !existing.is_deleted &&
+        existing.registration_status === 'ACTIVE' &&
+        existing.onboarding_completed === true &&
+        (await this.prismaService.db.profile.count({
+          where: {
+            user_id: existing.id,
+            is_deleted: false,
+            is_active: true,
+            organization: { is_deleted: false, status: 'ACTIVE' },
+          },
+        })) === 0;
+      if (emailMatches && (existing.is_deleted || isRemovedFromAllOrgs)) {
         const password_hashed = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
         // user.update + verificationCode.create commit together. The
         // email dispatch sits inside send() and holds the Prisma

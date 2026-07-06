@@ -183,6 +183,36 @@ describe('SessionsService', () => {
     });
   });
 
+  it('routes an onboarded user with zero active memberships to create-org onboarding', async () => {
+    const { sessionsService, mocks } = createAuthTestEnv();
+    mocks.userFindFirst.mockResolvedValue({
+      id: '11111111-1111-4111-8111-111111111111',
+      email: 'sara@example.com',
+      password_hashed: await bcrypt.hash('Password1!', 12),
+      is_active: true,
+      registration_status: 'ACTIVE',
+      onboarding_completed: true,
+    });
+    // Removed from their only org → no selectable profiles remain.
+    mocks.profileFindMany.mockResolvedValue([]);
+
+    const result = await sessionsService.login({
+      email: 'sara@example.com',
+      password: 'Password1!',
+    });
+
+    // Instead of a dead-end empty profile_selection, the user gets a signup
+    // token so they can create a fresh org straight from sign-in.
+    expect(result).toMatchObject({
+      type: 'ONBOARDING_REQUIRED',
+      step: 'COMPLETE_ONBOARDING',
+      expires_in: expect.any(Number),
+    });
+    expect((result as { signup_token?: string }).signup_token).toEqual(
+      expect.any(String),
+    );
+  });
+
   it('requires branch id when selected profile has multiple branches', async () => {
     const { sessionsService, mocks, jwtService } = createAuthTestEnv();
     const selectionToken = jwtService.sign(

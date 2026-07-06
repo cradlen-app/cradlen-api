@@ -724,7 +724,7 @@ export class StaffService {
         organization_id: organizationId,
         is_deleted: false,
       },
-      select: { id: true },
+      select: { id: true, user_id: true },
     });
     if (!profile) throw new NotFoundException('Staff member not found');
 
@@ -764,6 +764,18 @@ export class StaffService {
         await tx.profile.update({
           where: { id: staffProfileId },
           data: { is_deleted: true, deleted_at: new Date() },
+        });
+        // Revoke this member's live sessions for THIS org (mirrors
+        // deactivateStaff), scoped to organizationId so any sessions they
+        // hold in other orgs survive. Removal without this leaves a usable
+        // refresh token behind.
+        await tx.refreshToken.updateMany({
+          where: {
+            user_id: profile.user_id,
+            organization_id: organizationId,
+            is_revoked: false,
+          },
+          data: { is_revoked: true, revoked_at: new Date() },
         });
       }
     });
