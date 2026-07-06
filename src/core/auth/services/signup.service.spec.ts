@@ -234,17 +234,23 @@ describe('SignupService', () => {
   });
 
   it.each([
-    ['PENDING', false, 'VERIFY_OTP'],
-    ['ACTIVE', false, 'COMPLETE_ONBOARDING'],
-    ['ACTIVE', true, 'DONE'],
+    ['PENDING', false, 0, 'VERIFY_OTP'],
+    ['ACTIVE', false, 0, 'COMPLETE_ONBOARDING'],
+    // Onboarded but removed from every org (0 active memberships) → must resume
+    // onboarding, mirroring the login funnel, not report DONE.
+    ['ACTIVE', true, 0, 'COMPLETE_ONBOARDING'],
+    // Onboarded and still a member somewhere → DONE.
+    ['ACTIVE', true, 2, 'DONE'],
   ] as const)(
-    'maps %s registration status with onboarding=%s to %s',
-    async (registration_status, onboarding_completed, step) => {
+    'maps %s registration status (onboarding=%s, %d memberships) to %s',
+    async (registration_status, onboarding_completed, memberships, step) => {
       const { signupService, mocks } = createAuthTestEnv();
       mocks.userFindFirst.mockResolvedValue({
+        id: 'user-uuid',
         registration_status,
         onboarding_completed,
       });
+      mocks.profileCount.mockResolvedValue(memberships);
 
       await expect(
         signupService.getRegistrationStatus({ email: 'sara@example.com' }),
@@ -255,10 +261,13 @@ describe('SignupService', () => {
   it('includes email for valid bearer registration status', async () => {
     const { signupService, mocks, jwtService } = createAuthTestEnv();
     mocks.userFindFirst.mockResolvedValue({
+      id: 'user-uuid',
       email: 'sara@example.com',
       registration_status: 'ACTIVE',
       onboarding_completed: true,
     });
+    // Still a member of an org → DONE (membership-aware resolver).
+    mocks.profileCount.mockResolvedValue(1);
     const token = jwtService.sign(
       {
         userId: '11111111-1111-4111-8111-111111111111',
