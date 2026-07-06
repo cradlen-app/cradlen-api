@@ -438,6 +438,67 @@ describe('SignupService', () => {
     expect(mocks.sendVerificationEmail).toHaveBeenCalledTimes(1);
   });
 
+  it('reuses a live user with zero active memberships (removed from their only org) instead of 409', async () => {
+    const txUserUpdate = jest.fn().mockResolvedValue({});
+    const txVerificationUpdateMany = jest.fn().mockResolvedValue({ count: 0 });
+    const txVerificationCreate = jest.fn().mockResolvedValue({});
+    const $transaction = jest.fn(
+      async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          user: { update: txUserUpdate },
+          verificationCode: {
+            updateMany: txVerificationUpdateMany,
+            create: txVerificationCreate,
+          },
+        }),
+    );
+    const { signupService, mocks } = createAuthTestEnv({ $transaction });
+    mocks.userFindFirst.mockResolvedValue({
+      id: 'live-user-no-profiles',
+      email: 'sara@example.com',
+      is_deleted: false,
+      registration_status: 'ACTIVE',
+    });
+    mocks.profileCount.mockResolvedValue(0);
+
+    const result = await signupService.start({
+      first_name: 'Sara',
+      last_name: 'Ali',
+      email: 'sara@example.com',
+      password: 'Password1!',
+      confirm_password: 'Password1!',
+    });
+
+    // Re-onboarding is unblocked: no conflict, no new User row, OTP re-sent
+    // through the reactivation transaction.
+    expect(result.signup_token).toEqual(expect.any(String));
+    expect(mocks.userCreate).not.toHaveBeenCalled();
+    expect(txUserUpdate).toHaveBeenCalledTimes(1);
+    expect(mocks.sendVerificationEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it('still rejects signup start when the existing live user has an active membership', async () => {
+    const { signupService, mocks } = createAuthTestEnv();
+    mocks.userFindFirst.mockResolvedValue({
+      id: 'live-user-with-profile',
+      email: 'sara@example.com',
+      is_deleted: false,
+      registration_status: 'ACTIVE',
+    });
+    mocks.profileCount.mockResolvedValue(1);
+
+    await expect(
+      signupService.start({
+        first_name: 'Sara',
+        last_name: 'Ali',
+        email: 'sara@example.com',
+        password: 'Password1!',
+        confirm_password: 'Password1!',
+      }),
+    ).rejects.toThrow(ConflictException);
+    expect(mocks.userCreate).not.toHaveBeenCalled();
+  });
+
   describe('verify', () => {
     const userId = '11111111-1111-4111-8111-111111111111';
 

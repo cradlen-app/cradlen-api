@@ -26,6 +26,7 @@ export function createAuthTestEnv(
   const verificationCount = jest.fn();
   const profileFindFirst = jest.fn();
   const profileFindMany = jest.fn();
+  const profileCount = jest.fn().mockResolvedValue(0);
   const branchFindMany = jest.fn();
   const refreshTokenCreate = jest.fn();
   const sendVerificationEmail = jest.fn();
@@ -54,7 +55,11 @@ export function createAuthTestEnv(
         update: jest.fn(),
         updateMany: jest.fn(),
       },
-      profile: { findMany: profileFindMany, findFirst: profileFindFirst },
+      profile: {
+        findMany: profileFindMany,
+        findFirst: profileFindFirst,
+        count: profileCount,
+      },
       branch: { findMany: branchFindMany },
       passwordResetToken: {
         create: jest.fn().mockResolvedValue({}),
@@ -157,6 +162,7 @@ export function createAuthTestEnv(
       verificationCount,
       profileFindFirst,
       profileFindMany,
+      profileCount,
       branchFindMany,
       refreshTokenCreate,
       sendVerificationEmail,

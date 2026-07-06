@@ -419,7 +419,32 @@ export class SessionsService {
       };
     }
 
-    return this.buildProfileSelectionResponse(user.id);
+    const profiles = await this.getSelectableProfiles(user.id);
+    if (profiles.length === 0) {
+      // Onboarded before but no active memberships (e.g. removed from their
+      // only org) → route to create-org onboarding rather than return an empty
+      // profile list the FE can only render as a dead-end. The user is already
+      // ACTIVE + verified, so signup/complete accepts this token without OTP.
+      const { signup_token, expires_in } = this.tokensService.issueSignupToken(
+        user.id,
+        'signup',
+      );
+      return {
+        type: 'ONBOARDING_REQUIRED',
+        step: 'COMPLETE_ONBOARDING',
+        signup_token,
+        expires_in,
+      };
+    }
+
+    return {
+      type: 'profile_selection',
+      selection_token: this.tokensService.issueSignupToken(
+        user.id,
+        'profile_selection',
+      ).signup_token,
+      profiles,
+    };
   }
 
   private async getSelectableProfiles(
