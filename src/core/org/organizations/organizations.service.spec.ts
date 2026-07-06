@@ -1,7 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import {
+  ForbiddenException,
   InternalServerErrorException,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import authConfig from '@config/auth.config';
 import { PrismaService } from '@infrastructure/database/prisma.service';
@@ -10,6 +12,8 @@ import { EventBus } from '@infrastructure/messaging/event-bus';
 import { AuthorizationService } from '@core/auth/authorization/authorization.service';
 import { SpecialtyCatalogService } from '@core/org/specialty-catalog/specialty-catalog.public';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { TokensService } from '@core/auth/services/tokens.service';
+import { SessionsService } from '@core/auth/services/sessions.service';
 import { OrganizationsService } from './organizations.service';
 
 const ORG_ID = '33333333-3333-4333-8333-333333333333';
@@ -43,6 +47,8 @@ describe('OrganizationsService', () => {
     assertWithinSizeLimit: jest.Mock;
     extensionFor: jest.Mock;
   };
+  let tokens: { decodeSignupToken: jest.Mock };
+  let sessions: { buildProfileSelectionResponse: jest.Mock };
 
   beforeEach(async () => {
     db = {
@@ -91,6 +97,14 @@ describe('OrganizationsService', () => {
       assertWithinSizeLimit: jest.fn(),
       extensionFor: jest.fn().mockReturnValue('png'),
     };
+    tokens = { decodeSignupToken: jest.fn() };
+    sessions = {
+      buildProfileSelectionResponse: jest.fn().mockResolvedValue({
+        type: 'profile_selection',
+        selection_token: 'sel-token',
+        profiles: [],
+      }),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -101,6 +115,8 @@ describe('OrganizationsService', () => {
         { provide: SubscriptionsService, useValue: subscriptions },
         { provide: StorageService, useValue: storage },
         { provide: EventBus, useValue: { publish: jest.fn() } },
+        { provide: TokensService, useValue: tokens },
+        { provide: SessionsService, useValue: sessions },
         {
           provide: authConfig.KEY,
           useValue: { freeTrialDays: 14 },
@@ -317,6 +333,90 @@ describe('OrganizationsService', () => {
           branch_governorate: 'Cairo',
         }),
       ).rejects.toBeInstanceOf(InternalServerErrorException);
+    });
+  });
+
+  describe('bootstrapOrganizationFromSelectionToken', () => {
+    const dto = {
+      organization_name: 'Clinic',
+      specialties: ['OBGYN'],
+      branch_name: 'Main',
+      branch_address: '1 St',
+      branch_city: 'Cairo',
+      branch_governorate: 'Cairo',
+    };
+
+    function wireCreate() {
+      specialties.resolveByCodeOrName.mockResolvedValue([specialtyRow]);
+      db.role.findUnique.mockResolvedValue({ id: 'role-id', code: 'OWNER' });
+      db.subscriptionPlan.findUnique.mockResolvedValue({ id: 'plan-id' });
+      const tx = {
+        organization: {
+          create: jest.fn().mockResolvedValue({
+            id: ORG_ID,
+            name: 'Clinic',
+            status: 'ACTIVE',
+          }),
+        },
+        branch: {
+          create: jest.fn().mockResolvedValue({
+            id: 'branch-id',
+            name: 'Main',
+            city: 'Cairo',
+            governorate: 'Cairo',
+            is_main: true,
+          }),
+        },
+        profile: { create: jest.fn().mockResolvedValue({ id: PROFILE_ID }) },
+        subscription: { create: jest.fn().mockResolvedValue({}) },
+      };
+      db.$transaction.mockImplementation((fn: (t: typeof tx) => unknown) =>
+        fn(tx),
+      );
+    }
+
+    it('creates an org for a profile-less user and returns a fresh profile_selection', async () => {
+      tokens.decodeSignupToken.mockReturnValue(USER_ID);
+      db.profile.count.mockResolvedValue(0);
+      wireCreate();
+
+      const result = await service.bootstrapOrganizationFromSelectionToken(
+        'sel-tok',
+        dto,
+      );
+
+      expect(tokens.decodeSignupToken).toHaveBeenCalledWith(
+        'sel-tok',
+        'profile_selection',
+      );
+      expect(subscriptions.assertOrganizationLimit).toHaveBeenCalledWith(
+        USER_ID,
+      );
+      expect(sessions.buildProfileSelectionResponse).toHaveBeenCalledWith(
+        USER_ID,
+      );
+      expect(result).toMatchObject({ type: 'profile_selection', profiles: [] });
+    });
+
+    it('rejects when the user still has an active membership', async () => {
+      tokens.decodeSignupToken.mockReturnValue(USER_ID);
+      db.profile.count.mockResolvedValue(1);
+
+      await expect(
+        service.bootstrapOrganizationFromSelectionToken('sel-tok', dto),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(subscriptions.assertOrganizationLimit).not.toHaveBeenCalled();
+    });
+
+    it('propagates 401 when the selection token is invalid', async () => {
+      tokens.decodeSignupToken.mockImplementation(() => {
+        throw new UnauthorizedException('Invalid token type');
+      });
+
+      await expect(
+        service.bootstrapOrganizationFromSelectionToken('bad', dto),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(db.profile.count).not.toHaveBeenCalled();
     });
   });
 

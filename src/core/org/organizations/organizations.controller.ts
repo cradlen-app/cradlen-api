@@ -3,12 +3,15 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { Public } from '@common/decorators/public.decorator.js';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -50,6 +53,26 @@ export class OrganizationsController {
     @Body() dto: CreateOrganizationDto,
   ) {
     return this.organizationsService.createOrganization(user.userId, dto);
+  }
+
+  @Public()
+  @Post('bootstrap')
+  @ApiOperation({
+    summary: 'Create the first organization for a profile-less user',
+    description:
+      'Public route authenticated by the login-issued selection_token (Bearer), for a user with zero active memberships (e.g. removed from all their orgs). Creates the org + owner profile + trial and returns a fresh profile_selection listing it.',
+  })
+  @ApiStandardResponse(CreateOrganizationResultDto)
+  bootstrapOrganization(
+    @Headers('authorization') authorization: string | undefined,
+    @Body() dto: CreateOrganizationDto,
+  ) {
+    const token = authorization?.replace(/^Bearer\s+/i, '').trim();
+    if (!token) throw new UnauthorizedException('Missing selection token');
+    return this.organizationsService.bootstrapOrganizationFromSelectionToken(
+      token,
+      dto,
+    );
   }
 
   @Get(':organizationId/specialties')
