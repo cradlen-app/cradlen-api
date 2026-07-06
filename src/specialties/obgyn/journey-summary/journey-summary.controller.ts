@@ -1,7 +1,7 @@
 import { Controller, Get, Param, ParseUUIDPipe } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { ApiStandardResponse } from '@common/swagger';
-import { CurrentUser } from '@common/decorators';
+import { AuditsPhiAccess, CurrentUser } from '@common/decorators';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { JourneySummaryService } from './journey-summary.service';
 import { ActiveJourneySummaryDto } from './dto/active-journey-summary.dto';
@@ -12,6 +12,10 @@ export class JourneySummaryController {
   constructor(private readonly service: JourneySummaryService) {}
 
   @Get()
+  @AuditsPhiAccess({
+    resource: 'patient.journey_summary',
+    purpose: 'treatment',
+  })
   @ApiStandardResponse(ActiveJourneySummaryDto)
   getActiveJourneySummary(
     @Param('id', ParseUUIDPipe) patientId: string,

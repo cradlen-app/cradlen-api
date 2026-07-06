@@ -2,6 +2,7 @@ import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '@common/decorators/public.decorator.js';
 import { CurrentPatient } from '@common/decorators/current-patient.decorator.js';
+import { AuditsPhiAccess } from '@common/decorators/audits-phi-access.decorator.js';
 import { PatientJwtAuthGuard } from '@common/guards/patient-jwt-auth.guard.js';
 import { ApiPaginatedResponse } from '@common/swagger/index.js';
 import type { PatientAuthContext } from '@common/interfaces/patient-auth-context.interface.js';
@@ -24,6 +25,11 @@ export class PatientVisitsController {
     summary: "List the patient's completed visit history (paginated)",
   })
   @ApiPaginatedResponse(PatientVisitItemDto)
+  @AuditsPhiAccess({
+    resource: 'portal.visits',
+    purpose: 'patient_self',
+    subject: 'self',
+  })
   visits(
     @CurrentPatient() patient: PatientAuthContext,
     @Query() query: ListPatientVisitsQueryDto,
@@ -39,6 +45,11 @@ export class PatientVisitsController {
     summary: "List the patient's upcoming recommended follow-ups (paginated)",
   })
   @ApiPaginatedResponse(PatientUpcomingVisitItemDto)
+  @AuditsPhiAccess({
+    resource: 'portal.visits.upcoming',
+    purpose: 'patient_self',
+    subject: 'self',
+  })
   upcoming(
     @CurrentPatient() patient: PatientAuthContext,
     @Query() query: ListPatientVisitsQueryDto,
@@ -55,6 +66,11 @@ export class PatientVisitsController {
       'Patient journey timeline: journeys → episodes → completed visits (paginated by journey)',
   })
   @ApiPaginatedResponse(PatientJourneyTimelineDto)
+  @AuditsPhiAccess({
+    resource: 'portal.journeys.timeline',
+    purpose: 'patient_self',
+    subject: 'self',
+  })
   journeyTimeline(
     @CurrentPatient() patient: PatientAuthContext,
     @Query() query: ListPatientVisitsQueryDto,

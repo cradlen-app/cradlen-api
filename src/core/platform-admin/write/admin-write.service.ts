@@ -9,6 +9,11 @@ import { PrismaService } from '@infrastructure/database/prisma.service.js';
 import { SubscriptionsService } from '@core/org/subscriptions/subscriptions.service.js';
 import { SubscriptionPaymentsService } from '@core/org/subscriptions/payments/subscription-payments.service.js';
 import type { SubscriptionPaymentResponseDto } from '@core/org/subscriptions/payments/dto/subscription-payment-response.dto.js';
+import { ErasureService } from '@core/compliance/erasure/erasure.service.js';
+import type {
+  AnonymizePatientDto,
+  AnonymizeResultDto,
+} from '@core/compliance/erasure/dto/anonymize-patient.dto.js';
 import { AdminAuditService } from '../audit/admin-audit.service.js';
 
 const BCRYPT_ROUNDS = 12;
@@ -28,7 +33,22 @@ export class AdminWriteService {
     private readonly subscriptionsService: SubscriptionsService,
     private readonly paymentsService: SubscriptionPaymentsService,
     private readonly audit: AdminAuditService,
+    private readonly erasureService: ErasureService,
   ) {}
+
+  // ---- Patient erasure (right-to-be-forgotten) ---------------------------
+
+  /**
+   * Anonymize a patient on a controller's documented instruction. Delegates to
+   * ErasureService, which owns the transaction + in-tx AdminAuditLog row.
+   */
+  anonymizePatient(
+    adminId: string,
+    patientId: string,
+    dto: AnonymizePatientDto,
+  ): Promise<AnonymizeResultDto> {
+    return this.erasureService.anonymizePatient(adminId, patientId, dto);
+  }
 
   // ---- Payments -----------------------------------------------------------
 
