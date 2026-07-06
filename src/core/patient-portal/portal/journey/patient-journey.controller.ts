@@ -7,6 +7,7 @@ import {
 } from '@nestjs/swagger';
 import { Public } from '@common/decorators/public.decorator.js';
 import { CurrentPatient } from '@common/decorators/current-patient.decorator.js';
+import { AuditsPhiAccess } from '@common/decorators/audits-phi-access.decorator.js';
 import { PatientJwtAuthGuard } from '@common/guards/patient-jwt-auth.guard.js';
 import type { PatientAuthContext } from '@common/interfaces/patient-auth-context.interface.js';
 import { PatientJourneyService } from './patient-journey.service.js';
@@ -29,6 +30,11 @@ export class PatientJourneyController {
       'pregnancy block (GA + EDD). Null when the patient has no active journey.',
   })
   @ApiOkResponse({ type: PatientJourneyDto })
+  @AuditsPhiAccess({
+    resource: 'portal.journey',
+    purpose: 'patient_self',
+    subject: 'self',
+  })
   journey(
     @CurrentPatient() patient: PatientAuthContext,
     @Query() query: GetPatientJourneyQueryDto,

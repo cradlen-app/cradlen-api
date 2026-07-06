@@ -9,7 +9,11 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { ApiStandardResponse } from '@common/swagger';
-import { CurrentUser, LocksOnClosedVisit } from '@common/decorators';
+import {
+  AuditsPhiAccess,
+  CurrentUser,
+  LocksOnClosedVisit,
+} from '@common/decorators';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { EncounterMutationGuard } from '@core/clinical/visits/visits.public';
 import { ObgynExaminationService } from './obgyn-examination.service';
@@ -32,6 +36,12 @@ export class ObgynExaminationController {
   constructor(private readonly service: ObgynExaminationService) {}
 
   @Get()
+  @AuditsPhiAccess({
+    resource: 'visit.examination',
+    param: 'id',
+    subjectType: 'VISIT',
+    purpose: 'treatment',
+  })
   @ApiStandardResponse(VisitExaminationEnvelopeDto)
   get(
     @Param('id', ParseUUIDPipe) id: string,

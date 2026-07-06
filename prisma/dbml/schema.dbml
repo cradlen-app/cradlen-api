@@ -197,6 +197,7 @@ Table organizations {
   charges charges [not null]
   cash_sessions cash_sessions [not null]
   subscription_payments subscription_payments [not null]
+  patient_consents patient_consents [not null]
 }
 
 Table branches {
@@ -559,6 +560,25 @@ Table auth_audit_log {
   user users
 }
 
+Table phi_access_log {
+  id String [pk]
+  actor_type String [not null]
+  user_id String
+  profile_id String
+  patient_account_id String
+  organization_id String
+  subject_type String [not null]
+  subject_id String [not null]
+  patient_id String
+  action String [not null, default: 'VIEW']
+  resource String [not null]
+  route String [not null]
+  purpose String
+  request_id String
+  ip String
+  at DateTime [default: `now()`, not null]
+}
+
 Table password_reset_tokens {
   id String [pk]
   jti String [unique, not null]
@@ -829,7 +849,8 @@ Table episode_templates {
 
 Table patients {
   id String [pk]
-  national_id String [unique, not null]
+  national_id String [not null]
+  national_id_bidx String [unique]
   full_name String [not null]
   date_of_birth DateTime [not null]
   phone_number String [not null]
@@ -849,10 +870,31 @@ Table patients {
   receipts receipts [not null]
   charges charges [not null]
   notifications patient_notifications [not null]
+  consents patient_consents [not null]
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
   is_deleted Boolean [not null, default: false]
   deleted_at DateTime
+}
+
+Table patient_consents {
+  id String [pk]
+  patient_id String [not null]
+  organization_id String [not null]
+  type ConsentType [not null]
+  status ConsentStatus [not null, default: 'GRANTED']
+  consent_version String [not null]
+  captured_by_id String [not null]
+  granted_at DateTime [default: `now()`, not null]
+  withdrawn_at DateTime
+  withdrawn_by_id String
+  note String
+  is_deleted Boolean [not null, default: false]
+  deleted_at DateTime
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+  patient patients [not null]
+  organization organizations [not null]
 }
 
 Table patient_notifications {
@@ -2748,6 +2790,17 @@ Enum FeedbackStatus {
   DECLINED
 }
 
+Enum ConsentType {
+  TREATMENT
+  DATA_PROCESSING
+  COMMUNICATIONS
+}
+
+Enum ConsentStatus {
+  GRANTED
+  WITHDRAWN
+}
+
 Enum DiagnosisCodeSource {
   SYSTEM
   USER
@@ -2895,6 +2948,10 @@ Ref: invitation_subspecialties.subspecialty_id > subspecialties.id [delete: Casc
 Ref: journey_templates.specialty_id > specialties.id [delete: Cascade]
 
 Ref: episode_templates.journey_template_id > journey_templates.id [delete: Cascade]
+
+Ref: patient_consents.patient_id > patients.id [delete: Cascade]
+
+Ref: patient_consents.organization_id > organizations.id [delete: Cascade]
 
 Ref: patient_notifications.patient_id > patients.id [delete: Cascade]
 

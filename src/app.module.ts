@@ -10,7 +10,9 @@ import authConfig from './config/auth.config';
 import storageConfig from './config/storage.config';
 import paymentsConfig from './config/payments.config';
 import pushConfig from './config/push.config';
+import complianceConfig from './config/compliance.config';
 import { DatabaseModule } from '@infrastructure/database/database.module';
+import { RlsModule } from '@infrastructure/database/rls.module.js';
 import { StorageModule } from '@infrastructure/storage/storage.module.js';
 import { MessagingModule } from '@infrastructure/messaging/messaging.module';
 import { HealthModule } from '@core/health/health.module';
@@ -55,6 +57,10 @@ import { PregnancyModule } from '@specialties/obgyn/pregnancy/pregnancy.module';
 import { SurgicalModule } from '@specialties/obgyn/surgical/surgical.module';
 import { TemplatesModule } from '@builder/templates/templates.module.js';
 import { FinancialModule } from '@core/financial/financial.module.js';
+import { PhiAuditModule } from '@core/compliance/phi-audit/phi-audit.module.js';
+import { ConsentModule } from '@core/compliance/consent/consent.module.js';
+import { DsarModule } from '@core/compliance/dsar/dsar.module.js';
+import { RetentionModule } from '@core/compliance/retention/retention.module.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { SubscriptionGuard } from '@core/org/subscriptions/subscription.guard.js';
 import { PermissionsModule } from '@common/authorization/permissions.module.js';
@@ -75,6 +81,7 @@ import { PermissionsModule } from '@common/authorization/permissions.module.js';
         storageConfig,
         paymentsConfig,
         pushConfig,
+        complianceConfig,
       ],
     }),
     ThrottlerModule.forRootAsync({
@@ -85,6 +92,7 @@ import { PermissionsModule } from '@common/authorization/permissions.module.js';
       },
     }),
     DatabaseModule,
+    RlsModule,
     PermissionsModule,
     HealthModule,
     AuthModule,
@@ -128,6 +136,10 @@ import { PermissionsModule } from '@common/authorization/permissions.module.js';
     PregnancyModule,
     SurgicalModule,
     TemplatesModule,
+    PhiAuditModule,
+    ConsentModule,
+    DsarModule,
+    RetentionModule,
   ],
   controllers: [],
   providers: [
