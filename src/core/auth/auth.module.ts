@@ -37,6 +37,6 @@ import { AuthAuditListener } from './events/auth-audit.listener.js';
     AuthAuditListener,
     LastActiveService,
   ],
-  exports: [TokensService, LastActiveService],
+  exports: [TokensService, SessionsService, LastActiveService],
 })
 export class AuthModule {}

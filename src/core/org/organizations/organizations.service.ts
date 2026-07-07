@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   InternalServerErrorException,
@@ -18,6 +19,11 @@ import {
   toSpecialtySummary,
 } from '@core/org/specialty-catalog/specialty-catalog.public.js';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service.js';
+import { TokensService } from '@core/auth/services/tokens.service.js';
+import {
+  SessionsService,
+  type ProfileSelectionResponse,
+} from '@core/auth/services/sessions.service.js';
 import authConfig from '@config/auth.config.js';
 import type { CreateOrganizationDto } from './dto/create-organization.dto.js';
 import type { UpdateOrganizationDto } from './dto/update-organization.dto.js';
@@ -51,6 +57,8 @@ export class OrganizationsService {
     private readonly subscriptionsService: SubscriptionsService,
     private readonly storageService: StorageService,
     private readonly eventBus: EventBus,
+    private readonly tokensService: TokensService,
+    private readonly sessionsService: SessionsService,
     @Inject(authConfig.KEY)
     config: ConfigType<typeof authConfig>,
   ) {
@@ -419,6 +427,43 @@ export class OrganizationsService {
         },
       },
     };
+  }
+
+  /**
+   * Create the first organization for a profile-less user, authenticated by the
+   * `selection_token` they receive at login (not an access token — they have no
+   * profile to mint one from). This is the "removed from all orgs" re-entry
+   * path: login returns an empty profile_selection, the FE `/select-profile`
+   * empty state offers "Create organization", and that runs here.
+   *
+   * Restricted to users with ZERO active memberships — a user who still belongs
+   * somewhere must add orgs through the authenticated `POST /organizations`
+   * route, not this public one. Returns a fresh `profile_selection` (now listing
+   * the new org) so the FE can select it and finish signing in.
+   */
+  async bootstrapOrganizationFromSelectionToken(
+    selectionToken: string,
+    dto: CreateOrganizationDto,
+  ): Promise<ProfileSelectionResponse> {
+    const userId = this.tokensService.decodeSignupToken(
+      selectionToken,
+      'profile_selection',
+    );
+    const activeMemberships = await this.prismaService.db.profile.count({
+      where: {
+        user_id: userId,
+        is_deleted: false,
+        is_active: true,
+        organization: { is_deleted: false, status: 'ACTIVE' },
+      },
+    });
+    if (activeMemberships > 0) {
+      throw new ForbiddenException(
+        'Sign in to an existing organization to create another one',
+      );
+    }
+    await this.createOrganization(userId, dto);
+    return this.sessionsService.buildProfileSelectionResponse(userId);
   }
 
   async deleteOrganization(profileId: string, organizationId: string) {

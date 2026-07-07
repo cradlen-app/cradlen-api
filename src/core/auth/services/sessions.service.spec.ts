@@ -183,7 +183,7 @@ describe('SessionsService', () => {
     });
   });
 
-  it('routes an onboarded user with zero active memberships to create-org onboarding', async () => {
+  it('returns an empty profile_selection for an onboarded user with zero active memberships', async () => {
     const { sessionsService, mocks } = createAuthTestEnv();
     mocks.userFindFirst.mockResolvedValue({
       id: '11111111-1111-4111-8111-111111111111',
@@ -201,16 +201,14 @@ describe('SessionsService', () => {
       password: 'Password1!',
     });
 
-    // Instead of a dead-end empty profile_selection, the user gets a signup
-    // token so they can create a fresh org straight from sign-in.
+    // Empty profile_selection: the FE renders the /select-profile empty state
+    // ("create an organization" runs off this selection_token via the org
+    // bootstrap route, or the user waits for an invitation).
     expect(result).toMatchObject({
-      type: 'ONBOARDING_REQUIRED',
-      step: 'COMPLETE_ONBOARDING',
-      expires_in: expect.any(Number),
+      type: 'profile_selection',
+      selection_token: expect.any(String),
+      profiles: [],
     });
-    expect((result as { signup_token?: string }).signup_token).toEqual(
-      expect.any(String),
-    );
   });
 
   it('requires branch id when selected profile has multiple branches', async () => {
