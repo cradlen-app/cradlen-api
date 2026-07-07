@@ -36,18 +36,20 @@ export class SurgicalEpisodeRouterService {
   /**
    * Re-point `visitId` onto the journey's phase episode with `order`, mark it
    * ACTIVE, and COMPLETE the earlier phase episodes. Graceful no-op if the target
-   * episode is missing. Runs in the caller's transaction.
+   * episode is missing. Runs in the caller's transaction. Returns the target
+   * episode id (so callers can retarget episode-scoped writes onto the moved-to
+   * episode), or null when it was a no-op.
    */
   async routeVisitToEpisode(
     tx: Prisma.TransactionClient,
     journeyId: string,
     visitId: string,
     order: number,
-  ): Promise<void> {
+  ): Promise<string | null> {
     const target = await tx.patientEpisode.findFirst({
       where: { journey_id: journeyId, order, is_deleted: false },
     });
-    if (!target || target.order > MAX_EPISODE_ORDER) return;
+    if (!target || target.order > MAX_EPISODE_ORDER) return null;
 
     await tx.visit.update({
       where: { id: visitId },
@@ -71,5 +73,7 @@ export class SurgicalEpisodeRouterService {
       },
       data: { status: 'COMPLETED', ended_at: new Date() },
     });
+
+    return target.id;
   }
 }

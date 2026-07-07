@@ -24,7 +24,8 @@
     "smoke": "node scripts/smoke.mjs",
     "seed:fixtures": "tsx prisma/seed-fixtures.ts",
     "backfill:invoice-doctor": "tsx prisma/backfill-invoice-doctor.ts",
-    "backfill:daily-metrics": "tsx prisma/backfill-daily-metrics.ts"
+    "backfill:daily-metrics": "tsx prisma/backfill-daily-metrics.ts",
+    "backfill:journey-episode-routing": "tsx prisma/backfill-journey-episode-routing.ts"
   },
   "engines": {
     "node": ">=22 <23"

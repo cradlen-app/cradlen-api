@@ -20,6 +20,7 @@ import { formatBloodGroupRh } from '../blood-group.util';
 import { JourneyClinicalHandler } from '../journeys/journey-clinical.handler';
 import { JourneyClinicalRegistry } from '../journeys/journey-clinical.registry';
 import { SURGICAL_CARE_PATH_CODE } from './surgical-care-path.guard';
+import { SurgicalEpisodeRouterService } from './surgical-episode-router.service';
 
 const SURGICAL_TEMPLATE_CODE = 'obgyn_surgical';
 
@@ -65,6 +66,7 @@ interface VisitJourneyContext {
   journeyId: string;
   patientId: string;
   carePathCode: string | null;
+  scheduledAt: Date | null;
 }
 
 /**
@@ -88,6 +90,7 @@ export class SurgicalClinicalService
     private readonly eventBus: EventBus,
     private readonly obgynHistory: ObgynHistoryService,
     private readonly registry: JourneyClinicalRegistry,
+    private readonly episodeRouter: SurgicalEpisodeRouterService,
   ) {}
 
   onModuleInit(): void {
@@ -189,7 +192,36 @@ export class SurgicalClinicalService
           },
         });
 
-        await this.upsertEpisode(tx, ctx.episodeId, body, profileId, scopes);
+        // When the surgery date changed, re-route the (open) visit onto the
+        // phase episode (Pre-op/Surgery/Post-op) matching its visit date and
+        // advance the journey's ACTIVE pointer. Episode-scoped writes below then
+        // target the moved-to episode, not the stale one. No surgery date →
+        // leave the visit in place, matching the visit.booked listener.
+        let effectiveEpisodeId = ctx.episodeId;
+        if ('surgery_date' in journeyData) {
+          const order = this.episodeRouter.resolveEpisodeOrder(
+            updated.surgery_date,
+            ctx.scheduledAt ?? new Date(),
+          );
+          if (order != null) {
+            const targetEpisodeId =
+              await this.episodeRouter.routeVisitToEpisode(
+                tx,
+                ctx.journeyId,
+                visitId,
+                order,
+              );
+            effectiveEpisodeId = targetEpisodeId ?? ctx.episodeId;
+          }
+        }
+
+        await this.upsertEpisode(
+          tx,
+          effectiveEpisodeId,
+          body,
+          profileId,
+          scopes,
+        );
         await this.upsertVisit(tx, visitId, body, profileId, scopes);
 
         return updated.version;
@@ -299,6 +331,7 @@ export class SurgicalClinicalService
     const visit = await this.prismaService.db.visit.findFirst({
       where: { id: visitId, is_deleted: false },
       select: {
+        scheduled_at: true,
         episode: {
           select: {
             id: true,
@@ -325,6 +358,7 @@ export class SurgicalClinicalService
       journeyId: journey.id,
       patientId: journey.patient_id,
       carePathCode: journey.care_path?.code ?? null,
+      scheduledAt: visit.scheduled_at,
     };
   }
 
