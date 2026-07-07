@@ -8,6 +8,7 @@ import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { CLINICAL_EVENTS } from '@core/clinical/events/clinical-events';
 import { ObgynHistoryService } from '../patient-history/obgyn-history.service';
 import { JourneyClinicalRegistry } from '../journeys/journey-clinical.registry';
+import { PregnancyEpisodeRouterService } from './pregnancy-episode-router.service';
 
 const user: AuthContext = {
   userId: 'u1',
@@ -51,6 +52,10 @@ describe('PregnancyClinicalService', () => {
   let validator: { validatePayload: jest.Mock };
   let eventBus: { publish: jest.Mock };
   let obgynHistory: { readEnvelope: jest.Mock };
+  let episodeRouter: {
+    resolveTrimesterOrder: jest.Mock;
+    routeVisitToTrimester: jest.Mock;
+  };
 
   beforeEach(async () => {
     db = {
@@ -79,6 +84,10 @@ describe('PregnancyClinicalService', () => {
     obgynHistory = {
       readEnvelope: jest.fn().mockResolvedValue({ blood_group_rh: 'A_POS' }),
     };
+    episodeRouter = {
+      resolveTrimesterOrder: jest.fn().mockReturnValue(null),
+      routeVisitToTrimester: jest.fn().mockResolvedValue(null),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -92,6 +101,7 @@ describe('PregnancyClinicalService', () => {
           provide: JourneyClinicalRegistry,
           useValue: { register: jest.fn(), resolve: jest.fn() },
         },
+        { provide: PregnancyEpisodeRouterService, useValue: episodeRouter },
       ],
     }).compile();
 
@@ -166,6 +176,92 @@ describe('PregnancyClinicalService', () => {
         }),
       );
       expect(env.version).toBe(3);
+      // A non-dating edit must not touch episode routing.
+      expect(episodeRouter.resolveTrimesterOrder).not.toHaveBeenCalled();
+      expect(episodeRouter.routeVisitToTrimester).not.toHaveBeenCalled();
+    });
+
+    it('re-routes the visit to its trimester episode when dating changes, and routes episode-scoped writes to the moved-to episode', async () => {
+      db.pregnancyJourneyRecord.findUnique
+        .mockResolvedValueOnce(journeyRecord())
+        .mockResolvedValueOnce(journeyRecord({ version: 3 }));
+      episodeRouter.resolveTrimesterOrder.mockReturnValue(3);
+      episodeRouter.routeVisitToTrimester.mockResolvedValue('episode-3');
+
+      const tx = {
+        pregnancyJourneyRecordRevision: { create: jest.fn() },
+        pregnancyJourneyRecord: {
+          update: jest.fn().mockResolvedValue({ version: 3 }),
+        },
+        pregnancyEpisodeRecordRevision: { create: jest.fn() },
+        pregnancyEpisodeRecord: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          create: jest.fn(),
+        },
+        visitPregnancyRecord: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          create: jest.fn(),
+        },
+      };
+      db.$transaction.mockImplementation(
+        (cb: (t: typeof tx) => Promise<number>) => cb(tx),
+      );
+
+      await service.patch(
+        VISIT,
+        JOURNEY,
+        { lmp: '2026-01-01', anomaly_scan: { result: 'normal' } },
+        user,
+      );
+
+      // Resolved from the UPDATED record + the open visit's scheduled_at.
+      expect(episodeRouter.resolveTrimesterOrder).toHaveBeenCalledWith(
+        { version: 3 },
+        new Date('2026-02-15T00:00:00.000Z'),
+      );
+      expect(episodeRouter.routeVisitToTrimester).toHaveBeenCalledWith(
+        tx,
+        JOURNEY,
+        VISIT,
+        3,
+      );
+      // Episode-scoped labs land on the moved-to episode, not the stale one.
+      expect(tx.pregnancyEpisodeRecord.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ episode_id: 'episode-3' }),
+        }),
+      );
+    });
+
+    it('does not re-route when dating changes but no trimester resolves (no Episode-1 fallback)', async () => {
+      db.pregnancyJourneyRecord.findUnique
+        .mockResolvedValueOnce(journeyRecord())
+        .mockResolvedValueOnce(journeyRecord({ version: 3 }));
+      episodeRouter.resolveTrimesterOrder.mockReturnValue(null);
+
+      const tx = {
+        pregnancyJourneyRecordRevision: { create: jest.fn() },
+        pregnancyJourneyRecord: {
+          update: jest.fn().mockResolvedValue({ version: 3 }),
+        },
+        pregnancyEpisodeRecordRevision: { create: jest.fn() },
+        pregnancyEpisodeRecord: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          create: jest.fn(),
+        },
+        visitPregnancyRecord: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          create: jest.fn(),
+        },
+      };
+      db.$transaction.mockImplementation(
+        (cb: (t: typeof tx) => Promise<number>) => cb(tx),
+      );
+
+      await service.patch(VISIT, JOURNEY, { lmp: '2026-01-01' }, user);
+
+      expect(episodeRouter.resolveTrimesterOrder).toHaveBeenCalled();
+      expect(episodeRouter.routeVisitToTrimester).not.toHaveBeenCalled();
     });
   });
 });

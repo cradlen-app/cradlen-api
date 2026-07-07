@@ -8,6 +8,7 @@ import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { CLINICAL_EVENTS } from '@core/clinical/events/clinical-events';
 import { ObgynHistoryService } from '../patient-history/obgyn-history.service';
 import { JourneyClinicalRegistry } from '../journeys/journey-clinical.registry';
+import { SurgicalEpisodeRouterService } from './surgical-episode-router.service';
 
 const user: AuthContext = {
   userId: 'u1',
@@ -52,11 +53,16 @@ describe('SurgicalClinicalService', () => {
   let validator: { validatePayload: jest.Mock };
   let eventBus: { publish: jest.Mock };
   let obgynHistory: { readEnvelope: jest.Mock };
+  let episodeRouter: {
+    resolveEpisodeOrder: jest.Mock;
+    routeVisitToEpisode: jest.Mock;
+  };
 
   beforeEach(async () => {
     db = {
       visit: {
         findFirst: jest.fn().mockResolvedValue({
+          scheduled_at: new Date('2026-06-20T00:00:00.000Z'),
           episode: {
             id: 'episode-1',
             journey: {
@@ -79,6 +85,10 @@ describe('SurgicalClinicalService', () => {
     obgynHistory = {
       readEnvelope: jest.fn().mockResolvedValue({ blood_group_rh: 'O_POS' }),
     };
+    episodeRouter = {
+      resolveEpisodeOrder: jest.fn().mockReturnValue(null),
+      routeVisitToEpisode: jest.fn().mockResolvedValue(null),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -92,6 +102,7 @@ describe('SurgicalClinicalService', () => {
           provide: JourneyClinicalRegistry,
           useValue: { register: jest.fn(), resolve: jest.fn() },
         },
+        { provide: SurgicalEpisodeRouterService, useValue: episodeRouter },
       ],
     }).compile();
 
@@ -232,6 +243,95 @@ describe('SurgicalClinicalService', () => {
         }),
       );
       expect(env.version).toBe(3);
+      // A non-routing edit (procedure_name) must not touch episode routing.
+      expect(episodeRouter.resolveEpisodeOrder).not.toHaveBeenCalled();
+      expect(episodeRouter.routeVisitToEpisode).not.toHaveBeenCalled();
+    });
+
+    it('re-routes the visit to its phase episode when surgery_date changes, and routes episode-scoped writes to the moved-to episode', async () => {
+      db.surgicalJourneyRecord.findUnique
+        .mockResolvedValueOnce(journeyRecord())
+        .mockResolvedValueOnce(journeyRecord({ version: 3 }));
+      episodeRouter.resolveEpisodeOrder.mockReturnValue(3);
+      episodeRouter.routeVisitToEpisode.mockResolvedValue('episode-postop');
+
+      const tx = {
+        surgicalJourneyRecordRevision: { create: jest.fn() },
+        surgicalJourneyRecord: {
+          update: jest.fn().mockResolvedValue({
+            version: 3,
+            surgery_date: new Date('2026-06-15T00:00:00.000Z'),
+          }),
+        },
+        surgicalEpisodeRecord: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          create: jest.fn(),
+        },
+        visitSurgicalRecord: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          create: jest.fn(),
+        },
+      };
+      db.$transaction.mockImplementation(
+        (cb: (t: typeof tx) => Promise<number>) => cb(tx),
+      );
+
+      await service.patch(
+        VISIT,
+        JOURNEY,
+        { surgery_date: '2026-06-15', postop_summary: { note: 'stable' } },
+        user,
+      );
+
+      // Resolved from the UPDATED surgery_date + the open visit's scheduled_at.
+      expect(episodeRouter.resolveEpisodeOrder).toHaveBeenCalledWith(
+        new Date('2026-06-15T00:00:00.000Z'),
+        new Date('2026-06-20T00:00:00.000Z'),
+      );
+      expect(episodeRouter.routeVisitToEpisode).toHaveBeenCalledWith(
+        tx,
+        JOURNEY,
+        VISIT,
+        3,
+      );
+      // Episode-scoped writes land on the moved-to episode, not the stale one.
+      expect(tx.surgicalEpisodeRecord.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ episode_id: 'episode-postop' }),
+        }),
+      );
+    });
+
+    it('does not re-route when surgery_date changes but no phase resolves (no fallback)', async () => {
+      db.surgicalJourneyRecord.findUnique
+        .mockResolvedValueOnce(journeyRecord())
+        .mockResolvedValueOnce(journeyRecord({ version: 3 }));
+      episodeRouter.resolveEpisodeOrder.mockReturnValue(null);
+
+      const tx = {
+        surgicalJourneyRecordRevision: { create: jest.fn() },
+        surgicalJourneyRecord: {
+          update: jest
+            .fn()
+            .mockResolvedValue({ version: 3, surgery_date: null }),
+        },
+        surgicalEpisodeRecord: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          create: jest.fn(),
+        },
+        visitSurgicalRecord: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          create: jest.fn(),
+        },
+      };
+      db.$transaction.mockImplementation(
+        (cb: (t: typeof tx) => Promise<number>) => cb(tx),
+      );
+
+      await service.patch(VISIT, JOURNEY, { surgery_date: '2026-06-15' }, user);
+
+      expect(episodeRouter.resolveEpisodeOrder).toHaveBeenCalled();
+      expect(episodeRouter.routeVisitToEpisode).not.toHaveBeenCalled();
     });
   });
 });
