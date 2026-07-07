@@ -28,8 +28,17 @@ import {
   gaFromLmp,
   gaFromUsDating,
 } from './ga.util';
+import { PregnancyEpisodeRouterService } from './pregnancy-episode-router.service';
 
 const PREGNANCY_TEMPLATE_CODE = 'obgyn_pregnancy';
+
+/** Journey dating inputs that drive trimester-episode routing. */
+const DATING_KEYS = [
+  'lmp',
+  'us_dating_date',
+  'us_ga_weeks',
+  'us_ga_days',
+] as const;
 
 /** Columns the demux coerces from string → integer before writing. */
 const INT_COLUMNS = new Set([
@@ -125,6 +134,7 @@ export class PregnancyClinicalService
     private readonly eventBus: EventBus,
     private readonly obgynHistory: ObgynHistoryService,
     private readonly registry: JourneyClinicalRegistry,
+    private readonly episodeRouter: PregnancyEpisodeRouterService,
   ) {}
 
   onModuleInit(): void {
@@ -237,7 +247,37 @@ export class PregnancyClinicalService
           },
         });
 
-        await this.upsertEpisode(tx, ctx.episodeId, body, profileId, scopes);
+        // When dating changed, re-route the (open) visit onto the trimester
+        // episode matching its GA and advance the journey's ACTIVE pointer.
+        // Episode-scoped writes below then target the moved-to episode, not the
+        // stale one. No usable dating → leave the visit where it is (no
+        // Episode-1 fallback), matching the visit.booked listener.
+        let effectiveEpisodeId = ctx.episodeId;
+        const datingChanged = DATING_KEYS.some((k) => k in journeyData);
+        if (datingChanged) {
+          const order = this.episodeRouter.resolveTrimesterOrder(
+            updated,
+            ctx.scheduledAt ?? new Date(),
+          );
+          if (order != null) {
+            const targetEpisodeId =
+              await this.episodeRouter.routeVisitToTrimester(
+                tx,
+                ctx.journeyId,
+                visitId,
+                order,
+              );
+            effectiveEpisodeId = targetEpisodeId ?? ctx.episodeId;
+          }
+        }
+
+        await this.upsertEpisode(
+          tx,
+          effectiveEpisodeId,
+          body,
+          profileId,
+          scopes,
+        );
         await this.upsertVisit(tx, visitId, body, profileId, scopes);
         if (body.fetuses !== undefined) {
           await this.diffFetuses(tx, visitId, body.fetuses, profileId);

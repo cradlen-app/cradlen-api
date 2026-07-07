@@ -49,13 +49,15 @@ export class PregnancyEpisodeRouterService {
    * that episode ACTIVE, and COMPLETE the earlier trimester episodes. Later
    * trimesters stay PENDING; Delivery/Postpartum (order > 3) are untouched.
    * Graceful no-op if the target episode is missing. Runs in the caller's tx.
+   * Returns the target episode id (so callers can retarget episode-scoped
+   * writes onto the moved-to episode), or null when it was a no-op.
    */
   async routeVisitToTrimester(
     tx: Prisma.TransactionClient,
     journeyId: string,
     visitId: string,
     order: number,
-  ): Promise<void> {
+  ): Promise<string | null> {
     const target = await tx.patientEpisode.findFirst({
       where: {
         journey_id: journeyId,
@@ -63,7 +65,7 @@ export class PregnancyEpisodeRouterService {
         is_deleted: false,
       },
     });
-    if (!target || target.order > MAX_TRIMESTER_ORDER) return;
+    if (!target || target.order > MAX_TRIMESTER_ORDER) return null;
 
     await tx.visit.update({
       where: { id: visitId },
@@ -91,5 +93,7 @@ export class PregnancyEpisodeRouterService {
       },
       data: { status: 'COMPLETED', ended_at: new Date() },
     });
+
+    return target.id;
   }
 }

@@ -45,9 +45,16 @@ describe('SurgicalEpisodeRouterService', () => {
 
     it('re-points the visit, activates the target, and completes earlier phases', async () => {
       const tx = makeTx({ id: 'ep-3', order: 3, status: 'PENDING' });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await service.routeVisitToEpisode(tx as any, 'journey-1', 'visit-1', 3);
 
+      const result = await service.routeVisitToEpisode(
+        tx as never,
+        'journey-1',
+        'visit-1',
+        3,
+      );
+
+      // Returns the moved-to episode id so callers can retarget episode writes.
+      expect(result).toBe('ep-3');
       expect(tx.visit.update).toHaveBeenCalledWith({
         where: { id: 'visit-1' },
         data: { episode_id: 'ep-3' },
@@ -67,8 +74,14 @@ describe('SurgicalEpisodeRouterService', () => {
 
     it('is a no-op when the target episode is missing', async () => {
       const tx = makeTx(null);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await service.routeVisitToEpisode(tx as any, 'journey-1', 'visit-1', 2);
+
+      const result = await service.routeVisitToEpisode(
+        tx as never,
+        'journey-1',
+        'visit-1',
+        2,
+      );
+      expect(result).toBeNull();
       expect(tx.visit.update).not.toHaveBeenCalled();
     });
   });

@@ -66,13 +66,15 @@ describe('PregnancyEpisodeRouterService', () => {
         status: 'PENDING',
         started_at: null,
       });
-      await service.routeVisitToTrimester(
+      const result = await service.routeVisitToTrimester(
         tx as never,
         'journey-1',
         'visit-1',
         2,
       );
 
+      // Returns the moved-to episode id so callers can retarget episode writes.
+      expect(result).toBe('ep-2');
       expect(tx.visit.update).toHaveBeenCalledWith({
         where: { id: 'visit-1' },
         data: { episode_id: 'ep-2' },
@@ -113,12 +115,13 @@ describe('PregnancyEpisodeRouterService', () => {
 
     it('is a no-op when the trimester episode is missing', async () => {
       const tx = makeTx(null);
-      await service.routeVisitToTrimester(
+      const result = await service.routeVisitToTrimester(
         tx as never,
         'journey-1',
         'visit-1',
         2,
       );
+      expect(result).toBeNull();
       expect(tx.visit.update).not.toHaveBeenCalled();
       expect(tx.patientEpisode.update).not.toHaveBeenCalled();
       expect(tx.patientEpisode.updateMany).not.toHaveBeenCalled();
