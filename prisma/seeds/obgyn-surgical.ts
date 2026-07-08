@@ -117,6 +117,19 @@ const DISCHARGE_OPTS = [
   opt('ADMITTED', 'Admitted / observation'),
   opt('TRANSFERRED', 'Transferred'),
 ];
+// Blood group / Rh — copied verbatim from the OB/GYN patient-history seed
+// (`general_medical` section). Codes match the `BloodGroupRh` Prisma enum;
+// negative labels use the Unicode minus sign (U+2212).
+const BLOOD_GROUP_OPTS = [
+  opt('A_POS', 'A+'),
+  opt('A_NEG', 'A−'),
+  opt('B_POS', 'B+'),
+  opt('B_NEG', 'B−'),
+  opt('AB_POS', 'AB+'),
+  opt('AB_NEG', 'AB−'),
+  opt('O_POS', 'O+'),
+  opt('O_NEG', 'O−'),
+];
 
 /** A read-only display field in the Summary (mirrors a value owned elsewhere). */
 const display = (
@@ -184,9 +197,9 @@ const SECTIONS: SectionSpec[] = [
       mirror('summary_anesthesia', 'Anesthesia', 'anesthesia_type', 'SELECT', ANESTHESIA_OPTS),
       mirror('summary_planned', 'Planned date', 'planned_date'),
       mirror('summary_surgery', 'Surgery date', 'surgery_date'),
-      // Blood group — read-only from the patient's OB/GYN history (folded into
-      // the GET envelope as `blood_group_rh`).
-      display('summary_blood_group', 'Blood group', 'PATIENT_OBGYN_HISTORY', 'blood_group_rh'),
+      // Blood group — live mirror of the editable SELECT in the Surgery profile
+      // (which writes through to the patient's OB/GYN history).
+      mirror('summary_blood_group', 'Blood group', 'blood_group_rh', 'SELECT', BLOOD_GROUP_OPTS),
       mirror('summary_indication', 'Indication', 'indication', 'TEXT', undefined, 9),
       display('summary_created', 'Created', 'SURGICAL_JOURNEY', 'created_at'),
       display('summary_updated', 'Updated', 'SURGICAL_JOURNEY', 'updated_at'),
@@ -241,6 +254,23 @@ const SECTIONS: SectionSpec[] = [
         type: 'TEXT',
         binding: { namespace: 'SURGICAL_JOURNEY', path: 'procedure_code' },
         config: { ui: { readOnly: true, colSpan: 6 } },
+      },
+      {
+        // Patient-level blood group — editable here (the surgical tab does not
+        // surface the general medical-history section). Writes through to
+        // PatientObgynHistory.blood_group_rh (single source of truth) via the
+        // surgical PATCH; the read-only Summary mirrors it.
+        code: 'blood_group_rh',
+        label: 'Blood group / Rh',
+        type: 'SELECT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'blood_group_rh',
+        },
+        config: {
+          ui: { placeholder: 'Ex : O+', colSpan: 4 },
+          validation: { options: BLOOD_GROUP_OPTS },
+        },
       },
       {
         code: 'urgency',
