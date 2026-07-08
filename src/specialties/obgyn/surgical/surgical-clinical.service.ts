@@ -4,7 +4,7 @@ import {
   NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { BloodGroupRh, Prisma } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { EventBus } from '@infrastructure/messaging/event-bus';
@@ -138,10 +138,12 @@ export class SurgicalClinicalService
       if (episodeId === ctx.episodeId) currentPhaseOrder = order;
     }
 
-    const bloodGroup = await this.readBloodGroup(ctx.patientId);
+    // Raw enum code (e.g. O_POS) so the editable SELECT pre-fills by option
+    // code; the linked_summary display formats it (O+).
+    const rawBloodGroup = await this.readBloodGroupRaw(ctx.patientId);
     const linkedSummary = await this.buildLinkedSummary(
       journeyRecord.source_pregnancy_journey_id,
-      bloodGroup,
+      formatBloodGroupRh(rawBloodGroup),
     );
 
     return this.buildEnvelope(
@@ -151,7 +153,7 @@ export class SurgicalClinicalService
       phaseRecord(3),
       visitRecord,
       linkedSummary,
-      bloodGroup,
+      rawBloodGroup,
       currentPhaseOrder,
     );
   }
@@ -251,6 +253,33 @@ export class SurgicalClinicalService
         if (episodeTouched) scopes.push('episode');
 
         await this.upsertVisit(tx, visitId, body, profileId, scopes);
+
+        // Patient-level blood group — written through to PatientObgynHistory
+        // (single source of truth) in THIS transaction, mirroring the
+        // examination tab. The field rides every surgical save, so only write
+        // when it actually changed — otherwise every save would churn the
+        // history version + revision. `applyPatch` lazy-creates the singleton,
+        // so setting it when none exists works. `null` If-Match (last-write-wins).
+        if (typeof body.blood_group_rh === 'string' && body.blood_group_rh) {
+          const submitted = body.blood_group_rh as BloodGroupRh;
+          const currentHistory = await this.obgynHistory.readEnvelope(
+            ctx.patientId,
+            tx,
+          );
+          const current =
+            (currentHistory as { blood_group_rh?: string | null } | null)
+              ?.blood_group_rh ?? null;
+          if (current !== submitted) {
+            await this.obgynHistory.applyPatch(
+              tx,
+              ctx.patientId,
+              { blood_group_rh: submitted },
+              null,
+              profileId,
+            );
+            scopes.push('patient_history');
+          }
+        }
 
         return updated.version;
       },
@@ -414,12 +443,12 @@ export class SurgicalClinicalService
     return byOrder;
   }
 
-  /** The patient's formatted blood group from OB/GYN history (or null). */
-  private async readBloodGroup(patientId: string): Promise<string | null> {
+  /** The patient's RAW blood-group enum code from OB/GYN history (or null). */
+  private async readBloodGroupRaw(patientId: string): Promise<string | null> {
     const history = await this.obgynHistory.readEnvelope(patientId);
-    return formatBloodGroupRh(
+    return (
       (history as { blood_group_rh?: string | null } | null)?.blood_group_rh ??
-        null,
+      null
     );
   }
 
