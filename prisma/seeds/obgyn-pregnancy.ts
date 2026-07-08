@@ -10,7 +10,8 @@
  *     OB/GYN history; created/updated are date-only.
  *   - Journey — dating & profile (editable): LMP (single capture), US dating,
  *     risk, pregnancy type, #fetuses → PREGNANCY_JOURNEY.
- *   - Episode — labs (editable): anomaly scan / GTT / trimester → PREGNANCY_EPISODE.
+ *   - Episode — labs (editable): anomaly scan / GTT / trimester → PREGNANCY_JOURNEY.
+ *     One per pregnancy (journey-scoped), so they pre-fill on every visit.
  *   - Visit — maternal / fetal (editable, fetuses repeatable) → PREGNANCY_VISIT /
  *     PREGNANCY_FETUS.
  *
@@ -26,7 +27,7 @@ import { assertValidConfig } from '../../src/builder/fields/field-config.schema.
 import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 
 const TEMPLATE_CODE = 'obgyn_pregnancy';
-const TEMPLATE_VERSION = 3;
+const TEMPLATE_VERSION = 4;
 
 type FieldType = keyof typeof FIELD_TYPES;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -307,7 +308,8 @@ const SECTIONS: SectionSpec[] = [
   },
 
   // ---------------------------------------------------------------------------
-  // 3. Episode — labs (editable, JSON columns)
+  // 3. Episode — labs (editable, JSON columns). Journey-scoped (one per
+  //    pregnancy) so they pre-fill on every visit, like the Journey section.
   // ---------------------------------------------------------------------------
   {
     code: 'episode_labs',
@@ -318,7 +320,7 @@ const SECTIONS: SectionSpec[] = [
         code: 'anomaly_scan_date',
         label: 'Anomaly scan date',
         type: 'DATE',
-        binding: { namespace: 'PREGNANCY_EPISODE', path: 'anomaly_scan.date' },
+        binding: { namespace: 'PREGNANCY_JOURNEY', path: 'anomaly_scan.date' },
         config: { ui: { colSpan: 4 } },
       },
       {
@@ -326,7 +328,7 @@ const SECTIONS: SectionSpec[] = [
         label: 'Anomaly scan result',
         type: 'SELECT',
         binding: {
-          namespace: 'PREGNANCY_EPISODE',
+          namespace: 'PREGNANCY_JOURNEY',
           path: 'anomaly_scan.result',
         },
         config: {
@@ -340,14 +342,14 @@ const SECTIONS: SectionSpec[] = [
         code: 'anomaly_scan_notes',
         label: 'Anomaly scan notes',
         type: 'TEXTAREA',
-        binding: { namespace: 'PREGNANCY_EPISODE', path: 'anomaly_scan.notes' },
+        binding: { namespace: 'PREGNANCY_JOURNEY', path: 'anomaly_scan.notes' },
         config: { ui: { colSpan: 4 } },
       },
       {
         code: 'gtt_fasting',
         label: 'GTT fasting',
         type: 'NUMBER',
-        binding: { namespace: 'PREGNANCY_EPISODE', path: 'gtt_result.fasting' },
+        binding: { namespace: 'PREGNANCY_JOURNEY', path: 'gtt_result.fasting' },
         config: { ui: { colSpan: 3, suffix: 'mmol/L', step: 0.1 } },
       },
       {
@@ -355,7 +357,7 @@ const SECTIONS: SectionSpec[] = [
         label: 'GTT 1-hour',
         type: 'NUMBER',
         binding: {
-          namespace: 'PREGNANCY_EPISODE',
+          namespace: 'PREGNANCY_JOURNEY',
           path: 'gtt_result.one_hour',
         },
         config: { ui: { colSpan: 3, suffix: 'mmol/L', step: 0.1 } },
@@ -365,7 +367,7 @@ const SECTIONS: SectionSpec[] = [
         label: 'GTT 2-hour',
         type: 'NUMBER',
         binding: {
-          namespace: 'PREGNANCY_EPISODE',
+          namespace: 'PREGNANCY_JOURNEY',
           path: 'gtt_result.two_hour',
         },
         config: { ui: { colSpan: 3, suffix: 'mmol/L', step: 0.1 } },
@@ -375,7 +377,7 @@ const SECTIONS: SectionSpec[] = [
         label: 'GTT interpretation',
         type: 'SELECT',
         binding: {
-          namespace: 'PREGNANCY_EPISODE',
+          namespace: 'PREGNANCY_JOURNEY',
           path: 'gtt_result.interpretation',
         },
         config: {
@@ -390,7 +392,7 @@ const SECTIONS: SectionSpec[] = [
         label: 'Trimester summary',
         type: 'TEXTAREA',
         binding: {
-          namespace: 'PREGNANCY_EPISODE',
+          namespace: 'PREGNANCY_JOURNEY',
           path: 'trimester_summary.notes',
         },
         config: { ui: { colSpan: 12 } },

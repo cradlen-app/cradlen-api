@@ -65,8 +65,8 @@ const JOURNEY_WRITABLE = [
   'pregnancy_type',
   'number_of_fetuses',
   'gender',
-] as const;
-const EPISODE_WRITABLE = [
+  // Pregnancy-wide labs (one per pregnancy) — journey-scoped so they pre-fill
+  // on every visit like the rest of the Journey section.
   'anomaly_scan',
   'gtt_result',
   'trimester_summary',
@@ -107,7 +107,6 @@ type Body = Record<string, unknown>;
 type Data = Record<string, unknown>;
 
 interface VisitJourneyContext {
-  episodeId: string;
   journeyId: string;
   patientId: string;
   carePathCode: string | null;
@@ -157,10 +156,7 @@ export class PregnancyClinicalService
       throw new NotFoundException('No pregnancy profile for this journey');
     }
 
-    const [episode, visitRecord, fetuses, history] = await Promise.all([
-      this.prismaService.db.pregnancyEpisodeRecord.findUnique({
-        where: { episode_id: ctx.episodeId },
-      }),
+    const [visitRecord, fetuses, history] = await Promise.all([
       this.prismaService.db.visitPregnancyRecord.findUnique({
         where: { visit_id: visitId },
       }),
@@ -179,7 +175,6 @@ export class PregnancyClinicalService
     const asOf = ctx.scheduledAt ?? new Date();
     return this.buildEnvelope(
       journeyRecord,
-      episode,
       visitRecord,
       fetuses,
       bloodGroupRh,
@@ -248,11 +243,10 @@ export class PregnancyClinicalService
         });
 
         // When dating changed, re-route the (open) visit onto the trimester
-        // episode matching its GA and advance the journey's ACTIVE pointer.
-        // Episode-scoped writes below then target the moved-to episode, not the
-        // stale one. No usable dating → leave the visit where it is (no
-        // Episode-1 fallback), matching the visit.booked listener.
-        let effectiveEpisodeId = ctx.episodeId;
+        // episode matching its GA and advance the journey's ACTIVE pointer, so
+        // the visit stays filed under the right trimester. Labs are now
+        // journey-scoped, so no episode-scoped write depends on this. No usable
+        // dating → leave the visit where it is, matching the visit.booked listener.
         const datingChanged = DATING_KEYS.some((k) => k in journeyData);
         if (datingChanged) {
           const order = this.episodeRouter.resolveTrimesterOrder(
@@ -260,24 +254,15 @@ export class PregnancyClinicalService
             ctx.scheduledAt ?? new Date(),
           );
           if (order != null) {
-            const targetEpisodeId =
-              await this.episodeRouter.routeVisitToTrimester(
-                tx,
-                ctx.journeyId,
-                visitId,
-                order,
-              );
-            effectiveEpisodeId = targetEpisodeId ?? ctx.episodeId;
+            await this.episodeRouter.routeVisitToTrimester(
+              tx,
+              ctx.journeyId,
+              visitId,
+              order,
+            );
           }
         }
 
-        await this.upsertEpisode(
-          tx,
-          effectiveEpisodeId,
-          body,
-          profileId,
-          scopes,
-        );
         await this.upsertVisit(tx, visitId, body, profileId, scopes);
         if (body.fetuses !== undefined) {
           await this.diffFetuses(tx, visitId, body.fetuses, profileId);
@@ -307,42 +292,6 @@ export class PregnancyClinicalService
   // ---------------------------------------------------------------------------
   // Scoped writers
   // ---------------------------------------------------------------------------
-
-  private async upsertEpisode(
-    tx: Prisma.TransactionClient,
-    episodeId: string,
-    body: Body,
-    profileId: string,
-    scopes: string[],
-  ) {
-    const data = pickWritable(body, EPISODE_WRITABLE);
-    if (Object.keys(data).length === 0) return;
-    const prior = await tx.pregnancyEpisodeRecord.findUnique({
-      where: { episode_id: episodeId },
-    });
-    if (prior) {
-      await tx.pregnancyEpisodeRecordRevision.create({
-        data: buildRevision(prior, Object.keys(data), profileId),
-      });
-      await tx.pregnancyEpisodeRecord.update({
-        where: { id: prior.id },
-        data: {
-          ...(data as Prisma.PregnancyEpisodeRecordUncheckedUpdateInput),
-          updated_by_id: profileId,
-          version: { increment: 1 },
-        },
-      });
-    } else {
-      await tx.pregnancyEpisodeRecord.create({
-        data: {
-          ...(data as Prisma.PregnancyEpisodeRecordUncheckedCreateInput),
-          episode_id: episodeId,
-          updated_by_id: profileId,
-        },
-      });
-    }
-    scopes.push('episode');
-  }
 
   private async upsertVisit(
     tx: Prisma.TransactionClient,
@@ -449,7 +398,6 @@ export class PregnancyClinicalService
         scheduled_at: true,
         episode: {
           select: {
-            id: true,
             journey: {
               select: {
                 id: true,
@@ -469,7 +417,6 @@ export class PregnancyClinicalService
       throw new NotFoundException('Journey does not match this visit');
     }
     return {
-      episodeId: visit.episode.id,
       journeyId: journey.id,
       patientId: journey.patient_id,
       carePathCode: journey.care_path?.code ?? null,
@@ -479,7 +426,6 @@ export class PregnancyClinicalService
 
   private buildEnvelope(
     journey: Prisma.PregnancyJourneyRecordGetPayload<true>,
-    episode: Prisma.PregnancyEpisodeRecordGetPayload<true> | null,
     visit: Prisma.VisitPregnancyRecordGetPayload<true> | null,
     fetuses: Prisma.VisitFetalRecordGetPayload<true>[],
     bloodGroupRh: string | null,
@@ -523,10 +469,11 @@ export class PregnancyClinicalService
         ),
       ),
 
-      // Episode scope (JSON labs)
-      anomaly_scan: episode?.anomaly_scan ?? null,
-      gtt_result: episode?.gtt_result ?? null,
-      trimester_summary: episode?.trimester_summary ?? null,
+      // Pregnancy-wide labs — journey-scoped (one per pregnancy), so they
+      // pre-fill on every visit like the rest of the journey record.
+      anomaly_scan: journey.anomaly_scan ?? null,
+      gtt_result: journey.gtt_result ?? null,
+      trimester_summary: journey.trimester_summary ?? null,
 
       // Per-visit scope
       cervix_length_mm: visit?.cervix_length_mm ?? null,
