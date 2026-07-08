@@ -15,9 +15,13 @@
  *   - Journey — surgery profile (editable): procedure (ENTITY_SEARCH →
  *     Procedure catalog), indication, urgency, anesthesia, planned/surgery date
  *     → SURGICAL_JOURNEY.
- *   - Episode — phase summaries (editable): pre-op assessment / operative /
- *     post-op → SURGICAL_EPISODE.
- *   - Visit — the per-encounter operative note (editable) → SURGICAL_VISIT.
+ *   - Pre-operative / Operative / Post-operative — three collapsible phase
+ *     sections (editable) → SURGICAL_EPISODE. Each phase's blob lives on its own
+ *     phase-episode record (pre-op → order-1, operative → order-2, post-op →
+ *     order-3); the service aggregates all three so every field pre-fills from
+ *     any visit. The operative note is singular per journey (not per-visit).
+ *   - This visit (follow-up) — the per-encounter post-op entry (interval
+ *     history, wound assessment this visit, plan) → SURGICAL_VISIT.
  *
  * Activation flips this template active + PUBLISHED. Idempotent.
  */
@@ -28,7 +32,7 @@ import { assertValidConfig } from '../../src/builder/fields/field-config.schema.
 import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 
 const TEMPLATE_CODE = 'obgyn_surgical';
-const TEMPLATE_VERSION = 1;
+const TEMPLATE_VERSION = 2;
 
 type FieldType = keyof typeof FIELD_TYPES;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -50,6 +54,11 @@ interface SectionSpec {
   is_repeatable?: boolean;
   /** Rendered read-only by the FE and excluded from submission (overview). */
   readOnly?: boolean;
+  /** FE renders a collapse chevron; the current phase is expanded by default. */
+  collapsible?: boolean;
+  /** Phase episode order (1=Pre-op, 2=Operative, 3=Post-op) — drives which
+   *  collapsible section the FE auto-expands for the visit's current phase. */
+  phaseOrder?: number;
   fields: FieldSpec[];
 }
 
@@ -65,6 +74,48 @@ const ANESTHESIA_OPTS = [
   opt('REGIONAL', 'Regional'),
   opt('LOCAL', 'Local'),
   opt('SEDATION', 'Sedation'),
+];
+const ASA_OPTS = [
+  opt('ASA_I', 'ASA I'),
+  opt('ASA_II', 'ASA II'),
+  opt('ASA_III', 'ASA III'),
+  opt('ASA_IV', 'ASA IV'),
+  opt('ASA_V', 'ASA V'),
+];
+const CLEARANCE_OPTS = [
+  opt('CLEARED', 'Cleared'),
+  opt('CONDITIONAL', 'Conditional'),
+  opt('NOT_CLEARED', 'Not cleared'),
+];
+const YES_NO_OPTS = [opt('YES', 'Yes'), opt('NO', 'No')];
+const CONSENT_OPTS = [opt('OBTAINED', 'Obtained'), opt('PENDING', 'Pending')];
+const WOUND_OPTS = [
+  opt('CLEAN_DRY', 'Clean & dry'),
+  opt('ERYTHEMA', 'Erythema'),
+  opt('DISCHARGE', 'Discharge'),
+  opt('DEHISCENCE', 'Dehiscence'),
+];
+const COMPLICATION_OPTS = [
+  opt('NONE', 'None'),
+  opt('BLEEDING', 'Bleeding / hemorrhage'),
+  opt('INFECTION', 'Infection'),
+  opt('ANESTHETIC', 'Anesthetic complication'),
+  opt('ORGAN_INJURY', 'Organ injury'),
+  opt('THROMBOEMBOLIC', 'Thromboembolic'),
+];
+const SAFETY_SIGNIN_OPTS = [
+  opt('IDENTITY_CONFIRMED', 'Patient identity confirmed'),
+  opt('SITE_MARKED', 'Surgical site marked'),
+  opt('CONSENT_CONFIRMED', 'Consent confirmed'),
+  opt('ANESTHESIA_CHECK', 'Anesthesia safety check complete'),
+  opt('ALLERGY_CHECKED', 'Known allergy reviewed'),
+  opt('AIRWAY_RISK', 'Difficult airway / aspiration risk assessed'),
+];
+const DISCHARGE_OPTS = [
+  opt('PENDING', 'Pending'),
+  opt('DISCHARGED', 'Discharged'),
+  opt('ADMITTED', 'Admitted / observation'),
+  opt('TRANSFERRED', 'Transferred'),
 ];
 
 /** A read-only display field in the Summary (mirrors a value owned elsewhere). */
@@ -106,7 +157,7 @@ const mirror = (
 
 const SECTIONS: SectionSpec[] = [
   // ---------------------------------------------------------------------------
-  // 1. Summary — read-only overview (journey + episode + visit). Not submitted.
+  // 1. Summary — read-only overview (journey + phases + this-visit). Not submitted.
   // ---------------------------------------------------------------------------
   {
     code: 'summary',
@@ -133,12 +184,15 @@ const SECTIONS: SectionSpec[] = [
       mirror('summary_anesthesia', 'Anesthesia', 'anesthesia_type', 'SELECT', ANESTHESIA_OPTS),
       mirror('summary_planned', 'Planned date', 'planned_date'),
       mirror('summary_surgery', 'Surgery date', 'surgery_date'),
-      mirror('summary_indication', 'Indication', 'indication', 'TEXT', undefined, 8),
+      // Blood group — read-only from the patient's OB/GYN history (folded into
+      // the GET envelope as `blood_group_rh`).
+      display('summary_blood_group', 'Blood group', 'PATIENT_OBGYN_HISTORY', 'blood_group_rh'),
+      mirror('summary_indication', 'Indication', 'indication', 'TEXT', undefined, 9),
       display('summary_created', 'Created', 'SURGICAL_JOURNEY', 'created_at'),
       display('summary_updated', 'Updated', 'SURGICAL_JOURNEY', 'updated_at'),
-      // This-visit operative highlights (live mirrors of the editable Visit fields)
-      mirror('summary_procedure_performed', 'Procedure performed (this visit)', 'procedure_performed', 'TEXT', undefined, 6),
-      mirror('summary_wound', 'Wound status (this visit)', 'wound_status', 'TEXT', undefined, 6),
+      // This-visit follow-up highlights (live mirrors of the editable Visit fields)
+      mirror('summary_wound', 'Wound status (this visit)', 'wound_status', 'SELECT', WOUND_OPTS, 6),
+      mirror('summary_interval', 'Interval history (this visit)', 'interval_history', 'TEXT', undefined, 6),
     ],
   },
 
@@ -233,12 +287,15 @@ const SECTIONS: SectionSpec[] = [
   },
 
   // ---------------------------------------------------------------------------
-  // 3. Episode — pre-operative assessment (editable, JSON column)
+  // 3. Pre-operative (Episode 1) — assessment only, NO operative fields.
+  //    Stored on the order-1 phase-episode record (preop_assessment JSON).
   // ---------------------------------------------------------------------------
   {
     code: 'episode_preop',
-    name: 'Pre-operative assessment',
+    name: 'Pre-operative',
     group: 'Episode',
+    collapsible: true,
+    phaseOrder: 1,
     fields: [
       {
         code: 'preop_asa_class',
@@ -250,15 +307,7 @@ const SECTIONS: SectionSpec[] = [
         },
         config: {
           ui: { placeholder: 'Ex : ASA II', colSpan: 4 },
-          validation: {
-            options: [
-              opt('ASA_I', 'ASA I'),
-              opt('ASA_II', 'ASA II'),
-              opt('ASA_III', 'ASA III'),
-              opt('ASA_IV', 'ASA IV'),
-              opt('ASA_V', 'ASA V'),
-            ],
-          },
+          validation: { options: ASA_OPTS },
         },
       },
       {
@@ -271,13 +320,7 @@ const SECTIONS: SectionSpec[] = [
         },
         config: {
           ui: { placeholder: 'Ex : Cleared', colSpan: 4 },
-          validation: {
-            options: [
-              opt('CLEARED', 'Cleared'),
-              opt('CONDITIONAL', 'Conditional'),
-              opt('NOT_CLEARED', 'Not cleared'),
-            ],
-          },
+          validation: { options: CLEARANCE_OPTS },
         },
       },
       {
@@ -290,7 +333,7 @@ const SECTIONS: SectionSpec[] = [
         },
         config: {
           ui: { placeholder: 'Ex : Yes', colSpan: 4 },
-          validation: { options: [opt('YES', 'Yes'), opt('NO', 'No')] },
+          validation: { options: YES_NO_OPTS },
         },
       },
       {
@@ -303,10 +346,45 @@ const SECTIONS: SectionSpec[] = [
         },
         config: {
           ui: { placeholder: 'Ex : Obtained', colSpan: 4 },
-          validation: {
-            options: [opt('OBTAINED', 'Obtained'), opt('PENDING', 'Pending')],
+          validation: { options: CONSENT_OPTS },
+        },
+      },
+      {
+        code: 'preop_consent_details',
+        label: 'Consent details',
+        type: 'TEXTAREA',
+        binding: {
+          namespace: 'SURGICAL_EPISODE',
+          path: 'preop_assessment.consent_details',
+        },
+        config: {
+          ui: {
+            placeholder: 'Procedure explained, risks/benefits, alternatives, who consented',
+            colSpan: 8,
           },
         },
+      },
+      {
+        code: 'preop_investigations',
+        label: 'Pre-op investigations',
+        type: 'TEXTAREA',
+        binding: {
+          namespace: 'SURGICAL_EPISODE',
+          path: 'preop_assessment.pre_op_investigations',
+        },
+        config: {
+          ui: { placeholder: 'CBC, coagulation, imaging, cross-match, ECG…', colSpan: 12 },
+        },
+      },
+      {
+        code: 'preop_safety_checklist',
+        label: 'Surgical safety checklist (sign-in)',
+        type: 'MULTISELECT',
+        binding: {
+          namespace: 'SURGICAL_EPISODE',
+          path: 'preop_assessment.safety_checklist_signin',
+        },
+        config: { ui: { colSpan: 12 }, validation: { options: SAFETY_SIGNIN_OPTS } },
       },
       {
         code: 'preop_notes',
@@ -322,22 +400,194 @@ const SECTIONS: SectionSpec[] = [
   },
 
   // ---------------------------------------------------------------------------
-  // 4. Episode — operative & post-operative summary (editable, JSON columns)
+  // 4. Operative (Episode 2) — the ONLY place with operative fields.
+  //    Stored on the order-2 phase-episode record (operative_summary JSON) —
+  //    singular per journey, visible from any visit.
   // ---------------------------------------------------------------------------
   {
-    code: 'episode_summary',
-    name: 'Operative & post-op summary',
+    code: 'episode_operative',
+    name: 'Operative',
     group: 'Episode',
+    collapsible: true,
+    phaseOrder: 2,
     fields: [
       {
-        code: 'operative_notes',
-        label: 'Operative summary',
+        code: 'op_procedure_performed',
+        label: 'Procedure performed',
+        type: 'TEXT',
+        binding: {
+          namespace: 'SURGICAL_EPISODE',
+          path: 'operative_summary.procedure_performed',
+        },
+        config: { ui: { placeholder: 'Ex : Laparoscopic left ovarian cystectomy', colSpan: 8 } },
+      },
+      {
+        code: 'op_ebl_ml',
+        label: 'Estimated blood loss',
+        type: 'NUMBER',
+        binding: {
+          namespace: 'SURGICAL_EPISODE',
+          path: 'operative_summary.ebl_ml',
+        },
+        config: {
+          ui: { placeholder: 'Ex : 400', colSpan: 4, suffix: 'mL' },
+          validation: { min: 0, max: 10000 },
+        },
+      },
+      {
+        code: 'op_duration_minutes',
+        label: 'Duration',
+        type: 'NUMBER',
+        binding: {
+          namespace: 'SURGICAL_EPISODE',
+          path: 'operative_summary.duration_minutes',
+        },
+        config: {
+          ui: { placeholder: 'Ex : 45', colSpan: 4, suffix: 'min' },
+          validation: { min: 0, max: 1440 },
+        },
+      },
+      {
+        code: 'op_drains',
+        label: 'Drains',
+        type: 'TEXT',
+        binding: {
+          namespace: 'SURGICAL_EPISODE',
+          path: 'operative_summary.drains',
+        },
+        config: { ui: { placeholder: 'Ex : None', colSpan: 4 } },
+      },
+      {
+        code: 'op_specimens_sent',
+        label: 'Specimens sent',
+        type: 'TEXT',
+        binding: {
+          namespace: 'SURGICAL_EPISODE',
+          path: 'operative_summary.specimens_sent',
+        },
+        config: { ui: { placeholder: 'Ex : Left ovarian cyst → histology', colSpan: 4 } },
+      },
+      {
+        code: 'op_complications',
+        label: 'Complications',
+        type: 'MULTISELECT',
+        binding: {
+          namespace: 'SURGICAL_EPISODE',
+          path: 'operative_summary.complications',
+        },
+        config: { ui: { colSpan: 12 }, validation: { options: COMPLICATION_OPTS } },
+      },
+      {
+        code: 'op_findings',
+        label: 'Operative findings',
+        type: 'TEXTAREA',
+        binding: {
+          namespace: 'SURGICAL_EPISODE',
+          path: 'operative_summary.findings',
+        },
+        config: { ui: { colSpan: 12 } },
+      },
+      {
+        code: 'op_time_out_completed',
+        label: 'Time-out completed',
+        type: 'BOOLEAN',
+        binding: {
+          namespace: 'SURGICAL_EPISODE',
+          path: 'operative_summary.time_out_completed',
+        },
+        config: { ui: { colSpan: 6 } },
+      },
+      {
+        code: 'op_sign_out_completed',
+        label: 'Sign-out completed',
+        type: 'BOOLEAN',
+        binding: {
+          namespace: 'SURGICAL_EPISODE',
+          path: 'operative_summary.sign_out_completed',
+        },
+        config: { ui: { colSpan: 6 } },
+      },
+      {
+        code: 'op_immediate_postop',
+        label: 'Immediate post-op',
+        type: 'TEXTAREA',
+        binding: {
+          namespace: 'SURGICAL_EPISODE',
+          path: 'operative_summary.immediate_postop',
+        },
+        config: {
+          ui: { placeholder: 'Recovery-room status, vitals, analgesia, disposition', colSpan: 12 },
+        },
+      },
+      {
+        code: 'op_notes',
+        label: 'Operative note',
         type: 'TEXTAREA',
         binding: {
           namespace: 'SURGICAL_EPISODE',
           path: 'operative_summary.notes',
         },
         config: { ui: { colSpan: 12 } },
+      },
+    ],
+  },
+
+  // ---------------------------------------------------------------------------
+  // 5. Post-operative (Episode 3) — episode-level recovery; NO operative note.
+  //    Stored on the order-3 phase-episode record (postop_summary JSON).
+  //    Per-follow-up interval history / wound live in "This visit" below.
+  // ---------------------------------------------------------------------------
+  {
+    code: 'episode_postop',
+    name: 'Post-operative',
+    group: 'Episode',
+    collapsible: true,
+    phaseOrder: 3,
+    fields: [
+      {
+        code: 'postop_histopathology',
+        label: 'Histopathology result review',
+        type: 'TEXTAREA',
+        binding: {
+          namespace: 'SURGICAL_EPISODE',
+          path: 'postop_summary.histopathology_result',
+        },
+        config: { ui: { placeholder: 'Specimen, diagnosis, margins, action', colSpan: 12 } },
+      },
+      {
+        code: 'postop_recovery_milestones',
+        label: 'Recovery milestones',
+        type: 'TEXTAREA',
+        binding: {
+          namespace: 'SURGICAL_EPISODE',
+          path: 'postop_summary.recovery_milestones',
+        },
+        config: {
+          ui: { placeholder: 'Ambulation, oral intake, bowel function, suture removal…', colSpan: 12 },
+        },
+      },
+      {
+        code: 'postop_discharge_decision',
+        label: 'Discharge decision',
+        type: 'SELECT',
+        binding: {
+          namespace: 'SURGICAL_EPISODE',
+          path: 'postop_summary.discharge_decision',
+        },
+        config: {
+          ui: { placeholder: 'Ex : Discharged', colSpan: 6 },
+          validation: { options: DISCHARGE_OPTS },
+        },
+      },
+      {
+        code: 'postop_discharge_date',
+        label: 'Discharge date',
+        type: 'DATE',
+        binding: {
+          namespace: 'SURGICAL_EPISODE',
+          path: 'postop_summary.discharge_date',
+        },
+        config: { ui: { colSpan: 6 } },
       },
       {
         code: 'postop_notes',
@@ -353,45 +603,27 @@ const SECTIONS: SectionSpec[] = [
   },
 
   // ---------------------------------------------------------------------------
-  // 5. Visit — operative note (editable, per encounter)
+  // 6. This visit (follow-up) — per-encounter post-op entry (current visit only).
+  //    Stored on the per-visit record (SURGICAL_VISIT).
   // ---------------------------------------------------------------------------
   {
-    code: 'visit_operative',
-    name: 'Operative note',
+    code: 'visit_followup',
+    name: 'This visit (follow-up)',
     group: 'Visit',
     fields: [
       {
-        code: 'procedure_performed',
-        label: 'Procedure performed',
-        type: 'TEXT',
-        binding: {
-          namespace: 'SURGICAL_VISIT',
-          path: 'procedure_performed',
-        },
-        config: { ui: { placeholder: 'Ex : Lower-segment cesarean', colSpan: 8 } },
+        code: 'interval_history',
+        label: 'Interval history',
+        type: 'TEXTAREA',
+        binding: { namespace: 'SURGICAL_VISIT', path: 'interval_history' },
+        config: { ui: { placeholder: 'Symptoms/events since the last visit', colSpan: 12 } },
       },
       {
-        code: 'estimated_blood_loss_ml',
-        label: 'Estimated blood loss',
-        type: 'NUMBER',
-        binding: {
-          namespace: 'SURGICAL_VISIT',
-          path: 'estimated_blood_loss_ml',
-        },
-        config: {
-          ui: { placeholder: 'Ex : 400', colSpan: 4, suffix: 'mL' },
-          validation: { min: 0, max: 10000 },
-        },
-      },
-      {
-        code: 'duration_minutes',
-        label: 'Duration',
-        type: 'NUMBER',
-        binding: { namespace: 'SURGICAL_VISIT', path: 'duration_minutes' },
-        config: {
-          ui: { placeholder: 'Ex : 45', colSpan: 4, suffix: 'min' },
-          validation: { min: 0, max: 1440 },
-        },
+        code: 'wound_assessment',
+        label: 'Wound assessment',
+        type: 'TEXTAREA',
+        binding: { namespace: 'SURGICAL_VISIT', path: 'wound_assessment' },
+        config: { ui: { placeholder: 'Site, healing, signs of infection', colSpan: 8 } },
       },
       {
         code: 'wound_status',
@@ -400,48 +632,15 @@ const SECTIONS: SectionSpec[] = [
         binding: { namespace: 'SURGICAL_VISIT', path: 'wound_status' },
         config: {
           ui: { placeholder: 'Ex : Clean & dry', colSpan: 4 },
-          validation: {
-            options: [
-              opt('CLEAN_DRY', 'Clean & dry'),
-              opt('ERYTHEMA', 'Erythema'),
-              opt('DISCHARGE', 'Discharge'),
-              opt('DEHISCENCE', 'Dehiscence'),
-            ],
-          },
+          validation: { options: WOUND_OPTS },
         },
       },
       {
-        code: 'drains',
-        label: 'Drains',
-        type: 'TEXT',
-        binding: { namespace: 'SURGICAL_VISIT', path: 'drains' },
-        config: { ui: { placeholder: 'Ex : None', colSpan: 4 } },
-      },
-      {
-        code: 'complications',
-        label: 'Complications',
-        type: 'MULTISELECT',
-        binding: { namespace: 'SURGICAL_VISIT', path: 'complications' },
-        config: {
-          ui: { colSpan: 12 },
-          validation: {
-            options: [
-              opt('NONE', 'None'),
-              opt('BLEEDING', 'Bleeding / hemorrhage'),
-              opt('INFECTION', 'Infection'),
-              opt('ANESTHETIC', 'Anesthetic complication'),
-              opt('ORGAN_INJURY', 'Organ injury'),
-              opt('THROMBOEMBOLIC', 'Thromboembolic'),
-            ],
-          },
-        },
-      },
-      {
-        code: 'findings',
-        label: 'Operative findings',
+        code: 'plan',
+        label: 'Plan',
         type: 'TEXTAREA',
-        binding: { namespace: 'SURGICAL_VISIT', path: 'findings' },
-        config: { ui: { colSpan: 12 } },
+        binding: { namespace: 'SURGICAL_VISIT', path: 'plan' },
+        config: { ui: { placeholder: 'Next steps, follow-up interval, referrals', colSpan: 12 } },
       },
       {
         code: 'recovery_notes',
@@ -459,6 +658,8 @@ function buildSectionConfig(section: SectionSpec): SectionConfig {
     ui: {
       group: section.group,
       ...(section.readOnly ? { readOnly: true } : {}),
+      ...(section.collapsible ? { collapsible: true } : {}),
+      ...(section.phaseOrder != null ? { phaseOrder: section.phaseOrder } : {}),
     },
     validation: {},
     logic: {},

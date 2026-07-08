@@ -22,6 +22,14 @@ const user: AuthContext = {
 const VISIT = 'visit-1';
 const JOURNEY = 'journey-1';
 
+// The journey's three phase episodes (Pre-op=1 / Surgery=2 / Post-op=3). The
+// current visit sits on the Pre-op episode ('episode-1').
+const PHASE_EPISODES = [
+  { id: 'episode-1', order: 1 },
+  { id: 'episode-2', order: 2 },
+  { id: 'episode-3', order: 3 },
+];
+
 function journeyRecord(over: Record<string, unknown> = {}) {
   return {
     id: 'sjr-1',
@@ -73,8 +81,11 @@ describe('SurgicalClinicalService', () => {
           },
         }),
       },
+      patientEpisode: {
+        findMany: jest.fn().mockResolvedValue(PHASE_EPISODES),
+      },
       surgicalJourneyRecord: { findUnique: jest.fn() },
-      surgicalEpisodeRecord: { findUnique: jest.fn().mockResolvedValue(null) },
+      surgicalEpisodeRecord: { findMany: jest.fn().mockResolvedValue([]) },
       visitSurgicalRecord: { findUnique: jest.fn().mockResolvedValue(null) },
       pregnancyJourneyRecord: { findUnique: jest.fn() },
       $transaction: jest.fn(),
@@ -110,8 +121,28 @@ describe('SurgicalClinicalService', () => {
   });
 
   describe('GET', () => {
-    it('builds a flat envelope and folds the patient-history linked_summary (no source pregnancy)', async () => {
+    it('aggregates all three phase-episode records, folds blood group + the patient-history linked_summary, and reports the current phase', async () => {
       db.surgicalJourneyRecord.findUnique.mockResolvedValue(journeyRecord());
+      db.surgicalEpisodeRecord.findMany.mockResolvedValue([
+        {
+          episode_id: 'episode-1',
+          preop_assessment: { asa_class: 'ASA_II' },
+          operative_summary: null,
+          postop_summary: null,
+        },
+        {
+          episode_id: 'episode-2',
+          preop_assessment: null,
+          operative_summary: { procedure_performed: 'Myomectomy', ebl_ml: 300 },
+          postop_summary: null,
+        },
+        {
+          episode_id: 'episode-3',
+          preop_assessment: null,
+          operative_summary: null,
+          postop_summary: { discharge_decision: 'DISCHARGED' },
+        },
+      ]);
 
       const env = await service.get(VISIT, JOURNEY, user);
 
@@ -119,8 +150,18 @@ describe('SurgicalClinicalService', () => {
       expect(env.version).toBe(2);
       expect(env.procedure_name).toBe('Myomectomy');
       expect(env.surgery_date).toBe('2026-06-15');
-      // No source pregnancy → linked_summary mirrors patient OB/GYN history.
+      // Each phase blob is sourced from its OWN order-keyed episode record.
+      expect(env.preop_assessment).toEqual({ asa_class: 'ASA_II' });
+      expect(env.operative_summary).toEqual({
+        procedure_performed: 'Myomectomy',
+        ebl_ml: 300,
+      });
+      expect(env.postop_summary).toEqual({ discharge_decision: 'DISCHARGED' });
+      // The current visit sits on the Pre-op (order-1) episode.
+      expect(env.current_phase_order).toBe(1);
+      // Blood group is always surfaced from OB/GYN history.
       expect(obgynHistory.readEnvelope).toHaveBeenCalledWith('patient-1');
+      expect(env.blood_group_rh).toBe('O+');
       expect(env.linked_summary).toEqual(
         expect.objectContaining({
           kind: 'PATIENT_HISTORY',
@@ -129,7 +170,7 @@ describe('SurgicalClinicalService', () => {
       );
     });
 
-    it('folds the source pregnancy journey into linked_summary for a cesarean', async () => {
+    it('folds the source pregnancy journey into linked_summary for a cesarean (blood group still surfaced)', async () => {
       db.surgicalJourneyRecord.findUnique.mockResolvedValue(
         journeyRecord({
           procedure_code: 'CESAREAN_SECTION',
@@ -161,31 +202,42 @@ describe('SurgicalClinicalService', () => {
           risk_level: 'HIGH',
         }),
       );
-      // Patient-history read is not used on the cesarean path.
-      expect(obgynHistory.readEnvelope).not.toHaveBeenCalled();
+      // Blood group is still read + surfaced independently of the cesarean link.
+      expect(env.blood_group_rh).toBe('O+');
     });
   });
 
   describe('PATCH', () => {
-    it('demuxes journey/episode/visit, snapshots a revision, bumps the version, emits the event', async () => {
-      db.surgicalJourneyRecord.findUnique
-        .mockResolvedValueOnce(journeyRecord())
-        .mockResolvedValueOnce(journeyRecord({ version: 3 }));
-
-      const tx = {
+    function makeTx() {
+      return {
+        patientEpisode: {
+          findMany: jest.fn().mockResolvedValue(PHASE_EPISODES),
+        },
         surgicalJourneyRecordRevision: { create: jest.fn() },
         surgicalJourneyRecord: {
           update: jest.fn().mockResolvedValue({ version: 3 }),
         },
+        surgicalEpisodeRecordRevision: { create: jest.fn() },
         surgicalEpisodeRecord: {
           findUnique: jest.fn().mockResolvedValue(null),
           create: jest.fn(),
+          update: jest.fn(),
         },
+        visitSurgicalRecordRevision: { create: jest.fn() },
         visitSurgicalRecord: {
           findUnique: jest.fn().mockResolvedValue(null),
           create: jest.fn(),
+          update: jest.fn(),
         },
       };
+    }
+
+    it('demuxes each phase blob to its own order-keyed episode record, snapshots the journey revision, bumps the version, emits the event', async () => {
+      db.surgicalJourneyRecord.findUnique
+        .mockResolvedValueOnce(journeyRecord())
+        .mockResolvedValueOnce(journeyRecord({ version: 3 }));
+
+      const tx = makeTx();
       db.$transaction.mockImplementation(
         (cb: (t: typeof tx) => Promise<number>) => cb(tx),
       );
@@ -196,8 +248,9 @@ describe('SurgicalClinicalService', () => {
         {
           procedure_name: 'Total hysterectomy',
           preop_assessment: { asa_class: 'ASA_II' },
-          procedure_performed: 'TAH-BSO',
-          estimated_blood_loss_ml: '350',
+          operative_summary: { procedure_performed: 'TAH-BSO', ebl_ml: 350 },
+          postop_summary: { discharge_decision: 'DISCHARGED' },
+          interval_history: 'Recovering well',
         },
         user,
       );
@@ -214,7 +267,7 @@ describe('SurgicalClinicalService', () => {
           data: expect.objectContaining({ version: { increment: 1 } }),
         }),
       );
-      // Episode + visit scopes are demuxed into their own records.
+      // Pre-op → order-1 episode; operative → order-2; post-op → order-3.
       expect(tx.surgicalEpisodeRecord.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
@@ -223,13 +276,28 @@ describe('SurgicalClinicalService', () => {
           }),
         }),
       );
+      expect(tx.surgicalEpisodeRecord.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            episode_id: 'episode-2',
+            operative_summary: { procedure_performed: 'TAH-BSO', ebl_ml: 350 },
+          }),
+        }),
+      );
+      expect(tx.surgicalEpisodeRecord.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            episode_id: 'episode-3',
+            postop_summary: { discharge_decision: 'DISCHARGED' },
+          }),
+        }),
+      );
+      // Per-visit follow-up lands on the visit record.
       expect(tx.visitSurgicalRecord.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             visit_id: VISIT,
-            procedure_performed: 'TAH-BSO',
-            // string → integer coercion for the INT column.
-            estimated_blood_loss_ml: 350,
+            interval_history: 'Recovering well',
           }),
         }),
       );
@@ -248,30 +316,55 @@ describe('SurgicalClinicalService', () => {
       expect(episodeRouter.routeVisitToEpisode).not.toHaveBeenCalled();
     });
 
-    it('re-routes the visit to its phase episode when surgery_date changes, and routes episode-scoped writes to the moved-to episode', async () => {
+    it('writes the operative note to the order-2 episode even from a post-op visit (phase writes are order-keyed, not visit-anchored)', async () => {
+      // The current visit sits on the Post-op (order-3) episode this time.
+      db.visit.findFirst.mockResolvedValue({
+        scheduled_at: new Date('2026-06-25T00:00:00.000Z'),
+        episode: {
+          id: 'episode-3',
+          journey: {
+            id: JOURNEY,
+            patient_id: 'patient-1',
+            care_path: { code: 'OBGYN_SURGICAL' },
+          },
+        },
+      });
+      db.surgicalJourneyRecord.findUnique
+        .mockResolvedValueOnce(journeyRecord())
+        .mockResolvedValueOnce(journeyRecord({ version: 3 }));
+
+      const tx = makeTx();
+      db.$transaction.mockImplementation(
+        (cb: (t: typeof tx) => Promise<number>) => cb(tx),
+      );
+
+      await service.patch(
+        VISIT,
+        JOURNEY,
+        { operative_summary: { procedure_performed: 'TAH-BSO' } },
+        user,
+      );
+
+      // Lands on the Surgery (order-2) episode, not the current (order-3) one.
+      expect(tx.surgicalEpisodeRecord.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ episode_id: 'episode-2' }),
+        }),
+      );
+    });
+
+    it('re-routes the visit onto its phase episode for the timeline when surgery_date changes', async () => {
       db.surgicalJourneyRecord.findUnique
         .mockResolvedValueOnce(journeyRecord())
         .mockResolvedValueOnce(journeyRecord({ version: 3 }));
       episodeRouter.resolveEpisodeOrder.mockReturnValue(3);
-      episodeRouter.routeVisitToEpisode.mockResolvedValue('episode-postop');
+      episodeRouter.routeVisitToEpisode.mockResolvedValue('episode-3');
 
-      const tx = {
-        surgicalJourneyRecordRevision: { create: jest.fn() },
-        surgicalJourneyRecord: {
-          update: jest.fn().mockResolvedValue({
-            version: 3,
-            surgery_date: new Date('2026-06-15T00:00:00.000Z'),
-          }),
-        },
-        surgicalEpisodeRecord: {
-          findUnique: jest.fn().mockResolvedValue(null),
-          create: jest.fn(),
-        },
-        visitSurgicalRecord: {
-          findUnique: jest.fn().mockResolvedValue(null),
-          create: jest.fn(),
-        },
-      };
+      const tx = makeTx();
+      tx.surgicalJourneyRecord.update.mockResolvedValue({
+        version: 3,
+        surgery_date: new Date('2026-06-15T00:00:00.000Z'),
+      });
       db.$transaction.mockImplementation(
         (cb: (t: typeof tx) => Promise<number>) => cb(tx),
       );
@@ -294,10 +387,10 @@ describe('SurgicalClinicalService', () => {
         VISIT,
         3,
       );
-      // Episode-scoped writes land on the moved-to episode, not the stale one.
+      // The post-op blob still lands on the order-3 episode regardless of routing.
       expect(tx.surgicalEpisodeRecord.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ episode_id: 'episode-postop' }),
+          data: expect.objectContaining({ episode_id: 'episode-3' }),
         }),
       );
     });
@@ -308,22 +401,11 @@ describe('SurgicalClinicalService', () => {
         .mockResolvedValueOnce(journeyRecord({ version: 3 }));
       episodeRouter.resolveEpisodeOrder.mockReturnValue(null);
 
-      const tx = {
-        surgicalJourneyRecordRevision: { create: jest.fn() },
-        surgicalJourneyRecord: {
-          update: jest
-            .fn()
-            .mockResolvedValue({ version: 3, surgery_date: null }),
-        },
-        surgicalEpisodeRecord: {
-          findUnique: jest.fn().mockResolvedValue(null),
-          create: jest.fn(),
-        },
-        visitSurgicalRecord: {
-          findUnique: jest.fn().mockResolvedValue(null),
-          create: jest.fn(),
-        },
-      };
+      const tx = makeTx();
+      tx.surgicalJourneyRecord.update.mockResolvedValue({
+        version: 3,
+        surgery_date: null,
+      });
       db.$transaction.mockImplementation(
         (cb: (t: typeof tx) => Promise<number>) => cb(tx),
       );
