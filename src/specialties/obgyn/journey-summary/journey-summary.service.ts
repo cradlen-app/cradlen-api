@@ -54,6 +54,9 @@ interface PregnancyRecordShape {
   pregnancy_type: string | null;
   number_of_fetuses: number | null;
   delivery_plan: unknown;
+  // Pregnancy-wide labs (journey-scoped, one per pregnancy).
+  gtt_result: unknown;
+  anomaly_scan: unknown;
 }
 
 /**
@@ -201,12 +204,7 @@ export class JourneySummaryService {
         ? (record.delivery_plan as Record<string, unknown>)
         : null;
 
-    const flags = await this.buildPregnancyFlags(
-      base.journey_id!,
-      record,
-      ga,
-      outcome,
-    );
+    const flags = this.buildPregnancyFlags(record, ga, outcome);
 
     return {
       ...base,
@@ -217,12 +215,11 @@ export class JourneySummaryService {
     };
   }
 
-  private async buildPregnancyFlags(
-    journeyId: string,
+  private buildPregnancyFlags(
     record: PregnancyRecordShape,
     ga: GestationalAge | null,
     outcome: Record<string, unknown> | null,
-  ): Promise<JourneySummaryFlagDto[]> {
+  ): JourneySummaryFlagDto[] {
     const flags: JourneySummaryFlagDto[] = [];
     const risk = (record.risk_level ?? '').toUpperCase();
     if (risk === 'HIGH') flags.push({ label: 'High risk', severity: 'high' });
@@ -240,20 +237,13 @@ export class JourneySummaryService {
     else if (ga && ga.weeks >= 41)
       flags.push({ label: 'Late-term', severity: 'medium' });
 
-    // Episode labs (GTT / anomaly scan) across the journey's episodes.
-    const episodeRecords =
-      await this.prismaService.db.pregnancyEpisodeRecord.findMany({
-        where: { is_deleted: false, episode: { journey_id: journeyId } },
-        select: { gtt_result: true, anomaly_scan: true },
-      });
-    for (const er of episodeRecords) {
-      const gtt = er.gtt_result as { interpretation?: string } | null;
-      if ((gtt?.interpretation ?? '').toUpperCase().includes('GDM'))
-        flags.push({ label: 'GDM', severity: 'high' });
-      const anomaly = er.anomaly_scan as { result?: string } | null;
-      if ((anomaly?.result ?? '').toUpperCase() === 'ABNORMAL')
-        flags.push({ label: 'Abnormal anomaly scan', severity: 'high' });
-    }
+    // Pregnancy-wide labs (GTT / anomaly scan) — journey-scoped, one per pregnancy.
+    const gtt = record.gtt_result as { interpretation?: string } | null;
+    if ((gtt?.interpretation ?? '').toUpperCase().includes('GDM'))
+      flags.push({ label: 'GDM', severity: 'high' });
+    const anomaly = record.anomaly_scan as { result?: string } | null;
+    if ((anomaly?.result ?? '').toUpperCase() === 'ABNORMAL')
+      flags.push({ label: 'Abnormal anomaly scan', severity: 'high' });
 
     if (outcome) {
       const rawType = outcome.outcome_type;

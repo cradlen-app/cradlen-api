@@ -986,7 +986,6 @@ model Profile {
   patient_obgyn_history_updates    PatientObgynHistory[]            @relation("PatientObgynHistoryUpdatedBy")
   visit_obgyn_encounter_updates    VisitObgynEncounter[]            @relation("VisitObgynEncounterUpdatedBy")
   pregnancy_journey_updates        PregnancyJourneyRecord[]         @relation("PregnancyJourneyRecordUpdatedBy")
-  pregnancy_episode_updates        PregnancyEpisodeRecord[]         @relation("PregnancyEpisodeRecordUpdatedBy")
   visit_pregnancy_updates          VisitPregnancyRecord[]           @relation("VisitPregnancyRecordUpdatedBy")
   visit_fetal_updates              VisitFetalRecord[]               @relation("VisitFetalRecordUpdatedBy")
   surgical_journey_updates         SurgicalJourneyRecord[]          @relation("SurgicalJourneyRecordUpdatedBy")
@@ -1003,7 +1002,6 @@ model Profile {
   prescription_revisions           PrescriptionRevision[]           @relation("PrescriptionRevisedBy")
   prescription_item_revisions      PrescriptionItemRevision[]       @relation("PrescriptionItemRevisedBy")
   pregnancy_journey_revisions      PregnancyJourneyRecordRevision[] @relation("PregnancyJourneyRecordRevisedBy")
-  pregnancy_episode_revisions      PregnancyEpisodeRecordRevision[] @relation("PregnancyEpisodeRecordRevisedBy")
   visit_pregnancy_revisions        VisitPregnancyRecordRevision[]   @relation("VisitPregnancyRecordRevisedBy")
   visit_fetal_revisions            VisitFetalRecordRevision[]       @relation("VisitFetalRecordRevisedBy")
   surgical_journey_revisions       SurgicalJourneyRecordRevision[]  @relation("SurgicalJourneyRecordRevisedBy")
@@ -1650,7 +1648,6 @@ model PatientEpisode {
   started_at           DateTime?
   ended_at             DateTime?
   visits               Visit[]
-  pregnancy_record     PregnancyEpisodeRecord?
   surgical_record      SurgicalEpisodeRecord?
   created_at           DateTime                @default(now())
   updated_at           DateTime                @updatedAt
@@ -2350,6 +2347,11 @@ model PregnancyJourneyRecord {
   number_of_fetuses Int?
   gender            String?
   delivery_plan     Json?
+  // Pregnancy-wide labs (one per pregnancy): anomaly scan, GTT, trimester notes.
+  // Journey-scoped so they pre-fill on every visit like the rest of this record.
+  anomaly_scan      Json?
+  gtt_result        Json?
+  trimester_summary Json?
   version           Int                              @default(1)
   updated_by_id     String?                          @db.Uuid
   updated_by        Profile?                         @relation("PregnancyJourneyRecordUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
@@ -2359,25 +2361,6 @@ model PregnancyJourneyRecord {
   updated_at        DateTime                         @updatedAt
 
   @@map("pregnancy_journey_records")
-}
-
-model PregnancyEpisodeRecord {
-  id                String                           @id @default(uuid()) @db.Uuid
-  episode_id        String                           @unique @db.Uuid
-  episode           PatientEpisode                   @relation(fields: [episode_id], references: [id], onDelete: Cascade)
-  revisions         PregnancyEpisodeRecordRevision[]
-  anomaly_scan      Json?
-  gtt_result        Json?
-  trimester_summary Json?
-  version           Int                              @default(1)
-  updated_by_id     String?                          @db.Uuid
-  updated_by        Profile?                         @relation("PregnancyEpisodeRecordUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
-  is_deleted        Boolean                          @default(false)
-  deleted_at        DateTime?
-  created_at        DateTime                         @default(now())
-  updated_at        DateTime                         @updatedAt
-
-  @@map("pregnancy_episode_records")
 }
 
 model VisitPregnancyRecord {
@@ -2661,22 +2644,6 @@ model PregnancyJourneyRecordRevision {
 
   @@index([entity_id, version])
   @@map("pregnancy_journey_record_revisions")
-}
-
-model PregnancyEpisodeRecordRevision {
-  id              String                 @id @default(uuid()) @db.Uuid
-  entity_id       String                 @db.Uuid
-  entity          PregnancyEpisodeRecord @relation(fields: [entity_id], references: [id], onDelete: Cascade)
-  version         Int
-  snapshot        Json
-  changed_fields  Json
-  revised_by_id   String                 @db.Uuid
-  revised_by      Profile                @relation("PregnancyEpisodeRecordRevisedBy", fields: [revised_by_id], references: [id], onDelete: Cascade)
-  revised_at      DateTime               @default(now())
-  revision_reason String?
-
-  @@index([entity_id, version])
-  @@map("pregnancy_episode_record_revisions")
 }
 
 model VisitPregnancyRecordRevision {
