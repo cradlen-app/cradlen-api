@@ -373,8 +373,9 @@ export const ALLOWED_PATHS = {
   // Surgical clinical surface (journey-centric chart) — the OBGYN_SURGICAL care
   // path. Same flat-envelope/demux model as pregnancy. Scopes:
   //   SURGICAL_JOURNEY → surgical_journey_records (procedure, dates, urgency)
-  //   SURGICAL_EPISODE → surgical_episode_records (phase summaries; JSON blobs)
-  //   SURGICAL_VISIT   → visit_surgical_records   (per-encounter operative note)
+  //   SURGICAL_EPISODE → surgical_episode_records (phase records: pre-op on the
+  //     order-1 episode, operative note on order-2, post-op on order-3; JSON blobs)
+  //   SURGICAL_VISIT   → visit_surgical_records   (per-encounter post-op follow-up)
   // status/created_at/updated_at are read-only display (lifecycle-managed by
   // activation/close); the demux's writable allow-list excludes them.
   SURGICAL_JOURNEY: [
@@ -391,24 +392,41 @@ export const ALLOWED_PATHS = {
     'updated_at',
   ],
   SURGICAL_EPISODE: [
+    // Pre-op assessment (order-1 phase episode)
     'preop_assessment.asa_class',
     'preop_assessment.clearance',
     'preop_assessment.fasting_status',
     'preop_assessment.consent_obtained',
+    'preop_assessment.consent_details',
+    'preop_assessment.pre_op_investigations',
+    'preop_assessment.safety_checklist_signin',
     'preop_assessment.notes',
+    // Operative note (order-2 phase episode) — the single operative record per journey
+    'operative_summary.procedure_performed',
+    'operative_summary.ebl_ml',
+    'operative_summary.duration_minutes',
+    'operative_summary.findings',
+    'operative_summary.complications',
+    'operative_summary.drains',
+    'operative_summary.specimens_sent',
+    'operative_summary.time_out_completed',
+    'operative_summary.sign_out_completed',
+    'operative_summary.immediate_postop',
     'operative_summary.notes',
+    // Post-op episode-level (order-3 phase episode)
+    'postop_summary.histopathology_result',
+    'postop_summary.recovery_milestones',
+    'postop_summary.discharge_decision',
+    'postop_summary.discharge_date',
     'postop_summary.notes',
   ],
   SURGICAL_VISIT: [
-    'procedure_performed',
-    'findings',
-    'estimated_blood_loss_ml',
-    'duration_minutes',
-    'complications',
+    // Per-encounter post-op follow-up (current visit only)
+    'interval_history',
+    'wound_assessment',
     'wound_status',
-    'drains',
+    'plan',
     'recovery_notes',
-    'additional_findings',
   ],
 } as const satisfies Record<BindingNamespace, readonly string[]>;
 

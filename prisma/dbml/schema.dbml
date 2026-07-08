@@ -1603,15 +1603,11 @@ Table visit_surgical_records {
   visit_id String [unique, not null]
   visit visits [not null]
   revisions visit_surgical_record_revisions [not null]
-  procedure_performed String
-  findings Json
-  estimated_blood_loss_ml Int
-  duration_minutes Int
-  complications Json
+  interval_history String
+  wound_assessment String
   wound_status String
-  drains String
+  plan String
   recovery_notes String
-  additional_findings Json
   version Int [not null, default: 1]
   updated_by_id String
   updated_by profiles
