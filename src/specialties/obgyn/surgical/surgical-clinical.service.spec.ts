@@ -60,7 +60,7 @@ describe('SurgicalClinicalService', () => {
   let access: { assertVisitInOrg: jest.Mock };
   let validator: { validatePayload: jest.Mock };
   let eventBus: { publish: jest.Mock };
-  let obgynHistory: { readEnvelope: jest.Mock };
+  let obgynHistory: { readEnvelope: jest.Mock; applyPatch: jest.Mock };
   let episodeRouter: {
     resolveEpisodeOrder: jest.Mock;
     routeVisitToEpisode: jest.Mock;
@@ -95,6 +95,7 @@ describe('SurgicalClinicalService', () => {
     eventBus = { publish: jest.fn() };
     obgynHistory = {
       readEnvelope: jest.fn().mockResolvedValue({ blood_group_rh: 'O_POS' }),
+      applyPatch: jest.fn().mockResolvedValue(undefined),
     };
     episodeRouter = {
       resolveEpisodeOrder: jest.fn().mockReturnValue(null),
@@ -159,9 +160,10 @@ describe('SurgicalClinicalService', () => {
       expect(env.postop_summary).toEqual({ discharge_decision: 'DISCHARGED' });
       // The current visit sits on the Pre-op (order-1) episode.
       expect(env.current_phase_order).toBe(1);
-      // Blood group is always surfaced from OB/GYN history.
+      // Blood group is surfaced RAW (for the editable SELECT) from OB/GYN
+      // history; the linked_summary display formats it.
       expect(obgynHistory.readEnvelope).toHaveBeenCalledWith('patient-1');
-      expect(env.blood_group_rh).toBe('O+');
+      expect(env.blood_group_rh).toBe('O_POS');
       expect(env.linked_summary).toEqual(
         expect.objectContaining({
           kind: 'PATIENT_HISTORY',
@@ -202,8 +204,8 @@ describe('SurgicalClinicalService', () => {
           risk_level: 'HIGH',
         }),
       );
-      // Blood group is still read + surfaced independently of the cesarean link.
-      expect(env.blood_group_rh).toBe('O+');
+      // Blood group is still read + surfaced (raw) independently of the link.
+      expect(env.blood_group_rh).toBe('O_POS');
     });
   });
 
@@ -314,6 +316,33 @@ describe('SurgicalClinicalService', () => {
       // A non-routing edit (procedure_name) must not touch episode routing.
       expect(episodeRouter.resolveEpisodeOrder).not.toHaveBeenCalled();
       expect(episodeRouter.routeVisitToEpisode).not.toHaveBeenCalled();
+    });
+
+    it('writes blood group through to patient OB/GYN history (applyPatch) in-tx', async () => {
+      db.surgicalJourneyRecord.findUnique
+        .mockResolvedValueOnce(journeyRecord())
+        .mockResolvedValueOnce(journeyRecord({ version: 3 }));
+
+      const tx = makeTx();
+      db.$transaction.mockImplementation(
+        (cb: (t: typeof tx) => Promise<number>) => cb(tx),
+      );
+
+      await service.patch(VISIT, JOURNEY, { blood_group_rh: 'A_POS' }, user);
+
+      expect(obgynHistory.applyPatch).toHaveBeenCalledWith(
+        tx,
+        'patient-1',
+        { blood_group_rh: 'A_POS' },
+        null,
+        'profile-A',
+      );
+      expect(eventBus.publish).toHaveBeenCalledWith(
+        CLINICAL_EVENTS.journey.clinicalUpdated,
+        expect.objectContaining({
+          scopes: expect.arrayContaining(['patient_history']),
+        }),
+      );
     });
 
     it('writes the operative note to the order-2 episode even from a post-op visit (phase writes are order-keyed, not visit-anchored)', async () => {
