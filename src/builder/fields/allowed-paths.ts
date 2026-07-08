@@ -307,8 +307,8 @@ export const ALLOWED_PATHS = {
   // template flattens these to the envelope root by binding path (no namespace
   // containers); the backend pregnancy-clinical PATCH demuxes each root key into
   // the right scoped record by namespace. Scopes:
-  //   PREGNANCY_JOURNEY → pregnancy_journey_records (one per pregnancy journey)
-  //   PREGNANCY_EPISODE → pregnancy_episode_records (one per episode; JSON labs)
+  //   PREGNANCY_JOURNEY → pregnancy_journey_records (one per pregnancy journey;
+  //                       includes the pregnancy-wide JSON labs)
   //   PREGNANCY_VISIT   → visit_pregnancy_records   (maternal + shared fetal)
   //   PREGNANCY_FETUS   → visit_fetal_records       (repeatable, per fetus)
   // status/created_at/updated_at are read-only display fields (lifecycle-managed
@@ -323,9 +323,24 @@ export const ALLOWED_PATHS = {
     'pregnancy_type',
     'number_of_fetuses',
     'gender',
+    // Pregnancy-wide labs (one per pregnancy) — moved off the per-trimester
+    // episode record so they pre-fill on every visit like the rest of the journey.
+    'anomaly_scan.date',
+    'anomaly_scan.result',
+    'anomaly_scan.notes',
+    'gtt_result.fasting',
+    'gtt_result.one_hour',
+    'gtt_result.two_hour',
+    'gtt_result.interpretation',
+    'trimester_summary.notes',
     'created_at',
     'updated_at',
   ],
+  // PREGNANCY_EPISODE is RETIRED — the pregnancy labs are now journey-scoped
+  // (see PREGNANCY_JOURNEY). No template binds this namespace anymore; the paths
+  // are kept only because the dormant `PREGNANCY_EPISODE` value still exists in
+  // the Prisma `BindingNamespace` enum (dropping a Postgres enum value is
+  // disproportionate churn), and this map must `satisfies Record<BindingNamespace>`.
   PREGNANCY_EPISODE: [
     'anomaly_scan.date',
     'anomaly_scan.result',

@@ -443,7 +443,6 @@ Table profiles {
   patient_obgyn_history_updates patient_obgyn_histories [not null]
   visit_obgyn_encounter_updates visit_obgyn_encounters [not null]
   pregnancy_journey_updates pregnancy_journey_records [not null]
-  pregnancy_episode_updates pregnancy_episode_records [not null]
   visit_pregnancy_updates visit_pregnancy_records [not null]
   visit_fetal_updates visit_fetal_records [not null]
   surgical_journey_updates surgical_journey_records [not null]
@@ -459,7 +458,6 @@ Table profiles {
   prescription_revisions prescription_revisions [not null]
   prescription_item_revisions prescription_item_revisions [not null]
   pregnancy_journey_revisions pregnancy_journey_record_revisions [not null]
-  pregnancy_episode_revisions pregnancy_episode_record_revisions [not null]
   visit_pregnancy_revisions visit_pregnancy_record_revisions [not null]
   visit_fetal_revisions visit_fetal_record_revisions [not null]
   surgical_journey_revisions surgical_journey_record_revisions [not null]
@@ -954,7 +952,6 @@ Table patient_episodes {
   started_at DateTime
   ended_at DateTime
   visits visits [not null]
-  pregnancy_record pregnancy_episode_records
   surgical_record surgical_episode_records
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
@@ -1473,20 +1470,6 @@ Table pregnancy_journey_records {
   number_of_fetuses Int
   gender String
   delivery_plan Json
-  version Int [not null, default: 1]
-  updated_by_id String
-  updated_by profiles
-  is_deleted Boolean [not null, default: false]
-  deleted_at DateTime
-  created_at DateTime [default: `now()`, not null]
-  updated_at DateTime [not null]
-}
-
-Table pregnancy_episode_records {
-  id String [pk]
-  episode_id String [unique, not null]
-  episode patient_episodes [not null]
-  revisions pregnancy_episode_record_revisions [not null]
   anomaly_scan Json
   gtt_result Json
   trimester_summary Json
@@ -1686,19 +1669,6 @@ Table pregnancy_journey_record_revisions {
   id String [pk]
   entity_id String [not null]
   entity pregnancy_journey_records [not null]
-  version Int [not null]
-  snapshot Json [not null]
-  changed_fields Json [not null]
-  revised_by_id String [not null]
-  revised_by profiles [not null]
-  revised_at DateTime [default: `now()`, not null]
-  revision_reason String
-}
-
-Table pregnancy_episode_record_revisions {
-  id String [pk]
-  entity_id String [not null]
-  entity pregnancy_episode_records [not null]
   version Int [not null]
   snapshot Json [not null]
   changed_fields Json [not null]
@@ -3065,10 +3035,6 @@ Ref: pregnancy_journey_records.journey_id - patient_journeys.id [delete: Cascade
 
 Ref: pregnancy_journey_records.updated_by_id > profiles.id [delete: Set Null]
 
-Ref: pregnancy_episode_records.episode_id - patient_episodes.id [delete: Cascade]
-
-Ref: pregnancy_episode_records.updated_by_id > profiles.id [delete: Set Null]
-
 Ref: visit_pregnancy_records.visit_id - visits.id [delete: Cascade]
 
 Ref: visit_pregnancy_records.updated_by_id > profiles.id [delete: Set Null]
@@ -3112,10 +3078,6 @@ Ref: visit_obgyn_encounter_revisions.revised_by_id > profiles.id [delete: Cascad
 Ref: pregnancy_journey_record_revisions.entity_id > pregnancy_journey_records.id [delete: Cascade]
 
 Ref: pregnancy_journey_record_revisions.revised_by_id > profiles.id [delete: Cascade]
-
-Ref: pregnancy_episode_record_revisions.entity_id > pregnancy_episode_records.id [delete: Cascade]
-
-Ref: pregnancy_episode_record_revisions.revised_by_id > profiles.id [delete: Cascade]
 
 Ref: visit_pregnancy_record_revisions.entity_id > visit_pregnancy_records.id [delete: Cascade]
 

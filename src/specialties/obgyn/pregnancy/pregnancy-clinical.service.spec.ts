@@ -37,6 +37,10 @@ function journeyRecord(over: Record<string, unknown> = {}) {
     pregnancy_type: 'SINGLETON',
     number_of_fetuses: 1,
     gender: null,
+    // Pregnancy-wide labs are journey-scoped (one per pregnancy).
+    anomaly_scan: null,
+    gtt_result: null,
+    trimester_summary: null,
     is_deleted: false,
     created_at: new Date('2026-02-01T00:00:00.000Z'),
     updated_at: new Date('2026-02-01T00:00:00.000Z'),
@@ -51,7 +55,7 @@ describe('PregnancyClinicalService', () => {
   let access: { assertVisitInOrg: jest.Mock };
   let validator: { validatePayload: jest.Mock };
   let eventBus: { publish: jest.Mock };
-  let obgynHistory: { readEnvelope: jest.Mock };
+  let obgynHistory: { readEnvelope: jest.Mock; applyPatch: jest.Mock };
   let episodeRouter: {
     resolveTrimesterOrder: jest.Mock;
     routeVisitToTrimester: jest.Mock;
@@ -63,7 +67,6 @@ describe('PregnancyClinicalService', () => {
         findFirst: jest.fn().mockResolvedValue({
           scheduled_at: new Date('2026-02-15T00:00:00.000Z'),
           episode: {
-            id: 'episode-1',
             journey: {
               id: JOURNEY,
               patient_id: 'patient-1',
@@ -73,7 +76,6 @@ describe('PregnancyClinicalService', () => {
         }),
       },
       pregnancyJourneyRecord: { findUnique: jest.fn() },
-      pregnancyEpisodeRecord: { findUnique: jest.fn().mockResolvedValue(null) },
       visitPregnancyRecord: { findUnique: jest.fn().mockResolvedValue(null) },
       visitFetalRecord: { findMany: jest.fn().mockResolvedValue([]) },
       $transaction: jest.fn(),
@@ -83,6 +85,7 @@ describe('PregnancyClinicalService', () => {
     eventBus = { publish: jest.fn() };
     obgynHistory = {
       readEnvelope: jest.fn().mockResolvedValue({ blood_group_rh: 'A_POS' }),
+      applyPatch: jest.fn().mockResolvedValue(undefined),
     };
     episodeRouter = {
       resolveTrimesterOrder: jest.fn().mockReturnValue(null),
@@ -120,11 +123,37 @@ describe('PregnancyClinicalService', () => {
       expect(env.lmp).toBe('2026-01-01');
       expect(env.ga_lmp).toBe('6w 3d');
       expect(env.edd_lmp).toBe('2026-10-08');
-      // Blood group is folded in read-only from patient OB/GYN history.
+      // Blood group is folded in from patient OB/GYN history.
       expect(obgynHistory.readEnvelope).toHaveBeenCalledWith('patient-1');
-      // Raw enum (A_POS) is formatted to its display label for the surface.
-      expect(env.blood_group_rh).toBe('A+');
+      // Emitted as the RAW enum code so the editable SELECT pre-fills by code
+      // (the Summary mirror renders it as a label via its options).
+      expect(env.blood_group_rh).toBe('A_POS');
       expect(env.fetuses).toEqual([]);
+    });
+
+    it('folds pregnancy-wide labs from the journey record (pre-fills on every visit)', async () => {
+      // Labs live on the journey record — keyed by journey_id, not episode_id —
+      // so a follow-up visit routed to a different trimester episode still reads
+      // them (the reported regression).
+      db.pregnancyJourneyRecord.findUnique.mockResolvedValue(
+        journeyRecord({
+          anomaly_scan: { date: '2026-05-01', result: 'NORMAL' },
+          gtt_result: { fasting: 4.5, interpretation: 'NORMAL' },
+          trimester_summary: { notes: 'Uneventful' },
+        }),
+      );
+
+      const env = await service.get(VISIT, JOURNEY, user);
+
+      expect(env.anomaly_scan).toEqual({
+        date: '2026-05-01',
+        result: 'NORMAL',
+      });
+      expect(env.gtt_result).toEqual({
+        fasting: 4.5,
+        interpretation: 'NORMAL',
+      });
+      expect(env.trimester_summary).toEqual({ notes: 'Uneventful' });
     });
   });
 
@@ -181,7 +210,62 @@ describe('PregnancyClinicalService', () => {
       expect(episodeRouter.routeVisitToTrimester).not.toHaveBeenCalled();
     });
 
-    it('re-routes the visit to its trimester episode when dating changes, and routes episode-scoped writes to the moved-to episode', async () => {
+    it('writes blood group through to OB/GYN history when it changed', async () => {
+      // Mock history currently holds A_POS; submitting a different code writes.
+      db.pregnancyJourneyRecord.findUnique
+        .mockResolvedValueOnce(journeyRecord())
+        .mockResolvedValueOnce(journeyRecord({ version: 3 }));
+
+      const tx = {
+        pregnancyJourneyRecordRevision: { create: jest.fn() },
+        pregnancyJourneyRecord: {
+          update: jest.fn().mockResolvedValue({ version: 3 }),
+        },
+      };
+      db.$transaction.mockImplementation(
+        (cb: (t: typeof tx) => Promise<number>) => cb(tx),
+      );
+
+      await service.patch(VISIT, JOURNEY, { blood_group_rh: 'O_NEG' }, user);
+
+      // Routed to the patient-level single source of truth in the same tx.
+      expect(obgynHistory.applyPatch).toHaveBeenCalledWith(
+        tx,
+        'patient-1',
+        { blood_group_rh: 'O_NEG' },
+        null,
+        'profile-A',
+      );
+      expect(eventBus.publish).toHaveBeenCalledWith(
+        CLINICAL_EVENTS.journey.clinicalUpdated,
+        expect.objectContaining({
+          scopes: expect.arrayContaining(['patient_history']),
+        }),
+      );
+    });
+
+    it('does not write blood group when it is unchanged (no history churn)', async () => {
+      // Mock history already holds A_POS; submitting the same code is a no-op.
+      db.pregnancyJourneyRecord.findUnique
+        .mockResolvedValueOnce(journeyRecord())
+        .mockResolvedValueOnce(journeyRecord({ version: 3 }));
+
+      const tx = {
+        pregnancyJourneyRecordRevision: { create: jest.fn() },
+        pregnancyJourneyRecord: {
+          update: jest.fn().mockResolvedValue({ version: 3 }),
+        },
+      };
+      db.$transaction.mockImplementation(
+        (cb: (t: typeof tx) => Promise<number>) => cb(tx),
+      );
+
+      await service.patch(VISIT, JOURNEY, { blood_group_rh: 'A_POS' }, user);
+
+      expect(obgynHistory.applyPatch).not.toHaveBeenCalled();
+    });
+
+    it('re-routes the visit to its trimester episode when dating changes, and writes the journey-scoped labs on the journey record', async () => {
       db.pregnancyJourneyRecord.findUnique
         .mockResolvedValueOnce(journeyRecord())
         .mockResolvedValueOnce(journeyRecord({ version: 3 }));
@@ -192,11 +276,6 @@ describe('PregnancyClinicalService', () => {
         pregnancyJourneyRecordRevision: { create: jest.fn() },
         pregnancyJourneyRecord: {
           update: jest.fn().mockResolvedValue({ version: 3 }),
-        },
-        pregnancyEpisodeRecordRevision: { create: jest.fn() },
-        pregnancyEpisodeRecord: {
-          findUnique: jest.fn().mockResolvedValue(null),
-          create: jest.fn(),
         },
         visitPregnancyRecord: {
           findUnique: jest.fn().mockResolvedValue(null),
@@ -219,16 +298,17 @@ describe('PregnancyClinicalService', () => {
         { version: 3 },
         new Date('2026-02-15T00:00:00.000Z'),
       );
+      // The visit is still filed under its trimester episode…
       expect(episodeRouter.routeVisitToTrimester).toHaveBeenCalledWith(
         tx,
         JOURNEY,
         VISIT,
         3,
       );
-      // Episode-scoped labs land on the moved-to episode, not the stale one.
-      expect(tx.pregnancyEpisodeRecord.create).toHaveBeenCalledWith(
+      // …but the labs are journey-scoped: they land on the journey record.
+      expect(tx.pregnancyJourneyRecord.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ episode_id: 'episode-3' }),
+          data: expect.objectContaining({ anomaly_scan: { result: 'normal' } }),
         }),
       );
     });
@@ -243,11 +323,6 @@ describe('PregnancyClinicalService', () => {
         pregnancyJourneyRecordRevision: { create: jest.fn() },
         pregnancyJourneyRecord: {
           update: jest.fn().mockResolvedValue({ version: 3 }),
-        },
-        pregnancyEpisodeRecordRevision: { create: jest.fn() },
-        pregnancyEpisodeRecord: {
-          findUnique: jest.fn().mockResolvedValue(null),
-          create: jest.fn(),
         },
         visitPregnancyRecord: {
           findUnique: jest.fn().mockResolvedValue(null),

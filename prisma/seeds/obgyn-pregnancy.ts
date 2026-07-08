@@ -10,7 +10,8 @@
  *     OB/GYN history; created/updated are date-only.
  *   - Journey — dating & profile (editable): LMP (single capture), US dating,
  *     risk, pregnancy type, #fetuses → PREGNANCY_JOURNEY.
- *   - Episode — labs (editable): anomaly scan / GTT / trimester → PREGNANCY_EPISODE.
+ *   - Episode — labs (editable): anomaly scan / GTT / trimester → PREGNANCY_JOURNEY.
+ *     One per pregnancy (journey-scoped), so they pre-fill on every visit.
  *   - Visit — maternal / fetal (editable, fetuses repeatable) → PREGNANCY_VISIT /
  *     PREGNANCY_FETUS.
  *
@@ -26,7 +27,7 @@ import { assertValidConfig } from '../../src/builder/fields/field-config.schema.
 import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 
 const TEMPLATE_CODE = 'obgyn_pregnancy';
-const TEMPLATE_VERSION = 3;
+const TEMPLATE_VERSION = 5;
 
 type FieldType = keyof typeof FIELD_TYPES;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -52,6 +53,20 @@ interface SectionSpec {
 }
 
 const opt = (code: string, label: string) => ({ code, label });
+
+// Blood group / Rh — copied verbatim from the OB/GYN patient-history seed
+// (`general_medical` section). Codes match the `BloodGroupRh` Prisma enum;
+// negative labels use the Unicode minus sign (U+2212).
+const BLOOD_GROUP_OPTS = [
+  opt('A_POS', 'A+'),
+  opt('A_NEG', 'A−'),
+  opt('B_POS', 'B+'),
+  opt('B_NEG', 'B−'),
+  opt('AB_POS', 'AB+'),
+  opt('AB_NEG', 'AB−'),
+  opt('O_POS', 'O+'),
+  opt('O_NEG', 'O−'),
+];
 
 /** A read-only display field in the Summary (mirrors a value owned elsewhere). */
 const display = (
@@ -135,11 +150,14 @@ const SECTIONS: SectionSpec[] = [
         opt('MODERATE', 'Moderate'),
         opt('HIGH', 'High'),
       ]),
-      display(
+      // Blood group — live mirror of the editable SELECT in Dating & profile
+      // (which writes through to the patient's OB/GYN history).
+      mirror(
         'summary_blood_group',
         'Blood group & RH',
-        'PATIENT_OBGYN_HISTORY',
         'blood_group_rh',
+        'SELECT',
+        BLOOD_GROUP_OPTS,
       ),
       mirror('summary_lmp', 'LMP', 'lmp'),
       computed('summary_ga_lmp', 'GA (LMP)', 'ga_lmp', 'ga_from_lmp', ['lmp']),
@@ -261,6 +279,23 @@ const SECTIONS: SectionSpec[] = [
         },
       },
       {
+        // Patient-level blood group — editable here (the pregnancy tab does not
+        // surface the general medical-history section). Writes through to
+        // PatientObgynHistory.blood_group_rh (single source of truth) via the
+        // pregnancy PATCH; the read-only Summary mirrors it.
+        code: 'blood_group_rh',
+        label: 'Blood group / Rh',
+        type: 'SELECT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'blood_group_rh',
+        },
+        config: {
+          ui: { placeholder: 'Ex : O+', colSpan: 4 },
+          validation: { options: BLOOD_GROUP_OPTS },
+        },
+      },
+      {
         code: 'pregnancy_type',
         label: 'Pregnancy type',
         type: 'SELECT',
@@ -307,7 +342,8 @@ const SECTIONS: SectionSpec[] = [
   },
 
   // ---------------------------------------------------------------------------
-  // 3. Episode — labs (editable, JSON columns)
+  // 3. Episode — labs (editable, JSON columns). Journey-scoped (one per
+  //    pregnancy) so they pre-fill on every visit, like the Journey section.
   // ---------------------------------------------------------------------------
   {
     code: 'episode_labs',
@@ -318,7 +354,7 @@ const SECTIONS: SectionSpec[] = [
         code: 'anomaly_scan_date',
         label: 'Anomaly scan date',
         type: 'DATE',
-        binding: { namespace: 'PREGNANCY_EPISODE', path: 'anomaly_scan.date' },
+        binding: { namespace: 'PREGNANCY_JOURNEY', path: 'anomaly_scan.date' },
         config: { ui: { colSpan: 4 } },
       },
       {
@@ -326,7 +362,7 @@ const SECTIONS: SectionSpec[] = [
         label: 'Anomaly scan result',
         type: 'SELECT',
         binding: {
-          namespace: 'PREGNANCY_EPISODE',
+          namespace: 'PREGNANCY_JOURNEY',
           path: 'anomaly_scan.result',
         },
         config: {
@@ -340,14 +376,14 @@ const SECTIONS: SectionSpec[] = [
         code: 'anomaly_scan_notes',
         label: 'Anomaly scan notes',
         type: 'TEXTAREA',
-        binding: { namespace: 'PREGNANCY_EPISODE', path: 'anomaly_scan.notes' },
+        binding: { namespace: 'PREGNANCY_JOURNEY', path: 'anomaly_scan.notes' },
         config: { ui: { colSpan: 4 } },
       },
       {
         code: 'gtt_fasting',
         label: 'GTT fasting',
         type: 'NUMBER',
-        binding: { namespace: 'PREGNANCY_EPISODE', path: 'gtt_result.fasting' },
+        binding: { namespace: 'PREGNANCY_JOURNEY', path: 'gtt_result.fasting' },
         config: { ui: { colSpan: 3, suffix: 'mmol/L', step: 0.1 } },
       },
       {
@@ -355,7 +391,7 @@ const SECTIONS: SectionSpec[] = [
         label: 'GTT 1-hour',
         type: 'NUMBER',
         binding: {
-          namespace: 'PREGNANCY_EPISODE',
+          namespace: 'PREGNANCY_JOURNEY',
           path: 'gtt_result.one_hour',
         },
         config: { ui: { colSpan: 3, suffix: 'mmol/L', step: 0.1 } },
@@ -365,7 +401,7 @@ const SECTIONS: SectionSpec[] = [
         label: 'GTT 2-hour',
         type: 'NUMBER',
         binding: {
-          namespace: 'PREGNANCY_EPISODE',
+          namespace: 'PREGNANCY_JOURNEY',
           path: 'gtt_result.two_hour',
         },
         config: { ui: { colSpan: 3, suffix: 'mmol/L', step: 0.1 } },
@@ -375,7 +411,7 @@ const SECTIONS: SectionSpec[] = [
         label: 'GTT interpretation',
         type: 'SELECT',
         binding: {
-          namespace: 'PREGNANCY_EPISODE',
+          namespace: 'PREGNANCY_JOURNEY',
           path: 'gtt_result.interpretation',
         },
         config: {
@@ -390,7 +426,7 @@ const SECTIONS: SectionSpec[] = [
         label: 'Trimester summary',
         type: 'TEXTAREA',
         binding: {
-          namespace: 'PREGNANCY_EPISODE',
+          namespace: 'PREGNANCY_JOURNEY',
           path: 'trimester_summary.notes',
         },
         config: { ui: { colSpan: 12 } },

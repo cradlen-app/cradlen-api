@@ -25,7 +25,6 @@ describe('JourneySummaryService', () => {
     db = {
       patientJourney: { findFirst: jest.fn() },
       visit: { findFirst: jest.fn().mockResolvedValue(null) },
-      pregnancyEpisodeRecord: { findMany: jest.fn().mockResolvedValue([]) },
     };
     history = {
       readEnvelope: jest.fn().mockResolvedValue({ blood_group_rh: 'O_POS' }),
