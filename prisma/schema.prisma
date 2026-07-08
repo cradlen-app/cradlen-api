@@ -2531,17 +2531,14 @@ model VisitSurgicalRecord {
   visit     Visit                         @relation(fields: [visit_id], references: [id], onDelete: Cascade)
   revisions VisitSurgicalRecordRevision[]
 
-  // Per-encounter operative note. On the surgery-day visit this is the operative
-  // record; on pre-op/post-op visits it captures assessment/recovery findings.
-  procedure_performed     String?
-  findings                Json?
-  estimated_blood_loss_ml Int?
-  duration_minutes        Int?
-  complications           Json?
-  wound_status            String?
-  drains                  String?
-  recovery_notes          String?
-  additional_findings     Json?
+  // Per-encounter post-op follow-up (current visit only). The operative note is
+  // singular per journey and lives on the Surgery phase-episode record
+  // (SurgicalEpisodeRecord.operative_summary), not here.
+  interval_history String?
+  wound_assessment String?
+  wound_status     String?
+  plan             String?
+  recovery_notes   String?
 
   version       Int       @default(1)
   updated_by_id String?   @db.Uuid

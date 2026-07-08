@@ -24,8 +24,6 @@ import { SurgicalEpisodeRouterService } from './surgical-episode-router.service'
 
 const SURGICAL_TEMPLATE_CODE = 'obgyn_surgical';
 
-/** Columns the demux coerces from string → integer before writing. */
-const INT_COLUMNS = new Set(['estimated_blood_loss_ml', 'duration_minutes']);
 /** Columns the demux coerces from string → Date (`@db.Date`). */
 const DATE_COLUMNS = new Set(['planned_date', 'surgery_date']);
 
@@ -41,21 +39,19 @@ const JOURNEY_WRITABLE = [
   'anesthesia_type',
   'urgency',
 ] as const;
-const EPISODE_WRITABLE = [
-  'preop_assessment',
-  'operative_summary',
-  'postop_summary',
+// Each phase blob is a whole-JSON column written to ITS OWN phase-episode record
+// (by episode order), independent of which visit the doctor is on.
+const PHASE_BLOBS = [
+  { order: 1, column: 'preop_assessment' },
+  { order: 2, column: 'operative_summary' },
+  { order: 3, column: 'postop_summary' },
 ] as const;
 const VISIT_WRITABLE = [
-  'procedure_performed',
-  'findings',
-  'estimated_blood_loss_ml',
-  'duration_minutes',
-  'complications',
+  'interval_history',
+  'wound_assessment',
   'wound_status',
-  'drains',
+  'plan',
   'recovery_notes',
-  'additional_findings',
 ] as const;
 
 type Body = Record<string, unknown>;
@@ -113,25 +109,50 @@ export class SurgicalClinicalService
       throw new NotFoundException('No surgical profile for this journey');
     }
 
-    const [episode, visitRecord] = await Promise.all([
-      this.prismaService.db.surgicalEpisodeRecord.findUnique({
-        where: { episode_id: ctx.episodeId },
-      }),
+    // Aggregate ALL three phase-episode records (pre-op / operative / post-op)
+    // so every phase pre-fills from any visit — not just the visit's current
+    // episode. Each phase blob lives on its own order-keyed episode record.
+    const phaseByOrder = await this.loadPhaseEpisodes(journeyId);
+    const episodeIds = [...phaseByOrder.values()];
+    const [episodeRecords, visitRecord] = await Promise.all([
+      episodeIds.length
+        ? this.prismaService.db.surgicalEpisodeRecord.findMany({
+            where: { episode_id: { in: episodeIds } },
+          })
+        : Promise.resolve([]),
       this.prismaService.db.visitSurgicalRecord.findUnique({
         where: { visit_id: visitId },
       }),
     ]);
+    const recordByEpisode = new Map(
+      episodeRecords.map((r) => [r.episode_id, r]),
+    );
+    const phaseRecord = (order: number) => {
+      const episodeId = phaseByOrder.get(order);
+      return episodeId ? (recordByEpisode.get(episodeId) ?? null) : null;
+    };
 
+    // Which phase does the current visit sit in? (drives FE auto-expand)
+    let currentPhaseOrder: number | null = null;
+    for (const [order, episodeId] of phaseByOrder) {
+      if (episodeId === ctx.episodeId) currentPhaseOrder = order;
+    }
+
+    const bloodGroup = await this.readBloodGroup(ctx.patientId);
     const linkedSummary = await this.buildLinkedSummary(
       journeyRecord.source_pregnancy_journey_id,
-      ctx.patientId,
+      bloodGroup,
     );
 
     return this.buildEnvelope(
       journeyRecord,
-      episode,
+      phaseRecord(1),
+      phaseRecord(2),
+      phaseRecord(3),
       visitRecord,
       linkedSummary,
+      bloodGroup,
+      currentPhaseOrder,
     );
   }
 
@@ -194,34 +215,41 @@ export class SurgicalClinicalService
 
         // When the surgery date changed, re-route the (open) visit onto the
         // phase episode (Pre-op/Surgery/Post-op) matching its visit date and
-        // advance the journey's ACTIVE pointer. Episode-scoped writes below then
-        // target the moved-to episode, not the stale one. No surgery date →
-        // leave the visit in place, matching the visit.booked listener.
-        let effectiveEpisodeId = ctx.episodeId;
+        // advance the journey's ACTIVE pointer — for the visit timeline only.
+        // Phase-scoped writes below target each phase's OWN episode by order, so
+        // they no longer depend on where the visit sits. No surgery date → leave
+        // the visit in place, matching the visit.booked listener.
         if ('surgery_date' in journeyData) {
           const order = this.episodeRouter.resolveEpisodeOrder(
             updated.surgery_date,
             ctx.scheduledAt ?? new Date(),
           );
           if (order != null) {
-            const targetEpisodeId =
-              await this.episodeRouter.routeVisitToEpisode(
-                tx,
-                ctx.journeyId,
-                visitId,
-                order,
-              );
-            effectiveEpisodeId = targetEpisodeId ?? ctx.episodeId;
+            await this.episodeRouter.routeVisitToEpisode(
+              tx,
+              ctx.journeyId,
+              visitId,
+              order,
+            );
           }
         }
 
-        await this.upsertEpisode(
-          tx,
-          effectiveEpisodeId,
-          body,
-          profileId,
-          scopes,
-        );
+        // Demux each phase blob to its owning phase-episode record (by order).
+        const phaseByOrder = await this.loadPhaseEpisodes(journeyId, tx);
+        let episodeTouched = false;
+        for (const { order, column } of PHASE_BLOBS) {
+          if (body[column] === undefined) continue;
+          const wrote = await this.upsertEpisodeBlob(
+            tx,
+            phaseByOrder.get(order),
+            column,
+            body[column],
+            profileId,
+          );
+          episodeTouched = episodeTouched || wrote;
+        }
+        if (episodeTouched) scopes.push('episode');
+
         await this.upsertVisit(tx, visitId, body, profileId, scopes);
 
         return updated.version;
@@ -248,21 +276,26 @@ export class SurgicalClinicalService
   // Scoped writers
   // ---------------------------------------------------------------------------
 
-  private async upsertEpisode(
+  /**
+   * Write ONE phase blob (`preop_assessment` / `operative_summary` /
+   * `postop_summary`) to its owning phase-episode record — upserting the record
+   * and shadowing the prior row. Returns whether a write happened.
+   */
+  private async upsertEpisodeBlob(
     tx: Prisma.TransactionClient,
-    episodeId: string,
-    body: Body,
+    episodeId: string | undefined,
+    column: (typeof PHASE_BLOBS)[number]['column'],
+    value: unknown,
     profileId: string,
-    scopes: string[],
-  ) {
-    const data = pickWritable(body, EPISODE_WRITABLE);
-    if (Object.keys(data).length === 0) return;
+  ): Promise<boolean> {
+    if (!episodeId) return false;
+    const data = { [column]: value } as Data;
     const prior = await tx.surgicalEpisodeRecord.findUnique({
       where: { episode_id: episodeId },
     });
     if (prior) {
       await tx.surgicalEpisodeRecordRevision.create({
-        data: buildRevision(prior, Object.keys(data), profileId),
+        data: buildRevision(prior, [column], profileId),
       });
       await tx.surgicalEpisodeRecord.update({
         where: { id: prior.id },
@@ -281,7 +314,7 @@ export class SurgicalClinicalService
         },
       });
     }
-    scopes.push('episode');
+    return true;
   }
 
   private async upsertVisit(
@@ -362,14 +395,42 @@ export class SurgicalClinicalService
     };
   }
 
+  /** The journey's phase episodes (Pre-op=1 / Surgery=2 / Post-op=3) → order→id. */
+  private async loadPhaseEpisodes(
+    journeyId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<Map<number, string>> {
+    const db = tx ?? this.prismaService.db;
+    const episodes = await db.patientEpisode.findMany({
+      where: {
+        journey_id: journeyId,
+        order: { in: [1, 2, 3] },
+        is_deleted: false,
+      },
+      select: { id: true, order: true },
+    });
+    const byOrder = new Map<number, string>();
+    for (const e of episodes) byOrder.set(e.order, e.id);
+    return byOrder;
+  }
+
+  /** The patient's formatted blood group from OB/GYN history (or null). */
+  private async readBloodGroup(patientId: string): Promise<string | null> {
+    const history = await this.obgynHistory.readEnvelope(patientId);
+    return formatBloodGroupRh(
+      (history as { blood_group_rh?: string | null } | null)?.blood_group_rh ??
+        null,
+    );
+  }
+
   /**
    * Read-only cross-journey context for the Summary. A cesarean surgical journey
    * mirrors its source pregnancy journey; any other surgery mirrors the patient's
-   * OB/GYN history. Returns null when neither is available.
+   * OB/GYN history (blood group). Returns null when neither is available.
    */
   private async buildLinkedSummary(
     sourcePregnancyJourneyId: string | null,
-    patientId: string,
+    bloodGroup: string | null,
   ): Promise<Record<string, unknown> | null> {
     if (sourcePregnancyJourneyId) {
       const preg =
@@ -396,25 +457,24 @@ export class SurgicalClinicalService
         };
       }
     }
-    const history = await this.obgynHistory.readEnvelope(patientId);
-    return {
-      kind: 'PATIENT_HISTORY',
-      blood_group_rh: formatBloodGroupRh(
-        (history as { blood_group_rh?: string | null } | null)
-          ?.blood_group_rh ?? null,
-      ),
-    };
+    return { kind: 'PATIENT_HISTORY', blood_group_rh: bloodGroup };
   }
 
   private buildEnvelope(
     journey: Prisma.SurgicalJourneyRecordGetPayload<true>,
-    episode: Prisma.SurgicalEpisodeRecordGetPayload<true> | null,
+    preop: Prisma.SurgicalEpisodeRecordGetPayload<true> | null,
+    operative: Prisma.SurgicalEpisodeRecordGetPayload<true> | null,
+    postop: Prisma.SurgicalEpisodeRecordGetPayload<true> | null,
     visit: Prisma.VisitSurgicalRecordGetPayload<true> | null,
     linkedSummary: Record<string, unknown> | null,
+    bloodGroup: string | null,
+    currentPhaseOrder: number | null,
   ): Record<string, unknown> {
     return {
       journey_id: journey.journey_id,
       version: journey.version,
+      // Which phase the current visit sits in — the FE auto-expands it.
+      current_phase_order: currentPhaseOrder,
 
       // Journey scope. created_at/updated_at are date-only (display).
       status: journey.status,
@@ -429,24 +489,22 @@ export class SurgicalClinicalService
       anesthesia_type: journey.anesthesia_type,
       urgency: journey.urgency,
 
+      // Read-only patient context (from OB/GYN history)
+      blood_group_rh: bloodGroup,
       // Cross-journey context (read-only)
       linked_summary: linkedSummary,
 
-      // Episode scope (JSON phase summaries)
-      preop_assessment: episode?.preop_assessment ?? null,
-      operative_summary: episode?.operative_summary ?? null,
-      postop_summary: episode?.postop_summary ?? null,
+      // Phase scope — each blob sourced from its own phase-episode record.
+      preop_assessment: preop?.preop_assessment ?? null,
+      operative_summary: operative?.operative_summary ?? null,
+      postop_summary: postop?.postop_summary ?? null,
 
-      // Per-visit operative note
-      procedure_performed: visit?.procedure_performed ?? null,
-      findings: visit?.findings ?? null,
-      estimated_blood_loss_ml: visit?.estimated_blood_loss_ml ?? null,
-      duration_minutes: visit?.duration_minutes ?? null,
-      complications: visit?.complications ?? null,
+      // Per-visit post-op follow-up (current visit only)
+      interval_history: visit?.interval_history ?? null,
+      wound_assessment: visit?.wound_assessment ?? null,
       wound_status: visit?.wound_status ?? null,
-      drains: visit?.drains ?? null,
+      plan: visit?.plan ?? null,
       recovery_notes: visit?.recovery_notes ?? null,
-      additional_findings: visit?.additional_findings ?? null,
     };
   }
 }
@@ -457,13 +515,9 @@ function formatDate(date: Date | null): string | null {
   return date.toISOString().slice(0, 10);
 }
 
-/** Coerce a wire value for a column: ints → integer, dates → Date, else as-is. */
+/** Coerce a wire value for a column: dates → Date, else as-is. */
 function coerce(col: string, value: unknown): unknown {
   if (value === undefined || value === null) return value;
-  if (INT_COLUMNS.has(col)) {
-    const n = Number(value);
-    return Number.isFinite(n) ? Math.trunc(n) : null;
-  }
   if (DATE_COLUMNS.has(col)) {
     if (typeof value !== 'string' && typeof value !== 'number') return null;
     const date = new Date(value);
