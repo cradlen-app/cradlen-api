@@ -4,7 +4,7 @@ import {
   NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { BloodGroupRh, Prisma } from '@prisma/client';
 import { PrismaService } from '@infrastructure/database/prisma.service';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { splitDiff } from '@common/utils/id-keyed-diff';
@@ -17,7 +17,6 @@ import { PatientAccessService } from '@core/patient/patient-access/patient-acces
 import { TemplateValidator } from '@builder/validator/template.validator';
 import { buildRevision } from '../revisions.helper';
 import { ObgynHistoryService } from '../patient-history/obgyn-history.service';
-import { formatBloodGroupRh } from '../blood-group.util';
 import { JourneyClinicalHandler } from '../journeys/journey-clinical.handler';
 import { JourneyClinicalRegistry } from '../journeys/journey-clinical.registry';
 import {
@@ -167,10 +166,11 @@ export class PregnancyClinicalService
       // Blood group is patient-level — single source of truth is OB/GYN history.
       this.obgynHistory.readEnvelope(ctx.patientId),
     ]);
-    const bloodGroupRh = formatBloodGroupRh(
+    // Emit the RAW enum code (e.g. O_POS) so the editable SELECT pre-fills by
+    // option code; the Summary mirror renders it as a label via its options.
+    const bloodGroupRh =
       (history as { blood_group_rh?: string | null } | null)?.blood_group_rh ??
-        null,
-    );
+      null;
 
     const asOf = ctx.scheduledAt ?? new Date();
     return this.buildEnvelope(
@@ -267,6 +267,33 @@ export class PregnancyClinicalService
         if (body.fetuses !== undefined) {
           await this.diffFetuses(tx, visitId, body.fetuses, profileId);
           scopes.push('fetus');
+        }
+
+        // Patient-level blood group — written through to PatientObgynHistory
+        // (single source of truth) in THIS transaction, mirroring the
+        // examination tab. The field rides every pregnancy save, so only write
+        // when it actually changed — otherwise every save would churn the
+        // history version + revision. `applyPatch` lazy-creates the singleton,
+        // so setting it when none exists works. `null` If-Match (last-write-wins).
+        if (typeof body.blood_group_rh === 'string' && body.blood_group_rh) {
+          const submitted = body.blood_group_rh as BloodGroupRh;
+          const currentHistory = await this.obgynHistory.readEnvelope(
+            ctx.patientId,
+            tx,
+          );
+          const current =
+            (currentHistory as { blood_group_rh?: string | null } | null)
+              ?.blood_group_rh ?? null;
+          if (current !== submitted) {
+            await this.obgynHistory.applyPatch(
+              tx,
+              ctx.patientId,
+              { blood_group_rh: submitted },
+              null,
+              profileId,
+            );
+            scopes.push('patient_history');
+          }
         }
 
         return updated.version;

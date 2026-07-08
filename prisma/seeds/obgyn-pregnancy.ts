@@ -27,7 +27,7 @@ import { assertValidConfig } from '../../src/builder/fields/field-config.schema.
 import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 
 const TEMPLATE_CODE = 'obgyn_pregnancy';
-const TEMPLATE_VERSION = 4;
+const TEMPLATE_VERSION = 5;
 
 type FieldType = keyof typeof FIELD_TYPES;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -53,6 +53,20 @@ interface SectionSpec {
 }
 
 const opt = (code: string, label: string) => ({ code, label });
+
+// Blood group / Rh — copied verbatim from the OB/GYN patient-history seed
+// (`general_medical` section). Codes match the `BloodGroupRh` Prisma enum;
+// negative labels use the Unicode minus sign (U+2212).
+const BLOOD_GROUP_OPTS = [
+  opt('A_POS', 'A+'),
+  opt('A_NEG', 'A−'),
+  opt('B_POS', 'B+'),
+  opt('B_NEG', 'B−'),
+  opt('AB_POS', 'AB+'),
+  opt('AB_NEG', 'AB−'),
+  opt('O_POS', 'O+'),
+  opt('O_NEG', 'O−'),
+];
 
 /** A read-only display field in the Summary (mirrors a value owned elsewhere). */
 const display = (
@@ -136,11 +150,14 @@ const SECTIONS: SectionSpec[] = [
         opt('MODERATE', 'Moderate'),
         opt('HIGH', 'High'),
       ]),
-      display(
+      // Blood group — live mirror of the editable SELECT in Dating & profile
+      // (which writes through to the patient's OB/GYN history).
+      mirror(
         'summary_blood_group',
         'Blood group & RH',
-        'PATIENT_OBGYN_HISTORY',
         'blood_group_rh',
+        'SELECT',
+        BLOOD_GROUP_OPTS,
       ),
       mirror('summary_lmp', 'LMP', 'lmp'),
       computed('summary_ga_lmp', 'GA (LMP)', 'ga_lmp', 'ga_from_lmp', ['lmp']),
@@ -259,6 +276,23 @@ const SECTIONS: SectionSpec[] = [
               opt('HIGH', 'High'),
             ],
           },
+        },
+      },
+      {
+        // Patient-level blood group — editable here (the pregnancy tab does not
+        // surface the general medical-history section). Writes through to
+        // PatientObgynHistory.blood_group_rh (single source of truth) via the
+        // pregnancy PATCH; the read-only Summary mirrors it.
+        code: 'blood_group_rh',
+        label: 'Blood group / Rh',
+        type: 'SELECT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'blood_group_rh',
+        },
+        config: {
+          ui: { placeholder: 'Ex : O+', colSpan: 4 },
+          validation: { options: BLOOD_GROUP_OPTS },
         },
       },
       {

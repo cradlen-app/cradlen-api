@@ -55,7 +55,7 @@ describe('PregnancyClinicalService', () => {
   let access: { assertVisitInOrg: jest.Mock };
   let validator: { validatePayload: jest.Mock };
   let eventBus: { publish: jest.Mock };
-  let obgynHistory: { readEnvelope: jest.Mock };
+  let obgynHistory: { readEnvelope: jest.Mock; applyPatch: jest.Mock };
   let episodeRouter: {
     resolveTrimesterOrder: jest.Mock;
     routeVisitToTrimester: jest.Mock;
@@ -85,6 +85,7 @@ describe('PregnancyClinicalService', () => {
     eventBus = { publish: jest.fn() };
     obgynHistory = {
       readEnvelope: jest.fn().mockResolvedValue({ blood_group_rh: 'A_POS' }),
+      applyPatch: jest.fn().mockResolvedValue(undefined),
     };
     episodeRouter = {
       resolveTrimesterOrder: jest.fn().mockReturnValue(null),
@@ -122,10 +123,11 @@ describe('PregnancyClinicalService', () => {
       expect(env.lmp).toBe('2026-01-01');
       expect(env.ga_lmp).toBe('6w 3d');
       expect(env.edd_lmp).toBe('2026-10-08');
-      // Blood group is folded in read-only from patient OB/GYN history.
+      // Blood group is folded in from patient OB/GYN history.
       expect(obgynHistory.readEnvelope).toHaveBeenCalledWith('patient-1');
-      // Raw enum (A_POS) is formatted to its display label for the surface.
-      expect(env.blood_group_rh).toBe('A+');
+      // Emitted as the RAW enum code so the editable SELECT pre-fills by code
+      // (the Summary mirror renders it as a label via its options).
+      expect(env.blood_group_rh).toBe('A_POS');
       expect(env.fetuses).toEqual([]);
     });
 
@@ -206,6 +208,61 @@ describe('PregnancyClinicalService', () => {
       // A non-dating edit must not touch episode routing.
       expect(episodeRouter.resolveTrimesterOrder).not.toHaveBeenCalled();
       expect(episodeRouter.routeVisitToTrimester).not.toHaveBeenCalled();
+    });
+
+    it('writes blood group through to OB/GYN history when it changed', async () => {
+      // Mock history currently holds A_POS; submitting a different code writes.
+      db.pregnancyJourneyRecord.findUnique
+        .mockResolvedValueOnce(journeyRecord())
+        .mockResolvedValueOnce(journeyRecord({ version: 3 }));
+
+      const tx = {
+        pregnancyJourneyRecordRevision: { create: jest.fn() },
+        pregnancyJourneyRecord: {
+          update: jest.fn().mockResolvedValue({ version: 3 }),
+        },
+      };
+      db.$transaction.mockImplementation(
+        (cb: (t: typeof tx) => Promise<number>) => cb(tx),
+      );
+
+      await service.patch(VISIT, JOURNEY, { blood_group_rh: 'O_NEG' }, user);
+
+      // Routed to the patient-level single source of truth in the same tx.
+      expect(obgynHistory.applyPatch).toHaveBeenCalledWith(
+        tx,
+        'patient-1',
+        { blood_group_rh: 'O_NEG' },
+        null,
+        'profile-A',
+      );
+      expect(eventBus.publish).toHaveBeenCalledWith(
+        CLINICAL_EVENTS.journey.clinicalUpdated,
+        expect.objectContaining({
+          scopes: expect.arrayContaining(['patient_history']),
+        }),
+      );
+    });
+
+    it('does not write blood group when it is unchanged (no history churn)', async () => {
+      // Mock history already holds A_POS; submitting the same code is a no-op.
+      db.pregnancyJourneyRecord.findUnique
+        .mockResolvedValueOnce(journeyRecord())
+        .mockResolvedValueOnce(journeyRecord({ version: 3 }));
+
+      const tx = {
+        pregnancyJourneyRecordRevision: { create: jest.fn() },
+        pregnancyJourneyRecord: {
+          update: jest.fn().mockResolvedValue({ version: 3 }),
+        },
+      };
+      db.$transaction.mockImplementation(
+        (cb: (t: typeof tx) => Promise<number>) => cb(tx),
+      );
+
+      await service.patch(VISIT, JOURNEY, { blood_group_rh: 'A_POS' }, user);
+
+      expect(obgynHistory.applyPatch).not.toHaveBeenCalled();
     });
 
     it('re-routes the visit to its trimester episode when dating changes, and writes the journey-scoped labs on the journey record', async () => {
