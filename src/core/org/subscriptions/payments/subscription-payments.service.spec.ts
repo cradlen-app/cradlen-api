@@ -189,6 +189,53 @@ describe('SubscriptionPaymentsService', () => {
       expect(amount).toBeLessThan(16000);
     });
 
+    it('caps the prorated amount at one yearly price when the term extends beyond a year', async () => {
+      const now = Date.now();
+      mockDb.subscription.findFirst.mockResolvedValue({
+        id: 'sub-1',
+        status: 'ACTIVE',
+        subscription_plan_id: 'plan-center',
+        ends_at: new Date(now + 3 * 365 * 86_400_000), // stacked renewals: ~3 years remaining
+      });
+      mockDb.addOn.findFirst.mockResolvedValue({
+        id: 'addon-1',
+        subscription_plan_id: 'plan-center',
+      });
+      mockDb.addOnPrice.findFirst.mockResolvedValue({
+        price: new Prisma.Decimal('8000'),
+        currency: 'EGP',
+      });
+      mockDb.subscriptionPayment.create.mockImplementation((args) =>
+        Promise.resolve({
+          id: 'pay-3',
+          created_at: new Date(),
+          verified_at: null,
+          rejection_reason: null,
+          ...args.data,
+        }),
+      );
+      mockInitiate.mockResolvedValue({
+        settlement_mode: 'MANUAL_PROOF',
+        requires_proof: true,
+        instructions: {},
+      });
+
+      await service.create(
+        ORG,
+        {
+          plan: 'center',
+          provider: 'INSTAPAY' as never,
+          add_on_code: 'center_extra_branch',
+          quantity: 2,
+        },
+        USER,
+      );
+
+      const createData =
+        mockDb.subscriptionPayment.create.mock.calls[0][0].data;
+      expect(createData.amount.toString()).toBe('16000');
+    });
+
     it('rejects an add-on purchase without an active paid subscription', async () => {
       mockDb.subscription.findFirst.mockResolvedValue({
         id: 'sub-1',

@@ -366,7 +366,8 @@ export class SubscriptionPaymentsService {
   /**
    * Prorates a yearly price to the days remaining until `endsAt`:
    * `price × quantity × daysRemaining / 365`, rounded to 2 decimals. Clamped to
-   * at least 1 day so a same-day purchase still charges something.
+   * [1, 365] days so a same-day purchase still charges something and a
+   * multi-year term (stacked renewals) never charges more than one year.
    */
   private prorate(
     yearlyPrice: Prisma.Decimal,
@@ -375,9 +376,9 @@ export class SubscriptionPaymentsService {
     endsAt: Date,
   ): Prisma.Decimal {
     const dayMs = 24 * 60 * 60 * 1000;
-    const daysRemaining = Math.max(
-      1,
-      Math.ceil((endsAt.getTime() - from.getTime()) / dayMs),
+    const daysRemaining = Math.min(
+      365,
+      Math.max(1, Math.ceil((endsAt.getTime() - from.getTime()) / dayMs)),
     );
     return yearlyPrice
       .mul(quantity)
