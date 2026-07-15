@@ -648,7 +648,10 @@ export class SubscriptionPaymentsService {
   /**
    * Grants (or increments) one add-on on a subscription, co-terminus with the
    * subscription's current `ends_at`. Reused per line by the ADD_ON and COMBINED
-   * verify branches. Runs inside verify's txn.
+   * verify branches. Runs inside verify's txn. A row that was previously
+   * CANCELLED (e.g. by a plan change) or soft-deleted is reset to the purchased
+   * quantity — incrementing its stale quantity would grant capacity that was
+   * never paid for.
    */
   private async grantAddOn(
     tx: Prisma.TransactionClient,
@@ -656,26 +659,38 @@ export class SubscriptionPaymentsService {
     addOnId: string,
     quantity: number,
   ): Promise<void> {
-    await tx.subscriptionAddOn.upsert({
+    const existing = await tx.subscriptionAddOn.findUnique({
       where: {
         subscription_id_add_on_id: {
           subscription_id: subscription.id,
           add_on_id: addOnId,
         },
       },
-      update: {
-        quantity: { increment: quantity },
+    });
+    if (!existing) {
+      await tx.subscriptionAddOn.create({
+        data: {
+          subscription_id: subscription.id,
+          add_on_id: addOnId,
+          quantity,
+          status: SubscriptionAddOnStatus.ACTIVE,
+          ends_at: subscription.ends_at,
+        },
+      });
+      return;
+    }
+    const isLiveGrant =
+      existing.status === SubscriptionAddOnStatus.ACTIVE &&
+      !existing.is_deleted;
+    await tx.subscriptionAddOn.update({
+      where: { id: existing.id },
+      data: {
+        quantity: isLiveGrant ? { increment: quantity } : quantity,
         status: SubscriptionAddOnStatus.ACTIVE,
+        ...(isLiveGrant ? {} : { starts_at: new Date() }),
         ends_at: subscription.ends_at,
         is_deleted: false,
         deleted_at: null,
-      },
-      create: {
-        subscription_id: subscription.id,
-        add_on_id: addOnId,
-        quantity,
-        status: SubscriptionAddOnStatus.ACTIVE,
-        ends_at: subscription.ends_at,
       },
     });
   }

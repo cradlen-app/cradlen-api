@@ -122,6 +122,12 @@ export class SubscriptionsService {
         'Organization has no subscription',
       );
     }
+    // Add-ons are plan-scoped: hide rows belonging to another plan's catalog
+    // (stale pre-cleanup data) so the response's add-on list and the enforced
+    // limits can never diverge.
+    sub.add_ons = sub.add_ons.filter(
+      (owned) => owned.add_on.subscription_plan_id === sub.subscription_plan_id,
+    );
     return sub;
   }
 
@@ -208,8 +214,23 @@ export class SubscriptionsService {
         ends_at: endsAt,
       },
     });
-    // Co-terminus add-ons renew with the base plan: extend every active add-on
-    // to the new end date so they stay valid for the renewed term.
+    if (sub.subscription_plan_id !== params.subscriptionPlanId) {
+      // Add-ons are plan-scoped: an add-on from the outgoing plan's catalog
+      // does not transfer to the new plan. Cancel it before the extend below
+      // so it stops counting toward limits and drops out of the subscription
+      // response.
+      await client.subscriptionAddOn.updateMany({
+        where: {
+          subscription_id: sub.id,
+          is_deleted: false,
+          status: SubscriptionAddOnStatus.ACTIVE,
+          add_on: { subscription_plan_id: { not: params.subscriptionPlanId } },
+        },
+        data: { status: SubscriptionAddOnStatus.CANCELLED, ends_at: now },
+      });
+    }
+    // Co-terminus add-ons renew with the base plan: extend every surviving
+    // active add-on to the new end date so they stay valid for the renewed term.
     await client.subscriptionAddOn.updateMany({
       where: {
         subscription_id: sub.id,
@@ -394,6 +415,11 @@ export class SubscriptionsService {
     let maxBranches = sub.subscription_plan.max_branches;
     let maxStaff = sub.subscription_plan.max_staff;
     for (const owned of sub.add_ons) {
+      // Plan-scoped: skip stale rows from another plan's catalog (pre-cleanup
+      // data from before add-ons were cancelled on plan change).
+      if (owned.add_on.subscription_plan_id !== sub.subscription_plan_id) {
+        continue;
+      }
       maxBranches += owned.add_on.delta_branches * owned.quantity;
       maxStaff += owned.add_on.delta_users * owned.quantity;
     }
@@ -406,9 +432,11 @@ export class SubscriptionsService {
 
   /**
    * Effective caps the org *would* have on a TARGET plan = the target plan's base
-   * limits + the org's currently-ACTIVE add-on deltas + any `cartAddOns` being
-   * purchased in the same checkout (combined plan+seats). Used by
-   * `assertUsageFitsPlan` to decide whether a plan change/purchase fits.
+   * limits + the org's currently-ACTIVE add-ons **belonging to the target plan's
+   * catalog** (add-ons are plan-scoped and do not transfer across plan changes)
+   * + any `cartAddOns` being purchased in the same checkout (combined
+   * plan+seats). Used by `assertUsageFitsPlan` to decide whether a plan
+   * change/purchase fits.
    */
   async getEffectiveLimitsForPlan(
     targetPlanId: string,
@@ -423,6 +451,7 @@ export class SubscriptionsService {
           subscription: { organization_id: organizationId, is_deleted: false },
           is_deleted: false,
           status: SubscriptionAddOnStatus.ACTIVE,
+          add_on: { subscription_plan_id: targetPlanId },
           OR: [{ ends_at: null }, { ends_at: { gt: new Date() } }],
         },
         include: { add_on: true },

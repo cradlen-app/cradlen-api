@@ -15,7 +15,11 @@ const mockDb = {
   addOn: { findFirst: jest.fn() },
   addOnPrice: { findFirst: jest.fn() },
   subscription: { findFirst: jest.fn() },
-  subscriptionAddOn: { upsert: jest.fn() },
+  subscriptionAddOn: {
+    findUnique: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+  },
   subscriptionPayment: {
     create: jest.fn(),
     findFirst: jest.fn(),
@@ -296,7 +300,14 @@ describe('SubscriptionPaymentsService', () => {
         id: 'sub-1',
         ends_at: new Date('2027-01-01T00:00:00Z'),
       });
-      mockDb.subscriptionAddOn.upsert.mockResolvedValue({ id: 'sao-1' });
+      // Already owns 1 of this add-on (live grant → increment).
+      mockDb.subscriptionAddOn.findUnique.mockResolvedValue({
+        id: 'sao-1',
+        status: 'ACTIVE',
+        is_deleted: false,
+        quantity: 1,
+      });
+      mockDb.subscriptionAddOn.update.mockResolvedValue({ id: 'sao-1' });
       mockDb.subscriptionPayment.update.mockImplementation((args) =>
         Promise.resolve({
           id: 'pay-2',
@@ -319,14 +330,17 @@ describe('SubscriptionPaymentsService', () => {
       const result = await service.verifyPayment('pay-2', 'admin-1');
 
       expect(activateMock).not.toHaveBeenCalled();
-      expect(mockDb.subscriptionAddOn.upsert).toHaveBeenCalledWith(
+      expect(mockDb.subscriptionAddOn.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          update: expect.objectContaining({
+          where: { id: 'sao-1' },
+          data: expect.objectContaining({
             quantity: { increment: 2 },
+            status: 'ACTIVE',
             ends_at: new Date('2027-01-01T00:00:00Z'),
           }),
         }),
       );
+      expect(mockDb.subscriptionAddOn.create).not.toHaveBeenCalled();
       expect(result.status).toBe(SubscriptionPaymentStatus.VERIFIED);
       expect(publishMock).toHaveBeenCalledWith(
         'subscription.addon.granted',
@@ -365,7 +379,9 @@ describe('SubscriptionPaymentsService', () => {
         id: 'sub-1',
         ends_at: new Date('2027-01-01T00:00:00Z'),
       });
-      mockDb.subscriptionAddOn.upsert.mockResolvedValue({ id: 'sao-1' });
+      // First purchase of this add-on → a new row is created.
+      mockDb.subscriptionAddOn.findUnique.mockResolvedValue(null);
+      mockDb.subscriptionAddOn.create.mockResolvedValue({ id: 'sao-1' });
       mockDb.subscriptionPayment.update.mockImplementation((args) =>
         Promise.resolve({
           id: 'pay-3',
@@ -397,9 +413,15 @@ describe('SubscriptionPaymentsService', () => {
         expect.objectContaining({ subscriptionPlanId: 'plan-individual' }),
         mockDb,
       );
-      expect(mockDb.subscriptionAddOn.upsert).toHaveBeenCalledWith(
+      expect(mockDb.subscriptionAddOn.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          update: expect.objectContaining({ quantity: { increment: 3 } }),
+          data: expect.objectContaining({
+            subscription_id: 'sub-1',
+            add_on_id: 'seat',
+            quantity: 3,
+            status: 'ACTIVE',
+            ends_at: new Date('2027-01-01T00:00:00Z'),
+          }),
         }),
       );
       expect(result.status).toBe(SubscriptionPaymentStatus.VERIFIED);
@@ -411,6 +433,68 @@ describe('SubscriptionPaymentsService', () => {
         'subscription.addon.granted',
         expect.objectContaining({ add_on_id: 'seat', quantity: 3 }),
       );
+    });
+
+    it('re-granting a previously cancelled add-on resets quantity instead of incrementing', async () => {
+      // Plan round-trip: the row was CANCELLED when the org changed plans, so
+      // its stale quantity must not be resurrected by an increment.
+      mockDb.subscriptionPayment.findFirst.mockResolvedValue({
+        id: 'pay-4',
+        organization_id: ORG,
+        subscription_id: 'sub-1',
+        subscription_plan_id: 'plan-center',
+        purpose: 'ADD_ON',
+        add_on_id: 'addon-1',
+        quantity: 1,
+        billing_interval: 'YEARLY',
+        status: SubscriptionPaymentStatus.AWAITING_VERIFICATION,
+      });
+      mockDb.subscription.findFirst.mockResolvedValue({
+        id: 'sub-1',
+        ends_at: new Date('2027-01-01T00:00:00Z'),
+      });
+      mockDb.subscriptionAddOn.findUnique.mockResolvedValue({
+        id: 'sao-1',
+        status: 'CANCELLED',
+        is_deleted: false,
+        quantity: 2,
+      });
+      mockDb.subscriptionAddOn.update.mockResolvedValue({ id: 'sao-1' });
+      mockDb.subscriptionPayment.update.mockImplementation((args) =>
+        Promise.resolve({
+          id: 'pay-4',
+          organization_id: ORG,
+          subscription_plan_id: 'plan-center',
+          purpose: 'ADD_ON',
+          add_on_id: 'addon-1',
+          quantity: 1,
+          provider: 'INSTAPAY',
+          billing_interval: 'YEARLY',
+          amount: new Prisma.Decimal('2000'),
+          currency: 'EGP',
+          created_at: new Date(),
+          verified_at: new Date(),
+          rejection_reason: null,
+          ...args.data,
+        }),
+      );
+
+      await service.verifyPayment('pay-4', 'admin-1');
+
+      expect(mockDb.subscriptionAddOn.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'sao-1' },
+          data: expect.objectContaining({
+            quantity: 1, // reset, not { increment: 1 } on the stale 2
+            status: 'ACTIVE',
+            starts_at: expect.any(Date),
+            ends_at: new Date('2027-01-01T00:00:00Z'),
+            is_deleted: false,
+            deleted_at: null,
+          }),
+        }),
+      );
+      expect(mockDb.subscriptionAddOn.create).not.toHaveBeenCalled();
     });
 
     it('rejects verifying a payment that is not awaiting verification', async () => {
