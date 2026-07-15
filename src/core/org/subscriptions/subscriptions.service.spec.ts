@@ -111,6 +111,7 @@ describe('SubscriptionsService', () => {
     it('sums active add-on deltas (× quantity) onto the base plan', async () => {
       mockDb.subscription.findFirst.mockResolvedValue({
         status: SubscriptionStatus.ACTIVE,
+        subscription_plan_id: 'plan-center',
         subscription_plan: {
           max_branches: 1,
           max_staff: 10,
@@ -118,15 +119,59 @@ describe('SubscriptionsService', () => {
         },
         add_ons: [
           // center extra-branch: +1 branch, +5 users
-          { quantity: 1, add_on: { delta_branches: 1, delta_users: 5 } },
+          {
+            quantity: 1,
+            add_on: {
+              subscription_plan_id: 'plan-center',
+              delta_branches: 1,
+              delta_users: 5,
+            },
+          },
           // 3 extra user seats
-          { quantity: 3, add_on: { delta_branches: 0, delta_users: 1 } },
+          {
+            quantity: 3,
+            add_on: {
+              subscription_plan_id: 'plan-center',
+              delta_branches: 0,
+              delta_users: 1,
+            },
+          },
         ],
       });
 
       await expect(service.getEffectiveLimits('org-1')).resolves.toEqual({
         max_branches: 2,
         max_staff: 18,
+        max_organizations: 1,
+      });
+    });
+
+    it('ignores stale add-ons belonging to another plan', async () => {
+      // Pre-cleanup data: the org changed plans before add-ons were cancelled
+      // on plan change, so an old plan's add-on row is still ACTIVE.
+      mockDb.subscription.findFirst.mockResolvedValue({
+        status: SubscriptionStatus.ACTIVE,
+        subscription_plan_id: 'plan-individual',
+        subscription_plan: {
+          max_branches: 1,
+          max_staff: 2,
+          max_organizations: 1,
+        },
+        add_ons: [
+          {
+            quantity: 1,
+            add_on: {
+              subscription_plan_id: 'plan-center',
+              delta_branches: 1,
+              delta_users: 5,
+            },
+          },
+        ],
+      });
+
+      await expect(service.getEffectiveLimits('org-1')).resolves.toEqual({
+        max_branches: 1,
+        max_staff: 2,
         max_organizations: 1,
       });
     });
@@ -293,6 +338,41 @@ describe('SubscriptionsService', () => {
       ).resolves.toBeUndefined();
     });
 
+    it('queries only owned add-ons belonging to the target plan (plan-scoped)', async () => {
+      mockDb.subscriptionPlan.findUnique.mockResolvedValue({
+        max_branches: 1,
+        max_staff: 2,
+      });
+      mockDb.subscriptionAddOn.findMany.mockResolvedValue([]);
+      mockUsage(2);
+
+      await service.assertUsageFitsPlan('org-1', 'plan-individual');
+
+      expect(mockDb.subscriptionAddOn.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            add_on: { subscription_plan_id: 'plan-individual' },
+          }),
+        }),
+      );
+    });
+
+    it('counts owned target-plan add-ons toward the target limits', async () => {
+      // Individual base 2 staff + 3 owned individual seats = 5 ≥ 5 staff.
+      mockDb.subscriptionPlan.findUnique.mockResolvedValue({
+        max_branches: 1,
+        max_staff: 2,
+      });
+      mockDb.subscriptionAddOn.findMany.mockResolvedValue([
+        { quantity: 3, add_on: { delta_branches: 0, delta_users: 1 } },
+      ]);
+      mockUsage(5);
+
+      await expect(
+        service.assertUsageFitsPlan('org-1', 'plan-individual'),
+      ).resolves.toBeUndefined();
+    });
+
     it('allows an over-base downgrade when the cart adds enough seats', async () => {
       // Individual base 2 + 3 cart seats (delta_users 1 each) = 5 ≥ 5 staff.
       mockDb.subscriptionPlan.findUnique.mockResolvedValue({
@@ -402,6 +482,7 @@ describe('SubscriptionsService', () => {
       const now = Date.now();
       mockDb.subscription.findFirst.mockResolvedValue({
         id: 'sub-1',
+        subscription_plan_id: 'plan-1',
         ends_at: new Date(now - 86_400_000),
       });
       mockDb.subscription.update.mockImplementation((args) =>
@@ -426,6 +507,7 @@ describe('SubscriptionsService', () => {
       const future = new Date('2027-01-01T00:00:00Z');
       mockDb.subscription.findFirst.mockResolvedValue({
         id: 'sub-1',
+        subscription_plan_id: 'plan-1',
         ends_at: future,
       });
       mockDb.subscription.update.mockImplementation((args) =>
@@ -446,6 +528,7 @@ describe('SubscriptionsService', () => {
       const future = new Date('2027-01-01T00:00:00Z');
       mockDb.subscription.findFirst.mockResolvedValue({
         id: 'sub-1',
+        subscription_plan_id: 'plan-1',
         ends_at: future,
       });
       mockDb.subscription.update.mockImplementation((args) =>
@@ -467,6 +550,64 @@ describe('SubscriptionsService', () => {
           data: { ends_at: new Date('2028-01-01T00:00:00Z') },
         }),
       );
+    });
+
+    it('renewal onto the same plan never cancels add-ons', async () => {
+      mockDb.subscription.findFirst.mockResolvedValue({
+        id: 'sub-1',
+        subscription_plan_id: 'plan-1',
+        ends_at: new Date('2027-01-01T00:00:00Z'),
+      });
+      mockDb.subscription.update.mockImplementation((args) =>
+        Promise.resolve({ id: 'sub-1', ...args.data }),
+      );
+
+      await service.activate({
+        organizationId: 'org-1',
+        subscriptionPlanId: 'plan-1',
+        billingInterval: BillingInterval.YEARLY,
+      });
+
+      // Only the co-terminus extend runs — no CANCELLED write.
+      expect(mockDb.subscriptionAddOn.updateMany).toHaveBeenCalledTimes(1);
+      const call = mockDb.subscriptionAddOn.updateMany.mock.calls[0][0];
+      expect(call.data.status).toBeUndefined();
+    });
+
+    it('cancels add-ons from the outgoing plan on a plan change', async () => {
+      mockDb.subscription.findFirst.mockResolvedValue({
+        id: 'sub-1',
+        subscription_plan_id: 'plan-old',
+        ends_at: new Date('2027-01-01T00:00:00Z'),
+      });
+      mockDb.subscription.update.mockImplementation((args) =>
+        Promise.resolve({ id: 'sub-1', ...args.data }),
+      );
+
+      await service.activate({
+        organizationId: 'org-1',
+        subscriptionPlanId: 'plan-new',
+        billingInterval: BillingInterval.YEARLY,
+      });
+
+      expect(mockDb.subscriptionAddOn.updateMany).toHaveBeenCalledTimes(2);
+      const [cancelCall, extendCall] =
+        mockDb.subscriptionAddOn.updateMany.mock.calls.map((c) => c[0]);
+      // First: cancel every active add-on not belonging to the new plan.
+      expect(cancelCall.where).toMatchObject({
+        subscription_id: 'sub-1',
+        status: 'ACTIVE',
+        add_on: { subscription_plan_id: { not: 'plan-new' } },
+      });
+      expect(cancelCall.data).toMatchObject({
+        status: 'CANCELLED',
+        ends_at: expect.any(Date),
+      });
+      // Then: extend the surviving (new-plan) add-ons co-terminus.
+      expect(extendCall.where.add_on).toBeUndefined();
+      expect(extendCall.data).toEqual({
+        ends_at: new Date('2028-01-01T00:00:00Z'),
+      });
     });
   });
 });
