@@ -21,6 +21,7 @@ import { JourneyClinicalHandler } from '../journeys/journey-clinical.handler';
 import { JourneyClinicalRegistry } from '../journeys/journey-clinical.registry';
 import { SURGICAL_CARE_PATH_CODE } from './surgical-care-path.guard';
 import { SurgicalEpisodeRouterService } from './surgical-episode-router.service';
+import { historyRowPatchForSurgicalActivation } from './surgical-history-sync.util';
 
 const SURGICAL_TEMPLATE_CODE = 'obgyn_surgical';
 
@@ -214,6 +215,25 @@ export class SurgicalClinicalService
             version: { increment: 1 },
           },
         });
+
+        // Surgical-history sync: the activation drawer opens the profile with
+        // no details, so the Journey-section save is where procedure/date
+        // actually become known — refresh the journey-tagged `gyn_surgeries`
+        // row from the updated record. ACTIVE-only (a post-close edit must
+        // never regress the finalized outcome back to PLANNED); the upsert's
+        // idempotency guard skips the write when nothing relevant changed.
+        if (
+          Object.keys(journeyData).length > 0 &&
+          updated.status === 'ACTIVE'
+        ) {
+          await this.obgynHistory.upsertJourneyGynSurgeryRow(
+            tx,
+            ctx.patientId,
+            journeyId,
+            historyRowPatchForSurgicalActivation(updated),
+            profileId,
+          );
+        }
 
         // When the surgery date changed, re-route the (open) visit onto the
         // phase episode (Pre-op/Surgery/Post-op) matching its visit date and

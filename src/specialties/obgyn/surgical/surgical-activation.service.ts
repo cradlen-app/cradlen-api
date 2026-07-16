@@ -156,6 +156,34 @@ export class SurgicalActivationService {
     const patientId = journey.patient_id;
     const sourcePregnancyJourneyId = activePregnancy ? oldJourneyId : null;
 
+    // Cesarean handoff default: the handoff IS a cesarean (the pregnancy is
+    // closed with a cesarean delivery in this same request), so when the
+    // drawer supplies no procedure, resolve the seeded CESAREAN_SECTION
+    // catalog row — the record, the Surgical tab, and the history row are
+    // then labeled from the start instead of opening blank.
+    let procedure = {
+      id: dto.procedure_id ?? null,
+      code: dto.procedure_code ?? null,
+      name: dto.procedure_name ?? null,
+    };
+    if (
+      activePregnancy &&
+      dto.pregnancy_outcome &&
+      !procedure.id &&
+      !procedure.code &&
+      !procedure.name
+    ) {
+      const cesarean = await this.prismaService.db.procedure.findFirst({
+        where: { code: 'CESAREAN_SECTION', is_deleted: false },
+        select: { id: true, code: true, name: true },
+      });
+      procedure = cesarean ?? {
+        id: null,
+        code: 'CESAREAN_SECTION',
+        name: 'Cesarean section',
+      };
+    }
+
     // A surgical journey is its OWN journey: optionally close the active pregnancy
     // (cesarean handoff), complete the current journey, open a fresh surgical
     // journey + episodes, re-point the current visit onto the phase episode, and
@@ -256,9 +284,9 @@ export class SurgicalActivationService {
         data: {
           journey_id: newJourney.id,
           status: 'ACTIVE',
-          procedure_id: dto.procedure_id ?? null,
-          procedure_code: dto.procedure_code ?? null,
-          procedure_name: dto.procedure_name ?? null,
+          procedure_id: procedure.id,
+          procedure_code: procedure.code,
+          procedure_name: procedure.name,
           indication: dto.indication ?? null,
           planned_date: dto.planned_date ? new Date(dto.planned_date) : null,
           surgery_date: dto.surgery_date ? new Date(dto.surgery_date) : null,
@@ -283,7 +311,11 @@ export class SurgicalActivationService {
         tx,
         patientId,
         newJourney.id,
-        historyRowPatchForSurgicalActivation(dto),
+        historyRowPatchForSurgicalActivation({
+          ...dto,
+          procedure_code: procedure.code,
+          procedure_name: procedure.name,
+        }),
         user.profileId,
       );
 

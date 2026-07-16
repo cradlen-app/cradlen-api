@@ -41,6 +41,7 @@ describe('SurgicalActivationService', () => {
       surgicalJourneyRecord: { findFirst: jest.fn() },
       pregnancyJourneyRecord: { findFirst: jest.fn() },
       carePath: { findFirst: jest.fn() },
+      procedure: { findFirst: jest.fn().mockResolvedValue(null) },
       $transaction: jest.fn(),
     };
     access = { assertVisitInOrg: jest.fn().mockResolvedValue(undefined) };
@@ -241,6 +242,104 @@ describe('SurgicalActivationService', () => {
         'profile-A',
       );
       expect(result.status).toBe('ACTIVE');
+    });
+
+    it('cesarean handoff with no procedure supplied defaults to the CESAREAN_SECTION catalog row', async () => {
+      liveJourney('OBGYN_PREGNANCY');
+      db.surgicalJourneyRecord.findFirst.mockResolvedValue(null);
+      db.carePath.findFirst.mockResolvedValue({
+        id: 'cp-surg',
+        journey_template_id: 'jt-surg',
+      });
+      db.pregnancyJourneyRecord.findFirst.mockResolvedValue({
+        id: 'pjr-1',
+        version: 2,
+      });
+      db.procedure.findFirst.mockResolvedValue({
+        id: 'proc-ces',
+        code: 'CESAREAN_SECTION',
+        name: 'Cesarean section',
+      });
+      const tx = txObject();
+      db.$transaction.mockImplementation((cb: (t: typeof tx) => unknown) =>
+        cb(tx),
+      );
+
+      await service.activate(
+        VISIT,
+        {
+          pregnancy_outcome: {
+            outcome_type: 'LIVE_BIRTH',
+            delivery_mode: 'CESAREAN',
+          },
+        },
+        user,
+      );
+
+      expect(db.procedure.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ code: 'CESAREAN_SECTION' }),
+        }),
+      );
+      expect(tx.surgicalJourneyRecord.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            procedure_id: 'proc-ces',
+            procedure_code: 'CESAREAN_SECTION',
+            procedure_name: 'Cesarean section',
+          }),
+        }),
+      );
+      expect(obgynHistory.upsertJourneyGynSurgeryRow).toHaveBeenCalledWith(
+        tx,
+        'patient-1',
+        'journey-SURG',
+        expect.objectContaining({
+          outcome: 'PLANNED',
+          procedure_code: 'CESAREAN_SECTION',
+          procedure_name: 'Cesarean section',
+        }),
+        'profile-A',
+      );
+    });
+
+    it('cesarean handoff falls back to a literal cesarean label when the catalog row is missing', async () => {
+      liveJourney('OBGYN_PREGNANCY');
+      db.surgicalJourneyRecord.findFirst.mockResolvedValue(null);
+      db.carePath.findFirst.mockResolvedValue({
+        id: 'cp-surg',
+        journey_template_id: 'jt-surg',
+      });
+      db.pregnancyJourneyRecord.findFirst.mockResolvedValue({
+        id: 'pjr-1',
+        version: 2,
+      });
+      db.procedure.findFirst.mockResolvedValue(null);
+      const tx = txObject();
+      db.$transaction.mockImplementation((cb: (t: typeof tx) => unknown) =>
+        cb(tx),
+      );
+
+      await service.activate(
+        VISIT,
+        {
+          pregnancy_outcome: {
+            outcome_type: 'LIVE_BIRTH',
+            delivery_mode: 'CESAREAN',
+          },
+        },
+        user,
+      );
+
+      expect(tx.surgicalJourneyRecord.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            procedure_id: null,
+            procedure_code: 'CESAREAN_SECTION',
+            procedure_name: 'Cesarean section',
+          }),
+        }),
+      );
     });
 
     it('general surgery (no pregnancy): opens a surgical journey with no source link', async () => {

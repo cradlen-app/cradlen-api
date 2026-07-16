@@ -66,6 +66,22 @@ describe('historyRowPatchForSurgicalActivation', () => {
       outcome: 'PLANNED',
     });
   });
+
+  it('accepts a SurgicalJourneyRecord-shaped source (Date columns, null fields)', () => {
+    expect(
+      historyRowPatchForSurgicalActivation({
+        procedure_code: 'CESAREAN_SECTION',
+        procedure_name: 'Cesarean section',
+        surgery_date: new Date('2026-07-20T00:00:00.000Z'),
+        planned_date: null,
+      }),
+    ).toEqual({
+      outcome: 'PLANNED',
+      procedure_code: 'CESAREAN_SECTION',
+      procedure_name: 'Cesarean section',
+      surgery_date: '2026-07-20',
+    });
+  });
 });
 
 describe('historyRowPatchForSurgicalClose', () => {

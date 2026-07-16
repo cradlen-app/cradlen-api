@@ -60,7 +60,11 @@ describe('SurgicalClinicalService', () => {
   let access: { assertVisitInOrg: jest.Mock };
   let validator: { validatePayload: jest.Mock };
   let eventBus: { publish: jest.Mock };
-  let obgynHistory: { readEnvelope: jest.Mock; applyPatch: jest.Mock };
+  let obgynHistory: {
+    readEnvelope: jest.Mock;
+    applyPatch: jest.Mock;
+    upsertJourneyGynSurgeryRow: jest.Mock;
+  };
   let episodeRouter: {
     resolveEpisodeOrder: jest.Mock;
     routeVisitToEpisode: jest.Mock;
@@ -96,6 +100,7 @@ describe('SurgicalClinicalService', () => {
     obgynHistory = {
       readEnvelope: jest.fn().mockResolvedValue({ blood_group_rh: 'O_POS' }),
       applyPatch: jest.fn().mockResolvedValue(undefined),
+      upsertJourneyGynSurgeryRow: jest.fn().mockResolvedValue(undefined),
     };
     episodeRouter = {
       resolveEpisodeOrder: jest.fn().mockReturnValue(null),
@@ -443,6 +448,97 @@ describe('SurgicalClinicalService', () => {
 
       expect(episodeRouter.resolveEpisodeOrder).toHaveBeenCalled();
       expect(episodeRouter.routeVisitToEpisode).not.toHaveBeenCalled();
+    });
+
+    it('re-syncs the gyn_surgeries history row from the updated ACTIVE record on a Journey-section save', async () => {
+      db.surgicalJourneyRecord.findUnique
+        .mockResolvedValueOnce(journeyRecord())
+        .mockResolvedValueOnce(journeyRecord({ version: 3 }));
+
+      const tx = makeTx();
+      tx.surgicalJourneyRecord.update.mockResolvedValue({
+        version: 3,
+        status: 'ACTIVE',
+        procedure_code: 'CESAREAN_SECTION',
+        procedure_name: 'Cesarean section',
+        surgery_date: new Date('2026-07-20T00:00:00.000Z'),
+        planned_date: null,
+      });
+      db.$transaction.mockImplementation(
+        (cb: (t: typeof tx) => Promise<number>) => cb(tx),
+      );
+
+      await service.patch(
+        VISIT,
+        JOURNEY,
+        {
+          procedure_name: 'Cesarean section',
+          procedure_code: 'CESAREAN_SECTION',
+        },
+        user,
+      );
+
+      expect(obgynHistory.upsertJourneyGynSurgeryRow).toHaveBeenCalledWith(
+        tx,
+        'patient-1',
+        JOURNEY,
+        {
+          outcome: 'PLANNED',
+          procedure_code: 'CESAREAN_SECTION',
+          procedure_name: 'Cesarean section',
+          surgery_date: '2026-07-20',
+        },
+        'profile-A',
+      );
+    });
+
+    it('does NOT touch the history row when only phase/visit fields are saved', async () => {
+      db.surgicalJourneyRecord.findUnique
+        .mockResolvedValueOnce(journeyRecord())
+        .mockResolvedValueOnce(journeyRecord({ version: 3 }));
+
+      const tx = makeTx();
+      tx.surgicalJourneyRecord.update.mockResolvedValue({
+        version: 3,
+        status: 'ACTIVE',
+      });
+      db.$transaction.mockImplementation(
+        (cb: (t: typeof tx) => Promise<number>) => cb(tx),
+      );
+
+      await service.patch(
+        VISIT,
+        JOURNEY,
+        { interval_history: 'Recovering well' },
+        user,
+      );
+
+      expect(obgynHistory.upsertJourneyGynSurgeryRow).not.toHaveBeenCalled();
+    });
+
+    it('does NOT regress a CLOSED journey — no history sync on post-close edits', async () => {
+      db.surgicalJourneyRecord.findUnique
+        .mockResolvedValueOnce(journeyRecord({ status: 'CLOSED' }))
+        .mockResolvedValueOnce(journeyRecord({ status: 'CLOSED', version: 3 }));
+
+      const tx = makeTx();
+      tx.surgicalJourneyRecord.update.mockResolvedValue({
+        version: 3,
+        status: 'CLOSED',
+        procedure_code: 'MYOMECTOMY',
+      });
+      db.$transaction.mockImplementation(
+        (cb: (t: typeof tx) => Promise<number>) => cb(tx),
+      );
+
+      await service.patch(
+        VISIT,
+        JOURNEY,
+        { procedure_name: 'Myomectomy (revised)' },
+        user,
+      );
+
+      expect(obgynHistory.upsertJourneyGynSurgeryRow).not.toHaveBeenCalled();
     });
   });
 });
