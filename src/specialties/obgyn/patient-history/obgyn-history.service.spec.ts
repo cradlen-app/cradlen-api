@@ -41,6 +41,7 @@ function baseSingleton(overrides: Record<string, unknown> = {}) {
     pregnancies: null,
     contraceptives: null,
     non_gyn_surgeries: null,
+    gyn_surgeries: null,
     family_members: null,
     medications: null,
     allergies: null,
@@ -461,6 +462,196 @@ describe('ObgynHistoryService.upsertJourneyPregnancyRow (GTPAL sync)', () => {
     const rows = pregnancies(update);
     expect(rows.find((r) => r.id === 'r1')).toMatchObject({
       outcome: 'MISCARRIAGE',
+      notes: 'keep me',
+    });
+    expect(rows).toHaveLength(2);
+  });
+});
+
+describe('ObgynHistoryService.upsertJourneyGynSurgeryRow (surgical history sync)', () => {
+  const JOURNEY = 'journey-SURG';
+
+  function surgeries(update: jest.Mock): Array<Record<string, unknown>> {
+    return dataArg(update).gyn_surgeries as Array<Record<string, unknown>>;
+  }
+
+  it('appends a PLANNED row tagged with the journey — without touching the obstetric summary', async () => {
+    const { service, eventBus } = makeService();
+    const { tx, update } = createTx(baseSingleton());
+
+    await service.upsertJourneyGynSurgeryRow(
+      tx as never,
+      'p1',
+      JOURNEY,
+      {
+        outcome: 'PLANNED',
+        procedure_code: 'MYOMECTOMY',
+        procedure_name: 'Myomectomy',
+        surgery_date: '2026-08-01',
+      },
+      PROFILE,
+    );
+
+    const rows = surgeries(update);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      outcome: 'PLANNED',
+      procedure_code: 'MYOMECTOMY',
+      journey_id: JOURNEY,
+      created_by_id: PROFILE,
+    });
+    // gyn_surgeries never trigger the GTPAL recompute.
+    expect('obstetric_summary' in dataArg(update)).toBe(false);
+    expect(eventBus.publish).toHaveBeenCalledTimes(1);
+  });
+
+  it('adopts the most recent untagged still-planned row with the same procedure code', async () => {
+    const { service } = makeService();
+    const { tx, update } = createTx(
+      baseSingleton({
+        gyn_surgeries: [
+          {
+            id: 's-old',
+            outcome: 'PLANNED',
+            procedure_code: 'MYOMECTOMY',
+            created_at: '2026-01-01T00:00:00Z',
+          },
+          {
+            id: 's-new',
+            procedure_code: 'MYOMECTOMY', // no outcome → still planned
+            created_at: '2026-06-01T00:00:00Z',
+          },
+          { id: 's-done', outcome: 'COMPLETED', procedure_code: 'MYOMECTOMY' },
+        ],
+      }),
+    );
+
+    await service.upsertJourneyGynSurgeryRow(
+      tx as never,
+      'p1',
+      JOURNEY,
+      { outcome: 'PLANNED', procedure_code: 'MYOMECTOMY' },
+      PROFILE,
+    );
+
+    const rows = surgeries(update);
+    expect(rows).toHaveLength(3); // adopted, not appended
+    expect(rows.find((r) => r.id === 's-new')).toMatchObject({
+      journey_id: JOURNEY,
+    });
+    expect(rows.find((r) => r.id === 's-old')?.journey_id).toBeUndefined();
+    expect(rows.find((r) => r.id === 's-done')?.journey_id).toBeUndefined();
+  });
+
+  it('appends instead of adopting when the procedure code differs or is absent', async () => {
+    const { service } = makeService();
+    const { tx, update } = createTx(
+      baseSingleton({
+        gyn_surgeries: [
+          { id: 's1', outcome: 'PLANNED', procedure_code: 'HYSTERECTOMY' },
+        ],
+      }),
+    );
+
+    await service.upsertJourneyGynSurgeryRow(
+      tx as never,
+      'p1',
+      JOURNEY,
+      { outcome: 'PLANNED', procedure_code: 'MYOMECTOMY' },
+      PROFILE,
+    );
+
+    const rows = surgeries(update);
+    expect(rows).toHaveLength(2);
+    expect(rows[1]).toMatchObject({
+      procedure_code: 'MYOMECTOMY',
+      journey_id: JOURNEY,
+    });
+    expect(rows[0].journey_id).toBeUndefined();
+  });
+
+  it('finalizes the journey-tagged row on close', async () => {
+    const { service } = makeService();
+    const { tx, update } = createTx(
+      baseSingleton({
+        gyn_surgeries: [
+          {
+            id: 's1',
+            outcome: 'PLANNED',
+            procedure_code: 'CESAREAN_SECTION',
+            journey_id: JOURNEY,
+          },
+        ],
+      }),
+    );
+
+    await service.upsertJourneyGynSurgeryRow(
+      tx as never,
+      'p1',
+      JOURNEY,
+      {
+        outcome: 'COMPLETED',
+        procedure_code: 'CESAREAN_SECTION',
+        surgery_date: '2026-07-16',
+        complications: 'None',
+      },
+      PROFILE,
+    );
+
+    const rows = surgeries(update);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      id: 's1',
+      outcome: 'COMPLETED',
+      surgery_date: '2026-07-16',
+      complications: 'None',
+      journey_id: JOURNEY,
+    });
+  });
+
+  it('is idempotent: an in-sync target writes nothing', async () => {
+    const { service, eventBus } = makeService();
+    const { tx, update } = createTx(
+      baseSingleton({
+        gyn_surgeries: [{ id: 's1', outcome: 'PLANNED', journey_id: JOURNEY }],
+      }),
+    );
+
+    await service.upsertJourneyGynSurgeryRow(
+      tx as never,
+      'p1',
+      JOURNEY,
+      { outcome: 'PLANNED' },
+      PROFILE,
+    );
+
+    expect(update).not.toHaveBeenCalled();
+    expect(tx.patientObgynHistoryRevision.create).not.toHaveBeenCalled();
+    expect(eventBus.publish).not.toHaveBeenCalled();
+  });
+
+  it('leaves other collections (incl. pregnancies) untouched', async () => {
+    const { service } = makeService();
+    const { tx, update } = createTx(
+      baseSingleton({
+        pregnancies: [{ id: 'r1', outcome: 'ONGOING' }],
+        gyn_surgeries: [{ id: 's1', outcome: 'COMPLETED', notes: 'keep me' }],
+      }),
+    );
+
+    await service.upsertJourneyGynSurgeryRow(
+      tx as never,
+      'p1',
+      JOURNEY,
+      { outcome: 'PLANNED', procedure_code: 'MYOMECTOMY' },
+      PROFILE,
+    );
+
+    const data = dataArg(update);
+    expect('pregnancies' in data).toBe(false);
+    const rows = surgeries(update);
+    expect(rows.find((r) => r.id === 's1')).toMatchObject({
+      outcome: 'COMPLETED',
       notes: 'keep me',
     });
     expect(rows).toHaveLength(2);

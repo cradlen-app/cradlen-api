@@ -1418,6 +1418,7 @@ Table patient_obgyn_histories {
   pregnancies Json
   contraceptives Json
   non_gyn_surgeries Json
+  gyn_surgeries Json
   family_members Json
   medications Json
   allergies Json

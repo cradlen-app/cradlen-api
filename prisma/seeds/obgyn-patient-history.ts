@@ -32,7 +32,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import type { Predicate } from '../../src/builder/rules/predicates.js';
 
 const TEMPLATE_CODE = 'obgyn_patient_history';
-const TEMPLATE_VERSION = 9;
+const TEMPLATE_VERSION = 10;
 
 export type FieldType = keyof typeof FIELD_TYPES;
 export type SectionConfig = { ui?: any; validation?: any; logic?: any };
@@ -194,6 +194,111 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
             ],
           },
         },
+      },
+    ],
+  },
+  {
+    // Journey-synced chronological surgical history (id-keyed rows). The
+    // surgical activation/close flows file journey-tagged rows here (PLANNED →
+    // final outcome); doctors can also enter past surgeries manually. Distinct
+    // from `gynecologic_procedures` above — that checkbox list stays as quick
+    // baseline capture; this collection is the authoritative timeline.
+    code: 'gyn_surgeries',
+    name: 'Gynecologic Surgeries',
+    group: 'Gynecological History',
+    is_repeatable: true,
+    fields: [
+      {
+        code: 'procedure_name',
+        label: 'Procedure',
+        type: 'ENTITY_SEARCH',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'gyn_surgeries.procedure_name',
+        },
+        config: {
+          ui: {
+            placeholder: 'Search procedure by name or code',
+            colSpan: 4,
+            searchEntity: {
+              kind: 'procedure',
+              // On pick, copy the resolved Procedure code into the hidden
+              // sibling; allowCreate keeps free-typed procedure names.
+              fillFields: { procedure_code: 'code' },
+              allowCreate: true,
+            },
+          },
+          logic: { entity: 'procedure' },
+        },
+      },
+      {
+        // Hidden sibling — receives the resolved Procedure code on a catalog
+        // pick (fillFields of procedure_name). Also the journey-sync adoption
+        // key: a manually pre-entered PLANNED row with the same code is
+        // adopted by activation instead of duplicated.
+        code: 'procedure_code',
+        label: 'Procedure code',
+        type: 'TEXT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'gyn_surgeries.procedure_code',
+        },
+        config: { ui: { hidden: true } },
+      },
+      {
+        code: 'surgery_date',
+        label: 'Date',
+        type: 'DATE',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'gyn_surgeries.surgery_date',
+        },
+        config: { ui: { placeholder: 'Ex : 1/1/2026', colSpan: 4 } },
+      },
+      {
+        code: 'outcome',
+        label: 'Outcome',
+        type: 'SELECT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'gyn_surgeries.outcome',
+        },
+        config: {
+          ui: { placeholder: 'Ex : Completed', colSpan: 4 },
+          validation: {
+            options: [
+              // PLANNED is written by surgical activation; the rest mirror the
+              // surgical close outcome vocabulary 1:1.
+              opt('PLANNED', 'Planned'),
+              opt('COMPLETED', 'Completed'),
+              opt('ABORTED', 'Aborted'),
+              opt('CONVERTED', 'Converted'),
+              opt('TRANSFERRED', 'Transferred'),
+              opt('DECEASED', 'Deceased'),
+              opt('OTHER', 'Other'),
+            ],
+          },
+        },
+      },
+      {
+        code: 'complications',
+        label: 'Complications',
+        type: 'TEXT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'gyn_surgeries.complications',
+        },
+        config: { ui: { placeholder: 'Ex : None', colSpan: 6 } },
+      },
+      {
+        code: 'notes',
+        label: 'Notes',
+        type: 'TEXT',
+        binding: {
+          namespace: 'PATIENT_OBGYN_HISTORY',
+          path: 'gyn_surgeries.notes',
+        },
+        config: { ui: { placeholder: 'Ex : Uncomplicated recovery', colSpan: 6 } },
       },
     ],
   },

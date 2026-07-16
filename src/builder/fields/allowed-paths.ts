@@ -148,6 +148,14 @@ export const ALLOWED_PATHS = {
     'contraceptives.complications',
     'non_gyn_surgeries.surgery_name',
     'non_gyn_surgeries.surgery_date',
+    // gyn_surgeries — journey-synced surgical history collection (journey_id
+    // is server-stamped, never a bound form field)
+    'gyn_surgeries.procedure_name',
+    'gyn_surgeries.procedure_code',
+    'gyn_surgeries.surgery_date',
+    'gyn_surgeries.outcome',
+    'gyn_surgeries.complications',
+    'gyn_surgeries.notes',
     'medications.drug_name',
     'medications.medication_id',
     'medications.indication',

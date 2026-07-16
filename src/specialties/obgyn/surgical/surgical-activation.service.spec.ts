@@ -30,7 +30,10 @@ describe('SurgicalActivationService', () => {
     resolveEpisodeOrder: jest.Mock;
     routeVisitToEpisode: jest.Mock;
   };
-  let obgynHistory: { upsertJourneyPregnancyRow: jest.Mock };
+  let obgynHistory: {
+    upsertJourneyPregnancyRow: jest.Mock;
+    upsertJourneyGynSurgeryRow: jest.Mock;
+  };
 
   beforeEach(async () => {
     db = {
@@ -38,6 +41,7 @@ describe('SurgicalActivationService', () => {
       surgicalJourneyRecord: { findFirst: jest.fn() },
       pregnancyJourneyRecord: { findFirst: jest.fn() },
       carePath: { findFirst: jest.fn() },
+      procedure: { findFirst: jest.fn().mockResolvedValue(null) },
       $transaction: jest.fn(),
     };
     access = { assertVisitInOrg: jest.fn().mockResolvedValue(undefined) };
@@ -48,6 +52,7 @@ describe('SurgicalActivationService', () => {
     };
     obgynHistory = {
       upsertJourneyPregnancyRow: jest.fn().mockResolvedValue(undefined),
+      upsertJourneyGynSurgeryRow: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -129,6 +134,7 @@ describe('SurgicalActivationService', () => {
       expect(db.carePath.findFirst).not.toHaveBeenCalled();
       expect(db.$transaction).not.toHaveBeenCalled();
       expect(eventBus.publish).not.toHaveBeenCalled();
+      expect(obgynHistory.upsertJourneyGynSurgeryRow).not.toHaveBeenCalled();
     });
 
     it('blocks with 409 PREGNANCY_ACTIVE_REQUIRES_CLOSE when a pregnancy is active and no outcome is supplied', async () => {
@@ -223,7 +229,117 @@ describe('SurgicalActivationService', () => {
         }),
         'profile-A',
       );
+      // Surgical-history sync: the cesarean itself is filed as a PLANNED
+      // gyn-surgery row tagged with the NEW surgical journey.
+      expect(obgynHistory.upsertJourneyGynSurgeryRow).toHaveBeenCalledWith(
+        tx,
+        'patient-1',
+        'journey-SURG',
+        expect.objectContaining({
+          outcome: 'PLANNED',
+          procedure_code: 'CESAREAN_SECTION',
+        }),
+        'profile-A',
+      );
       expect(result.status).toBe('ACTIVE');
+    });
+
+    it('cesarean handoff with no procedure supplied defaults to the CESAREAN_SECTION catalog row', async () => {
+      liveJourney('OBGYN_PREGNANCY');
+      db.surgicalJourneyRecord.findFirst.mockResolvedValue(null);
+      db.carePath.findFirst.mockResolvedValue({
+        id: 'cp-surg',
+        journey_template_id: 'jt-surg',
+      });
+      db.pregnancyJourneyRecord.findFirst.mockResolvedValue({
+        id: 'pjr-1',
+        version: 2,
+      });
+      db.procedure.findFirst.mockResolvedValue({
+        id: 'proc-ces',
+        code: 'CESAREAN_SECTION',
+        name: 'Cesarean section',
+      });
+      const tx = txObject();
+      db.$transaction.mockImplementation((cb: (t: typeof tx) => unknown) =>
+        cb(tx),
+      );
+
+      await service.activate(
+        VISIT,
+        {
+          pregnancy_outcome: {
+            outcome_type: 'LIVE_BIRTH',
+            delivery_mode: 'CESAREAN',
+          },
+        },
+        user,
+      );
+
+      expect(db.procedure.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ code: 'CESAREAN_SECTION' }),
+        }),
+      );
+      expect(tx.surgicalJourneyRecord.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            procedure_id: 'proc-ces',
+            procedure_code: 'CESAREAN_SECTION',
+            procedure_name: 'Cesarean section',
+          }),
+        }),
+      );
+      expect(obgynHistory.upsertJourneyGynSurgeryRow).toHaveBeenCalledWith(
+        tx,
+        'patient-1',
+        'journey-SURG',
+        expect.objectContaining({
+          outcome: 'PLANNED',
+          procedure_code: 'CESAREAN_SECTION',
+          procedure_name: 'Cesarean section',
+        }),
+        'profile-A',
+      );
+    });
+
+    it('cesarean handoff falls back to a literal cesarean label when the catalog row is missing', async () => {
+      liveJourney('OBGYN_PREGNANCY');
+      db.surgicalJourneyRecord.findFirst.mockResolvedValue(null);
+      db.carePath.findFirst.mockResolvedValue({
+        id: 'cp-surg',
+        journey_template_id: 'jt-surg',
+      });
+      db.pregnancyJourneyRecord.findFirst.mockResolvedValue({
+        id: 'pjr-1',
+        version: 2,
+      });
+      db.procedure.findFirst.mockResolvedValue(null);
+      const tx = txObject();
+      db.$transaction.mockImplementation((cb: (t: typeof tx) => unknown) =>
+        cb(tx),
+      );
+
+      await service.activate(
+        VISIT,
+        {
+          pregnancy_outcome: {
+            outcome_type: 'LIVE_BIRTH',
+            delivery_mode: 'CESAREAN',
+          },
+        },
+        user,
+      );
+
+      expect(tx.surgicalJourneyRecord.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            procedure_id: null,
+            procedure_code: 'CESAREAN_SECTION',
+            procedure_name: 'Cesarean section',
+          }),
+        }),
+      );
     });
 
     it('general surgery (no pregnancy): opens a surgical journey with no source link', async () => {
@@ -243,6 +359,17 @@ describe('SurgicalActivationService', () => {
 
       expect(tx.pregnancyJourneyRecord.update).not.toHaveBeenCalled();
       expect(obgynHistory.upsertJourneyPregnancyRow).not.toHaveBeenCalled();
+      // Surgical-history sync fires for a plain activation too.
+      expect(obgynHistory.upsertJourneyGynSurgeryRow).toHaveBeenCalledWith(
+        tx,
+        'patient-1',
+        'journey-SURG',
+        expect.objectContaining({
+          outcome: 'PLANNED',
+          procedure_code: 'MYOMECTOMY',
+        }),
+        'profile-A',
+      );
       expect(tx.surgicalJourneyRecord.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
@@ -308,6 +435,17 @@ describe('SurgicalActivationService', () => {
           journey_id: 'journey-1',
           outcome_type: 'COMPLETED',
         }),
+      );
+      // Surgical-history sync: close finalizes the journey-tagged row.
+      expect(obgynHistory.upsertJourneyGynSurgeryRow).toHaveBeenCalledWith(
+        tx,
+        'patient-1',
+        'journey-1',
+        expect.objectContaining({
+          outcome: 'COMPLETED',
+          notes: 'uncomplicated',
+        }),
+        'profile-A',
       );
       expect(result.status).toBe('CLOSED');
     });
