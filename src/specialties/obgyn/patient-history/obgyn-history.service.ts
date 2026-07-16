@@ -38,6 +38,7 @@ const CHILD_COLLECTIONS = [
   'pregnancies',
   'contraceptives',
   'non_gyn_surgeries',
+  'gyn_surgeries',
   'family_members',
   'medications',
   'allergies',
@@ -106,6 +107,7 @@ const COLLECTION_SORTERS: Record<
   pregnancies: byDateDesc('birth_date'),
   contraceptives: byCreatedDesc,
   non_gyn_surgeries: byDateDesc('surgery_date'),
+  gyn_surgeries: byDateDesc('surgery_date'),
   family_members: byCreatedDesc,
   medications: byMedication,
   allergies: byCreatedDesc,
@@ -156,9 +158,9 @@ export class ObgynHistoryService {
    * as the canonical internal writer — the OB/GYN examination flow calls into
    * it to persist patient-level history captured during an encounter.
    *
-   * Singleton JSON columns + all six child collections (pregnancies,
-   * contraceptives, non_gyn_surgeries, family_members, medications, allergies)
-   * are diffed and written atomically. The collections live as JSON-array
+   * Singleton JSON columns + all seven child collections (pregnancies,
+   * contraceptives, non_gyn_surgeries, gyn_surgeries, family_members,
+   * medications, allergies) are diffed and written atomically. The collections live as JSON-array
    * columns on the singleton; each array element carries a stable `id` so the
    * id-keyed diff still applies: present id → update; missing id → create;
    * live id absent from the body → remove. A field absent from the body leaves
@@ -306,17 +308,8 @@ export class ObgynHistoryService {
    * (and the surgical cesarean handoff) so the GTPAL obstetric summary tracks
    * the journey lifecycle: activation files the current pregnancy as ONGOING
    * (gravida includes the current pregnancy), close finalizes its outcome.
-   *
-   * Target selection: the row already tagged with `journey_id`; else ADOPT the
-   * most recently created untagged ONGOING row (a doctor may have pre-entered
-   * the current pregnancy manually — adopting prevents a double gravida); else
-   * append a new row. Idempotent: when the target already carries every patch
-   * field, returns without writing (no version churn, revision, or event).
-   *
-   * Delegates to `applyPatch` with the FULL pregnancies array (the collection
-   * diff is upsert-and-delete-missing), so the revision snapshot, version bump,
-   * `patient.history.updated` event, and obstetric-summary recompute all ride
-   * the existing machinery.
+   * Adoption matches an untagged ONGOING row (prevents a double gravida when
+   * the doctor pre-entered the current pregnancy manually).
    */
   async upsertJourneyPregnancyRow(
     tx: Prisma.TransactionClient,
@@ -331,20 +324,95 @@ export class ObgynHistoryService {
     },
     profileId: string,
   ): Promise<void> {
+    return this.upsertJourneyRow(
+      tx,
+      patientId,
+      journeyId,
+      'pregnancies',
+      patch,
+      profileId,
+      (r) => str(r.outcome).toUpperCase() === 'ONGOING',
+    );
+  }
+
+  /**
+   * In-tx upsert of the journey-tagged surgery row in the patient's history
+   * `gyn_surgeries` collection. Called by the surgical activation/close flows
+   * so the gynecologic surgical history tracks the journey lifecycle:
+   * activation files the surgery as PLANNED, close finalizes its outcome.
+   *
+   * Same adopt-or-append semantics as the pregnancy sync; adoption matches an
+   * untagged still-planned row with the same `procedure_code` (a doctor may
+   * have pre-entered the upcoming surgery manually).
+   */
+  async upsertJourneyGynSurgeryRow(
+    tx: Prisma.TransactionClient,
+    patientId: string,
+    journeyId: string,
+    patch: {
+      outcome: string;
+      procedure_code?: string;
+      procedure_name?: string;
+      surgery_date?: string;
+      anesthesia_type?: string;
+      complications?: string;
+      notes?: string;
+    },
+    profileId: string,
+  ): Promise<void> {
+    return this.upsertJourneyRow(
+      tx,
+      patientId,
+      journeyId,
+      'gyn_surgeries',
+      patch,
+      profileId,
+      (r) => {
+        const outcome = str(r.outcome).toUpperCase();
+        const stillPlanned = outcome === '' || outcome === 'PLANNED';
+        return (
+          stillPlanned &&
+          !!patch.procedure_code &&
+          r.procedure_code === patch.procedure_code
+        );
+      },
+    );
+  }
+
+  /**
+   * Shared core for the journey-lifecycle syncs above. Target selection: the
+   * row already tagged with `journey_id`; else ADOPT the most recently created
+   * untagged row matching `adoptUntagged` (prevents duplicating a manually
+   * pre-entered row); else append a new row. Idempotent: when the target
+   * already carries every patch field, returns without writing (no version
+   * churn, revision, or event).
+   *
+   * Delegates to `applyPatch` with the FULL collection array (the collection
+   * diff is upsert-and-delete-missing), so the revision snapshot, version
+   * bump, `patient.history.updated` event — and, for pregnancies, the
+   * obstetric-summary recompute — all ride the existing machinery.
+   */
+  private async upsertJourneyRow(
+    tx: Prisma.TransactionClient,
+    patientId: string,
+    journeyId: string,
+    collection: ChildCollection,
+    patch: Record<string, unknown>,
+    profileId: string,
+    adoptUntagged: (row: StoredRow) => boolean,
+  ): Promise<void> {
     const singleton = await this.loadOrCreateSingleton(
       tx,
       patientId,
       profileId,
     );
-    const rows = coerceRows(singleton.pregnancies);
+    const rows = coerceRows(singleton[collection]);
 
     const tagged = rows.find((r) => r.journey_id === journeyId);
     const adoptable = tagged
       ? undefined
       : [...rows]
-          .filter(
-            (r) => !r.journey_id && str(r.outcome).toUpperCase() === 'ONGOING',
-          )
+          .filter((r) => !r.journey_id && adoptUntagged(r))
           .sort(byCreatedDesc)[0];
     const target = tagged ?? adoptable;
 
@@ -360,7 +428,7 @@ export class ObgynHistoryService {
     await this.applyPatch(
       tx,
       patientId,
-      { pregnancies: nextRows } as UpdateObgynHistoryDto,
+      { [collection]: nextRows } as unknown as UpdateObgynHistoryDto,
       null,
       profileId,
     );
@@ -384,7 +452,7 @@ export class ObgynHistoryService {
     });
   }
 
-  /** Read the six JSON-array columns off the singleton row (unsorted). */
+  /** Read the child-collection JSON-array columns off the singleton (unsorted). */
   private loadChildren(singleton: Record<string, unknown>): Children {
     return CHILD_COLLECTIONS.reduce((acc, key) => {
       acc[key] = coerceRows(singleton[key]);

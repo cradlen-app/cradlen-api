@@ -20,6 +20,10 @@ import { PatientAccessService } from '@core/patient/patient-access/patient-acces
 import { buildRevision } from '../revisions.helper';
 import { ObgynHistoryService } from '../patient-history/obgyn-history.service';
 import { historyRowPatchForClose } from '../pregnancy/pregnancy-history-sync.util';
+import {
+  historyRowPatchForSurgicalActivation,
+  historyRowPatchForSurgicalClose,
+} from './surgical-history-sync.util';
 import { SURGICAL_CARE_PATH_CODE } from './surgical-care-path.guard';
 import { SurgicalEpisodeRouterService } from './surgical-episode-router.service';
 import {
@@ -248,7 +252,7 @@ export class SurgicalActivationService {
         order,
       );
 
-      return tx.surgicalJourneyRecord.create({
+      const created = await tx.surgicalJourneyRecord.create({
         data: {
           journey_id: newJourney.id,
           status: 'ACTIVE',
@@ -271,6 +275,19 @@ export class SurgicalActivationService {
           procedure_name: true,
         },
       });
+
+      // Surgical-history sync: file the surgery as PLANNED in the patient's
+      // `gyn_surgeries` history collection, tagged with the NEW surgical
+      // journey (close finalizes the outcome on the same row).
+      await this.obgynHistory.upsertJourneyGynSurgeryRow(
+        tx,
+        patientId,
+        newJourney.id,
+        historyRowPatchForSurgicalActivation(dto),
+        user.profileId,
+      );
+
+      return created;
     }, TX_OPTIONS);
 
     if (activePregnancy && dto.pregnancy_outcome) {
@@ -381,8 +398,17 @@ export class SurgicalActivationService {
         where: { id: journey.id },
         data: { status: 'COMPLETED', ended_at: new Date() },
       });
+      // Surgical-history sync: finalize the history row tagged with this
+      // journey (or adopt/append — pre-feature journeys self-heal here).
+      await this.obgynHistory.upsertJourneyGynSurgeryRow(
+        tx,
+        journey.patient_id,
+        journey.id,
+        historyRowPatchForSurgicalClose(dto.outcome, record, new Date()),
+        user.profileId,
+      );
       return next;
-    });
+    }, TX_OPTIONS);
 
     this.eventBus.publish<SurgicalClosedEvent>(
       CLINICAL_EVENTS.surgical.closed,
