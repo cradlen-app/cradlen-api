@@ -18,6 +18,8 @@ import {
 } from '@core/clinical/events/events.public';
 import { PatientAccessService } from '@core/patient/patient-access/patient-access.public';
 import { buildRevision } from '../revisions.helper';
+import { ObgynHistoryService } from '../patient-history/obgyn-history.service';
+import { historyRowPatchForClose } from '../pregnancy/pregnancy-history-sync.util';
 import { SURGICAL_CARE_PATH_CODE } from './surgical-care-path.guard';
 import { SurgicalEpisodeRouterService } from './surgical-episode-router.service';
 import {
@@ -25,6 +27,10 @@ import {
   CreateSurgicalDto,
   SurgicalProfileDto,
 } from './dto/surgical-activation.dto';
+
+// The activation transaction carries several statements (optional pregnancy
+// close + GTPAL history sync + journey swap + episode routing) over Neon.
+const TX_OPTIONS = { timeout: 20_000, maxWait: 10_000 };
 
 /**
  * Lifecycle of a surgical profile: activation (the drawer's "Create") and
@@ -46,6 +52,7 @@ export class SurgicalActivationService {
     private readonly access: PatientAccessService,
     private readonly eventBus: EventBus,
     private readonly episodeRouter: SurgicalEpisodeRouterService,
+    private readonly obgynHistory: ObgynHistoryService,
   ) {}
 
   async activate(
@@ -183,6 +190,20 @@ export class SurgicalActivationService {
             version: { increment: 1 },
           },
         });
+        // GTPAL sync: finalize the history pregnancy row tagged with the
+        // closing pregnancy journey (same tag activation stamped), so a
+        // cesarean handoff updates para/abortion exactly like a plain close.
+        await this.obgynHistory.upsertJourneyPregnancyRow(
+          tx,
+          patientId,
+          oldJourneyId,
+          historyRowPatchForClose(
+            dto.pregnancy_outcome,
+            activePregnancy,
+            new Date(),
+          ),
+          user.profileId,
+        );
       }
 
       // Archive the journey the visit came from BEFORE creating the new one.
@@ -250,7 +271,7 @@ export class SurgicalActivationService {
           procedure_name: true,
         },
       });
-    });
+    }, TX_OPTIONS);
 
     if (activePregnancy && dto.pregnancy_outcome) {
       this.eventBus.publish<PregnancyClosedEvent>(

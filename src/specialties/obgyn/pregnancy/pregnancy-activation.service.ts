@@ -16,13 +16,19 @@ import {
 } from '@core/clinical/events/events.public';
 import { PatientAccessService } from '@core/patient/patient-access/patient-access.public';
 import { buildRevision } from '../revisions.helper';
+import { ObgynHistoryService } from '../patient-history/obgyn-history.service';
 import { PREGNANCY_CARE_PATH_CODE } from './pregnancy-care-path.guard';
 import { PregnancyEpisodeRouterService } from './pregnancy-episode-router.service';
+import { historyRowPatchForClose } from './pregnancy-history-sync.util';
 import {
   ClosePregnancyDto,
   CreatePregnancyDto,
   PregnancyProfileDto,
 } from './dto/pregnancy-activation.dto';
+
+// Activation/close transactions carry several statements (journey swap +
+// episode routing + the GTPAL history sync) over serverless Neon.
+const TX_OPTIONS = { timeout: 20_000, maxWait: 10_000 };
 
 /**
  * Lifecycle of a pregnancy profile: activation (the drawer's "Create") and
@@ -39,6 +45,7 @@ export class PregnancyActivationService {
     private readonly access: PatientAccessService,
     private readonly eventBus: EventBus,
     private readonly episodeRouter: PregnancyEpisodeRouterService,
+    private readonly obgynHistory: ObgynHistoryService,
   ) {}
 
   async activate(
@@ -187,7 +194,7 @@ export class PregnancyActivationService {
         trimesterOrder,
       );
 
-      return tx.pregnancyJourneyRecord.create({
+      const created = await tx.pregnancyJourneyRecord.create({
         data: {
           journey_id: newJourney.id,
           status: 'ACTIVE',
@@ -204,7 +211,20 @@ export class PregnancyActivationService {
         },
         select: { journey_id: true, status: true, created_at: true, lmp: true },
       });
-    });
+
+      // GTPAL sync: file the current pregnancy in the patient's OB/GYN history
+      // as ONGOING (gravida includes the current pregnancy). Adopts a manually
+      // pre-entered ONGOING row instead of duplicating it.
+      await this.obgynHistory.upsertJourneyPregnancyRow(
+        tx,
+        patientId,
+        newJourney.id,
+        { outcome: 'ONGOING' },
+        user.profileId,
+      );
+
+      return created;
+    }, TX_OPTIONS);
 
     this.eventBus.publish(CLINICAL_EVENTS.journey.completed, {
       journey_id: oldJourneyId,
@@ -309,8 +329,20 @@ export class PregnancyActivationService {
         where: { id: journey.id },
         data: { status: 'COMPLETED', ended_at: new Date() },
       });
+
+      // GTPAL sync: finalize the history pregnancy row (tagged at activation)
+      // with the typed outcome so para/abortion/ectopic/stillbirths update.
+      // Pre-feature pregnancies without a tagged row are adopted or appended.
+      await this.obgynHistory.upsertJourneyPregnancyRow(
+        tx,
+        journey.patient_id,
+        journey.id,
+        historyRowPatchForClose(dto.outcome, record, new Date()),
+        user.profileId,
+      );
+
       return next;
-    });
+    }, TX_OPTIONS);
 
     this.eventBus.publish<PregnancyClosedEvent>(
       CLINICAL_EVENTS.pregnancy.closed,

@@ -6,6 +6,7 @@ import { EventBus } from '@infrastructure/messaging/event-bus';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { CLINICAL_EVENTS } from '@core/clinical/events/clinical-events';
 import { PregnancyEpisodeRouterService } from './pregnancy-episode-router.service';
+import { ObgynHistoryService } from '../patient-history/obgyn-history.service';
 
 const user: AuthContext = {
   userId: 'u1',
@@ -28,6 +29,7 @@ describe('PregnancyActivationService', () => {
     resolveTrimesterOrder: jest.Mock;
     routeVisitToTrimester: jest.Mock;
   };
+  let obgynHistory: { upsertJourneyPregnancyRow: jest.Mock };
 
   beforeEach(async () => {
     db = {
@@ -42,6 +44,9 @@ describe('PregnancyActivationService', () => {
       resolveTrimesterOrder: jest.fn().mockReturnValue(null),
       routeVisitToTrimester: jest.fn().mockResolvedValue(undefined),
     };
+    obgynHistory = {
+      upsertJourneyPregnancyRow: jest.fn().mockResolvedValue(undefined),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -50,6 +55,7 @@ describe('PregnancyActivationService', () => {
         { provide: PatientAccessService, useValue: access },
         { provide: EventBus, useValue: eventBus },
         { provide: PregnancyEpisodeRouterService, useValue: episodeRouter },
+        { provide: ObgynHistoryService, useValue: obgynHistory },
       ],
     }).compile();
 
@@ -87,6 +93,7 @@ describe('PregnancyActivationService', () => {
       expect(db.carePath.findFirst).not.toHaveBeenCalled();
       expect(db.$transaction).not.toHaveBeenCalled();
       expect(eventBus.publish).not.toHaveBeenCalled();
+      expect(obgynHistory.upsertJourneyPregnancyRow).not.toHaveBeenCalled();
     });
 
     it('opens a NEW pregnancy journey + episodes, re-points the visit, completes the old journey', async () => {
@@ -176,6 +183,14 @@ describe('PregnancyActivationService', () => {
         CLINICAL_EVENTS.pregnancy.booked,
         expect.objectContaining({ journey_id: 'journey-PREG' }),
       );
+      // GTPAL sync: the current pregnancy is filed as ONGOING in-tx.
+      expect(obgynHistory.upsertJourneyPregnancyRow).toHaveBeenCalledWith(
+        tx,
+        'patient-1',
+        'journey-PREG',
+        { outcome: 'ONGOING' },
+        'profile-A',
+      );
       expect(result.status).toBe('ACTIVE');
     });
   });
@@ -231,6 +246,18 @@ describe('PregnancyActivationService', () => {
           outcome_type: 'LIVE_BIRTH',
           outcome: expect.objectContaining({ delivery_mode: 'CESAREAN' }),
         }),
+      );
+      // GTPAL sync: the history row is finalized with the mapped outcome in-tx.
+      expect(obgynHistory.upsertJourneyPregnancyRow).toHaveBeenCalledWith(
+        tx,
+        'patient-1',
+        'journey-1',
+        expect.objectContaining({
+          outcome: 'LIVE_BIRTH',
+          mode_of_delivery: 'CESAREAN',
+          notes: 'twins',
+        }),
+        'profile-A',
       );
       expect(result.status).toBe('CLOSED');
     });
