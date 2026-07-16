@@ -7,6 +7,7 @@ import { EventBus } from '@infrastructure/messaging/event-bus';
 import { AuthContext } from '@common/interfaces/auth-context.interface';
 import { CLINICAL_EVENTS } from '@core/clinical/events/clinical-events';
 import { SurgicalEpisodeRouterService } from './surgical-episode-router.service';
+import { ObgynHistoryService } from '../patient-history/obgyn-history.service';
 
 const user: AuthContext = {
   userId: 'u1',
@@ -29,6 +30,7 @@ describe('SurgicalActivationService', () => {
     resolveEpisodeOrder: jest.Mock;
     routeVisitToEpisode: jest.Mock;
   };
+  let obgynHistory: { upsertJourneyPregnancyRow: jest.Mock };
 
   beforeEach(async () => {
     db = {
@@ -44,6 +46,9 @@ describe('SurgicalActivationService', () => {
       resolveEpisodeOrder: jest.fn().mockReturnValue(null),
       routeVisitToEpisode: jest.fn().mockResolvedValue(undefined),
     };
+    obgynHistory = {
+      upsertJourneyPregnancyRow: jest.fn().mockResolvedValue(undefined),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -52,6 +57,7 @@ describe('SurgicalActivationService', () => {
         { provide: PatientAccessService, useValue: access },
         { provide: EventBus, useValue: eventBus },
         { provide: SurgicalEpisodeRouterService, useValue: episodeRouter },
+        { provide: ObgynHistoryService, useValue: obgynHistory },
       ],
     }).compile();
 
@@ -205,6 +211,18 @@ describe('SurgicalActivationService', () => {
           source_pregnancy_journey_id: 'journey-1',
         }),
       );
+      // GTPAL sync: the handoff finalizes the history row of the CLOSING
+      // pregnancy journey with the mapped cesarean outcome.
+      expect(obgynHistory.upsertJourneyPregnancyRow).toHaveBeenCalledWith(
+        tx,
+        'patient-1',
+        'journey-1',
+        expect.objectContaining({
+          outcome: 'LIVE_BIRTH',
+          mode_of_delivery: 'CESAREAN',
+        }),
+        'profile-A',
+      );
       expect(result.status).toBe('ACTIVE');
     });
 
@@ -224,6 +242,7 @@ describe('SurgicalActivationService', () => {
       await service.activate(VISIT, { procedure_code: 'MYOMECTOMY' }, user);
 
       expect(tx.pregnancyJourneyRecord.update).not.toHaveBeenCalled();
+      expect(obgynHistory.upsertJourneyPregnancyRow).not.toHaveBeenCalled();
       expect(tx.surgicalJourneyRecord.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({

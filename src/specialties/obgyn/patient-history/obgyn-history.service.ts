@@ -49,6 +49,7 @@ type Children = Record<ChildCollection, StoredRow[]>;
 
 const LIVE_BIRTH_OUTCOMES = ['LIVE_BIRTH'];
 const ABORTION_LIKE_OUTCOMES = ['MISCARRIAGE', 'ABORTION', 'ECTOPIC'];
+const ECTOPIC_OUTCOME = 'ECTOPIC';
 const STILLBIRTH_OUTCOME = 'STILLBIRTH';
 // A stillbirth counts toward parity only once the fetus is viable (>= 20 weeks).
 const STILLBIRTH_VIABLE_WEEKS = 20;
@@ -299,6 +300,72 @@ export class ObgynHistoryService {
     return updated;
   }
 
+  /**
+   * In-tx upsert of the journey-tagged pregnancy row in the patient's history
+   * `pregnancies` collection. Called by the pregnancy activation/close flows
+   * (and the surgical cesarean handoff) so the GTPAL obstetric summary tracks
+   * the journey lifecycle: activation files the current pregnancy as ONGOING
+   * (gravida includes the current pregnancy), close finalizes its outcome.
+   *
+   * Target selection: the row already tagged with `journey_id`; else ADOPT the
+   * most recently created untagged ONGOING row (a doctor may have pre-entered
+   * the current pregnancy manually — adopting prevents a double gravida); else
+   * append a new row. Idempotent: when the target already carries every patch
+   * field, returns without writing (no version churn, revision, or event).
+   *
+   * Delegates to `applyPatch` with the FULL pregnancies array (the collection
+   * diff is upsert-and-delete-missing), so the revision snapshot, version bump,
+   * `patient.history.updated` event, and obstetric-summary recompute all ride
+   * the existing machinery.
+   */
+  async upsertJourneyPregnancyRow(
+    tx: Prisma.TransactionClient,
+    patientId: string,
+    journeyId: string,
+    patch: {
+      outcome: string;
+      mode_of_delivery?: string;
+      gestational_age_weeks?: number;
+      birth_date?: string;
+      notes?: string;
+    },
+    profileId: string,
+  ): Promise<void> {
+    const singleton = await this.loadOrCreateSingleton(
+      tx,
+      patientId,
+      profileId,
+    );
+    const rows = coerceRows(singleton.pregnancies);
+
+    const tagged = rows.find((r) => r.journey_id === journeyId);
+    const adoptable = tagged
+      ? undefined
+      : [...rows]
+          .filter(
+            (r) => !r.journey_id && str(r.outcome).toUpperCase() === 'ONGOING',
+          )
+          .sort(byCreatedDesc)[0];
+    const target = tagged ?? adoptable;
+
+    const fields = rowFields({ ...patch, journey_id: journeyId });
+    if (target && Object.entries(fields).every(([k, v]) => target[k] === v)) {
+      return; // Already in sync — avoid version/revision/event churn.
+    }
+
+    const nextRows = target
+      ? rows.map((r) => (r.id === target.id ? { ...r, ...fields } : r))
+      : [...rows, fields]; // No `id` → diffCollection creates the row.
+
+    await this.applyPatch(
+      tx,
+      patientId,
+      { pregnancies: nextRows } as UpdateObgynHistoryDto,
+      null,
+      profileId,
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // Internals
   // ---------------------------------------------------------------------------
@@ -374,14 +441,22 @@ export class ObgynHistoryService {
   }
 
   /**
-   * Auto-compute gravida/para/abortion cache from the current pregnancy rows.
-   * Only called when pregnancies were touched and the caller did NOT supply an
-   * explicit `obstetric_summary`. Manual user input wins when supplied.
+   * Auto-compute the full obstetric-summary cache (gravida/para/abortion/
+   * ectopic/stillbirths) from the current pregnancy rows. Only called when
+   * pregnancies were touched and the caller did NOT supply an explicit
+   * `obstetric_summary`. Manual user input wins when supplied.
+   *
+   * Counting rules: every row counts toward gravida (including ONGOING and
+   * OTHER); ECTOPIC counts in both `abortion` and its own `ectopic` counter;
+   * `stillbirths` counts every stillbirth row while the >= 20-week viability
+   * rule gates `para` only.
    */
   private computeObstetricSummary(pregnancies: StoredRow[]) {
     let gravida = 0;
     let para = 0;
     let abortion = 0;
+    let ectopic = 0;
+    let stillbirths = 0;
     for (const r of pregnancies) {
       gravida += 1;
       const outcome = str(r.outcome).toUpperCase();
@@ -391,16 +466,19 @@ export class ObgynHistoryService {
           : 0;
       if (LIVE_BIRTH_OUTCOMES.includes(outcome)) {
         para += 1;
-      } else if (
-        outcome === STILLBIRTH_OUTCOME &&
-        ga >= STILLBIRTH_VIABLE_WEEKS
-      ) {
-        para += 1;
+      } else if (outcome === STILLBIRTH_OUTCOME) {
+        stillbirths += 1;
+        if (ga >= STILLBIRTH_VIABLE_WEEKS) {
+          para += 1;
+        }
       } else if (ABORTION_LIKE_OUTCOMES.includes(outcome)) {
         abortion += 1;
+        if (outcome === ECTOPIC_OUTCOME) {
+          ectopic += 1;
+        }
       }
     }
-    return { gravida, para, abortion };
+    return { gravida, para, abortion, ectopic, stillbirths };
   }
 }
 
