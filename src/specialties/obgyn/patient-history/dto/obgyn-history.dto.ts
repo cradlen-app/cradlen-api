@@ -174,6 +174,21 @@ export class NonGynSurgeryRowDto {
   @IsOptional() @IsString() notes?: string;
 }
 
+export class GynSurgeryRowDto {
+  @IsOptional() @IsUUID() id?: string;
+  // Server-stamped by the surgical activation/close sync (links the row to its
+  // PatientJourney); whitelisted so FE echoes of the envelope don't 400.
+  @IsOptional() @IsUUID() journey_id?: string;
+  @IsOptional() @IsString() procedure_code?: string;
+  @IsOptional() @IsString() procedure_name?: string;
+  @IsOptional() @IsDateString() surgery_date?: string;
+  // PLANNED | COMPLETED | ABORTED | CONVERTED | TRANSFERRED | DECEASED | OTHER
+  @IsOptional() @IsString() outcome?: string;
+  @IsOptional() @IsString() anesthesia_type?: string;
+  @IsOptional() @IsString() complications?: string;
+  @IsOptional() @IsString() notes?: string;
+}
+
 export class MedicationRowDto {
   @IsOptional() @IsUUID() id?: string;
   @IsOptional() @IsUUID() medication_id?: string;
@@ -294,6 +309,12 @@ export class UpdateObgynHistoryDto {
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
+  @Type(() => GynSurgeryRowDto)
+  gyn_surgeries?: GynSurgeryRowDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
   @Type(() => FamilyHistoryRowDto)
   family_members?: FamilyHistoryRowDto[];
 
@@ -328,6 +349,7 @@ export class PatientObgynHistoryDto {
   pregnancies!: unknown[];
   contraceptives!: unknown[];
   non_gyn_surgeries!: unknown[];
+  gyn_surgeries!: unknown[];
   family_members!: unknown[];
   medications!: unknown[];
   allergies!: unknown[];

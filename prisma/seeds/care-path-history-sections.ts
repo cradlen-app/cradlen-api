@@ -34,6 +34,7 @@ const OBGYN_CARE_PATH_HISTORY: CarePathHistoryMap[] = [
     sectionCodes: [
       'menstrual_history',
       'gynecologic_procedures',
+      'gyn_surgeries',
       'gynecologic_conditions',
       'sexual_history',
       'contraceptives',
@@ -68,6 +69,7 @@ const OBGYN_CARE_PATH_HISTORY: CarePathHistoryMap[] = [
     carePathCode: 'OBGYN_SURGICAL',
     sectionCodes: [
       'gynecologic_procedures',
+      'gyn_surgeries',
       'gynecologic_conditions',
       'non_gyn_surgeries',
       'medical_chronic_illnesses',
