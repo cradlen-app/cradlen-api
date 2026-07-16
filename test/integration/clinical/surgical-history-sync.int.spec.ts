@@ -12,6 +12,7 @@ import {
 import { bearer } from '../../helpers/auth-helpers';
 import { seedOrg } from '../../helpers/financial-helpers';
 import { seedVisit } from '../../helpers/visits-helpers';
+import { seedObgynSurgicalTemplate } from '../../../prisma/seeds/obgyn-surgical';
 
 /**
  * Surgical-history auto-sync between the surgical journey lifecycle and the
@@ -126,11 +127,12 @@ describe('OB/GYN — surgical history sync (integration)', () => {
   async function activateSurgical(
     ctx: Ctx,
     body: Record<string, unknown> = {},
-  ) {
-    await ctx
+  ): Promise<{ journey_id: string }> {
+    const res = await ctx
       .auth(request(http()).post(surgicalUrl(ctx.visitId)))
       .send(body)
       .expect(201);
+    return res.body.data as { journey_id: string };
   }
 
   async function readHistory(ctx: Ctx) {
@@ -194,6 +196,46 @@ describe('OB/GYN — surgical history sync (integration)', () => {
     expect(history.gyn_surgeries).toHaveLength(1);
     expect(history.gyn_surgeries[0]).toMatchObject({ id: manualRowId });
     expect(history.gyn_surgeries[0].journey_id).toBeDefined();
+  });
+
+  it('the Journey-section save (clinical PATCH) fills the history row — the real drawer opens empty', async () => {
+    const ctx = await seedOpenVisit();
+    // The FE activation drawer sends an empty body by design; the doctor fills
+    // procedure/date afterwards in the Surgical tab's Journey section.
+    const profile = await activateSurgical(ctx, {});
+
+    const before = await readHistory(ctx);
+    expect(before.gyn_surgeries).toHaveLength(1);
+    expect(before.gyn_surgeries[0]).toMatchObject({ outcome: 'PLANNED' });
+    expect(before.gyn_surgeries[0].procedure_name).toBeUndefined();
+
+    // The PATCH validates against the active obgyn_surgical template, which
+    // FKs profiles and is therefore wiped by cleanDatabase — re-seed it.
+    await seedObgynSurgicalTemplate(prisma);
+
+    await ctx
+      .auth(
+        request(http()).patch(
+          `/v1/visits/${ctx.visitId}/journeys/${profile.journey_id}/clinical`,
+        ),
+      )
+      .send({
+        procedure_code: 'MYOMECTOMY',
+        procedure_name: 'Myomectomy',
+        surgery_date: '2026-08-01',
+      })
+      .expect(200);
+
+    const after = await readHistory(ctx);
+    expect(after.gyn_surgeries).toHaveLength(1); // same row, refreshed
+    expect(after.gyn_surgeries[0]).toMatchObject({
+      id: before.gyn_surgeries[0].id,
+      outcome: 'PLANNED',
+      procedure_code: 'MYOMECTOMY',
+      procedure_name: 'Myomectomy',
+      surgery_date: '2026-08-01',
+      journey_id: profile.journey_id,
+    });
   });
 
   // ---------- close ----------
@@ -282,6 +324,30 @@ describe('OB/GYN — surgical history sync (integration)', () => {
     expect(history.gyn_surgeries[0].journey_id).not.toBe(
       history.pregnancies[0].journey_id,
     );
+  });
+
+  it('cesarean handoff with no procedure defaults the surgery row to the seeded CESAREAN_SECTION', async () => {
+    const ctx = await seedOpenVisit();
+    await ctx
+      .auth(request(http()).post(pregnancyUrl(ctx.visitId)))
+      .send({ lmp: '2026-01-01' })
+      .expect(201);
+
+    // The real handoff drawer sends only the pregnancy outcome — no procedure.
+    await activateSurgical(ctx, {
+      pregnancy_outcome: {
+        outcome_type: 'LIVE_BIRTH',
+        delivery_mode: 'CESAREAN',
+      },
+    });
+
+    const history = await readHistory(ctx);
+    expect(history.gyn_surgeries).toHaveLength(1);
+    expect(history.gyn_surgeries[0]).toMatchObject({
+      outcome: 'PLANNED',
+      procedure_code: 'CESAREAN_SECTION',
+    });
+    expect(history.gyn_surgeries[0].procedure_name).toBeTruthy();
   });
 
   // ---------- doctor workflow compatibility ----------

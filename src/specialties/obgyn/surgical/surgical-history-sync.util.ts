@@ -27,26 +27,30 @@ export interface SurgicalRecordFields {
   planned_date: Date | null;
 }
 
-function isoDate(value: Date): string {
-  return value.toISOString().slice(0, 10);
+function isoDate(value: Date | string): string {
+  return new Date(value).toISOString().slice(0, 10);
 }
 
 /**
- * Activation patch — files the surgery as PLANNED with whatever the drawer
- * captured. Date preference: the actual surgery date, else the planned date;
- * keys with no value are omitted entirely (never write nulls).
+ * Activation/still-planned patch — files (or refreshes) the surgery as PLANNED
+ * with whatever is known so far. Accepts either the activation DTO (string
+ * dates) or the `SurgicalJourneyRecord` row (Date columns) — the clinical
+ * surface PATCH re-syncs the history row from the updated record on every
+ * Journey-section save while the record is ACTIVE. Date preference: the actual
+ * surgery date, else the planned date; keys with no value are omitted entirely
+ * (never write nulls).
  */
-export function historyRowPatchForSurgicalActivation(dto: {
-  procedure_code?: string;
-  procedure_name?: string;
-  surgery_date?: string;
-  planned_date?: string;
+export function historyRowPatchForSurgicalActivation(source: {
+  procedure_code?: string | null;
+  procedure_name?: string | null;
+  surgery_date?: string | Date | null;
+  planned_date?: string | Date | null;
 }): HistoryGynSurgeryRowPatch {
   const patch: HistoryGynSurgeryRowPatch = { outcome: 'PLANNED' };
-  if (dto.procedure_code) patch.procedure_code = dto.procedure_code;
-  if (dto.procedure_name) patch.procedure_name = dto.procedure_name;
-  const date = dto.surgery_date ?? dto.planned_date;
-  if (date) patch.surgery_date = isoDate(new Date(date));
+  if (source.procedure_code) patch.procedure_code = source.procedure_code;
+  if (source.procedure_name) patch.procedure_name = source.procedure_name;
+  const date = source.surgery_date ?? source.planned_date;
+  if (date) patch.surgery_date = isoDate(date);
   return patch;
 }
 
