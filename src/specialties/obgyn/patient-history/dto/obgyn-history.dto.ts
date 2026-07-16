@@ -133,6 +133,9 @@ export class MenopauseHistoryDto {
 
 export class PregnancyRowDto {
   @IsOptional() @IsUUID() id?: string;
+  // Server-stamped by the pregnancy activation/close sync (links the row to its
+  // PatientJourney); whitelisted so FE echoes of the envelope don't 400.
+  @IsOptional() @IsUUID() journey_id?: string;
   @IsOptional() @IsDateString() birth_date?: string;
   @IsOptional() @IsString() outcome?: string;
   @IsOptional() @IsString() mode_of_delivery?: string;

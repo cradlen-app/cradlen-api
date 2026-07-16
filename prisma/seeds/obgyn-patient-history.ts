@@ -32,7 +32,7 @@ import { FIELD_TYPES } from '../../src/builder/fields/field-type.registry.js';
 import type { Predicate } from '../../src/builder/rules/predicates.js';
 
 const TEMPLATE_CODE = 'obgyn_patient_history';
-const TEMPLATE_VERSION = 8;
+const TEMPLATE_VERSION = 9;
 
 export type FieldType = keyof typeof FIELD_TYPES;
 export type SectionConfig = { ui?: any; validation?: any; logic?: any };
@@ -784,7 +784,7 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
     fields: [
       {
         code: 'birth_date',
-        label: 'Birth date',
+        label: 'Birth / outcome date',
         type: 'DATE',
         binding: {
           namespace: 'PATIENT_OBGYN_HISTORY',
@@ -810,6 +810,9 @@ export const HISTORY_SECTIONS: SectionSpec[] = [
               opt('ABORTION', 'Abortion'),
               opt('ECTOPIC', 'Ectopic'),
               opt('ONGOING', 'Ongoing'),
+              // Gravida-only closures (transferred care, lost to follow-up, …)
+              // written by the pregnancy-close GTPAL sync.
+              opt('OTHER', 'Other'),
             ],
           },
         },
